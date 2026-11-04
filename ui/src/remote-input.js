@@ -19,6 +19,7 @@ export function installRemoteInput(
     remote = new Map();
   let lastText = "",
     copyRequested = false,
+    pointerCopyUntil = 0,
     copyTimer,
     pending = 0,
     composing = false,
@@ -119,6 +120,9 @@ export function installRemoteInput(
         target.blur();
       }
       position(event.clientX, event.clientY);
+      // shortcut: one update within 1.6s of a click; use guest copy events for delayed copies.
+      if (event.isTrusted && event.button === 0 && isActive())
+        pointerCopyUntil = Date.now() + 1600;
     },
     true,
   );
@@ -199,10 +203,12 @@ export function installRemoteInput(
   });
   on(target, "blur", () => {
     if (nativeOwned) return;
+    pointerCopyUntil = 0;
     if (composing && compositionSession) queueComposition({ mode: "cancel", text: "", selectionStart: 0, selectionEnd: 0 });
     resetComposition();
   });
   on(document, "focusin", (event) => {
+    if (!container.contains(event.target)) pointerCopyUntil = 0;
     if (nativeOwned && !container.contains(event.target)) deactivateNative();
   });
   on(window, "cage-native-input", (event) => {
@@ -294,8 +300,9 @@ export function installRemoteInput(
   };
   on(rfb, "clipboard", async (event) => {
     lastText = event.detail.text;
-    if (!copyRequested) return;
+    if (!isActive() || (!copyRequested && Date.now() >= pointerCopyUntil)) return;
     copyRequested = false;
+    pointerCopyUntil = 0;
     clearTimeout(copyTimer);
     try {
       await writeClipboard(lastText);
@@ -305,6 +312,7 @@ export function installRemoteInput(
     }
   });
   const release = () => {
+    pointerCopyUntil = 0;
     for (const [code, keysym] of remote) rfb.sendKey(keysym, code, false);
     remote.clear();
     physical.clear();

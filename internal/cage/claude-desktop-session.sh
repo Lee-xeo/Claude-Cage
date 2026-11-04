@@ -30,7 +30,7 @@ for i in $(seq 1 100); do
 done
 xdpyinfo -display "$DISPLAY" >/dev/null
 openbox --config-file /etc/claude-cage/desktop-openbox.xml &
-X0tigervnc -display "$DISPLAY" -rfbport -1 -rfbunixpath "$XDG_RUNTIME_DIR/vnc.sock" -rfbunixmode 0600 -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/vnc-password" -AlwaysShared &
+X0tigervnc -display "$DISPLAY" -rfbport -1 -rfbunixpath "$XDG_RUNTIME_DIR/vnc.sock" -rfbunixmode 0600 -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/vnc-password" -AlwaysShared -SendPrimary=0 &
 mkfifo -m 0600 "$XDG_RUNTIME_DIR/unlock"
 gnome-keyring-daemon --unlock --components=secrets < "$XDG_RUNTIME_DIR/unlock" >/dev/null
 rm "$XDG_RUNTIME_DIR/unlock"

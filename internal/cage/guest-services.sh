@@ -97,7 +97,7 @@ Requires=cage-display.service
 After=cage-display.service
 [Service]
 User=cage-browser
-ExecStart=/usr/local/bin/cage-log-run /usr/bin/X0tigervnc -display :77 -rfbport 15900 -localhost -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd -AlwaysShared
+ExecStart=/usr/local/bin/cage-log-run /usr/bin/X0tigervnc -display :77 -rfbport 15900 -localhost -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd -AlwaysShared -SendPrimary=0
 LogNamespace=cage
 Restart=on-failure
 RestartSec=2

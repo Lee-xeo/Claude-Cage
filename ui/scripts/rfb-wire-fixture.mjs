@@ -7,6 +7,7 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
   const stats = { connections: 0, closed: 0, frames: 0 };
   const sockets = new Set();
   const displays = new Set();
+  const clipboards = new Set();
   let width = 640, height = 480;
   const server = http.createServer((req, res) => {
     if (req.url.startsWith("/api/")) {
@@ -47,6 +48,14 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
       send(update);
       makeFrame();
     };
+    const clipboard = (text) => {
+      const bytes = Buffer.from(text, "latin1");
+      const message = Buffer.alloc(8 + bytes.length);
+      message[0] = 3;
+      message.writeUInt32BE(bytes.length, 4);
+      bytes.copy(message, 8);
+      send(message);
+    };
     const consume = (data) => {
       rfb = Buffer.concat([rfb, data]);
       if (phase === 0 && rfb.length >= 12) { rfb = rfb.subarray(12); phase = 1; send(Buffer.from([1, 1])); }
@@ -62,6 +71,7 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
         init.writeUInt32BE(name.length, 20); name.copy(init, 24); send(init);
         makeFrame();
         displays.add(resize);
+        clipboards.add(clipboard);
         timer = setInterval(() => {
           if (socket.writableLength > frame.length * 2) return;
           frame.fill(stats.frames % 255, 16);
@@ -89,7 +99,7 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
       }
     });
     socket.on("error", () => {});
-    socket.on("close", () => { clearInterval(timer); displays.delete(resize); sockets.delete(socket); stats.closed++; });
+    socket.on("close", () => { clearInterval(timer); displays.delete(resize); clipboards.delete(clipboard); sockets.delete(socket); stats.closed++; });
     send(Buffer.from("RFB 003.008\n"));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -97,6 +107,7 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
     url: `http://127.0.0.1:${server.address().port}`,
     stats,
     resize(size) { width = size.width; height = size.height; for (const resize of displays) resize(); },
+    clipboard(text) { for (const clipboard of clipboards) clipboard(text); },
     close: async () => {
       for (const socket of sockets) socket.destroy();
       server.closeAllConnections();

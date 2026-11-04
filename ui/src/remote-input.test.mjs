@@ -21,6 +21,8 @@ function fixture(native = false, browserComposition = false) {
     writes = [],
     statuses = [];
   let reads = 0,
+    now = 1000,
+    active = true,
     mode = "mac",
     currentTabId = "tab-1";
   doc.activeElement = canvas;
@@ -56,6 +58,7 @@ function fixture(native = false, browserComposition = false) {
     setTimeout,
     clearTimeout,
     Promise,
+    Date: { now: () => now },
     Map,
     Set,
     console,
@@ -79,19 +82,20 @@ function fixture(native = false, browserComposition = false) {
     },
   };
   const install = vm.runInNewContext(source + "\ninstallRemoteInput;", context);
-  const controller = install(
-    rfb,
-    Object.assign(new EventTarget(), {
+  const container = Object.assign(new EventTarget(), {
       querySelector: () => null,
       contains: (element) => element === canvas || element === target,
       append() {},
       getBoundingClientRect: () => ({ left: 0, top: 0 }),
-    }),
+    });
+  const controller = install(
+    rfb,
+    container,
     {
       mode: () => mode,
       onStatus: (t) => statuses.push(t),
       onFallback() {},
-      isActive: () => true,
+      isActive: () => active,
       insertText: async (text) => {
         texts.push(text);
       },
@@ -135,6 +139,15 @@ function fixture(native = false, browserComposition = false) {
     statuses,
     controller,
     key,
+    pointer({ isTrusted = true, button = 0 } = {}) {
+      const event = new Event("pointerdown");
+      Object.defineProperty(event, "isTrusted", { value: isTrusted });
+      event.button = button;
+      event.clientX = event.clientY = 150;
+      container.dispatchEvent(event);
+    },
+    advance: (ms) => { now += ms; },
+    setActive: (value) => { active = value; },
     local,
     target,
     setMode: (value) => {
@@ -348,6 +361,48 @@ test("background clipboard notifications never write to the host", async () => {
     assert.deepEqual(f.writes, ["guest text"]);
   } finally {
     f.controller.dispose();
+  }
+});
+test("a real remote click exports one text update without sending a copy chord", async () => {
+  const f = fixture(true);
+  const clipboard = new Event("clipboard");
+  clipboard.detail = { text: "网页按钮复制的命令🙂" };
+  try {
+    f.pointer();
+    f.rfb.dispatchEvent(clipboard);
+    f.rfb.dispatchEvent(clipboard);
+    await Promise.resolve();
+    assert.deepEqual(f.writes, [clipboard.detail.text]);
+    assert.deepEqual(f.keys, []);
+    assert.equal(f.reads(), 0);
+    f.pointer();
+    f.rfb.dispatchEvent(clipboard);
+    await Promise.resolve();
+    assert.equal(f.writes.length, 2, "the same command can be copied again");
+  } finally {
+    f.controller.dispose();
+  }
+});
+test("synthetic, expired, inactive and blurred clicks cannot export clipboard updates", async () => {
+  for (const kind of ["synthetic", "right-button", "expired", "inactive-click", "inactive-update", "blur", "local-field", "disposed"]) {
+    const f = fixture();
+    try {
+      if (kind === "inactive-click") f.setActive(false);
+      f.pointer({ isTrusted: kind !== "synthetic", button: kind === "right-button" ? 2 : 0 });
+      if (kind === "expired") f.advance(1600);
+      if (kind === "inactive-click") f.setActive(true);
+      if (kind === "inactive-update") f.setActive(false);
+      if (kind === "blur") f.win.dispatchEvent(new Event("blur"));
+      if (kind === "local-field") inputEvent(f, "blur");
+      if (kind === "disposed") f.controller.dispose();
+      const clipboard = new Event("clipboard");
+      clipboard.detail = { text: "background text" };
+      f.rfb.dispatchEvent(clipboard);
+      await Promise.resolve();
+      assert.deepEqual(f.writes, [], kind);
+    } finally {
+      f.controller.dispose();
+    }
   }
 });
 test("native menu paste accepts every rapid gesture, without debouncing", async () => {

@@ -75,6 +75,8 @@ go test github.com/containers/gvisor-tap-vsock/pkg/services/dns \
 
 修改更新或恢复界面时，运行 `node ui/scripts/recovery-ui-smoke.mjs`；修改画面可见性时，运行 `node ui/scripts/remote-visibility-smoke.mjs`。两者需要可用的 Playwright 和已启动的前端开发服务，可通过 `CAGE_UI_URL` 指定地址；测试使用隔离接口，后者还使用真实 RFB 握手与帧验证停止和恢复，不连接日常 VM。修改原生更新流程时运行 `bash scripts/test-app-updates.sh`，正式签名、公证及真实安装仍须单独验收。组件清单、固定工具安装器和网络续租回归已包含在上述 Go 包测试中，无需重复执行一套独立命令。
 
+修改远端复制行为时，运行 `node ui/scripts/remote-copy-smoke.mjs`；沿用上述 Playwright 和前端服务配置，可用 `CAGE_TEST_BROWSER=webkit` 验证 WebKit。测试使用真实鼠标事件和 RFB 剪贴板消息，记录原生写入请求而不修改本机剪贴板，覆盖点击复制、单次同步、后台及本地输入框隔离和 `⌘C`。
+
 修改上游源码时，保持 `patches/` 与 `third_party/` 一致，并按 `patches/README.md` 核对同步方式。UI 改动需要在实际 App 中验证状态、失败恢复和关键交互；编译通过不能证明登录、联网或用户操作已成功。
 
 建议使用独立测试配置和非敏感测试项目，避免将开发验证写入日常环境。启动前的 Git 保护检查属于主机状态：单独指定 Cage 配置目录不会隔离全局 Git 设置，测试修改路径时应使用隔离的测试用户目录。应用必须先解释影响，用户明确确认后才将 `safe.bareRepository` 设置为 `explicit`，并在复检通过后启动环境；读取状态不得修改 Git 配置。真实网络验证应区分代理连通、环境放行、浏览器访问、Claude 授权与模型请求，不能互相替代。
