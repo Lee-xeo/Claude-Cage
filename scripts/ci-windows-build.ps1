@@ -53,6 +53,7 @@ try {
     & (Join-Path $PSScriptRoot 'install-nsis.ps1') -Destination $env:RUNNER_TEMP
     $env:PATH = (Join-Path $env:RUNNER_TEMP 'nsis-3.13') + [IO.Path]::PathSeparator + $env:PATH
     Invoke-BuildTool 'node' @('scripts/check-version.mjs')
+    Invoke-BuildTool 'node' @('--test', 'internal/cage/browser-favicon.test.mjs')
     & (Join-Path $PSScriptRoot 'build-windows.ps1') -Release:$Release
     Invoke-BuildTool 'dotnet' @('run', '--project', 'desktop/windows.tests/Cage.Windows.Tests.csproj')
     Invoke-BuildTool 'go' @('test', './internal/workbench', './internal/appupdate', './internal/host', './internal/managedproxy', './internal/env', './internal/paths', './internal/mounts')

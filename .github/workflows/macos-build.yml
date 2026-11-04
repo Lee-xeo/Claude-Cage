@@ -62,7 +62,7 @@ jobs:
         run: |
           npm run --prefix ui lint
           npm test --prefix ui
-          node --test internal/cage/clipboard.test.cjs internal/cage/browser-audit.test.mjs internal/cage/browser-downloads.test.mjs internal/cage/browser-uploads.test.mjs
+          node --test internal/cage/clipboard.test.cjs internal/cage/browser-audit.test.mjs internal/cage/browser-downloads.test.mjs internal/cage/browser-uploads.test.mjs internal/cage/browser-favicon.test.mjs
           uv run internal/cage/save-download.test.py
           uv run internal/cage/editor-migrate.test.py
       - name: Go tests and vet

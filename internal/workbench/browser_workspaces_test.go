@@ -36,7 +36,7 @@ func TestBrowserEditorWorkspaceRESTUsesAuthorizedWindowsProjects(t *testing.T) {
 	snapshot := `{"active":"first","downloads":[{"id":"download","url":"https://example.test/a"}],"tabs":[` +
 		`{"id":"first","kind":"editor","workspace":"/c/Users/甲 用户/项目 一","url":"http://127.0.0.1:18080/?folder=%2Fc%2FUsers%2F甲%20用户%2F项目%20一"},` +
 		`{"id":"second","kind":"editor","workspace":"/d/跨盘 项目/two","url":"http://127.0.0.1:18080/?folder=%2Fd%2F跨盘%20项目%2Ftwo"},` +
-		`{"id":"web","kind":"web","workspace":"/c/Users/甲 用户/项目 一","url":"https://example.test/"},` +
+		`{"id":"web","kind":"web","workspace":"/c/Users/甲 用户/项目 一","url":"https://example.test/","favicon":"data:image/png;base64,aWNvbg=="},` +
 		`{"id":"unshared","kind":"editor","workspace":"/e/private","url":"http://127.0.0.1:18080/?folder=%2Fe%2Fprivate"}]}`
 	s.browserControl = browserClientForTest(t, s, browserTransport(func(r *http.Request) (*http.Response, error) {
 		if r.Method != "GET" || r.URL.Path != "/tabs" || r.Header.Get("Authorization") != "Bearer private-test-token" {

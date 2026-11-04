@@ -10,6 +10,7 @@ import { nativeInput } from "./native-input.mjs";
 import { DownloadManager } from "./browser-downloads.mjs";
 import { UploadManager, uploadLimit } from "./browser-uploads.mjs";
 import { timingSafeEqual } from "node:crypto";
+import { readFavicon } from "./browser-favicon.mjs";
 
 const config = JSON.parse(
   readFileSync("/etc/claude-cage/browser-control.json", "utf8"),
@@ -62,6 +63,7 @@ let sequence = 0,
   ready = false;
 let shuttingDown = false;
 const events = new Set();
+const favicons = new Map(), faviconJobs = new Map();
 const auditContexts = new Set();
 const pending = new Map(),
   targets = new Map(),
@@ -132,6 +134,7 @@ chrome.stdio[4].on("data", (chunk) => {
       const t = p.targetInfo;
       if (t.type === "page" && !auditContexts.has(t.browserContextId)) {
         const fresh = !targets.has(t.targetId);
+        if (targets.get(t.targetId)?.url !== t.url) favicons.delete(t.targetId);
         targets.set(t.targetId, t);
         if (fresh) void session(t.targetId).catch(() => {});
         if (t.targetId === activeId) rememberSelection();
@@ -144,6 +147,7 @@ chrome.stdio[4].on("data", (chunk) => {
     if (event.method === "Target.targetDestroyed") {
       if (!targets.has(p.targetId)) continue;
       targets.delete(p.targetId);
+      favicons.delete(p.targetId);
       uploads.cancelTab(p.targetId);
       for (const [sid, tab] of uploadSessions) if (tab === p.targetId) uploadSessions.delete(sid);
       sessions.delete(p.targetId);
@@ -157,6 +161,7 @@ chrome.stdio[4].on("data", (chunk) => {
       downloads.begin(p.guid, p.suggestedFilename);
     if (event.method === "Browser.downloadProgress") downloads.progress(p);
     const uploadTab = uploadSessions.get(event.sessionId);
+    if (uploadTab && event.method === "Page.loadEventFired") refreshFavicon(uploadTab);
     if (uploadTab && event.method === "Page.fileChooserOpened")
       void uploads.opened(uploadTab, event.sessionId, p).catch(() => {});
     if (uploadTab && event.method === "Page.frameNavigated" && !p.frame?.parentId)
@@ -185,10 +190,28 @@ async function session(id) {
         uploadSessions.set(r.sessionId, id);
         await cdp("Page.enable", {}, r.sessionId);
         await cdp("Page.setInterceptFileChooserDialog", { enabled: true }, r.sessionId);
+        queueMicrotask(() => refreshFavicon(id));
         return r.sessionId;
       }).catch(error => { sessions.delete(id); throw error; }),
     );
   return sessions.get(id);
+}
+// shortcut: refresh on load/activation; observe page changes if live icon badges are needed.
+function refreshFavicon(id) {
+  if (!targets.has(id)) return;
+  const pending = faviconJobs.get(id);
+  if (pending) { pending.again = true; return; }
+  const job = { again: false };
+  faviconJobs.set(id, job);
+  const url = targets.get(id).url;
+  void session(id).then(sid => readFavicon(cdp, sid)).then(icon => {
+    if (targets.get(id)?.url !== url || favicons.get(id) === icon) return;
+    favicons.set(id, icon);
+    broadcastState();
+  }).catch(() => {}).finally(() => {
+    faviconJobs.delete(id);
+    if (job.again) refreshFavicon(id);
+  });
 }
 async function activate(id, focus = false) {
   if (!targets.has(id)) throw new Error("Tab no longer exists");
@@ -196,6 +219,7 @@ async function activate(id, focus = false) {
   // Page.enable must not block the command that wakes that renderer.
   await cdp("Target.activateTarget", { targetId: id });
   await session(id);
+  refreshFavicon(id);
   activeId = id;
   rememberSelection();
   broadcastState(focus);
@@ -319,6 +343,7 @@ function publicState() {
       id: t.targetId,
       title: displayTitle(t),
       url: t.url,
+      favicon: favicons.get(t.targetId) || "",
       kind: t.url.startsWith("http://127.0.0.1:18080/") ? "editor" : "web",
       workspace: t.url.startsWith("http://127.0.0.1:18080/") ? new URL(t.url).searchParams.get("folder") || config.workspace : undefined,
     })),

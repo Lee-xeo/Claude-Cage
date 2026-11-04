@@ -55,6 +55,8 @@ VM 身份固定保存在主机私有的 `environment.json`；最后打开的项�
 
 收藏由主机控制服务保存在当前配置目录的私有 `favorites.json`，Unix 权限为 `0600`，Windows 使用仅当前用户与 SYSTEM 可访问的显式 DACL；所有项目共用，应用和控制服务重启后保留，不与 Chromium 或外部浏览器同步。`GET /api/favorites` 返回 `items` 与 `folders`；`POST /api/favorites` 通过 `save`、`delete`、`save_folder`、`delete_folder` 操作单条记录，沿用工作台认证与来源校验。修改在专用互斥锁下读取最新文件并原子写入，避免并发新增覆盖其他窗口的收藏。保存失败保留编辑输入，读取失败不覆盖原文件。收藏操作不更改 VM、网络或共享目录状态。
 
+网页标签和标签搜索列表使用网站 favicon；编辑器和终端保留专用图标。浏览器控制器在页面加载、激活时读取声明的图标，失败后尝试 `/favicon.ico`，通过客机 Chromium 获取，沿用客机的网络策略、缓存和网站 CSP。每次最多尝试八个地址，原图上限 256 KiB；位图转为 32×32 PNG，小型 SVG 保留，传给工作台的 `tabs[].favicon` 为最多 8 KiB 的图片 data URL。主机界面不请求第三方图标地址，不放宽 CSP；缺失、失败或旧客机未提供该字段时回退地球图标。macOS、Windows、Linux 共用此数据格式和渲染逻辑。
+
 ## Claude 入口与终端
 
 浏览器下方提供 `claude.ai` 和 `Claude Desktop` 两个入口。前者在 Cage 浏览器中新建官网页面；后者管理同一份官方 Linux 桌面应用，Chat 与 Code 在应用内切换。Desktop 的安装、登录资料和工作进程均位于当前持久环境中，文件访问沿用已共享的项目范围。Cage 管理安装、启动、状态与关闭，不读取应用会话，也不自动操作其中的任务。

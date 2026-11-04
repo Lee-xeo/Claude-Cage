@@ -14,6 +14,7 @@ assert.equal(process.platform, "linux", "Run in the Linux guest");
 assert.ok(process.env.DISPLAY, "Provide an isolated X display");
 const directory = await mkdtemp(join(tmpdir(), "cage-controls-smoke-"));
 const reports = new Map();
+const favicon = path => "data:image/svg+xml;base64," + Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><text y="24">${path}</text></svg>`).toString("base64");
 const site = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   if (url.pathname === "/report") {
@@ -28,7 +29,7 @@ const site = http.createServer(async (req, res) => {
   res.setHeader("Content-Type", "text/html");
   if (url.pathname === "/first")
     res.setHeader("Set-Cookie", "cage_smoke=1; SameSite=Lax");
-  res.end(`<!doctype html><title>${url.pathname}</title><p>Browser smoke test</p>
+  res.end(`<!doctype html><title>${url.pathname}</title><link rel="icon" href="${favicon(url.pathname)}"><p>Browser smoke test</p>
     <script>fetch('/report?path='+encodeURIComponent(location.pathname), {
       method:'POST',body:JSON.stringify({webdriver:navigator.webdriver,
         cookie:document.cookie.includes('cage_smoke=1')})
@@ -99,6 +100,9 @@ try {
     .replace(listen, 'server.listen(0, "127.0.0.1", () => console.log("CONTROL_PORT=" + server.address().port));'));
   await copyFile(new URL("../internal/cage/browser-audit.mjs", import.meta.url), join(directory, "browser-audit.mjs"));
   await copyFile(new URL("../internal/cage/browser-downloads.mjs", import.meta.url), join(directory, "browser-downloads.mjs"));
+  await copyFile(new URL("../internal/cage/browser-uploads.mjs", import.meta.url), join(directory, "browser-uploads.mjs"));
+  await copyFile(new URL("../internal/cage/native-input.mjs", import.meta.url), join(directory, "native-input.mjs"));
+  await copyFile(new URL("../internal/cage/browser-favicon.mjs", import.meta.url), join(directory, "browser-favicon.mjs"));
   await writeFile(join(directory, "control.json"), JSON.stringify({ token, workspace: directory }));
   await writeFile(join(directory, "homepage.json"), JSON.stringify({ url: origin + "/first" }));
   await start();
@@ -109,6 +113,7 @@ try {
     headers: { Authorization: `Bearer ${token}`, Origin: "https://example.com" },
   })).status, 403);
   const original = (await api("/tabs")).active;
+  await waitFor(async () => (await api("/tabs")).tabs.some(t => t.id === original && t.favicon === favicon("/first")), "initial favicon");
   const second = await api("/new", { url: origin + "/second" });
   await waitFor(() => reports.get("/second"), "new tab");
   assert.equal(reports.get("/second").webdriver, false);
@@ -117,6 +122,7 @@ try {
   assert.equal((await api("/tabs")).active, original);
   await api("/navigate", { id: original, url: origin + "/third" });
   await waitFor(() => reports.get("/third"), "navigation");
+  await waitFor(async () => (await api("/tabs")).tabs.some(t => t.id === original && t.favicon === favicon("/third")), "favicon after navigation");
   assert.equal((await api("/tabs")).back, true);
   await api("/back", { id: original });
   await waitFor(async () => (await api("/tabs")).tabs.some(t => t.id === original && t.url === origin + "/first"), "back");
@@ -141,7 +147,7 @@ try {
   await api("/close", { id: restored.active });
   assert.equal((await api("/tabs")).tabs.length, 1, "Closing the last tab must create a homepage tab");
   console.log(JSON.stringify({
-    webdriver: false, newTab: true, activate: true, navigate: true,
+    webdriver: false, favicon: true, newTab: true, activate: true, navigate: true,
     back: true, forward: true, reload: true, close: true,
     sessionRestored: true, cookiesPreserved: true, lastTabReplaced: true,
     unauthenticatedRejected: true, crossOriginRejected: true,

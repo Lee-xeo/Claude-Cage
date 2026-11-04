@@ -12,14 +12,14 @@ import {
 } from "lucide-react";
 import { tabName } from "./workspace-state.mjs";
 
-export const TabIcon = ({ kind, size = 16 }) =>
-  kind === "terminal" ? (
-    <TerminalSquare size={size} />
-  ) : kind === "editor" ? (
-    <FileCode2 size={size} />
-  ) : (
-    <Globe2 size={size} />
-  );
+export function TabIcon({ kind, favicon, size = 16 }) {
+  const [failed, setFailed] = useState("");
+  if (kind === "terminal") return <TerminalSquare size={size} />;
+  if (kind === "editor") return <FileCode2 size={size} />;
+  if (typeof favicon === "string" && favicon.length <= 8192 && /^data:image\/(png|svg\+xml);base64,/.test(favicon) && failed !== favicon)
+    return <img className="tab-favicon" src={favicon} width={size} height={size} alt="" draggable={false} onError={() => setFailed(favicon)} />;
+  return <Globe2 size={size} />;
+}
 
 // Active content carries the strongest emphasis; titles and actions use the
 // existing paper/selected/muted tokens, 14px type and 8px spacing in both layouts.
@@ -303,7 +303,7 @@ export function WorkspaceTabs({
                   onSelect(tabs[at].id);
                 }}
               >
-                <TabIcon kind={tab.kind} size={15} />
+                <TabIcon kind={tab.kind} favicon={tab.favicon} size={15} />
                 <span>{title}</span>
                 {saved[tab.id]?.pinned && <Pin size={11} className="tab-pin" />}
               </button>
@@ -373,7 +373,7 @@ export function WorkspaceTabs({
                         onSelect(tab.id);
                       }}
                     >
-                      <TabIcon kind={tab.kind} />
+                      <TabIcon kind={tab.kind} favicon={tab.favicon} />
                       <span>{tabName(tab, saved)}</span>
                       {tab.id === active && (
                         <span className="current-tab-marker">当前</span>

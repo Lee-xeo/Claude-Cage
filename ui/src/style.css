@@ -1374,6 +1374,10 @@ svg {
 .sidebar-tab > button[role="tab"] svg {
   color: var(--muted);
 }
+.tab-favicon {
+  flex: none;
+  object-fit: contain;
+}
 .tab-pin {
   margin-left: auto;
 }
@@ -2195,7 +2199,8 @@ svg {
 .browser-tab.tiny .tab-pin { display: none; }
 .browser-tab.tiny.active .tab-close { display: none; }
 .browser-tab.sliver > [role="tab"] { padding-inline: 0; justify-content: center; }
-.browser-tab.sliver > [role="tab"] > svg { display: none; }
+.browser-tab.sliver > [role="tab"] > svg,
+.browser-tab.sliver > [role="tab"] > .tab-favicon { display: none; }
 .browser-tab.sliver > [role="tab"]::after { content: ""; height: 14px; width: 2px; background: var(--muted); border-radius: 2px; opacity: .5; }
 .browser-new-tab { order: 1; }
 .browser-all-tabs { position: relative; order: 2; }

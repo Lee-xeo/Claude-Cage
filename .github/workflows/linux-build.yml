@@ -69,6 +69,7 @@ jobs:
           bash scripts/build-linux.sh
           bash scripts/package-linux.sh --skip-build
           npm test --prefix ui
+          node --test internal/cage/browser-favicon.test.mjs
           npm run --prefix ui lint
       - name: Linux executable tests as an ordinary user
         run: |
