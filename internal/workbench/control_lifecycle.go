@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/version"
@@ -139,12 +140,13 @@ func controllerVMOwners(profile string) ([]string, error) {
 			return nil, err
 		}
 		var record struct {
-			PID int `json:"pid"`
+			PID     int    `json:"pid"`
+			Started string `json:"started"`
 		}
 		if json.Unmarshal(b, &record) != nil || record.PID <= 0 {
 			return nil, errors.New("环境进程记录无效")
 		}
-		if processExists(record.PID) {
+		if processExists(record.PID) && cage.ProcessStartMatches(record.PID, record.Started) {
 			owners = append(owners, fmt.Sprintf("%s/%d", filepath.Base(filepath.Dir(path)), record.PID))
 		}
 	}

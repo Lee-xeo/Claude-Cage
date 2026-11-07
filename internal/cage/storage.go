@@ -398,17 +398,18 @@ func stoppedStorage(source string) error {
 				return err
 			}
 			var pid int
+			started := ""
 			if name == "cage-running.json" {
 				var record runningProfile
 				err = json.Unmarshal(data, &record)
-				pid = record.PID
+				pid, started = record.PID, record.Started
 			} else {
 				pid, err = strconv.Atoi(strings.TrimSpace(string(data)))
 			}
 			if err != nil || pid < 1 {
 				return fmt.Errorf("无法核验虚拟机进程记录 %s", name)
 			}
-			if profileProcessAlive(pid) {
+			if profileProcessAlive(pid) && ProcessStartMatches(pid, started) {
 				return fmt.Errorf("请先停止虚拟机 %s，再迁移环境", inst.Name())
 			}
 		}

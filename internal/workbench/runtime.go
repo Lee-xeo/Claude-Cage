@@ -553,11 +553,12 @@ func vmAlive(profile, workspace string) bool {
 		return false
 	}
 	var record struct {
-		PID int `json:"pid"`
+		PID     int    `json:"pid"`
+		Started string `json:"started"`
 	}
 	if json.Unmarshal(b, &record) != nil || record.PID < 1 {
 		return false
 	}
-	return processExists(record.PID)
+	return processExists(record.PID) && cage.ProcessStartMatches(record.PID, record.Started)
 }
 func (s *Server) vmRunning() bool { return vmAlive(s.profile, s.environmentDir()) }
