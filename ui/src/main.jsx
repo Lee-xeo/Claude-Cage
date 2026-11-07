@@ -764,7 +764,7 @@ function App() {
         return terminalControls.current.get(current.id)?.edit(command) || false;
       return remote.current?.edit(command) || false;
     };
-    window.cageNativeAction = async (command) => {
+    window.cageWorkbenchAction = async (command) => {
       if (document.querySelector("[data-environment-dialog]")) {
         if (command === "closeTab") document.dispatchEvent(new Event("cage-close-modal"));
         return;
@@ -830,6 +830,15 @@ function App() {
           await native("quitNow");
           return;
         }
+        if (connectionError || fatal) {
+          setDialog({
+            title: "退出 Cage",
+            body: "工作台连接已中断，暂时无法确认环境状态。仍在运行的后台任务会继续。",
+            confirm: "仅退出桌面应用",
+            resolve: (confirmed) => confirmed && native("quitNow"),
+          });
+          return;
+        }
         setDialog({
           title: "退出 Cage",
           body: "退出前请保存文件和设置。可以保留环境，让后台任务继续运行；下次打开会重新连接。",
@@ -847,7 +856,7 @@ function App() {
     };
     return () => {
       window.removeEventListener("keydown", key, true);
-      delete window.cageNativeAction;
+      delete window.cageWorkbenchAction;
       delete window.cageEditAction;
     };
   }, [
@@ -863,6 +872,7 @@ function App() {
     busy,
     active,
     connectionError,
+    fatal,
     projectDialog,
     rename,
     showHome,

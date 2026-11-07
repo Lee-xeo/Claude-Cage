@@ -213,15 +213,6 @@ export function AccountGate({ children }) {
     setBusy(true);
     deviceAction("unlock", "automatic").catch((e) => setError(e.message)).finally(() => setBusy(false));
   }, [account?.unlocked, account?.devices?.automatic, account?.require_authentication, deviceSupport]);
-  useEffect(() => {
-    if (account?.unlocked) return;
-    window.cageNativeAction = async (action) => {
-      if (action === "quit") await native("quitNow");
-    };
-    return () => {
-      delete window.cageNativeAction;
-    };
-  }, [account?.unlocked]);
   if (account?.unlocked) return children;
   const creating = account && !account.exists;
   const submit = async (event) => {

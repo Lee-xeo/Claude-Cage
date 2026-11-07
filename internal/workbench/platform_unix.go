@@ -22,7 +22,6 @@ func processExists(pid int) bool {
 }
 func terminateLegacy(pid int) error  { return syscall.Kill(pid, syscall.SIGTERM) }
 func detachController(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }
-func hideCommand(cmd *exec.Cmd)      {}
 func sshExecutable() string          { return "/usr/bin/ssh" }
 func sshEnvironment() []string {
 	return []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "LANG=C", "LC_ALL=C", "TERM=xterm-256color"}

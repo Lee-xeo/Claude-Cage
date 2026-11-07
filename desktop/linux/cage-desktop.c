@@ -737,9 +737,11 @@ static void install_bridge(void) {
     char *code = g_strdup_printf(
         "(()=>{'use strict';window.cageLinuxBridgeInit='injected';if(window!==window.top||location.protocol!=='http:'||location.hostname!=='localhost'||location.port!=='%d')return;"
         "window.cageLinuxBridgeInit='origin-valid';window.cageNativeIMEAvailable=true;try{"
-        "const transport=window.webkit.messageHandlers.cageTransport;const token=%s;"
+        "const handlers=window.webkit.messageHandlers,transport=handlers.cageTransport;const token=%s;"
         "const cage=Object.freeze({postMessage(request){return transport.postMessage({token,request});}});"
-        "Object.defineProperty(window.webkit.messageHandlers,'cage',{value:cage,writable:false,configurable:false});"
+        "Object.defineProperty(handlers,'cage',{value:cage,writable:false,configurable:false});"
+        /* Keep the WebKit wrapper alive for this document so its custom cage property survives GC. */
+        "Object.defineProperty(window,'cageLinuxMessageHandlers',{value:handlers});"
         "window.cageLinuxBridgeInit='ready';}catch(error){window.cageLinuxBridgeInit=error.name;}"
         "})();", app.port, token);
     /* The host allowlist narrows injection; the script and native receiver

@@ -213,7 +213,7 @@ func BrowserFileForConnection(configPath, connectionID, action, id, destination 
 			}
 			cmd = exec.Command("gio", "open", path)
 		}
-		hideCommand(cmd)
+		host.HideCommandWindow(cmd)
 		if err = cmd.Run(); err != nil {
 			return result, errors.New("无法打开文件，请通过显示的位置手动查看")
 		}

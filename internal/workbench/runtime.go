@@ -15,6 +15,7 @@ import (
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
@@ -68,7 +69,7 @@ func (s *Server) sshCommandOptions(ctx context.Context, maintenance bool, args .
 	base = append(base, args...)
 	cmd := exec.CommandContext(ctx, sshExecutable(), base...)
 	cmd.Env = sshEnvironment()
-	hideCommand(cmd)
+	host.HideCommandWindow(cmd)
 	return cmd
 }
 func (s *Server) guest(ctx context.Context, script string) ([]byte, error) {
@@ -203,7 +204,7 @@ func (s *Server) runCage(args ...string) error {
 		defer cancel()
 	}
 	cmd := exec.CommandContext(ctx, s.exe, args...)
-	hideCommand(cmd)
+	host.HideCommandWindow(cmd)
 	cmd.Dir = s.environmentDir()
 	if cmd.Dir == "" {
 		cmd.Dir = s.profile

@@ -1,6 +1,7 @@
 import { reportDiagnostic } from "./diagnostics.mjs";
 import { assertConnection, connectionHeaders, getClientContext } from "./client-context.mjs";
 let sessionRenewal;
+class WorkbenchUnreachable extends Error {}
 async function responseError(response) {
   const error = new Error(
     (await response.text()).trim() || "连接未完成，请重试",
@@ -38,7 +39,11 @@ export async function api(path, body, method) {
   };
   const send = async () => {
     try { return await fetch("/api" + path, options); }
-    catch (error) { reportDiagnostic("frontend", error); throw error; }
+    catch (error) {
+      reportDiagnostic("frontend", error);
+      if (error instanceof TypeError) throw new WorkbenchUnreachable(error.message, { cause: error });
+      throw error;
+    }
   };
   let response = await send();
   // Authentication fails before a handler runs, so retrying this rejected
@@ -89,11 +94,31 @@ export async function uploadFile(path, file, { signal, onProgress } = {}) {
 }
 export const nativeAvailable = () =>
   Boolean(window.webkit?.messageHandlers?.cage);
+const lostLocalView = (context) =>
+  context.desktop_gateway && context.mode === "local" &&
+  context.connection?.state === "failed" && context.connection.error_code === "connection_lost";
+
+async function suspendBeforeQuit(context) {
+  if (context.mode !== "local" || context.client_only || lostLocalView(context)) return;
+  try {
+    await api("/account/suspend", {});
+  } catch (error) {
+    if (error.status === 423) return;
+    // The first request after CLI shutdown can fail before the next context poll.
+    if (context.desktop_gateway && [409, 502].includes(error.status)) {
+      const latest = await api("/client/context");
+      if (latest.connection_id === context.connection_id && lostLocalView(latest)) return;
+    }
+    throw error;
+  }
+}
 export async function native(action, extra = {}) {
-  const connection = getClientContext().connection_id;
-  if (action === "quitNow" && getClientContext().mode === "local" && !getClientContext().client_only) {
-    try { await api("/account/suspend", {}); }
-    catch (error) { if (error.status !== 423) throw error; }
+  const context = getClientContext();
+  const connection = context.connection_id;
+  if (action === "quitNow") {
+    try { await suspendBeforeQuit(context); }
+    catch (error) { if (!(error instanceof WorkbenchUnreachable)) throw error; }
+    assertConnection(connection);
   }
   try {
     const result = await window.webkit.messageHandlers.cage.postMessage({ action, ...extra, connection_id: connection });

@@ -1,4 +1,4 @@
-let current = Object.freeze({ mode: "local", connection_id: "local" });
+let current = Object.freeze({ mode: "none", connection_id: "" });
 
 export function setClientContext(value) {
   current = Object.freeze({ ...value });

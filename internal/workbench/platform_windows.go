@@ -34,9 +34,6 @@ func terminateLegacy(pid int) error {
 func detachController(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS}
 }
-func hideCommand(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
-}
 func sshExecutable() string {
 	exe, _ := os.Executable()
 	bundled := filepath.Join(filepath.Dir(exe), "runtime", "openssh", "ssh.exe")

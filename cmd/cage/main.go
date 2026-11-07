@@ -586,6 +586,7 @@ func relay(configPath, kind string) int {
 	stderr := store.Stream(source, "error")
 	defer stderr.Close()
 	cmd.Stdout, cmd.Stderr = out, stderr
+	host.HideCommandWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		return fail(err)
 	}
