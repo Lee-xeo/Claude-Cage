@@ -1,4 +1,4 @@
-// A hidden, disposable context avoids touching account tabs, browser cookies,
+// A disposable context avoids touching account tabs, browser cookies,
 // focus or the visible tab strip while reading Chromium's actual settings.
 export async function auditBrowser(
   cdp,
@@ -16,7 +16,6 @@ export async function auditBrowser(
       url: "about:blank",
       browserContextId,
       background: true,
-      hidden: true,
     }));
     const { sessionId } = await cdp("Target.attachToTarget", {
       targetId,
@@ -79,15 +78,13 @@ export async function auditBrowser(
     return response.result.value;
   } finally {
     try {
-      // Hidden targets are owned by the CDP connection, not the context's tab
-      // windows. Chromium 156 crashes after its 60s disposal timeout if a
-      // hidden page still references the context. Close it before disposal.
+      // Close the diagnostic page before disposing its context.
       if (targetId) await cdp("Target.closeTarget", { targetId });
       await cdp("Target.disposeBrowserContext", { browserContextId });
       auditContexts.delete(browserContextId);
     } catch {
       // If closing the page fails, leave its context alive and excluded from
-      // user tabs. Disposing it anyway would recreate the browser crash.
+      // user tabs, avoiding disposal while a page may still reference it.
     }
   }
 }

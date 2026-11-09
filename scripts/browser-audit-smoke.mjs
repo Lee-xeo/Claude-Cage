@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -12,6 +12,10 @@ import { auditBrowser } from "../internal/cage/browser-audit.mjs";
 assert.equal(process.platform, "linux", "Run this check in the Linux guest");
 assert.ok(process.env.DISPLAY, "Provide an isolated X display");
 const directory = await mkdtemp(join(tmpdir(), "cage-audit-smoke-"));
+await mkdir(join(directory, "Default"));
+await writeFile(join(directory, "Default", "Preferences"), JSON.stringify({
+  intl: { accept_languages: "ja-JP", selected_languages: "ja-JP" },
+}));
 const chrome = spawn(
   process.env.CAGE_TEST_CHROMIUM || "/usr/bin/chromium",
   [
@@ -20,9 +24,11 @@ const chrome = spawn(
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-background-networking",
+    "--lang=ja-JP",
     "about:blank",
   ],
-  { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] },
+  { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"],
+    env: { ...process.env, LANG: "ja_JP.UTF-8", LC_ALL: "ja_JP.UTF-8" } },
 );
 let sequence = 0,
   buffer = Buffer.alloc(0),
@@ -120,6 +126,7 @@ try {
   for (let index = 0; index < 20; index++) {
     const result = await auditBrowser(cdp, excluded, false, "UTC");
     assert.equal(result.expected_timezone, "UTC");
+    assert.equal(result.language, "ja-JP");
     assert.match(result.platform, /Linux/);
     await clean();
   }

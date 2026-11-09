@@ -34,6 +34,7 @@ p = Path.home() / "profile/Default/Preferences"
 p.parent.mkdir(parents=True, exist_ok=True)
 d = json.loads(p.read_text()) if p.exists() else {}
 d.setdefault("intl", {})["accept_languages"] = os.environ["CAGE_LANGUAGE"]
+d["intl"]["selected_languages"] = os.environ["CAGE_LANGUAGE"]
 d.setdefault("translate", {})["enabled"] = False
 p.write_text(json.dumps(d))
 PYCODE

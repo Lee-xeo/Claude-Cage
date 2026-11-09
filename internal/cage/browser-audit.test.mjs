@@ -15,7 +15,7 @@ function browser(failMethod) {
         contexts.add("audit-context");
         return { browserContextId: "audit-context" };
       case "Target.createTarget":
-        assert.equal(params.hidden, true);
+        assert.notEqual(params.hidden, true);
         assert.ok(excluded.has(params.browserContextId));
         pages.set("audit-page", params.browserContextId);
         return { targetId: "audit-page" };
@@ -31,7 +31,7 @@ function browser(failMethod) {
       case "Target.disposeBrowserContext":
         if ([...pages.values()].includes(params.browserContextId)) {
           unsafeDisposal = true;
-          throw new Error("live hidden page references this context");
+          throw new Error("live page references this context");
         }
         contexts.delete(params.browserContextId);
         return {};
@@ -49,7 +49,7 @@ function browser(failMethod) {
   };
 }
 
-test("successful audits close their hidden pages before disposing contexts", async () => {
+test("successful audits close their background pages before disposing contexts", async () => {
   const b = browser();
   for (let i = 0; i < 3; i++) {
     assert.deepEqual(

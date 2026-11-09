@@ -494,7 +494,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 	browser, browserErr := s.browserObservation(ctx, cfg, true)
 	if browserErr == nil {
 		if browserSettingsMatch(browser, cfg) {
-			set("browser_settings", cage.CheckPassed, "隐藏诊断页面读到 Linux 浏览器；实际时区与首选语言符合已应用配置", "")
+			set("browser_settings", cage.CheckPassed, "隔离诊断页面读到 Linux 浏览器；实际时区与首选语言符合已应用配置", "")
 		} else {
 			set("browser_settings", cage.CheckFailed, "浏览器实际时区、语言或系统标识与配置不一致", "重新应用设置并重启环境")
 		}
