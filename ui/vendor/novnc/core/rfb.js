@@ -233,7 +233,11 @@ export default class RFB extends EventTargetMixin {
         this._screen.appendChild(this._canvas);
 
         // Cursor
+        // Browser screenshots carry no cursor shape. Use the native host
+        // arrow until a real RFB cursor shape is supplied.
         this._cursor = new Cursor();
+        this._cageBrowserDisplay = !!options.cageBrowserDisplay;
+        this._cagePixelWheel = false;
 
         // XXX: TightVNC 2.8.11 sends no cursor at all until Windows changes
         // it. Result: no cursor at all until a window border or an edit field
@@ -1243,6 +1247,29 @@ export default class RFB extends EventTargetMixin {
         let dX = ev.deltaX;
         let dY = ev.deltaY;
 
+        // Negotiated Cage browser extension: preserve pixel distance in one
+        // validated input instead of a press/release RPC pair per wheel notch.
+        if (this._cagePixelWheel && bmask === 0) {
+            const unit = ev.deltaMode === 1 ? WHEEL_LINE_HEIGHT :
+                ev.deltaMode === 2 ? this._canvas.clientHeight : 1;
+            const dx = Math.max(-2048, Math.min(2048, Math.round(dX * unit)));
+            const dy = Math.max(-2048, Math.min(2048, Math.round(dY * unit)));
+            const send = () => {
+                if (this._rfbConnectionState !== 'connected' || this._viewOnly) return;
+                const packet = new Uint8Array(14), view = new DataView(packet.buffer);
+                packet[0] = 250;
+                view.setUint16(2, this._display.absX(pos.x));
+                view.setUint16(4, this._display.absY(pos.y));
+                view.setInt32(6, dx); view.setInt32(10, dy);
+                this._sock.sQpushBytes(packet); this._sock.flush();
+            };
+            if (dx || dy) {
+                if (this._cageInputChain) this._cageQueueInput(send);
+                else send();
+            }
+            return;
+        }
+
         // Pixel units unless it's non-zero.
         // Note that if deltamode is line or page won't matter since we aren't
         // sending the mouse wheel delta to the server anyway.
@@ -2233,6 +2260,7 @@ export default class RFB extends EventTargetMixin {
 
     _sendEncodings() {
         const encs = [];
+        if (this._cageBrowserDisplay) encs.push(-57345); // Cage pixel wheel v1
 
         // In preference order
         encs.push(encodings.encodingCopyRect);
@@ -2511,6 +2539,8 @@ export default class RFB extends EventTargetMixin {
         }
 
         const payload = this._sock.rQshiftStr(length);
+        if ((flags & (1 << 31)) && this._cageBrowserDisplay && payload === 'cage-wheel-v1')
+            this._cagePixelWheel = true;
 
         this._supportsFence = true;
 

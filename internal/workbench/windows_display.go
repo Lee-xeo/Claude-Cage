@@ -319,6 +319,7 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 	sized := false
 	supportsResize := false
 	supportsFence := false
+	supportsPixelWheel := false
 	rgbOrder := false
 	useZlib := false
 	useTight := false
@@ -364,7 +365,11 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 			useTight = false
 			useTightPNG = false
 			fenceRequested := false
+			wheelRequested := false
 			for i := 0; i < count; i++ {
+				if int32(binary.BigEndian.Uint32(encodings[i*4:])) == -57345 {
+					wheelRequested = true
+				}
 				if int32(binary.BigEndian.Uint32(encodings[i*4:])) == -312 {
 					fenceRequested = true
 				}
@@ -388,6 +393,13 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 				}
 			}
 			supportsFence = fenceRequested
+			if fenceRequested && wheelRequested && !supportsPixelWheel {
+				payload := []byte("cage-wheel-v1")
+				if err := write(append([]byte{248, 0, 0, 0, 0x80, 0, 0, 0, byte(len(payload))}, payload...)); err != nil {
+					return err
+				}
+			}
+			supportsPixelWheel = fenceRequested && wheelRequested
 		case 3:
 			update, err := read(9)
 			if err != nil {
@@ -396,7 +408,13 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 			if delay := time.Until(nextFrame); delay > 0 {
 				time.Sleep(delay)
 			}
-			nextFrame = time.Now().Add(time.Second / 30)
+			frameRate := 30
+			if supportsPixelWheel {
+				// The Cage browser viewer supports continuous compositor frames.
+				// Do not impose the desktop viewer's 30 Hz cap on that path.
+				frameRate = 60
+			}
+			nextFrame = time.Now().Add(time.Second / time.Duration(frameRate))
 			input := map[string]any{"action": "frame"}
 			if update[0] != 0 {
 				input["after"] = frame.Sequence
@@ -515,6 +533,34 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 				continue
 			}
 			if err = request(map[string]any{"action": "pointer", "target": frame.Target, "mask": pointer[0], "x": binary.BigEndian.Uint16(pointer[1:]), "y": binary.BigEndian.Uint16(pointer[3:])}, nil); err != nil {
+				return err
+			}
+		case 250:
+			wheel, err := read(13)
+			if err != nil {
+				return err
+			}
+			dx, dy := int32(binary.BigEndian.Uint32(wheel[5:])), int32(binary.BigEndian.Uint32(wheel[9:]))
+			if !supportsPixelWheel || wheel[0] != 0 || dx < -2048 || dx > 2048 || dy < -2048 || dy > 2048 {
+				return errors.New("画面滚动消息无效")
+			}
+			if !sized || (dx == 0 && dy == 0) {
+				continue
+			}
+			mask := 0
+			if dx < 0 {
+				mask |= 32
+			} else if dx > 0 {
+				mask |= 64
+			}
+			if dy < 0 {
+				mask |= 8
+			} else if dy > 0 {
+				mask |= 16
+			}
+			if err = request(map[string]any{"action": "pointer", "target": frame.Target, "mask": mask,
+				"x": binary.BigEndian.Uint16(wheel[1:]), "y": binary.BigEndian.Uint16(wheel[3:]),
+				"deltaX": dx, "deltaY": dy}, nil); err != nil {
 				return err
 			}
 		case 6:
