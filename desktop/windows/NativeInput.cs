@@ -163,7 +163,8 @@ internal sealed class NativeInput : TextBox
         publish(new() { ["owner"] = owner, ["kind"] = down ? "keydown" : "keyup", ["key"] = text ?? pair.Item1,
             ["code"] = code, ["textKey"] = text != null, ["repeat"] = repeating,
             ["ctrlKey"] = (ModifierKeys & Keys.Control) != 0, ["altKey"] = (ModifierKeys & Keys.Alt) != 0,
-            ["shiftKey"] = (ModifierKeys & Keys.Shift) != 0, ["metaKey"] = false });
+            ["shiftKey"] = (ModifierKeys & Keys.Shift) != 0, ["metaKey"] = false,
+            ["modifierCapsLock"] = IsKeyLocked(Keys.CapsLock) });
     }
 
     private void ReadKeyMessage(Message message)
