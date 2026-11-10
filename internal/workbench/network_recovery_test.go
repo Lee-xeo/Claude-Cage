@@ -34,9 +34,14 @@ func TestExitProbeTimeoutKeepsExistingLeaseWithoutRenewing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Windows can grant and renew within the same wall-clock tick.
+	// Advance past the grant tick before requiring a later deadline.
+	for !time.Now().Add(cage.GateLease).After(before.Until) {
+		time.Sleep(time.Millisecond)
+	}
 	s.finishSafetyMonitor(context.Background(), client, gate.Status(), "8.8.8.8", "")
 	if !gate.Status().Until.After(before.Until) || s.safety.monitorError != "" {
-		t.Fatal("successful observation did not renew and clear the retry notice")
+		t.Fatalf("successful observation did not renew and clear the retry notice: before=%+v after=%+v monitorError=%q", before, gate.Status(), s.safety.monitorError)
 	}
 	s.safety.VerifiedAt = time.Now().Add(-time.Minute)
 	gate.Close("检查或监测授权已到期")
