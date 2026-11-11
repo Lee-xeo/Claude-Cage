@@ -539,6 +539,39 @@ test("fullwidth punctuation without composition uses text, while host punctuatio
     assert.equal(f.key("keydown", "?", "Slash", { ctrlKey: true }).defaultPrevented, false);
   } finally { f.controller.dispose(); }
 });
+test("ASCII punctuation is committed on release when the host IME stays silent", () => {
+  const f = fixture();
+  try {
+    f.rfb.focus();
+    assert.equal(f.key("keydown", "?", "Slash", { shiftKey: true }).defaultPrevented, false);
+    assert.deepEqual(f.texts, []);
+    f.key("keyup", "?", "Slash", { shiftKey: true });
+    assert.deepEqual(f.texts, ["?"]);
+    assert.deepEqual(f.keys, []);
+  } finally { f.controller.dispose(); }
+});
+test("an IME answer keeps the chosen punctuation without repeating it", () => {
+  const f = fixture();
+  try {
+    f.rfb.focus();
+    f.key("keydown", "?", "Slash", { shiftKey: true });
+    f.target.value = "？";
+    inputEvent(f, "input", { data: "？", inputType: "insertText" });
+    f.key("keyup", "?", "Slash", { shiftKey: true });
+    assert.deepEqual(f.texts, ["？"]);
+    assert.deepEqual(f.keys, []);
+  } finally { f.controller.dispose(); }
+});
+test("ASCII punctuation is committed after a wait when the release is also lost", async () => {
+  const f = fixture();
+  try {
+    f.rfb.focus();
+    f.key("keydown", "!", "Digit1", { shiftKey: true });
+    assert.deepEqual(f.texts, []);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    assert.deepEqual(f.texts, ["!"]);
+  } finally { f.controller.dispose(); }
+});
 test("local fields and native keyboard mode do not acquire mapped shortcuts", () => {
   const f = fixture();
   try {
