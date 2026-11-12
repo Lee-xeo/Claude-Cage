@@ -13,7 +13,7 @@ import { PrivateBrowser } from "./browser-private.mjs";
 import { browserCookies } from "./browser-cookies.mjs";
 import { BrowserExtensions, extensionUploadLimit } from "./browser-extensions.mjs";
 import { BrowserClipboard } from "./browser-clipboard.mjs";
-import { BrowserVisibility } from "./browser-visibility.mjs";
+import { BrowserVisibility, rememberOpener, targetAfterClose } from "./browser-visibility.mjs";
 import { BrowserWheel, createActivitySignal, createPointerProbe } from "./browser-wheel.mjs";
 import { nativeInput } from "./native-input.mjs";
 import { createDisplaySettings, displayDensity } from "./display-density.mjs";
@@ -222,7 +222,8 @@ function updateTargetInfo(t) {
   else inspectors.delete(t.targetId);
   if (!isBrowserTab(t)) return;
   const fresh = !targets.has(t.targetId);
-  targets.set(t.targetId, privateBrowser.tab(loginBrowser.tab(t, targets.get(t.targetId))));
+  const previous = targets.get(t.targetId);
+  targets.set(t.targetId, privateBrowser.tab(loginBrowser.tab(rememberOpener(t, previous), previous)));
   if (isNativeNewTab(t.url)) void restoreHomepage(t.targetId).catch(error => console.error("Could not open homepage:", error.message));
   if (fresh) void session(t.targetId).catch(() => {});
   if (t.targetId === activeId) rememberSelection();
@@ -327,7 +328,8 @@ chrome.stdio[4].on("data", (chunk) => {
       }
       closingTargets.get(p.targetId)?.();
       if (!targets.has(p.targetId)) continue;
-      const wasPrivate = targets.get(p.targetId).incognito;
+      const closed = targets.get(p.targetId);
+      const wasPrivate = closed.incognito;
       vault.remove(p.targetId);
       targets.delete(p.targetId);
       browserClipboard.detachTab(p.targetId);
@@ -341,7 +343,7 @@ chrome.stdio[4].on("data", (chunk) => {
       sessions.delete(p.targetId);
       if (wasPrivate) void mutate(() => privateBrowser.prune()).catch(() => {});
       if (activeId === p.targetId) {
-        activeId = [...targets.keys()][0] || "";
+        activeId = targetAfterClose(targets, closed);
         if (activeId) void activate(activeId).catch(() => {});
       }
       broadcastState();
@@ -630,9 +632,11 @@ async function restartEditor(workspace) {
 async function tabState() {
   await Promise.allSettled([...auditCreations]);
   const { targetInfos } = await cdp("Target.getTargets");
-  for (const tab of targetInfos)
-    if (isBrowserTab(tab))
-      targets.set(tab.targetId, privateBrowser.tab(loginBrowser.tab(tab, targets.get(tab.targetId))));
+  for (const tab of targetInfos) {
+    if (!isBrowserTab(tab)) continue;
+    const previous = targets.get(tab.targetId);
+    targets.set(tab.targetId, privateBrowser.tab(loginBrowser.tab(rememberOpener(tab, previous), previous)));
+  }
   await refreshNavigation();
   return publicState();
 }
