@@ -26,7 +26,7 @@ xcrun clang -arch arm64 -mmacosx-version-min=14.0 -O2 -fobjc-arc -framework Foun
     "$src/macos-setup-account.m" -o "$dest/cage-finish-initial-setup"
 xcrun clang -arch arm64 -O2 "$src/macos-ipv6-check.c" -o "$dest/cage-macos-ipv6-check"
 bash "$src/package-macos-browser.sh" "$dest/native-browser"
-for f in prepare-macos-media.sh macos-cli.py prepare-macos-cli-kit.sh install-macos-cli.sh claude-desktop-macos.sh install-macos-browser.sh install-macos-node.sh install-macos-project-tools.sh register-macos-claude-window.sh register-macos-clipboard.sh register-macos-browser.sh macos-browser.mjs cage-macos-editor macos-fuse-media.sh provision-macos-workbench.sh; do
+for f in prepare-macos-media.sh macos-cli.py prepare-macos-cli-kit.sh install-macos-cli.sh claude-desktop-macos.sh install-macos-browser.sh install-macos-node.sh install-macos-project-tools.sh register-macos-claude-window.sh register-macos-clipboard.sh register-macos-browser.sh macos-browser.mjs cage-macos-editor macos-fuse-media.sh provision-macos-workbench.sh enable-macos-screensharing.sh; do
     cp "$src/$f" "$dest/"
 done
 cp "$src/../../internal/cage/"{claude-account.py,client_runtime.py} "$src/../../internal/workbench/"{cli_channel.py,cli_channel.resume.md,claude_account_resume.md} "$dest/"

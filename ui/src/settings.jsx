@@ -32,6 +32,7 @@ import { EnvironmentStorage } from "./environment-storage";
 import { ResourceSettings } from "./resources";
 import { DiagnosticSettings } from "./diagnostics.jsx";
 import { MacOSLogin } from "./macos-login";
+import { ScreenSharingChecks } from "./macos-screen-sharing";
 import { AccountSettings } from "./account";
 import { ClaudeAccountsPanel } from "./claude-accounts";
 const sections = [
@@ -615,6 +616,7 @@ export function SettingsPanel({
                     <MacOSLogin maintenance="input" label="辅助功能权限" disabled={!status.ready || busy} />
                   </div>
                 </section>}
+                {status.guest_system === "macos" && !isRemoteClient() && <MacOSScreenSharingSettings disabled={!status.ready || busy} onError={setError} />}
                 {!status.storage_recovery?.required && <ResourceSettings status={status} onConfirm={onConfirm} onDirtyChange={setResourceDirty} />}
  <DiagnosticSettings />
                 {status.can_restore && (
@@ -702,6 +704,60 @@ export function SettingsPanel({
             </>
           </footer>
         )}
+      </div>
+    </section>
+  );
+}
+
+function MacOSScreenSharingSettings({ disabled, onError }) {
+  const [sharingBusy, setSharingBusy] = useState("");
+  const [sharingStatus, setSharingStatus] = useState(null);
+  async function run(action) {
+    setSharingBusy(action);
+    onError("");
+    try {
+      const result = await api("/environment/macos-screen-sharing", { action });
+      if (action !== "open") setSharingStatus(result);
+    } catch (error) {
+      onError(error.message);
+    } finally {
+      setSharingBusy("");
+    }
+  }
+  return (
+    <section aria-label="客机屏幕共享">
+      <h4>客机屏幕共享</h4>
+      <p className="field-help">日常「打开客机屏幕共享」只在本机建立 SSH 环回转发，不给客机增加外网出口，因此不要求先断网。首次安装会在置备阶段启用服务，并在系统授权引导中检查是否真正可用；macOS 26 还需在「系统设置 → 通用 → 共享」中手动打开一次。之后若要重新启用服务或再次打开该设置页，必须先在工作台暂停外网。</p>
+      <ScreenSharingChecks status={sharingStatus} />
+      <div className="project-recovery-actions">
+        <button
+          type="button"
+          className="text-button"
+          disabled={disabled || Boolean(sharingBusy)}
+          onClick={() => run("check")}
+        >
+          {sharingBusy === "check" ? <LoaderCircle size={14} /> : null}
+          检查屏幕共享状态
+        </button>
+        <button
+          type="button"
+          className="text-button"
+          disabled={disabled || Boolean(sharingBusy)}
+          onClick={() => run("open")}
+        >
+          {sharingBusy === "open" ? <LoaderCircle size={14} /> : null}
+          打开客机屏幕共享
+        </button>
+        <button
+          type="button"
+          className="text-button"
+          disabled={disabled || Boolean(sharingBusy)}
+          onClick={() => run("enable")}
+        >
+          {sharingBusy === "enable" ? <LoaderCircle size={14} /> : null}
+          重新启用屏幕共享服务
+        </button>
+        <MacOSLogin maintenance="sharing" label="打开屏幕共享设置" disabled={disabled || Boolean(sharingBusy)} />
       </div>
     </section>
   );

@@ -288,7 +288,7 @@ private func handle(_ input: Request, inputSession: MacWindowInputSession) async
         return ["screen": CGPreflightScreenCaptureAccess(), "input": AXIsProcessTrusted()]
     case "setup-password-focus":
         return try MacSetupPassword.probe()
-    case "setup-screen", "setup-input", "setup-projects":
+    case "setup-screen", "setup-input", "setup-projects", "setup-sharing":
         let purpose: String
         if input.action == "setup-screen" {
             if !CGPreflightScreenCaptureAccess() { _ = CGRequestScreenCaptureAccess() }
@@ -297,6 +297,8 @@ private func handle(_ input: Request, inputSession: MacWindowInputSession) async
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(options)
             purpose = "input"
+        } else if input.action == "setup-sharing" {
+            purpose = "sharing"
         } else {
             let vendor = URL(fileURLWithPath: "/Applications/macFUSE.app")
             let configuration = NSWorkspace.OpenConfiguration()

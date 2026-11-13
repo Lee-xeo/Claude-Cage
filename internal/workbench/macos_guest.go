@@ -190,8 +190,13 @@ func (s *Server) syncMacOSRegion(ctx context.Context, cfg cage.Config) error {
 }
 
 func (s *Server) stopMacOSGuest() error {
+	s.closeMacOSScreenSharing()
 	s.mu.Lock()
 	s.macSetupProjectsChecked = time.Time{}
+	s.macSetupSharingOpened = false
+	s.macSetupSharingConfirmed = false
+	s.macSetupSharingAttempt = time.Time{}
+	s.macSetupSharingStatus = macOSScreenSharingStatus{}
 	s.mu.Unlock()
 	s.closeWindowsBrowser()
 	s.mu.Lock()

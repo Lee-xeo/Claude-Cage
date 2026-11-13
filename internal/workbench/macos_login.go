@@ -42,12 +42,15 @@ func macOSSetupRoute(path string) bool {
 }
 
 type macSetupPermissions struct {
-	Screen            bool   `json:"screen"`
-	Input             bool   `json:"input"`
-	Projects          bool   `json:"projects"`
-	ProjectsError     string `json:"projects_error,omitempty"`
-	Error             string `json:"error,omitempty"`
-	ManagedCredential bool   `json:"managed_credential,omitempty"`
+	Screen            bool                 `json:"screen"`
+	Input             bool                 `json:"input"`
+	Projects          bool                 `json:"projects"`
+	Sharing           bool                 `json:"sharing"`
+	SharingSummary    string               `json:"sharing_summary,omitempty"`
+	SharingChecks     []screenSharingCheck `json:"sharing_checks,omitempty"`
+	ProjectsError     string               `json:"projects_error,omitempty"`
+	Error             string               `json:"error,omitempty"`
+	ManagedCredential bool                 `json:"managed_credential,omitempty"`
 }
 
 type macLoginLease struct {
@@ -121,6 +124,7 @@ func (s *Server) macSetupPermissions(ctx context.Context) (macSetupPermissions, 
 	s.mu.Lock()
 	status.Projects = !s.macSetupProjectsChecked.IsZero() && time.Since(s.macSetupProjectsChecked) < 2*time.Minute
 	probeDue := time.Since(s.macSetupProjectsAttempt) > 15*time.Second
+	sharingDue := time.Since(s.macSetupSharingAttempt) > 15*time.Second
 	s.mu.Unlock()
 	if status.Screen && status.Input && !status.Projects && probeDue && s.op.TryLock() {
 		s.mu.Lock()
@@ -134,6 +138,23 @@ func (s *Server) macSetupPermissions(ctx context.Context) (macSetupPermissions, 
 		s.mu.Lock()
 		status.Projects = !s.macSetupProjectsChecked.IsZero()
 		s.mu.Unlock()
+	}
+	if status.Screen && status.Input && sharingDue {
+		sharing := s.evaluateMacOSSetupSharing(ctx, false)
+		status.Sharing = sharing.Satisfied
+		status.SharingSummary = sharing.Summary
+		status.SharingChecks = sharing.Checks
+	} else {
+		s.mu.Lock()
+		sharing := s.macSetupSharingStatus
+		opened, confirmed := s.macSetupSharingOpened, s.macSetupSharingConfirmed
+		s.mu.Unlock()
+		if sharing.State != "" {
+			sharing.Satisfied = setupSharingSatisfied(sharing, opened, confirmed)
+			status.Sharing = sharing.Satisfied
+			status.SharingSummary = sharing.Summary
+			status.SharingChecks = sharing.Checks
+		}
 	}
 	if install, err := guestos.LoadInstallation(s.profile); err == nil && install != nil {
 		password, err := s.account.savedMacGuestPassword(ctx, install.ID)
@@ -162,6 +183,12 @@ func (s *Server) macOSLoginWindow(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.Error(w, "维护画面只接受窗口查看与局部输入", http.StatusBadRequest)
 			return
+		}
+		if input.Maintenance == "sharing" {
+			if err := s.requireMacOSNetworkIsolated(r.Context()); err != nil {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
 		}
 	} else {
 		input.Maintenance = ""
@@ -226,8 +253,14 @@ func (s *Server) macOSLoginWindow(w http.ResponseWriter, r *http.Request) {
 				jsonReply(w, perm)
 				return
 			}
-			if input.Action == "finish" && (!perm.Screen || !perm.Input) {
-				http.Error(w, "请先完成窗口录制、辅助功能和文件系统扩展三项授权", 409)
+			if input.Action == "finish" {
+				sharing := s.evaluateMacOSSetupSharing(r.Context(), true)
+				perm.Sharing = sharing.Satisfied
+				perm.SharingSummary = sharing.Summary
+				perm.SharingChecks = sharing.Checks
+			}
+			if input.Action == "finish" && (!perm.Screen || !perm.Input || !perm.Sharing) {
+				http.Error(w, "请先完成窗口录制、辅助功能、文件系统扩展和屏幕共享授权", 409)
 				return
 			}
 			if !s.op.TryLock() {
@@ -253,8 +286,31 @@ func (s *Server) macOSLoginWindow(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "临时设置账户未关闭，请重试完成设置", 409)
 				return
 			}
-		case "screen", "input", "projects":
+		case "screen", "input", "projects", "sharing":
 			s.macOSWindowRPC(w, r, macOSWindowRequest{Action: "setup-" + input.Action})
+			if input.Action == "sharing" {
+				s.mu.Lock()
+				s.macSetupSharingOpened = true
+				s.mu.Unlock()
+			}
+			return
+		case "check-sharing", "confirm-sharing":
+			if input.Action == "confirm-sharing" {
+				s.mu.Lock()
+				s.macSetupSharingOpened = true
+				s.macSetupSharingConfirmed = true
+				s.mu.Unlock()
+			}
+			sharing := s.evaluateMacOSSetupSharing(r.Context(), true)
+			perm, err := s.macSetupPermissions(r.Context())
+			if err != nil {
+				http.Error(w, err.Error(), 409)
+				return
+			}
+			perm.Sharing = sharing.Satisfied
+			perm.SharingSummary = sharing.Summary
+			perm.SharingChecks = sharing.Checks
+			jsonReply(w, perm)
 			return
 		case "open", "close", "frame", "click", "key", "scroll":
 		default:

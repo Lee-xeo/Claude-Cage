@@ -111,9 +111,9 @@ func (s *Server) gateClient() (*cage.GateClient, error) {
 
 func (s *Server) publishGate(state cage.GateStatus) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	old := s.safety.Gate
 	if old != nil && old.RunID == state.RunID && old.Epoch > state.Epoch {
+		s.mu.Unlock()
 		return
 	}
 	s.safety.Gate = &state
@@ -126,6 +126,7 @@ func (s *Server) publishGate(state cage.GateStatus) {
 			s.exitProbeError = ""
 		}
 	}
+	s.mu.Unlock()
 }
 
 // A gate grant resolves a monitoring failure. Independent diagnostics, such

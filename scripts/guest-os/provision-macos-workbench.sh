@@ -79,3 +79,7 @@ cd /
 sudo -Hu $ordinary /usr/local/libexec/cage-register-claude-window --prepare
 sudo -Hu $ordinary /usr/local/libexec/cage-register-clipboard --prepare
 sudo -Hu $ordinary /usr/local/libexec/cage-register-browser --prepare
+# Enable Screen Sharing during first install, while the guest is still isolated.
+# Later repair must be started from the host only after the egress gate is closed.
+install -m 755 "$kit/enable-macos-screensharing.sh" /usr/local/libexec/cage-enable-screensharing
+/usr/local/libexec/cage-enable-screensharing "$ordinary"

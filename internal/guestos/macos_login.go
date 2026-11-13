@@ -31,5 +31,5 @@ type MacLoginReply struct {
 }
 
 func ValidMacMaintenancePurpose(value string) bool {
-	return value == "projects" || value == "screen" || value == "input"
+	return value == "projects" || value == "screen" || value == "input" || value == "sharing"
 }

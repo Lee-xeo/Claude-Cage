@@ -15,7 +15,7 @@ func nativeWorkbenchRoute(path string) bool {
 		"/api/appearance", "/api/favorites", "/api/status", "/api/settings", "/api/settings/probe",
 		"/api/start", "/api/stop", "/api/restore", "/api/host/git", "/api/projects/open", "/api/projects/remove", "/api/projects/directories",
 		"/api/environment/initialization", "/api/environment/versions", "/api/environment/update", "/api/environment/tools", "/api/environment/resources", "/api/environment/storage",
-		"/api/environment/storage/recover",
+		"/api/environment/storage/recover", "/api/environment/macos-screen-sharing",
 		"/api/terminals", "/api/claude-accounts", "/api/cli/sessions", "/api/proxy", "/api/vault", "/api/vault/browser", "/api/client/browser-extensions",
 		"/api/input", "/api/input/text", "/api/input/image", "/api/input/paste/start", "/api/input/paste/cancel", "/api/input/files/start", "/api/input/files/finish", "/api/input/files/cancel", "/api/input/files/directory", "/api/input/files/download-retry",
 		"/api/vnc", "/api/vnc-credentials", "/api/audio", "/api/clipboard", "/api/clipboard/copy", "/api/clipboard/files",

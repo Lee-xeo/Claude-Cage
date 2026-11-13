@@ -11,6 +11,7 @@ enum MacMaintenance {
         "projects": "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.fskit.fsmodule",
         "screen": "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
         "input": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        "sharing": "x-apple.systempreferences:com.apple.Sharing-Settings.extension",
     ]
 
     static func settingsURL(for purpose: String) -> URL? {

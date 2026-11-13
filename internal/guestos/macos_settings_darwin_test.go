@@ -22,7 +22,7 @@ enum MacSetupPassword {
 }
 @main struct Check {
     @MainActor static func main() {
-        for purpose in ["projects", "screen", "input"] {
+        for purpose in ["projects", "screen", "input", "sharing"] {
             guard let url = MacMaintenance.settingsURL(for: purpose) else { exit(1) }
             print("\(purpose) \(url.absoluteString)")
         }
@@ -48,6 +48,7 @@ enum MacSetupPassword {
 		"projects x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.fskit.fsmodule",
 		"screen x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
 		"input x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+		"sharing x-apple.systempreferences:com.apple.Sharing-Settings.extension",
 	}
 	if strings.TrimSpace(string(output)) != strings.Join(want, "\n") {
 		t.Fatalf("permission routes lost the specific destination: %s", output)

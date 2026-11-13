@@ -183,6 +183,11 @@ for ((index=0; index<${#loaded[@]}; index++)); do
     sudo -Hu "$user" /bin/launchctl bootstrap "gui/$uid" "/Users/$user/Library/LaunchAgents/$label.plist"
 done
 /usr/bin/perl "$kit/native-component-manifest.pl" publish "$manifest" "$kit"
+# Install or refresh the helper without starting the service. Enabling or
+# repairing Screen Sharing is a later host operation and requires isolation.
+if [[ -f $kit/enable-macos-screensharing.sh ]]; then
+    install -m 755 "$kit/enable-macos-screensharing.sh" /usr/local/libexec/cage-enable-screensharing
+fi
 # The new helpers accept both installation paths. Commit them before migrating
 # Claude so a later rollback cannot restore a helper that only knows the old
 # path. Migration failures retain the old application and can be retried.
