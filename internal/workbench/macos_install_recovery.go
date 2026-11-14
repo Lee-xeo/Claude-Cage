@@ -34,7 +34,7 @@ func macOSInstallRecoveryRoute(method, path string) bool {
 	}
 	if method == http.MethodPost {
 		switch path {
-		case "/api/account/unlock", "/api/account/lock", "/api/environment/initialization",
+		case "/api/account/unlock", "/api/account/lock", "/api/account/recovery-generate", "/api/account/recovery-reset", "/api/environment/initialization",
 			"/api/environment/guest-systems/activate", "/api/host/git", "/api/stop", "/api/start",
 			"/api/macos/install-recovery", "/api/session", "/api/launch", "/api/handoff":
 			return true

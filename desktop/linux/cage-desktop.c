@@ -951,6 +951,18 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
             }
             g_free(path);
         }
+    } else if (!strcmp(name, "saveRecoveryKey")) {
+        const char *key = text_member(request, "key");
+        if (strlen(key) != 71 || !g_regex_match_simple("^[A-F0-9]{8}(-[A-F0-9]{8}){7}$", key, 0, 0)) reply_error(reply, "恢复密钥格式无效。");
+        else if (app.picker_open) reply_error(reply, "请先完成当前文件选择。");
+        else {
+            char *path = choose_file(GTK_FILE_CHOOSER_ACTION_SAVE, "保存账户恢复密钥", "账户恢复密钥.txt");
+            char *contents = g_strconcat(key, "\n", NULL);
+            if (!path) reply_json(reply, context, "false");
+            else if (g_file_set_contents_full(path, contents, -1, G_FILE_SET_CONTENTS_CONSISTENT | G_FILE_SET_CONTENTS_DURABLE, 0600, NULL)) reply_json(reply, context, "true");
+            else reply_error(reply, "恢复密钥未能保存，请检查保存位置的权限。");
+            g_free(contents); g_free(path);
+        }
     } else if (!strcmp(name, "exportTheme")) {
         const char *contents = text_member(request, "text");
         JsonParser *theme_parser = json_parser_new();

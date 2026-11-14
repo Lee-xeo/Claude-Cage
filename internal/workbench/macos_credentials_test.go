@@ -46,7 +46,7 @@ func newSharedMacAccount(t *testing.T) *localAccount {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = a.createAccount("shihao", "initial-test-password", "", true); err != nil {
+	if _, err = a.createAccount("shihao", "initial-test-password", "", true); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(a.lock)

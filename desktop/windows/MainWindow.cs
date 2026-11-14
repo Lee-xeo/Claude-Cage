@@ -382,6 +382,16 @@ internal sealed class MainWindow : Form
                         result = reader.ReadToEnd();
                     }
                     break;
+                case "saveRecoveryKey":
+                {
+                    var key = request.Text("key");
+                    if (key.Length != 71 || !System.Text.RegularExpressions.Regex.IsMatch(key, "^[A-F0-9]{8}(-[A-F0-9]{8}){7}$")) throw new InvalidDataException("恢复密钥格式无效");
+                    using var picker = new SaveFileDialog { Filter = "文本文件 (*.txt)|*.txt", Title = "保存账户恢复密钥", FileName = "账户恢复密钥.txt", DefaultExt = "txt", AddExtension = true };
+                    if (picker.ShowDialog(this) != DialogResult.OK) { result = false; break; }
+                    try { File.WriteAllText(picker.FileName, key + "\n", new System.Text.UTF8Encoding(false)); result = true; }
+                    catch { throw new IOException("恢复密钥未能保存，请检查保存位置的权限"); }
+                    break;
+                }
                 case "exportTheme":
                     var themeText = request.Text("text");
                     if (System.Text.Encoding.UTF8.GetByteCount(themeText) > 256 * 1024) throw new InvalidDataException("主题文件不能超过 256 KB");
@@ -578,7 +588,7 @@ internal sealed class MainWindow : Form
           const fileActions = new Set([
             'uploadHostFiles', 'chooseUploadFiles', 'clipboardSyncRead', 'clipboardSyncWrite',
             'saveBrowserDownload', 'browserDownloadAction', 'desktopFileAction', 'exportDiagnostics',
-            'importTheme', 'exportTheme', 'shareLocalProject', 'chooseFolder', 'chooseGuestMedia',
+            'importTheme', 'exportTheme', 'saveRecoveryKey', 'shareLocalProject', 'chooseFolder', 'chooseGuestMedia',
           ]);
           chrome.webview.addEventListener('message', ({data}) => {
             const item = pending.get(data.id); if (!item) return;
