@@ -161,8 +161,12 @@ def private_directory(path):
     if os.name == "nt":
         executable = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
         script = "$ErrorActionPreference='Stop'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $acl=New-Object Security.AccessControl.DirectorySecurity; $acl.SetAccessRuleProtection($true,$false); $acl.SetOwner($sid); foreach($id in @($sid,[Security.Principal.SecurityIdentifier]::new('S-1-5-18'))){$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($id,'FullControl','ContainerInherit,ObjectInherit','None','Allow'))}; Set-Acl -LiteralPath $env:MAINTENANCE_DIRECTORY -AclObject $acl"
-        subprocess.run([str(executable), "-NoProfile", "-NonInteractive", "-Command", script], env={**os.environ, "MAINTENANCE_DIRECTORY": str(path)},
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, check=True)
+        try:
+            subprocess.run([str(executable), "-NoProfile", "-NonInteractive", "-Command", script], env={**os.environ, "MAINTENANCE_DIRECTORY": str(path)},
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=15, check=True)
+        except subprocess.CalledProcessError as error:
+            error.add_note(error.stderr.decode(errors="replace"))
+            raise
 
 
 def write_manifest(path, value):
