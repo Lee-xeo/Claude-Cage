@@ -96,13 +96,13 @@ func cliChannelCommand(mode, argument string) string {
 d=pathlib.Path.home()/".local/share/cage/cli-channel-code"
 d.mkdir(parents=True,exist_ok=True,mode=0o700)
 n="%x"
-a=gzip.decompress(base64.b85decode("%s")).decode("utf-8").split("\0")
+a=gzip.decompress(base64.b85decode("%s")).decode().split("\0")
 for s,v in zip((".py",".resume.md",".account-resume.md"),a):
  p=d/(n+s)
  if not p.exists():
   with tempfile.NamedTemporaryFile(dir=d,delete=False) as f:
-   f.write(v.encode("utf-8"))
-   t=f.n
+   f.write(v.encode())
+   t=f.name
   os.replace(t,p)
 p=d/(n+".py")
 os.execv(sys.executable,[sys.executable,"-I",str(p),*sys.argv[1:]])
