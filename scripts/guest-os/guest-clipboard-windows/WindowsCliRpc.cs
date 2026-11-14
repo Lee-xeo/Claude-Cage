@@ -54,6 +54,14 @@ internal static class WindowsCliRpc
                 var payload=request["conversation"]?.DeepClone() as JsonObject??throw new InvalidDataException("cli_conversation_invalid");
                 Guid.Parse(payload["id"]?.GetValue<string>()??"");Guid.Parse(payload["session_id"]?.GetValue<string>()??"");
                 ValidatePaths(layout,payload);
+                var additional=new JsonArray();
+                if(request["additional_projects"] is JsonArray projects)
+                {
+                    if(projects.Count>31)throw new InvalidDataException("cli_projects_invalid");
+                    foreach(var project in projects)
+                        additional.Add(ProjectRpc.Resolve(project?["id"]?.GetValue<string>()??"",project?["grant"]?.GetValue<string>()??""));
+                }
+                payload["additional_directories"]=additional;
                 var subject=request["subject"]?.GetValue<string>()??"";
                 if(subject!=""&&!Subject.IsMatch(subject))throw new InvalidDataException("cli_identity_invalid");
                 payload["account"]=account;payload["subject"]=subject;payload["prefix"]=new JsonArray(layout.Tools.Claude);

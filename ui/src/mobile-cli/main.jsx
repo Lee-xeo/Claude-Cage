@@ -159,8 +159,8 @@ function App() {
     });
   }, []);
   const projects = catalog?.projects || [];
-  const project = projects.find((p) => p.path === current.project) || projects[0];
-  const sessions = catalog?.sessions.filter((s) => s.workspace === project?.path)
+  const project = projects.find((p) => p.path === current.project || p.folders?.includes(current.project)) || projects[0];
+  const sessions = catalog?.sessions.filter((s) => (project?.folders || [project?.path]).includes(s.workspace))
     .sort(sortSessions) || [];
   const missingSession = useCallback(() => {
     const selected = route();
@@ -237,7 +237,7 @@ function App() {
   };
   const codeNavigation = <CodeNavigation catalog={catalog} project={project} sessions={sessions} current={session}
     creating={creating || actionBusy} onAction={chooseSessionAction} onProject={path => open(path)} onNew={() => start(project)} formatTime={displayTime}
-    onSession={id => {open(project.path, id, true); setDrawer(false);}} />;
+    onSession={id => {open(sessions.find(session => session.id === id)?.workspace || project.path, id, true); setDrawer(false);}} />;
   const activeTool = workspaceTools.find(entry => entry.id === current.tool);
   const ActiveToolIcon = ["settings", "archived"].includes(current.tool) ? Settings : activeTool?.icon || Terminal;
   const settingsPage = tool => {

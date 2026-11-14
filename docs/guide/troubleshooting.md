@@ -34,7 +34,7 @@ keywords: 错误 失败 白屏 断网 137 OOM 代理 账号 配对 SSH 损坏 �
 | NodeSource / APT 失败 | 查看失败来源，检查代理访问；保存具体错误与诊断。 |
 | APT 重复 `Tried to start delayed item` | 更新到包含 APT 修正的构建，旧版依赖管理器升级失败时先修复网络，不能继续依赖安装。 |
 
-Git 前置检查未通过时，按提示更新本机 Git 至 2.38+、检查全局配置写入权限或重新检查；不必重配节点。启用保护会影响主机全局 Git，先阅读确认卡片。
+安装和启动不要求启用主机 Git 裸仓库保护。已有 Git 设置不会随更新自动撤销；调整方法见[主机 Git 设置与裸仓库](https://github.com/Lee-xeo/Claude-Cage/blob/main/docs/troubleshooting.md#主机-git-设置与裸仓库)。
 
 <figure class="guide-shot">
   <a href="../../www/public/docs/screenshots/proxy-diagnostics.jpg" target="_blank" rel="noopener" aria-label="查看原图：代理核心状态与独立端口诊断"><img src="../../www/public/docs/screenshots/proxy-diagnostics.jpg" alt="代理核心状态与独立端口诊断" width="2560" height="1764" loading="lazy" decoding="async" /></a>

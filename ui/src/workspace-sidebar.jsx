@@ -33,6 +33,7 @@ export function WorkspaceSidebar({
   workspace,
   guestSystem,
   projects,
+  projectGroups = [],
   tabs,
   sessions = [],
   sessionError,
@@ -82,7 +83,8 @@ export function WorkspaceSidebar({
   const [collapsed, setCollapsed] = useState({});
   const [allSessionsShown, setAllSessionsShown] = useState({});
   const sessionBaseline = useRef(new Map());
-  const activeWorkspace = tabs.find((tab) => tab.id === active)?.workspace;
+  const activeFolder = tabs.find((tab) => tab.id === active)?.workspace;
+  const activeWorkspace = projectGroups.find(group => group.folders.includes(activeFolder))?.workspace || activeFolder;
   useEffect(() => {
     if (activeWorkspace)
       setCollapsed((previous) => ({ ...previous, [activeWorkspace]: false }));
@@ -176,9 +178,11 @@ export function WorkspaceSidebar({
           </div>
         )}
         {projects.map((path) => {
-          const project = projectName(path);
-          const rows = projectSessionRows(tabs.filter(tab => tab.kind === "terminal" && tab.workspace === path),
-            sessions.filter(session => session.workspace === path), saved, saved.sessionOrder?.[path], sessionBaseline.current);
+          const group = projectGroups.find(group => group.workspace === path);
+          const folders = group?.folders || [path];
+          const project = projectName(path, projectGroups);
+          const rows = projectSessionRows(tabs.filter(tab => tab.kind === "terminal" && folders.includes(tab.workspace)),
+            sessions.filter(session => folders.includes(session.workspace)), saved, saved.sessionOrder?.[path], sessionBaseline.current);
           const rowMetadata = { ...saved };
           for (const row of rows) rowMetadata[row.id] = { ...saved[row.id], pinned: row.sessionPinned };
           const expanded = !collapsed[path];
@@ -191,11 +195,11 @@ export function WorkspaceSidebar({
               aria-label={`项目 ${project}`}
             >
               <div
-                className={`project-heading ${workspace === path ? "current-project" : ""}`}
+                className={`project-heading ${folders.includes(workspace) ? "current-project" : ""}`}
               >
                 <button
                   className="project-disclosure"
-                  title={path}
+                  title={folders.join("\n")}
                   aria-expanded={expanded}
                   onClick={() => {
                     setCollapsed((previous) => ({
@@ -237,6 +241,9 @@ export function WorkspaceSidebar({
                 </button>
               </div>
               {terminalMenuAt(path)}
+              {expanded && folders.length > 1 && <div className="sidebar-project-folders" aria-label={`${project} 的文件夹`}>
+                {folders.map((folder, index) => <button key={folder} title={folder} disabled={!ready || busy} onClick={() => onEditor(folder)} aria-label={`打开文件夹 ${projectName(folder)} 的编辑器`}><Folder size={13} /><span>{projectName(folder)}</span>{index === 0 && <small>默认</small>}</button>)}
+              </div>}
               <div
                 className={`project-children ${expanded ? "expanded" : ""}`}
                 inert={!expanded}

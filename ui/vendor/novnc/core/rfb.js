@@ -3106,12 +3106,15 @@ export default class RFB extends EventTargetMixin {
 
     // Handle resize-messages from the server
     _resize(width, height) {
+        const sizeChanged = width !== this._fbWidth || height !== this._fbHeight;
         this._fbWidth = width;
         this._fbHeight = height;
 
         this._display.resize(this._fbWidth, this._fbHeight);
-        if (this._display instanceof CageBrowserDisplay && this._rfbConnectionState === 'connected') {
+        if (sizeChanged && this._display instanceof CageBrowserDisplay && this._rfbConnectionState === 'connected') {
             // Refresh unchanged regions too, so the stretched preview is fully replaced.
+            // The server answers a full request with its screen layout, which arrives
+            // here again at the same size; asking once more would never stop.
             RFB.messages.fbUpdateRequest(this._sock, false, 0, 0, width, height);
         }
 

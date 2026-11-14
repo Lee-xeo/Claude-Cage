@@ -49,13 +49,6 @@ export async function createWorkbench({
     chosenFolder: "/Users/shihao/Projects/design-lab",
     failSave: false,
     failJob: false,
-    hostGit: {
-      state: "ok",
-      ready: true,
-      can_enable: false,
-      message: "本机 Git 安全保护已启用。",
-    },
-    failHostGit: false,
     saves: [],
     requests: [],
     terminalConnections: 0,
@@ -175,24 +168,6 @@ export async function createWorkbench({
       if (favoritesRequest) return route.fulfill(await favoritesRequest(request));
       return route.fulfill({ json: { items: [], folders: [] } });
     }
-    if (path === "/host/git") {
-      if (request.method() === "POST") {
-        if (!body?.confirm)
-          return route.fulfill({ status: 400, body: "请先确认启用保护" });
-        if (state.failHostGit)
-          return route.fulfill({
-            status: 500,
-            body: "未能保存 Git 安全设置，请检查写入权限后重试。",
-          });
-        state.hostGit = {
-          state: "ok",
-          ready: true,
-          can_enable: false,
-          message: "本机 Git 安全保护已启用。",
-        };
-      }
-      return route.fulfill({ json: state.hostGit });
-    }
     if (path === "/appearance/codex")
       return route.fulfill({ json: state.codexAppearance });
     if (path === "/appearance") {
@@ -233,9 +208,26 @@ export async function createWorkbench({
     else if (path === "/projects/remove") {
       if (!body.workspace) return route.fulfill({ status: 400, body: "请选择已添加的项目" });
       if (state.failRemove || state.terminals.some(terminal => terminal.workspace === body.workspace && !terminal.closed) || state.tabs.some(tab => tab.kind === "editor" && tab.workspace === body.workspace)) return route.fulfill({ status: 409, contentType: "text/plain; charset=utf-8", body: "请先关闭此项目的终端和编辑器，再移除项目" });
-      state.status.projects = state.status.projects.filter(path => path !== body.workspace);
+      const members = state.status.project_groups?.find(group => group.workspace === body.workspace)?.folders || [body.workspace];
+      state.status.projects = state.status.projects.filter(path => !members.includes(path));
+      if (state.status.project_groups) state.status.project_groups = state.status.project_groups.filter(group => !members.includes(group.workspace));
       if (state.settings.workspace === body.workspace) state.settings.workspace = state.status.projects[0] || "";
       result = { workspace: state.settings.workspace };
+    }
+    else if (path === "/projects/save") {
+      if (state.failJob) return route.fulfill({ status: 400, contentType: "text/plain; charset=utf-8", body: "项目文件夹连接失败，原项目保持不变" });
+      if (!body.name?.trim() || !body.folders?.length) return route.fulfill({status:400, body:"请填写项目名称并添加文件夹"});
+      const workspace = body.workspace || body.folders[0];
+      if (body.workspace && !body.folders.includes(body.workspace)) return route.fulfill({status:400, body:"请保留默认文件夹"});
+      const groups = state.status.project_groups || state.status.projects.map(path => ({workspace:path, name:path.split("/").at(-1), folders:[path]}));
+      const previous = groups.find(group => group.workspace === workspace);
+      if (previous?.folders.some(path => !body.folders.includes(path)) && (state.terminals.some(t => previous.folders.includes(t.workspace) && !t.closed) || state.tabs.some(t => t.kind === "editor" && previous.folders.includes(t.workspace)))) return route.fulfill({status:409, body:"请先关闭此项目的终端和编辑器"});
+      const folders = [...new Set(body.folders)];
+      state.status.project_groups = [...groups.filter(group => group.workspace !== workspace && !folders.includes(group.workspace)), {workspace, name:body.name.trim(), folders}];
+      const removed = (previous?.folders || []).filter(path => !folders.includes(path));
+      state.status.projects = [...new Set([...state.status.projects.filter(path => !removed.includes(path)), ...folders])];
+      if (removed.includes(state.settings.workspace)) state.settings.workspace = workspace;
+      result = {workspace, name:body.name.trim(), folders};
     }
     else if (path === "/projects/open") {
       if (state.failJob) return route.fulfill({ status: 400, contentType: "text/plain; charset=utf-8", body: "项目文件夹连接失败，原项目保持不变" });

@@ -89,11 +89,11 @@ func TestInfo(t *testing.T) {
 	exec.Command("git", "-C", proj, "config", "core.hooksPath", ".").Run()
 	exec.Command("git", "-C", proj, "config", "core.fsmonitor", "./mon.sh").Run()
 	os.WriteFile(filepath.Join(home, ".gitconfig"), nil, 0o644)
-	if q := infoMap(t, te)["security_questions"]; q != "hooks,git-config,bare-repo" {
+	if q := infoMap(t, te)["security_questions"]; q != "hooks,git-config" {
 		t.Errorf("questions: %q", q)
 	}
 	t.Setenv("AGENT_VM_UNSAFE_WRITABLE_GIT", "1")
-	if m := infoMap(t, te); m["git_protected"] != "0" || m["security_questions"] != "bare-repo" {
+	if m := infoMap(t, te); m["git_protected"] != "0" || m["security_questions"] != "none" {
 		t.Errorf("opted out: %v", m)
 	}
 

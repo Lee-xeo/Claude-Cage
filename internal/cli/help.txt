@@ -138,11 +138,8 @@ Before a VM boots with writable shares, agent-vm stops on what it cannot
 protect, and asks whether to go on (no by default, and when it cannot ask):
 hooks no read-only name covers (the top of a share or of a repository, or a
 writable volume), git config, commands it names, or hooks linked to files, in
-the project or a writable volume, and git ignoring
-safe.bareRepository=explicit (which it offers to set: git would otherwise use
-a folder with HEAD, objects/ and refs/ as a repository, under any name). It
-checks the repository holding each share and those at most two folders below
-it, 50 per share; deeper ones are not checked.
+the project or a writable volume. It checks the repository holding each share
+and those at most two folders below it, 50 per share; deeper ones are not checked.
 A VM that already runs gets the warnings only,
 and a restart when it lacks a protection; once stopped to boot again, it is
 asked like any other.

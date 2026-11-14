@@ -37,7 +37,7 @@ export function ProjectTree({catalog, projectPath, sessionID, expanded, toggle, 
         const path = project.path;
         const open = expanded.get(path) ?? (path === projectPath || index === 0);
         const name = projects.some(other => other !== project && other.name === project.name) ? path : project.name;
-        const sessions = catalog.sessions.filter(s => s.workspace === path)
+        const sessions = catalog.sessions.filter(s => (project.folders || [path]).includes(s.workspace))
           .sort(sortSessions);
         return <div className="tree-project" key={path}>
           <div className="tree-row">
@@ -53,7 +53,7 @@ export function ProjectTree({catalog, projectPath, sessionID, expanded, toggle, 
           </div>
           {open && <ul className="tree-sessions" aria-label={name + "的会话"}>
             {sessions.length ? sessions.map(s => <SessionRow key={s.id} session={s} current={s.id === sessionID} disabled={creating}
-              onSelect={() => onSession(path, s.id)} onAction={onAction}/>) : <li className="tree-empty">暂无会话</li>}
+              onSelect={() => onSession(s.workspace, s.id)} onAction={onAction}/>) : <li className="tree-empty">暂无会话</li>}
           </ul>}
         </div>;
       })}

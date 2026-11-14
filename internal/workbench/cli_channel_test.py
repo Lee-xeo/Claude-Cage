@@ -143,6 +143,45 @@ class ChannelTests(unittest.TestCase):
         self.assertNotIn("cage", json.dumps(settings).lower())
         self.assertFalse(any(key.upper().startswith("CAGE_") for key in execute.call_args.args[2]))
 
+    def test_launch_adds_bound_directories_as_literal_arguments(self):
+        directory = self.home / "backend ' $literal"
+        directory.mkdir()
+        connection = str(uuid.uuid4())
+        with patch.object(channel, "migrate_cage_policy"), patch.object(channel.os, "execvpe") as execute:
+            channel.launch({"id": connection, "prefix": ["claude"], "additional_directories": [str(directory)]})
+        args = execute.call_args.args[1]
+        self.assertEqual(args[args.index("--add-dir") + 1], str(directory))
+        self.assertFalse(any(key.upper().startswith("CAGE_") for key in execute.call_args.args[2]))
+        with patch.object(channel, "migrate_cage_policy"), patch.object(channel.os, "execvpe") as execute:
+            with self.assertRaisesRegex(ValueError, "项目文件夹未连接"):
+                channel.launch({"id": str(uuid.uuid4()), "prefix": ["claude"], "additional_directories": [str(directory / "missing")]})
+            execute.assert_not_called()
+
+    @unittest.skipIf(os.name == "nt", "POSIX executable fixture")
+    def test_bound_directory_reaches_isolated_child_and_host_write(self):
+        default = Path(self.project)
+        default.mkdir()
+        extra = self.home / "backend ' $literal"
+        extra.mkdir()
+        binaries = self.home / "bin"
+        binaries.mkdir()
+        executable = binaries / "claude"
+        executable.write_text("#!" + sys.executable + "\n" +
+            "import json,os,sys\nfrom pathlib import Path\n" +
+            "directory=Path(sys.argv[sys.argv.index('--add-dir')+1])\n" +
+            "(directory/'from-child.txt').write_text('shared')\n" +
+            "print(json.dumps({'cwd':os.getcwd(),'args':sys.argv[1:],'env':dict(os.environ)}))\n")
+        executable.chmod(0o700)
+        env = {**self.env, "PATH": str(binaries) + os.pathsep + os.environ.get("PATH", os.defpath), "CAGE_TEST_INTERNAL": "must-stay-internal"}
+        request = {"id": str(uuid.uuid4()), "prefix": ["claude"], "additional_directories": [str(extra)]}
+        result = subprocess.run([sys.executable, "-I", str(source), "launch", json.dumps(request)],
+            cwd=default, env=env, capture_output=True, text=True, timeout=10, check=True)
+        received = json.loads(result.stdout)
+        self.assertEqual(received["cwd"], str(default))
+        self.assertEqual(received["args"][received["args"].index("--add-dir")+1], str(extra))
+        self.assertFalse(any(key.upper().startswith("CAGE_") for key in received["env"]))
+        self.assertEqual((extra / "from-child.txt").read_text(), "shared")
+
     def test_handoff_preserves_executing_tools(self):
         request = {"cli_id":self.session, "config":str(self.home / ".claude"), "workspace":self.project}
         for status in ("busy", None):

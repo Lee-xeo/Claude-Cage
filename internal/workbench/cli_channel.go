@@ -447,6 +447,10 @@ func (s *Server) terminalConversationAction(ctx context.Context, id string, inpu
 }
 
 func (s *Server) prepareTerminalConversation(workspace string, selection claudeSelection, existing string) (string, *mobileRecord, error) {
+	directories, err := s.projectAdditionalDirectories(workspace)
+	if err != nil {
+		return "", nil, err
+	}
 	s.mu.Lock()
 	launcher := claudeTerminalCommand(s.preferences)
 	s.mu.Unlock()
@@ -494,6 +498,9 @@ func (s *Server) prepareTerminalConversation(workspace string, selection claudeS
 		record.Connection = record.Switch.ID
 	}
 	payload := map[string]any{"id": record.Connection, "session_id": record.CLIID, "prefix": prefix, "config": record.GuestConfig}
+	if len(directories) > 0 {
+		payload["additional_directories"] = directories
+	}
 	if record.Resume {
 		payload["resume"] = record.CLIID
 	}

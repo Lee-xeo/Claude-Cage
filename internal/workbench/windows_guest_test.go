@@ -105,7 +105,7 @@ func TestWindowsGateUsesBoundInstanceDirectory(t *testing.T) {
 func TestWindowsSharedStartupAndFavoritesRoutes(t *testing.T) {
 	s := testServer(t)
 	s.windowsGuest = &guestos.WindowsProfile{}
-	for _, path := range []string{"/api/host/git", "/api/favorites"} {
+	for _, path := range []string{"/api/favorites"} {
 		w := windowsBrowserRequestForTest(s, "GET", path, nil)
 		if w.Code != http.StatusOK {
 			t.Fatalf("shared Windows desktop GET %s: %d", path, w.Code)
@@ -114,11 +114,7 @@ func TestWindowsSharedStartupAndFavoritesRoutes(t *testing.T) {
 			t.Fatalf("untrusted viewer reached %s: %d", path, w.Code)
 		}
 	}
-	w := windowsBrowserRequestForTest(s, "POST", "/api/host/git", []byte(`{"confirm":false}`))
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("host Git confirmation: %d", w.Code)
-	}
-	w = windowsBrowserRequestForTest(s, "POST", "/api/favorites", []byte(`{"action":"save","title":"Cage","url":"https://example.org/"}`))
+	w := windowsBrowserRequestForTest(s, "POST", "/api/favorites", []byte(`{"action":"save","title":"Cage","url":"https://example.org/"}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("save favorite: %d", w.Code)
 	}

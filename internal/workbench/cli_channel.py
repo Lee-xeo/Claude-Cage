@@ -742,6 +742,10 @@ def launch(request):
         state["policy_unavailable"] = policy_available is False
     args = [*request["prefix"], "--settings", _runtime["path"](folder / "settings.json"), "--mcp-config", _runtime["path"](folder / "mcp.json"),
             "--dangerously-load-development-channels", "server:" + connection]
+    for directory in request.get("additional_directories", []):
+        if not isinstance(directory, str) or not Path(directory).is_absolute() or not Path(directory).is_dir():
+            raise ValueError("项目文件夹未连接，请重新打开项目")
+        args += ["--add-dir", directory]
     if request.get("resume_transcript"):
         expected = ROOT.parent / "cli-account-switches" / identifier(request["switch_id"]) / "history.jsonl"
         if Path(request["resume_transcript"]) != expected or not expected.is_file():

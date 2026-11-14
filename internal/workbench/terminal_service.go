@@ -305,7 +305,17 @@ func (s *Server) createTerminalLocked(input terminalRequest) (*terminalSession, 
 			return nil, err
 		}
 	}
-	script := terminalScript(s.cliWorkspace(workspace), input.Kind, command)
+	launchCommand := command
+	if input.Kind == "claude" && !sharedCLILauncher(command) {
+		directories, err := s.projectAdditionalDirectories(workspace)
+		if err != nil {
+			return nil, err
+		}
+		for _, directory := range directories {
+			launchCommand += " --add-dir " + shellescape.Quote(directory)
+		}
+	}
+	script := terminalScript(s.cliWorkspace(workspace), input.Kind, launchCommand)
 	if s.macosGuest != nil {
 		script = `cd -- "$HOME" && exec env TERM=xterm-256color COLORTERM=truecolor /bin/zsh -l`
 		if input.Kind != "claude-login" {
@@ -340,7 +350,7 @@ func (s *Server) createTerminalLocked(input terminalRequest) (*terminalSession, 
 			if !login && selection.Subject == "" {
 				return nil, errors.New("Claude 账号状态已变化，请重试")
 			}
-			script = managedClaudeTerminalScript(s.cliWorkspace(workspace), command, selection.GuestID, selection.Subject, login)
+			script = managedClaudeTerminalScript(s.cliWorkspace(workspace), launchCommand, selection.GuestID, selection.Subject, login)
 			if login {
 				if s.macosGuest != nil {
 					ctx, cancel := context.WithTimeout(s.lifetimeContext(), 20*time.Second)

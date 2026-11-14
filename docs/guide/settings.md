@@ -27,6 +27,8 @@ keywords: 设置 账户 保险箱 记住登录 Touch ID 主题 外观 字体 无
 
 Claude Code 的多账号登录、备注、额度查询和调度在侧栏“Claude 账号管理”中操作，详见[多账号与额度](accounts.md)。分配选项影响新建 Claude 终端。
 
+Claude Code 的多账号登录、备注、额度查询和调度在侧栏“Claude 账号管理”中操作，详见[多账号与额度](accounts.md)。分配选项影响新建 Claude 终端。
+
 <figure class="guide-shot">
   <a href="../../www/public/docs/screenshots/account-settings.jpg" target="_blank" rel="noopener" aria-label="查看原图：账户资料、密码与登录解锁设置"><img src="../../www/public/docs/screenshots/account-settings.jpg" alt="账户资料、密码与登录解锁设置" width="2560" height="1764" loading="lazy" decoding="async" /></a>
   <figcaption>账户资料、密码与登录解锁设置。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/account-settings.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>

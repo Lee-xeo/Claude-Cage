@@ -39,6 +39,19 @@ func (s *Server) connectProject(path string, add bool) (string, error) {
 	if err = s.ensureProjectShare(path); err != nil {
 		return "", err
 	}
+	if !add {
+		folders, err := s.projectFolders(path)
+		if err != nil {
+			return "", err
+		}
+		for _, folder := range folders {
+			if folder != path {
+				if err := s.ensureProjectShare(folder); err != nil {
+					return "", err
+				}
+			}
+		}
+	}
 	if add {
 		if err = s.rememberSharedProject(path); err != nil {
 			return "", err
@@ -74,38 +87,8 @@ func (s *Server) openProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspace, err := s.connectProject(input.Workspace, input.Add)
-	if errors.Is(err, errMacOSProjectApproval) {
-		path, pathErr := validateWorkspace(input.Workspace, s.profile)
-		if pathErr == nil {
-			s.mu.Lock()
-			share := s.projectShares[path]
-			grant := ""
-			if share != nil {
-				grant = share.approval
-			}
-			s.mu.Unlock()
-			if grant != "" {
-				// Only an explicit project open should restore the approval app;
-				// background probes and frame polling must not take guest focus.
-				ctx, cancel := context.WithTimeout(s.operationContext(), 5*time.Second)
-				_, openErr := s.guestControl(ctx, "/usr/bin/open -a /Applications/CageProjectAccess.app", "macos-project-approval")
-				cancel()
-				if openErr != nil {
-					w.Header().Set("X-Cage-Recovery", "project-approval")
-					requestError(w, errors.New("未能显示客机项目授权窗口，请重试"))
-					return
-				}
-				jsonReply(w, map[string]string{"workspace": path, "approval": grant})
-				return
-			}
-		}
-	}
 	if err != nil {
-		var failure *projectShareError
-		if errors.As(err, &failure) && failure.Recovery != "" {
-			w.Header().Set("X-Cage-Recovery", failure.Recovery)
-		}
-		requestError(w, err)
+		s.projectConnectionError(w, err, input.Workspace)
 		return
 	}
 	if input.Activate && isClientMountPath(workspace) {
@@ -295,7 +278,8 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 }
 
 type sharedProjects struct {
-	Paths []string `json:"paths"`
+	Paths  []string       `json:"paths"`
+	Groups []projectGroup `json:"groups,omitempty"`
 }
 
 type projectShareError struct {

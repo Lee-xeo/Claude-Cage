@@ -63,7 +63,6 @@ function Initialization({ initial, onComplete }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [connectionError, setConnectionError] = useState("");
-  const [git, setGit] = useState(null);
   const [details, setDetails] = useState(false);
   const [help, setHelp] = useState(false);
   const [dialog, setDialog] = useState(null);
@@ -152,17 +151,12 @@ function Initialization({ initial, onComplete }) {
   async function install() {
     if (needsProxySetup(null, status, proxy)) { setError("请先选择并应用代理节点。"); setStep("proxy"); return; }
     await run(async () => {
-      const check = await api("/host/git");
-      if (!check.ready) { setGit(check); return; }
       await api("/environment/initialization", { action: "install" });
       const accepted = await api("/start", startOptions());
       if (!alive.current) return;
-      setGit(null); setStep("install");
+      setStep("install");
       setStatus(current => ({ ...current, job: { ...accepted, running: true, kind: accepted.kind || "start", message: accepted.message || "正在准备客机环境…" } }));
     });
-  }
-  async function enableGit() {
-    await run(async () => { const next = await api("/host/git", { confirm: true }); setGit(next.ready ? null : next); });
   }
   async function stop() {
     if (!await confirm({ title: "停止当前安装？", body: "安装进度、已下载文件和虚拟磁盘会保留。你可以在此界面继续安装。", confirm: "停止安装" })) return;
@@ -272,7 +266,6 @@ function Initialization({ initial, onComplete }) {
             <div className="initialization-recovery"><button onClick={() => setStep("proxy")} disabled={busy}>检查 Cage 代理配置</button>{!progress && <button onClick={() => setDetails(true)}>查看操作详情</button>}</div>
           </>)}
         </div>
-        {git && <section className="initialization-notice" aria-label="Git 安全保护"><h2>安装前，保护本机 Git</h2><p>{git.message}</p>{git.can_enable && <><p>启用后，Git 会忽略未经你明确指定的裸仓库。该操作会修改当前用户的全局设置，影响本机其他 Git 工具，普通项目保持原有操作。</p><pre>git config --global safe.bareRepository explicit</pre><button className="primary" disabled={busy} onClick={enableGit}>启用 Git 保护</button></>}<button disabled={busy} onClick={install}>重新检查并安装</button></section>}
         {error && <p className="initialization-notice" role="alert"><SafetyMessage message={error} /></p>}
         <footer className="initialization-actions">
           {step === "system" ? <span /> : <button className="text-button" disabled={busy} onClick={back}><ChevronLeft size={16} />上一步</button>}

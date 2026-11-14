@@ -17,8 +17,7 @@ import (
 
 func TestDoctor(t *testing.T) {
 	se := newStartEnv(t)
-	if code := se.run("doctor"); code != 1 || !strings.Contains(se.stdout.String(), "  FAIL  no base template yet") ||
-		!strings.Contains(se.stdout.String(), "  ok    safe.bareRepository = explicit") || !strings.HasSuffix(se.stdout.String(), "warning(s).\n") {
+	if code := se.run("doctor"); code != 1 || !strings.Contains(se.stdout.String(), "  FAIL  no base template yet") || !strings.HasSuffix(se.stdout.String(), "warning(s).\n") {
 		t.Errorf("no base:\n%s", se.out())
 	}
 	if se.run("doctor", "x") != 2 || !strings.Contains(se.out(), "Usage: agent-vm doctor") {

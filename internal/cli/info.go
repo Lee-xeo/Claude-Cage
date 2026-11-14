@@ -72,7 +72,7 @@ func tristate(ok bool, err error) string {
 // security_questions: what a start with writable shares of a stopped VM
 // would stop on unless answered yes, comma-separated, or "none": hooks (a
 // hooks folder that cannot be protected), git-config (git config or commands
-// in a share), bare-repo (safe.bareRepository).
+// in a share).
 func (e *app) infoCmd(ctx context.Context, args []string) int {
 	d := ""
 	if len(args) > 0 {
@@ -138,9 +138,6 @@ func (e *app) infoCmd(ctx context.Context, args []string) int {
 		if len(scan.Risks(scan.Names())) > 0 {
 			questions = append(questions, "git-config")
 		}
-	}
-	if st := gitguard.BareState(ctx); st == gitguard.BareUnset || st == gitguard.BareOld {
-		questions = append(questions, "bare-repo")
 	}
 	fmt.Fprintf(w, "git_protected=%s\n", protected)
 	q := strings.Join(questions, ",")
