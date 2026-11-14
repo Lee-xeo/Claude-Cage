@@ -34,10 +34,10 @@ import { MacOSLogin } from "./macos-login";
 import { MacOSClaudeWindow } from "./macos-claude-window";
 import { ProjectRecovery } from "./project-recovery";
 import { ClaudeDesktop } from "./claude-desktop";
-import { useClaudeAccounts } from "./claude-accounts";
+import { ClaudeAccountsPanel, useClaudeAccounts } from "./claude-accounts";
 import { AccountProvider, AccountGate, useAccount } from "./account";
 import { BrowserHeader, BrowserTabRail, TerminalHeader, ExpandSidebar, ExpandPane } from "./pane-headers";
-import { BrowserDownloads, useDownloadNotifications, useDesktopFiles } from "./browser-downloads";
+import { useDownloadNotifications, useDesktopFiles } from "./browser-downloads";
 import { BrowserUploads } from "./browser-uploads";
 import { BrowserSettingsPage } from "./browser-settings";
 import { AudioControls, useAudioOutput } from "./audio";
@@ -98,6 +98,7 @@ function App() {
     [browser, setBrowser] = useState({ tabs: [] }),
     [browserSettingsRevision, setBrowserSettingsRevision] = useState(0),
     [settingsOpen, setSettingsOpen] = useState(false),
+    [claudeAccountsOpen, setClaudeAccountsOpen] = useState(false),
     [startOptions, setStartOptions] = useState(null),
     [guestSystem, setGuestSystem] = useState(undefined),
     [startRequest, setStartRequest] = useState(null),
@@ -871,7 +872,7 @@ function App() {
         }
         return;
       }
-      if (k === "," && !projectDialog && !rename && !hostGitOpen) {
+      if (k === "," && !projectDialog && !rename && !hostGitOpen && !claudeAccountsOpen) {
         event.preventDefault();
         event.stopImmediatePropagation();
         openSettings();
@@ -879,6 +880,7 @@ function App() {
       }
       if (
         settingsOpen ||
+        claudeAccountsOpen ||
         hostGitOpen ||
         transfer ||
         details ||
@@ -946,6 +948,7 @@ function App() {
       if (document.querySelector(".mac-login-fullscreen")) return false;
       if (
         settingsOpen ||
+        claudeAccountsOpen ||
         transfer ||
         dialog ||
         details ||
@@ -975,7 +978,7 @@ function App() {
         return;
       }
       if (command === "settings") {
-        if (!projectDialog && !rename && !dialog) openSettings();
+        if (!projectDialog && !rename && !dialog && !claudeAccountsOpen) openSettings();
         return;
       }
       if (storageRecovery && ["openProject", "newTab", "newTerminal"].includes(command)) {
@@ -987,6 +990,7 @@ function App() {
           !busy &&
           running &&
           !settingsOpen &&
+          !claudeAccountsOpen &&
           !dialog &&
           !projectDialog &&
           !rename
@@ -995,7 +999,7 @@ function App() {
         return;
       }
       if (
-        (settingsOpen || dialog || projectDialog || terminalChoice || rename) &&
+        (settingsOpen || claudeAccountsOpen || dialog || projectDialog || terminalChoice || rename) &&
         ["newTab", "newTerminal"].includes(command)
       )
         return;
@@ -1011,6 +1015,7 @@ function App() {
           void finishDialog(false);
         } else if (
           settingsOpen ||
+          claudeAccountsOpen ||
           transfer ||
           details ||
           safetyOpen ||
@@ -1064,6 +1069,7 @@ function App() {
   }, [
     status,
     settingsOpen,
+    claudeAccountsOpen,
     hostGitOpen,
     safetyOpen,
     details,
@@ -1354,11 +1360,11 @@ function App() {
     <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <div
         className="workbench-shell"
-        inert={settingsOpen || hostGitOpen || undefined}
+        inert={settingsOpen || claudeAccountsOpen || hostGitOpen || undefined}
       >
         {!sidebarCollapsed && (
           <WorkspaceSidebar
-            downloadAction={<BrowserDownloads sidebar downloads={downloads} ready={status.ready && !busy} onStatus={notify} />}
+            onClaudeAccounts={() => setClaudeAccountsOpen(true)}
             updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
             guestSystem={account?.guest_system || status.guest_system || guestSystem?.guest_system || "debian-13"}
@@ -1808,13 +1814,22 @@ function App() {
           current={settings}
           status={status}
           initialSection={settingsSection}
-          claudeProfiles={claudeProfiles}
-          terminalTabs={tabs}
-          onClaudeLogin={(id) => createTerminal(workspace, "claude-login", id)}
           onClose={() => setSettingsOpen(false)}
           onSaved={refreshSettings}
           onConfirm={confirm}
         />
+      )}
+      {claudeAccountsOpen && (
+        <Modal title="Claude 账号管理" wide onClose={() => setClaudeAccountsOpen(false)}>
+          <div className="claude-accounts-content">
+            <ClaudeAccountsPanel store={claudeProfiles} tabs={tabs} onConfirm={confirm}
+              running={status.vm_running} environmentBusy={busy || storageRecovery}
+              login={async (id) => {
+                await createTerminal(workspace, "claude-login", id);
+                setClaudeAccountsOpen(false);
+              }} />
+          </div>
+        </Modal>
       )}
       {tailscaleOpen && <TailscalePanel status={status} onClose={() => setTailscaleOpen(false)}
         onConfirm={confirm} onInstall={async () => {

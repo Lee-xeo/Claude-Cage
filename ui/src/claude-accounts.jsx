@@ -348,16 +348,15 @@ export function ClaudeAccountsPanel({ store, running, environmentBusy, tabs, log
   };
   return <section className="claude-profiles" aria-label="Claude 账号管理">
     <div className="section-title">
-      <h3>Claude 账号</h3>
       <p>将普通终端已登录的订阅加入调度，或单独登录一个新账号。新建 Claude 终端时自动分配。</p>
     </div>
     <details className="claude-scheduling">
       <summary>调度设置 · {store.scheduling.mode === "sequential" ? "顺序优先" : "均衡分配"}</summary>
-      <label>新会话分配<InlineSelect aria-label="新会话分配" value={store.scheduling.mode} disabled={busy}
+      <label>新会话分配<InlineSelect inline aria-label="新会话分配" value={store.scheduling.mode} disabled={busy}
         onValueChange={mode => perform(() => load({action:"scheduling",scheduling:{...store.scheduling,mode}}))}>
         <option value="balanced">均衡分配</option><option value="sequential">按列表顺序优先</option>
       </InlineSelect></label>
-      <label>新会话切换授权<InlineSelect aria-label="新会话切换授权" value={store.scheduling.switch_policy} disabled={busy}
+      <label>新会话切换授权<InlineSelect inline aria-label="新会话切换授权" value={store.scheduling.switch_policy} disabled={busy}
         onValueChange={switch_policy => perform(() => load({action:"scheduling",scheduling:{...store.scheduling,switch_policy}}))}>
         <option value="ask">每次询问</option><option value="allow">额度耗尽后自动接续</option><option value="wait">始终等待原账号</option>
       </InlineSelect></label>

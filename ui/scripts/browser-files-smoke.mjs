@@ -140,13 +140,7 @@ try {
   await page
     .getByRole("dialog", { name: "上传本机文件" })
     .waitFor({ state: "hidden" });
-  state.status.ready = false;
-  state.status.vm_running = false;
-  await page.waitForFunction(
-    () =>
-      document.querySelector('[aria-label="打开浏览器"]')?.disabled === true,
-  );
-  await page.getByRole("button", { name: "下载文件", exact: true }).click();
+  await page.getByRole("button", { name: "浏览器下载", exact: true }).click();
   await page
     .getByText("/Users/test/Downloads/视频.mp4", { exact: true })
     .waitFor();

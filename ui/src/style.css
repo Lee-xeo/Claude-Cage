@@ -1427,9 +1427,23 @@ svg {
   font-size: 0.9286rem;
   gap: 10px;
 }
-.sidebar-link.selected {
+.sidebar-link.selected,
+.sidebar-browser-row.selected {
   background: var(--selected);
   color: var(--strong);
+}
+.sidebar-browser-row {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+.sidebar-browser-row > .sidebar-link {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.sidebar-claude-shortcut {
+  margin-right: 5px;
 }
 .sidebar-link kbd,
 .shortcut-hint {

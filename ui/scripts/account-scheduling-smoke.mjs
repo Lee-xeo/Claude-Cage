@@ -30,8 +30,8 @@ try{
     if(body?.action==="update")Object.assign(profiles.find(a=>a.id===body.id),body);
     return route.fulfill({json:{accounts:profiles,scheduling,detection_status:"offline"}});
   });
-  await page.getByRole("button",{name:"设置",exact:true}).click();
-  await page.getByRole("button",{name:"Claude 账号",exact:true}).click();
+
+  await page.getByRole("button",{name:"Claude 账号管理",exact:true}).click();
   await page.getByText("调度设置 · 均衡分配",{exact:true}).click();
   const select=page.getByRole("combobox",{name:"新会话分配",exact:true});
   const policy=page.getByRole("combobox",{name:"新会话切换授权",exact:true});
@@ -51,7 +51,7 @@ try{
   assert.equal(profiles.find(a=>a.id==="a").handoff_group,"本人账号");
   await page.screenshot({path:fileURLToPath(new URL("scheduling-desktop.png",out))});
   await page.reload();
-  await page.getByRole("button",{name:"设置",exact:true}).click();await page.getByRole("button",{name:"Claude 账号",exact:true}).click();
+  await page.getByRole("button",{name:"Claude 账号管理",exact:true}).click();
   await page.getByText("调度设置 · 顺序优先",{exact:true}).waitFor();
 
   const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:"CageMobile/1"});

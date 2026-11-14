@@ -754,6 +754,16 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
     } else if (!strcmp(name, "accountDevice")) {
         if (!strcmp(text_member(request, "operation"), "status")) reply_json(reply, context, "{\"supported\":false}");
         else reply_error(reply, "Linux 版本使用 Cage 账户密码解锁。");
+    } else if (!strcmp(name, "appReference")) {
+        const char *kind = text_member(request, "kind");
+        const char *uri = !strcmp(kind, "source") ? "https://github.com/Lee-xeo/Claude-Cage/commits/main"
+            : !strcmp(kind, "releases") ? "https://github.com/Lee-xeo/Claude-Cage/releases" : NULL;
+        if (!uri) reply_error(reply, "未知的项目页面");
+        else {
+            GError *error = NULL;
+            if (g_app_info_launch_default_for_uri(uri, NULL, &error)) reply_json(reply, context, "true");
+            else { reply_error(reply, "无法打开项目页面，请检查默认浏览器"); g_clear_error(&error); }
+        }
     } else if (!strcmp(name, "appUpdate")) {
         const char *operation = text_member(request, "operation");
         if (strcmp(operation, "status") && strcmp(operation, "check") && strcmp(operation, "install") && strcmp(operation, "cancel"))

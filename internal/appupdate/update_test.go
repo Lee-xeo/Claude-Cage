@@ -121,6 +121,10 @@ func TestChecksumListMustAgreeAndBelongToSameRelease(t *testing.T) {
 	}
 }
 func TestPrivateReleaseAndMissingProxyDoNotReportCurrent(t *testing.T) {
+	// Keep this failure test independent of the host's actual network settings.
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
 	if _, err := findRelease(context.Background(), responseClient(`{"message":"Not Found"}`, 404), "0.1.0"); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
 		t.Fatal(err)
 	}

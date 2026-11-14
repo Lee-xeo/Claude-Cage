@@ -1,4 +1,5 @@
-// Package appupdate downloads Cage releases through the selected managed egress.
+// Package appupdate checks and downloads releases using host networking first,
+// with the selected managed egress as a fallback for connection failures.
 // Signature verification and application replacement belong to the native app.
 package appupdate
 
@@ -95,10 +96,7 @@ func Run(configPath string, args []string, output io.Writer) int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	client, err := managedClient(ctx, configPath)
-	if err != nil {
-		return fail(err)
-	}
+	client := updateClient(configPath)
 	defer client.CloseIdleConnections()
 	state.Phase, state.Message = "checking", "正在检查更新"
 	emit()
@@ -165,30 +163,21 @@ func Run(configPath string, args []string, output io.Writer) int {
 func managedClient(ctx context.Context, configPath string) (*http.Client, error) {
 	cfg, err := cage.Load(configPath)
 	if err != nil {
-		return nil, errors.New("请先配置并启动 Cage 的所选代理，再检查更新")
+		return nil, errors.New("Cage 所选代理尚未配置")
 	}
 	profile := filepath.Dir(configPath)
 	p, err := managedproxy.Applied(profile, cfg.ProxyURL, cfg.ProxyRevision)
 	if err != nil {
-		return nil, &proxyUnavailableError{"所选代理尚未应用，更新检查将在代理就绪后重试"}
+		return nil, &proxyUnavailableError{"Cage 所选代理尚未应用"}
 	}
 	if !managedproxy.Running(ctx, profile, p) {
-		return nil, &proxyUnavailableError{"所选代理未运行，更新检查将在代理就绪后重试；更新不会改用主机直连"}
+		return nil, &proxyUnavailableError{"Cage 所选代理未运行"}
 	}
 	egress, err := cage.NewEgress(cfg)
 	if err != nil {
 		return nil, errors.New("更新代理配置无效")
 	}
-	return &http.Client{
-		Transport: &http.Transport{Proxy: nil, DialContext: egress.DialContext, ForceAttemptHTTP2: true, TLSHandshakeTimeout: 15 * time.Second, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 10 * time.Second},
-		Timeout:   20 * time.Minute,
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
-			if len(via) >= 5 || !allowedURL(r.URL, true) {
-				return errors.New("更新下载重定向被拒绝")
-			}
-			return nil
-		},
-	}, nil
+	return updateHTTPClient(&http.Transport{Proxy: nil, DialContext: egress.DialContext, ForceAttemptHTTP2: true, TLSHandshakeTimeout: 15 * time.Second, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 10 * time.Second}), nil
 }
 
 func allowedURL(u *url.URL, redirect bool) bool {
@@ -197,7 +186,18 @@ func allowedURL(u *url.URL, redirect bool) bool {
 	}
 	switch u.Hostname() {
 	case "api.github.com":
-		return u.Path == "/repos/"+repository+"/releases"
+		path := strings.TrimPrefix(u.Path, "/repos/"+repository+"/")
+		if path == u.Path {
+			return false
+		}
+		if path == "releases" || path == "commits/main" {
+			return true
+		}
+		if comparison, ok := strings.CutPrefix(path, "compare/"); ok {
+			base, head, found := strings.Cut(comparison, "...")
+			return found && validCommit(base) && validCommit(head)
+		}
+		return false
 	case "github.com":
 		return strings.HasPrefix(u.Path, "/"+repository+"/releases/download/") && !strings.Contains(u.Path, "/../")
 	case "release-assets.githubusercontent.com", "objects.githubusercontent.com":
@@ -215,7 +215,6 @@ func request(ctx context.Context, client *http.Client, raw string) (*http.Respon
 	if err != nil {
 		return nil, errors.New("更新请求无效")
 	}
-	req.Header.Set("User-Agent", "Cage-Updater/"+version.Version)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	if u.Hostname() == "api.github.com" {
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -225,12 +224,19 @@ func request(ctx context.Context, client *http.Client, raw string) (*http.Respon
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return nil, errors.New("更新下载已取消")
 		}
-		return nil, usererror.Wrap("连接应用更新源", errors.Join(ctx.Err(), err), "请在网络与代理设置中确认所选节点可以连接 GitHub，再检查更新。")
+		var unavailable *networkUnavailableError
+		if errors.As(err, &unavailable) {
+			return nil, unavailable
+		}
+		return nil, usererror.Wrap("连接应用更新源", errors.Join(ctx.Err(), err), "请检查主机网络与系统代理；主机连接失败时还会尝试 Cage 所选代理。恢复网络后可重新检测更新。")
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		switch resp.StatusCode {
 		case 404:
+			if strings.Contains(u.Path, "/compare/") {
+				return nil, errors.New("当前构建提交未被源码仓库收录，无法核对提交关系")
+			}
 			return nil, errors.New("更新源找不到请求的版本或安装包（HTTP 404）。请稍后检查更新；需要手动安装时，请核对 Cage 发布页面中的对应平台文件。")
 		case 403, 429:
 			return nil, updateSourceError(resp, time.Now())

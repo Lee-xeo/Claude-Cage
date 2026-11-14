@@ -56,7 +56,7 @@ export function Modal({ title, children, onClose, wide = false, footer, anchor }
       if (e.key === "Tab") {
         const nodes = [
           ...panel.current.querySelectorAll(
-            "input:not([disabled]),button:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href]",
+            'input:not([disabled]),button:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])',
           ),
         ].filter((n) => n.offsetParent !== null);
         if (!nodes.length) return;

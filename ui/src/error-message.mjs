@@ -1,5 +1,6 @@
 export function operationName(path = "", method = "GET") {
   const reading = method === "GET";
+  if (path === "/client/about") return reading ? "读取软件版本" : "检测应用更新";
   if (path.startsWith("/api/mobile/cli")) return reading ? "读取会话消息" : "提交会话操作";
   if (path.startsWith("/api/mobile/browser")) return "连接电脑上的浏览器";
   if (path.startsWith("/api/mobile/desktop")) return "连接电脑上的 Claude Desktop";
