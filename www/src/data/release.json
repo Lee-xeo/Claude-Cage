@@ -1,11 +1,29 @@
 {
-  "version": "0.1.6-alpha-preview",
-  "releaseURL": "https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.6-alpha-preview",
-  "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.6-alpha-preview/Cage-0.1.6-alpha-preview-macos-arm64.dmg",
-  "linuxDownloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.6-alpha-preview/Cage-0.1.6-alpha-preview-linux-amd64.deb",
-  "windowsPreview": {
-    "version": "0.1.6-alpha-preview",
-    "releaseURL": "https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.6-alpha-preview",
-    "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.6-alpha-preview/Cage-0.1.6-alpha-preview-windows-amd64-setup-unsigned.exe"
+  "version": "0.1.8-rc",
+  "releaseURL": "https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.8-rc",
+  "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-macos-arm64.dmg",
+  "windowsDownloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-windows-amd64-setup.exe",
+  "linuxDownloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-linux-amd64.deb",
+  "platforms": {
+    "macos": {
+      "version": "0.1.8-rc",
+      "releaseURL": "https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.8-rc",
+      "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-macos-arm64.dmg"
+    },
+    "windows": {
+      "version": "0.1.8-rc",
+      "releaseURL": "https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.8-rc",
+      "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-windows-amd64-setup.exe"
+    },
+    "linux": {
+      "version": "0.1.8-rc",
+      "releaseURL": "https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.8-rc",
+      "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-linux-amd64.deb"
+    },
+    "android": {
+      "version": "0.1.7",
+      "releaseURL": "https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.7",
+      "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.7/Cage-0.1.7-android-arm64.apk"
+    }
   }
 }

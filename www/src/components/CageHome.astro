@@ -12,8 +12,9 @@ import qr from '../../../assets/community-qq.png';
 interface Props { locale: CageLocale }
 const { locale } = Astro.props;
 const c = cageCopy[locale];
-type PlatformRelease = { version: string; releaseURL: string; downloadURL: string };
-const published: PlatformRelease & { windowsDownloadURL?: string; linuxDownloadURL?: string; androidDownloadURL?: string; windowsPreview?: PlatformRelease } = releaseData;
+type PlatformRelease = { version: string; releaseURL: string; downloadURL: string; unsigned?: boolean };
+const published: { version: string; releaseURL: string; platforms: Partial<Record<'macos' | 'windows' | 'linux' | 'android', PlatformRelease>> } = releaseData;
+const downloads = published.platforms;
 const base = import.meta.env.BASE_URL;
 const repo = 'https://github.com/Lee-xeo/Claude-Cage';
 const guideLabels: Record<CageLocale, string> = {
@@ -25,20 +26,17 @@ const guideLabel = guideLabels[locale];
 const docHref = (href: string) => href.replace('https://claude-cage.com/docs/', `${base}docs/`);
 const platforms = [
   { name: 'macOS', icon: 'apple', requirements: 'Apple Silicon · macOS 14+', format: '.dmg',
-    url: published.downloadURL, version: published.version, notes: published.releaseURL, guideURL: `${repo}/blob/main/docs/getting-started.md` },
+    url: downloads.macos?.downloadURL, version: downloads.macos?.version, notes: downloads.macos?.releaseURL, guideURL: `${repo}/blob/main/docs/getting-started.md` },
   { name: 'Windows', icon: 'windows', requirements: 'Windows 10 22H2 / 11 · x64', format: '.exe',
-    url: published.windowsDownloadURL || published.windowsPreview?.downloadURL,
-    version: published.windowsDownloadURL ? published.version : published.windowsPreview?.version,
-    preview: !published.windowsDownloadURL && !!published.windowsPreview,
-    notes: published.windowsDownloadURL ? published.releaseURL : published.windowsPreview?.releaseURL, guideURL: `${repo}/blob/main/docs/windows.md` },
+    url: downloads.windows?.downloadURL, version: downloads.windows?.version,
+    preview: downloads.windows?.unsigned,
+    notes: downloads.windows?.releaseURL, guideURL: `${repo}/blob/main/docs/windows.md` },
   { name: 'Linux', icon: 'linux', requirements: 'Debian 12 / Ubuntu 22.04 / 24.04 · x86_64', format: '.deb',
-    url: published.linuxDownloadURL,
-    version: published.linuxDownloadURL ? published.version : undefined,
-    notes: published.linuxDownloadURL ? published.releaseURL : undefined, guideURL: `${repo}/blob/main/docs/linux.md` },
+    url: downloads.linux?.downloadURL, version: downloads.linux?.version,
+    notes: downloads.linux?.releaseURL, guideURL: `${repo}/blob/main/docs/linux.md` },
   { name: 'Android', icon: 'android', requirements: 'Android 8.0+ · arm64', format: '.apk',
-    url: published.androidDownloadURL,
-    version: published.androidDownloadURL ? published.version : undefined,
-    notes: published.androidDownloadURL ? published.releaseURL : undefined, guideURL: `${base}docs/mobile/` },
+    url: downloads.android?.downloadURL, version: downloads.android?.version,
+    notes: downloads.android?.releaseURL, guideURL: `${base}docs/mobile/` },
   { name: 'iOS', icon: 'apple', requirements: 'iOS 17+ · Secure Enclave', localBuild: true,
     guideURL: `${base}docs/mobile/` },
 ];
