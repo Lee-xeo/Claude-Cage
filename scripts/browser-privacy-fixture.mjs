@@ -1,5 +1,5 @@
-// Real production controller; only deployment paths, headless display and a
-// private authenticated test-driving CDP route differ from the guest service.
+// Real production controller with test deployment paths, headless display,
+// mock keychain/basic password storage and a private test-driving CDP route.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -78,10 +78,11 @@ export async function createPrivacyController({ preferences, headless = true } =
     const source = await readFile(new URL('browser-agent.mjs', sourceDirectory), 'utf8');
     const marker = 'const input = JSON.parse(text || "{}");';
     assert.ok(source.includes(marker));
+    assert.ok(source.includes('spawn(browserBinary, flags'), 'Update the isolated browser launch adapter');
     const adapted = source.replaceAll('/home/cage-browser', directory)
       .replace('/etc/claude-cage/browser-control.json', join(directory, 'control.json'))
       .replace('/usr/local/lib/cage-split', join(directory, 'extension'))
-      .replace('spawn(browserBinary, flags', `spawn(${JSON.stringify(browserPath)}, flags`)
+      .replace('spawn(browserBinary, flags', `spawn(${JSON.stringify(browserPath)}, [...flags, "--use-mock-keychain", "--password-store=basic"]`)
       .replace('"--start-fullscreen",', headless ? '"--headless=new", "--disable-background-networking",' : '"--start-fullscreen", "--disable-background-networking",')
       .replace('server.listen(18500, "127.0.0.1");', 'server.listen(0,"127.0.0.1",()=>console.log("PORT="+server.address().port));')
       .replace(marker, `${marker}\nif(req.url === "/__privacy-test") { res.end(JSON.stringify(await cdp(input.method, input.params || {}, input.id ? await session(input.id) : input.sessionId))); return; }`);

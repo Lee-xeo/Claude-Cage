@@ -20,6 +20,8 @@ const chrome = spawn(
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-background-networking",
+    "--use-mock-keychain",
+    "--password-store=basic",
     "about:blank",
   ],
   { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] },

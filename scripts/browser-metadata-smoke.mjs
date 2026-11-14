@@ -141,6 +141,7 @@ try {
   const listen = 'server.listen(18500, "127.0.0.1");';
   const input = 'const input = JSON.parse(text || "{}");';
   assert.ok(source.includes(listen) && source.includes(input), "Update the isolated controller adapter");
+  assert.ok(source.includes('spawn(browserBinary, flags'), "Update the isolated browser launch adapter");
   // The extra authenticated route only drives the real page through the existing
   // private CDP pipe. Production state, extension bindings and SSE are untouched.
   const testRoute = `${input}
@@ -153,7 +154,7 @@ try {
     .replaceAll("/home/cage-browser", directory)
     .replace("/etc/claude-cage/browser-control.json", join(directory, "control.json"))
     .replace("/usr/local/lib/cage-split", join(directory, "extension"))
-    .replace('spawn(browserBinary, flags', `spawn(${JSON.stringify(executable)}, flags`)
+    .replace('spawn(browserBinary, flags', `spawn(${JSON.stringify(executable)}, [...flags, "--use-mock-keychain", "--password-store=basic"]`)
     .replace('"--start-fullscreen",', '"--headless=new",')
     .replace(listen, 'server.listen(0, "127.0.0.1", () => console.log("CONTROL_PORT=" + server.address().port));')
     .replace(input, testRoute);
