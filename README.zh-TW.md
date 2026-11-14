@@ -56,7 +56,7 @@ Claude Cage 讓你在熟悉的系統裡與 Claude 一起工作：Mac 上使用 m
 把這句話發給你的 agent（codex，dsh，workbuddy，反正不會是 claude code😁）
 
 ```markdown
-幫我安裝 https://github.com/Lee-xeo/Claude-Cage ，並把 Cage 的代理配置為我本機 Clash 的 xxx 節點。
+幫我拉取 https://github.com/Lee-xeo/Claude-Cage 的最新原始碼，打包安裝，並設定 Cage 的代理，透過我本機 Clash 的 xx 節點使用我的 xx IP 出口。全程盯著，有問題直接修復，必要時順手向專案提交 issue，幫助改善相容性。
 ```
 
 你唯一需要的，是一個靠譜的代理節點，本專案不做任何代理推廣，可以自行搜尋黑色錯誤網站解決。

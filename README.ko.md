@@ -56,7 +56,7 @@ Claude Cage는 터미널, 브라우저, 편집기와 공식 Claude Desktop을 �
 이 요청을 AI 에이전트(codex, dsh, workbuddy — Claude Code는 아닐 수도 있음 😁) 에 보냅니다.
 
 ```markdown
-설치 도와주세요 https://github.com/Lee-xeo/Claude-Cage 로컬 Clash 설치에서 xxx 엔드포인트를 사용하도록 Cage의 네트워크 프록시를 구성합니다.
+https://github.com/Lee-xeo/Claude-Cage의 최신 소스 코드를 받아 빌드하고 패키징해 설치해 줘. Cage 프록시가 내 로컬 Clash의 xx 노드를 통해 내 xx IP로 나가도록 설정해 줘. 전체 과정을 지켜보며 문제가 생기면 직접 수정하고, 필요하면 호환성 개선을 위해 프로젝트에 issue도 제출해 줘.
 ```
 
 필요한 것은 안정적인 네트워크 프록시 엔드포인트뿐입니다. 이 프로젝트는 프록시 공급자를 홍보하지 않습니다. 예를 들어 Black Error 웹사이트를 검색하여 제공자를 직접 찾을 수 있습니다.
