@@ -445,12 +445,14 @@ func IsNativeArch(arch Arch) bool {
 }
 
 func DefaultDriver() VMType {
-	switch runtime.GOOS {
-	case "darwin":
+	return defaultDriverFor(runtime.GOOS, runtime.GOARCH)
+}
+
+func defaultDriverFor(platform, arch string) VMType {
+	if platform == "darwin" && arch == "arm64" {
 		return VZ
-	default:
-		return QEMU
 	}
+	return QEMU
 }
 
 func DefaultNonNativeArchDriver() VMType {

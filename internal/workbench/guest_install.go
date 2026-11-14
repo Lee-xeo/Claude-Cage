@@ -242,7 +242,7 @@ func (s *Server) beginGuestInstallMode(w http.ResponseWriter, r *http.Request, i
 		http.Error(w, "当前环境无法安装所选客户机系统", http.StatusConflict)
 		return
 	}
-	if v.HostMatchOnly && v.Pending == nil && in.CloneKey == "" {
+	if v.HostMatchOnly && in.System == v.System && v.Pending == nil && in.CloneKey == "" {
 		requestError(w, errors.New("Intel Mac 请通过「自动匹配本机系统版本」选择 Apple 完整安装包"))
 		return
 	}

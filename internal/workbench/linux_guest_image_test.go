@@ -21,7 +21,7 @@ func TestUbuntuGuestChoicesMatchSupportedHostArchitectures(t *testing.T) {
 		available      bool
 	}{
 		{"darwin", "arm64", true}, {"windows", "amd64", true}, {"linux", "amd64", true},
-		{"darwin", "amd64", false}, {"windows", "arm64", false}, {"linux", "arm64", false},
+		{"darwin", "amd64", true}, {"windows", "arm64", false}, {"linux", "arm64", false},
 	} {
 		if got := linuxGuestSystems(host.platform, host.arch); (len(got) == 1 && got[0] == guestos.Ubuntu2204) != host.available {
 			t.Fatalf("%s/%s: %v", host.platform, host.arch, got)

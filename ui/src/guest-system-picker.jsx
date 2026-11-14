@@ -63,9 +63,9 @@ export function GuestSystemPicker({ system, onChange, preserveOnUnmount = false,
       if (!active) return;
       setView(next);
       if (next.fresh || next.pending) {
-        onChange(current => !next.pending && current && !current.pending && (!next.host_match_only || current.clone && current.guest_system === next.system) ? current : ({ guest_system: next.pending?.system || (next.host_match_only ? next.system : "debian-13"), media: next.pending?.media || "",
+        onChange(current => !next.pending && current && !current.pending && (current.guest_system !== next.system || !next.host_match_only || current.clone) ? current : ({ guest_system: next.pending?.system || (next.host_match_only ? next.system : "debian-13"), media: next.pending?.media || "",
           sha256: next.pending?.sha256 || "", editor_terms: Boolean(next.pending?.editor_terms),
-          clone: Boolean(next.host_match_only || next.pending?.source && !next.pending?.source_kind), clone_key: "", clone_ready: false,
+          clone: Boolean(next.host_match_only && (!next.pending || next.pending.system === next.system) || next.pending?.source && !next.pending?.source_kind), clone_key: "", clone_ready: false,
           activate: next.activate, pending: Boolean(next.pending) }));
       } else onChange(null);
     }).catch((e) => {
@@ -95,7 +95,7 @@ export function GuestSystemPicker({ system, onChange, preserveOnUnmount = false,
       <InlineSelect aria-label="客户机系统" value={system.clone ? "host" : os} disabled={system.pending}
         onValueChange={(value) => onChange({ guest_system: value === "host" ? view.system : value, clone: value === "host", clone_key: "", clone_ready: false, media: "", sha256: "", editor_terms: false })}>
         {Boolean(view.system) && <option value="host" disabled={!view.available}>自动匹配本机系统版本{view.available ? "" : "（暂不可用）"}</option>}
-        <option value="debian-13" disabled={view.host_match_only}>Debian 13{view.host_match_only ? "（此构建暂不可用）" : ""}</option>
+        <option value="debian-13">Debian 13</option>
         <option value="ubuntu-22.04" disabled={!view.linux_systems?.includes("ubuntu-22.04")}>Ubuntu 22.04{view.linux_systems?.includes("ubuntu-22.04") ? "" : "（此构建暂不可用）"}</option>
         {!view.host_match_only && <option value="macos" disabled={view.system !== "macos" || !view.available}>macOS{view.system === "macos" ? view.available ? "" : "（暂不可用）" : "（需要兼容的 Mac）"}</option>}
         <option value="windows-11" disabled={view.system !== "windows-11" || !view.available}>Windows 11{view.system === "windows-11" ? view.available ? "" : "（暂不可用）" : "（需要 Windows 11 与 Hyper-V）"}</option>
