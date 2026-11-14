@@ -233,7 +233,8 @@ class CacheMaintenanceTests(unittest.TestCase):
     def test_windows_junction_and_recovery_acl(self):
         link = self.home / ".claude/cache/junction"
         executable = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-        env = {**os.environ, "FIXTURE_LINK": str(link), "FIXTURE_TARGET": str(self.home / "project")}
+        env = {**os.environ, "FIXTURE_LINK": str(link), "FIXTURE_TARGET": str(self.home / "project"),
+               "PSModulePath": str(executable.parent / "Modules")}
         care.subprocess.run([str(executable), "-NoProfile", "-NonInteractive", "-Command",
                              "$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:FIXTURE_LINK -Target $env:FIXTURE_TARGET | Out-Null"], env=env, check=True, capture_output=True)
         try:
