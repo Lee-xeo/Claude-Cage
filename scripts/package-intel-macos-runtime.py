@@ -76,7 +76,7 @@ for source, (target, references) in files.items():
         signing += ["--timestamp", "--options", "runtime"]
     run(*signing, target)
 
-for name in ("edk2-x86_64-code.fd", "edk2-i386-vars.fd", "bios-256k.bin", "kvmvapic.bin", "vgabios-stdvga.bin", "efi-virtio.rom"):
+for name in ("edk2-x86_64-code.fd", "edk2-i386-vars.fd", "bios-256k.bin", "kvmvapic.bin", "vgabios-stdvga.bin", "efi-virtio.rom", "linuxboot_dma.bin", "multiboot_dma.bin", "pvh.bin"):
     shutil.copy2(prefix / "share/qemu" / name, runtime / "share/qemu" / name)
 
 # Start from OpenCore's documented sample and set only the virtual hardware
