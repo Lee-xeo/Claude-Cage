@@ -40,8 +40,6 @@ type Policy struct {
 
 	mu       sync.Mutex
 	resolved map[netip.Addr]time.Time
-	own      []netip.Prefix
-	ownAt    time.Time
 }
 
 // Rule is an allow line: a network, and a port or 0 for every one.
@@ -179,10 +177,14 @@ func internal(a netip.Addr) bool {
 // Allows reports whether the guest may reach dst over network ("tcp" or
 // "udp": nothing else is allowed).
 func (p *Policy) Allows(network string, dst netip.AddrPort) bool {
+	return p.allows(network, dst, net.InterfaceAddrs)
+}
+
+func (p *Policy) allows(network string, dst netip.AddrPort, interfaceAddrs func() ([]net.Addr, error)) bool {
 	if p.Open {
 		return true
 	}
-	if network != "tcp" && network != "udp" {
+	if !dst.IsValid() || network != "tcp" && network != "udp" {
 		return false
 	}
 	a := dst.Addr().Unmap().WithZone("")
@@ -191,7 +193,7 @@ func (p *Policy) Allows(network string, dst netip.AddrPort) bool {
 			return true
 		}
 	}
-	if internal(a) || p.ownAddress(a) {
+	if internal(a) || !offHost(a, interfaceAddrs) {
 		return false
 	}
 	if len(p.Domains) == 0 {
@@ -203,31 +205,24 @@ func (p *Policy) Allows(network string, dst netip.AddrPort) bool {
 	return ok && time.Now().Before(until)
 }
 
-// ownAddress reports whether a is an address of this machine (a public one
-// included): what listens on all its interfaces is reached there. Read again
-// every few seconds, as interfaces come and go.
-func (p *Policy) ownAddress(a netip.Addr) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if time.Since(p.ownAt) > 5*time.Second {
-		p.own = p.own[:0]
-		if addrs, err := net.InterfaceAddrs(); err == nil {
-			for _, ad := range addrs {
-				if n, ok := ad.(*net.IPNet); ok {
-					if ip, ok := netip.AddrFromSlice(n.IP); ok {
-						p.own = append(p.own, netip.PrefixFrom(ip.Unmap(), ip.Unmap().BitLen()))
-					}
-				}
-			}
-		}
-		p.ownAt = time.Now()
+// Each new flow needs a current interface list. A public address can become
+// local between connections, and a failed lookup cannot establish isolation.
+func offHost(a netip.Addr, interfaceAddrs func() ([]net.Addr, error)) bool {
+	addrs, err := interfaceAddrs()
+	if err != nil || len(addrs) == 0 {
+		return false
 	}
-	for _, o := range p.own {
-		if o.Contains(a) {
-			return true
+	for _, addr := range addrs {
+		n, ok := addr.(*net.IPNet)
+		if !ok || n == nil {
+			return false
+		}
+		ip, ok := netip.AddrFromSlice(n.IP)
+		if !ok || ip.Unmap() == a {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // Name reports whether the guest may resolve name: with Domains, those and

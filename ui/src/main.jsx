@@ -896,7 +896,7 @@ function App() {
         }
         return;
       }
-      if (k === "," && !projectDialog && !rename && !claudeAccountsOpen) {
+      if (k === "," && !projectDialog && !rename) {
         event.preventDefault();
         event.stopImmediatePropagation();
         openSettings();
@@ -996,7 +996,7 @@ function App() {
         return;
       }
       if (command === "settings") {
-        if (!projectDialog && !rename && !dialog && !claudeAccountsOpen) openSettings();
+        if (!projectDialog && !rename && !dialog) openSettings();
         return;
       }
       if (storageRecovery && ["openProject", "newTab", "newTerminal"].includes(command)) {
@@ -1838,18 +1838,6 @@ function App() {
           onSaved={refreshSettings}
           onConfirm={confirm}
         />
-      )}
-      {claudeAccountsOpen && (
-        <Modal title="Claude 账号管理" wide onClose={() => setClaudeAccountsOpen(false)}>
-          <div className="claude-accounts-content">
-            <ClaudeAccountsPanel store={claudeProfiles} tabs={tabs} onConfirm={confirm}
-              running={status.vm_running} environmentBusy={busy || storageRecovery}
-              login={async (id) => {
-                await createTerminal(workspace, "claude-login", id);
-                setClaudeAccountsOpen(false);
-              }} />
-          </div>
-        </Modal>
       )}
       {tailscaleOpen && <TailscalePanel status={status} onClose={() => setTailscaleOpen(false)}
         onConfirm={confirm} onInstall={async () => {
