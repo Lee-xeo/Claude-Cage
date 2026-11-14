@@ -10,7 +10,10 @@ import (
 	"github.com/sylvinus/agent-vm/internal/version"
 )
 
-func TestAboutUsesLocalBuildAndAuthenticatedManagedEgress(t *testing.T) {
+func TestAboutUsesLocalBuildAndAuthenticatedUpdateEgress(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
 	s := testServer(t)
 	// A selected remote host must never own this software's build information.
 	s.remote = newRemoteGateway(s.profile)
@@ -35,7 +38,7 @@ func TestAboutUsesLocalBuildAndAuthenticatedManagedEgress(t *testing.T) {
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &check) != nil {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
-	if check.Source.Status != "failed" || check.Release.Status != "failed" || !strings.Contains(check.Source.Error, "请先配置") {
+	if check.Source.Status != "failed" || check.Release.Status != "failed" {
 		t.Fatalf("%+v", check)
 	}
 	if strings.Contains(w.Body.String(), "secret") {

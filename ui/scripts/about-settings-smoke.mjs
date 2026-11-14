@@ -33,6 +33,7 @@ for (const platform of ["darwin", "windows", "linux"]) {
     const about = page.getByRole("region", { name: "关于 Cage", exact: true });
     await about.getByText("0.1.7", { exact: true }).waitFor();
     await about.getByText("aaaaaaaaaaaa", { exact: true }).waitFor();
+    await about.getByText(/优先通过主机网络与系统代理/).waitFor();
     assert.equal(checks, 0, "opening About must not trigger an online check");
     assert.ok(await about.getByText(/包含未提交的修改/).isVisible());
     assert.equal(await page.getByRole("button", { name: "保存设置", exact: true }).count(), 0);

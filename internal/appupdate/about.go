@@ -35,15 +35,12 @@ type AboutCheck struct {
 }
 
 // CheckAbout only reads metadata. It never downloads, installs, or changes the
-// native updater's stable/prerelease channel, and never falls back to direct egress.
+// native updater's stable/prerelease channel.
 func CheckAbout(ctx context.Context, configPath string) AboutCheck {
 	ctx, cancel := context.WithTimeout(ctx, 75*time.Second)
 	defer cancel()
 	b := version.CurrentBuild()
-	client, err := managedClient(ctx, configPath)
-	if err != nil {
-		return AboutCheck{Build: b, Source: checkFailure(err), Release: checkFailure(err), CheckedAt: time.Now().UTC().Format(time.RFC3339)}
-	}
+	client := updateClient(configPath)
 	defer client.CloseIdleConnections()
 	return checkAbout(ctx, client, b)
 }
