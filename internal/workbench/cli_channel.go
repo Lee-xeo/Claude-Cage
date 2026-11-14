@@ -83,6 +83,7 @@ type terminalConversation struct {
 	ChannelReady        bool         `json:"channel_ready"`
 	HasHistory          bool         `json:"has_history"`
 	Running             bool         `json:"running"`
+	ClaudeDesktop       bool         `json:"claude_desktop"`
 	Active              bool         `json:"active"`
 	ConnectionNotice    string       `json:"connection_notice"`
 	HistoryTruncated    bool         `json:"history_truncated"`
@@ -196,6 +197,7 @@ func (s *Server) discoverTerminalConversations(ctx context.Context, paths []stri
 	defer m.mu.Unlock()
 	known := map[string]*mobileRecord{}
 	running := map[string]bool{}
+	desktop := map[string]bool{}
 	for id := range m.catalog {
 		record, err := m.record(s.profile, id)
 		if err != nil {
@@ -255,9 +257,11 @@ func (s *Server) discoverTerminalConversations(ctx context.Context, paths []stri
 		}
 		m.catalog[record.ID] = record.summary()
 		running[record.ID] = running[record.ID] || item.Running
+		desktop[record.ID] = desktop[record.ID] || item.Running && item.ClaudeDesktop
 		known[record.CLIID] = record
 	}
 	m.running = running
+	m.desktop = desktop
 	return nil
 }
 

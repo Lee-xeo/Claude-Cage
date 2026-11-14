@@ -14,6 +14,7 @@ export function projectSessionRows(tabs, sessions, saved, manualOrder, baseline)
     return { ...tab, claudeAccountNumber: session?.account_id ? session.claudeAccountNumber : tab.claudeAccountNumber,
       sessionActive: Boolean(session?.active),
       sessionRunningElsewhere: Boolean(tab.historySession && session?.running),
+      sessionClaudeDesktop: Boolean(tab.historySession && session?.running && session?.claude_desktop),
       sessionPinned: Boolean(session ? session.pinned : saved[tab.id]?.pinned) };
   });
   for (const row of rows) if (!baseline.has(sessionKey(row))) baseline.set(sessionKey(row), baseline.size);

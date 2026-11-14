@@ -9,14 +9,17 @@ const sessions = [
 ];
 const keys = rows => rows.map(sessionKey);
 test("external running state blocks only history without an owned live terminal", () => {
-  const running = [{id:"external",running:true}, {id:"owned",running:true}, {id:"stopped",running:false}];
+  const running = [{id:"external",running:true}, {id:"owned",running:true,claude_desktop:true}, {id:"stopped",running:false,claude_desktop:true}, {id:"desktop",running:true,claude_desktop:true}];
   const tabs = [{id:"terminal:owned",cli_session_id:"owned"}, {id:"terminal:old",cli_session_id:"external",closed:true}];
   const rows = projectSessionRows(tabs, running, {}, undefined, new Map());
   assert.equal(rows.find(row=>row.cli_session_id==="external").sessionRunningElsewhere,true);
   assert.equal(rows.find(row=>row.cli_session_id==="owned").sessionRunningElsewhere,false);
   assert.equal(rows.find(row=>row.cli_session_id==="stopped").sessionRunningElsewhere,false);
+  assert.equal(rows.find(row=>row.cli_session_id==="desktop").sessionClaudeDesktop,true);
+  assert.equal(rows.filter(row=>row.sessionClaudeDesktop).length,1,"only confirmed live Desktop history gets a desktop indicator");
   const exited = projectSessionRows(tabs, running.map(session=>({...session,running:false})), {}, undefined, new Map());
   assert.equal(exited.some(row=>row.sessionRunningElsewhere),false);
+  assert.equal(exited.some(row=>row.sessionClaudeDesktop),false);
 });
 test("default activity, stable clicks and terminal attachment", () => {
   const baseline = new Map();

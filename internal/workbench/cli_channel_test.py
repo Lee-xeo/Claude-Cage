@@ -251,6 +251,29 @@ class ChannelTests(unittest.TestCase):
             completed.stdout = "[]"
             self.assertFalse(any(item["running"] for item in channel.discover(request)))
 
+    def test_discovery_identifies_desktop_from_live_registration_only(self):
+        self.history(self.session, self.project, [{"type":"user", "entrypoint":"claude-desktop", "message":{"content":"hello"}}])
+        request = {"accounts":["default"], "workspaces":{self.project:self.project}}
+        row = {"sessionId":self.session, "pid":os.getpid(), "startedAt":123, "status":"idle"}
+        registry = self.home / ".claude/sessions" / (str(os.getpid()) + ".json")
+        channel.save(registry, {**row, "entrypoint":"claude-desktop"})
+        with patch.object(channel, "running_sessions", return_value=[row]):
+            for entrypoint in ("claude-desktop", "claude-desktop-3p", "local-agent", "local_agent", "remote_desktop", "cli", "claude-vscode", "sdk-ts", "", "future-client"):
+                with self.subTest(entrypoint=entrypoint):
+                    channel.save(registry, {**row, "entrypoint":entrypoint})
+                    self.assertEqual(channel.discover(request)[0]["claude_desktop"], entrypoint in ("claude-desktop", "claude-desktop-3p", "local-agent", "local_agent", "remote_desktop"))
+            for invalid in ({**row, "startedAt":122}, {**row, "sessionId":str(uuid.uuid4())}, {**row, "pid":1}):
+                channel.save(registry, {**invalid, "entrypoint":"claude-desktop"})
+                self.assertFalse(channel.discover(request)[0]["claude_desktop"], "stale registration claimed Desktop ownership")
+            registry.write_text("invalid json")
+            self.assertFalse(channel.discover(request)[0]["claude_desktop"])
+            registry.unlink()
+            self.assertFalse(channel.discover(request)[0]["claude_desktop"], "transcript origin was used as live ownership")
+            row["entrypoint"] = "claude-desktop"
+            self.assertTrue(channel.discover(request)[0]["claude_desktop"], "explicit CLI source was ignored")
+        with patch.object(channel, "running_sessions", return_value=[]):
+            self.assertFalse(channel.discover(request)[0]["claude_desktop"])
+
     def test_purge_removes_only_target_transcripts_and_retries(self):
         target = self.history(self.session, self.project, [{"type":"user", "message":{"content":"delete this"}}])
         other = self.history(str(uuid.uuid4()), self.project, [{"type":"user", "message":{"content":"keep this"}}])

@@ -24,23 +24,24 @@ const (
 )
 
 type mobileSummary struct {
-	AccountID    string    `json:"account_id,omitempty"`
-	AccountLabel string    `json:"account_label,omitempty"`
-	Generation   string    `json:"generation"`
-	ID           string    `json:"id"`
-	Workspace    string    `json:"workspace"`
-	Title        string    `json:"title"`
-	CustomTitle  string    `json:"custom_title,omitempty"`
-	Pinned       bool      `json:"pinned"`
-	Active       bool      `json:"active"`
-	Running      bool      `json:"running"`
-	MetadataSet  bool      `json:"metadata_set"`
-	Deleted      bool      `json:"deleted,omitempty"`
-	Archived     bool      `json:"archived,omitempty"`
-	Purged       bool      `json:"purged,omitempty"`
-	Deleting     bool      `json:"deleting,omitempty"`
-	Revision     uint64    `json:"revision"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	AccountID     string    `json:"account_id,omitempty"`
+	AccountLabel  string    `json:"account_label,omitempty"`
+	Generation    string    `json:"generation"`
+	ID            string    `json:"id"`
+	Workspace     string    `json:"workspace"`
+	Title         string    `json:"title"`
+	CustomTitle   string    `json:"custom_title,omitempty"`
+	Pinned        bool      `json:"pinned"`
+	Active        bool      `json:"active"`
+	Running       bool      `json:"running"`
+	ClaudeDesktop bool      `json:"claude_desktop,omitempty"`
+	MetadataSet   bool      `json:"metadata_set"`
+	Deleted       bool      `json:"deleted,omitempty"`
+	Archived      bool      `json:"archived,omitempty"`
+	Purged        bool      `json:"purged,omitempty"`
+	Deleting      bool      `json:"deleting,omitempty"`
+	Revision      uint64    `json:"revision"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 type mobileTurn struct {
 	Tools       []cliconversation.ToolActivity `json:"tools,omitempty"`
@@ -135,6 +136,7 @@ type mobileCLIStore struct {
 	active     map[string]*mobileRun
 	catalog    map[string]mobileSummary
 	running    map[string]bool // Fresh guest process observation, never restored from disk.
+	desktop    map[string]bool // Claude Desktop ownership from the same live observation.
 	generation string
 }
 
@@ -272,6 +274,7 @@ func (m *mobileCLIStore) summaries(profile string, granted map[string]bool, arch
 			summary.Active = run.record.turnActive()
 		}
 		summary.Running = m.running[id]
+		summary.ClaudeDesktop = summary.Running && m.desktop[id]
 		if granted[summary.Workspace] && !summary.Deleted && summary.Archived == archived {
 			if summary.CustomTitle != "" {
 				summary.Title = summary.CustomTitle

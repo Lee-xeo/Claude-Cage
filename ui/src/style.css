@@ -1591,6 +1591,23 @@ svg {
 }
 .session-activity { margin-left: auto; flex: none; }
 .tab-pin + .session-activity { margin-left: 0; }
+.sidebar-tab.session-occupied > .sidebar-session:disabled { opacity: 1; }
+.session-owner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 26px;
+  height: 26px;
+  margin-right: 3px;
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: help;
+}
+.session-owner:is(:hover, :focus-visible) {
+  color: var(--strong);
+  background: var(--paper);
+}
+.session-owner:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .sidebar-tab.dragging { opacity: .5; }
 .tab-favicon {
   flex: 0 0 auto;

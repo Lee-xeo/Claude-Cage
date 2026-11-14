@@ -328,12 +328,17 @@ def discover(request):
             configs.add(state["config"])
     for config_name in configs:
         config = Path(config_name)
-        running_ids = None
+        running = None
         def observed_running():
-            nonlocal running_ids
-            if running_ids is None:
-                running_ids = {row.get("sessionId") for row in running_sessions(config_name)}
-            return running_ids
+            nonlocal running
+            if running is None:
+                running = running_sessions(config_name)
+            return running
+        def process_state(session_id):
+            rows = [row for row in observed_running() if row.get("sessionId") == session_id]
+            return {"running": bool(rows), "claude_desktop": any(
+                session_entrypoint(row, config) in ("claude-desktop", "claude-desktop-3p", "local-agent", "local_agent", "remote_desktop")
+                for row in rows)}
         paths = sorted((config / "projects").glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
         found = set()
         for path in paths:
@@ -347,9 +352,11 @@ def discover(request):
             if not any(workspace_within(workspace, root) for root in allowed):
                 continue
             connection, state = connection_for(session_id, config)
+            process = process_state(session_id)
             item = {"cli_id": session_id, "config": config_name, "connection": connection,
                     "workspace": workspace, "title": title or "Claude Code", "updated_at": path.stat().st_mtime,
-                    "running": session_id in observed_running() or bool(live(state.get("pid")) and not state.get("closed")),
+                    "running": process["running"] or bool(live(state.get("pid")) and not state.get("closed")),
+                    "claude_desktop": process["claude_desktop"],
                     "active": bool(live(state.get("pid")) and not state.get("closed") and (state.get("busy") or state.get("approvals")))}
             found.add(session_id)
             sessions.append(item)
@@ -360,7 +367,9 @@ def discover(request):
             if state.get("config") != config_name or not session_id or session_id in found or not any(workspace_within(workspace, root) for root in allowed):
                 continue
             item = view(config, session_id)
-            item["running"] = item["running"] or session_id in observed_running()
+            process = process_state(session_id)
+            item["running"] = item["running"] or process["running"]
+            item["claude_desktop"] = process["claude_desktop"]
             item.pop("turns")
             sessions.append(item)
     return sessions
@@ -462,6 +471,25 @@ def running_sessions(config=""):
     if listing.returncode != 0:
         raise ValueError("无法检查原会话是否仍在运行")
     return [row for row in json.loads(listing.stdout) if live(row.get("pid"))]
+
+
+def session_entrypoint(row, config):
+    # agents --json omits entrypoint in some CLI versions. Read only the
+    # matching live registration, never transcript origins or process arguments.
+    if row.get("entrypoint"):
+        return row["entrypoint"]
+    pid = row.get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        return ""
+    try:
+        with (config / "sessions" / (str(pid) + ".json")).open() as stream:
+            state = json.loads(stream.read(64 << 10))
+        if (state.get("pid") == pid and state.get("sessionId") == row.get("sessionId")
+                and row.get("startedAt") is not None and state.get("startedAt") == row["startedAt"]):
+            return state.get("entrypoint", "")
+    except (OSError, ValueError, AttributeError):
+        pass
+    return ""
 
 
 def handoff_session(request):
