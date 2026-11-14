@@ -1,7 +1,29 @@
+.workspace[hidden] { display: none; }
+.claude-accounts-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--paper);
+}
+.claude-accounts-header {
+  min-height: var(--workbench-header-height);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+}
+.claude-accounts-header h1 {
+  margin: 0;
+  font-size: 1.1429rem;
+  font-weight: 600;
+}
 .claude-accounts-content {
   display: flex;
   flex-direction: column;
-  height: min(680px, calc(100dvh - 104px));
+  flex: 1;
   min-height: 0;
   padding: 22px;
   overflow-y: auto;

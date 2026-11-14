@@ -21,7 +21,9 @@ const joins = [];
 const now = Math.floor(Date.now() / 1000);
 const openAccounts = async () => {
   await page.getByRole("button", { name: "Claude 账号管理", exact: true }).click();
-  await page.locator(".modal-scrim").evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+  await page.getByRole("main", { name: "Claude 账号管理", exact: true }).waitFor();
+  assert.ok(await page.getByRole("navigation", { name: "主导航" }).isVisible());
+  assert.equal(await page.getByRole("dialog", { name: "Claude 账号管理", exact: true }).count(), 0);
 };
 
 async function checkLongAccountList() {
@@ -84,7 +86,7 @@ async function checkLongAccountList() {
       "5h and 7d progress bars must start and end at the same horizontal positions");
     assert.ok(first.y + first.height <= second.y, "the two limits occupy separate rows");
   }
-  await page.getByRole("button", { name: "关闭面板", exact: true }).click();
+  await page.getByRole("button", { name: "工作台", exact: true }).click();
   await page.setViewportSize({ width: 1280, height: 850 });
 }
 
@@ -150,7 +152,7 @@ async function checkUsagePanel() {
   assert.ok(await list.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), "window history fits the narrow account list");
   await page.setViewportSize({ width: 1280, height: 850 });
   assert.equal(waves(), before + 1, "polling the completed query does not start another query");
-  const back = page.getByRole("button", { name: "关闭面板", exact: true });
+  const back = page.getByRole("button", { name: "工作台", exact: true });
   await back.click();
   offlineUsage = true;
   await openAccounts();
@@ -237,7 +239,7 @@ try {
     await plus.click();
     await page.getByRole("menuitem", { name: /Claude 终端$/ }).press("Enter");
   };
-  const back = () => page.getByRole("button", { name: "关闭面板", exact: true }).click();
+  const back = () => page.getByRole("button", { name: "工作台", exact: true }).click();
   const profileCard = (label) => page.getByRole("article", { name: label, exact: true });
   const rename = async (before, label) => {
     const row = profileCard(before);
