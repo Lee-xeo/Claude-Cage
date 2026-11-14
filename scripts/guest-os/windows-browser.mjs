@@ -112,6 +112,16 @@ export function createNativeBrowserService(options = {}) {
   const destination = options.downloadDirectory ?? path.join(homedir(), "Downloads", "Cage");
   let context, owner, browserCDP, initialized, closing, proxy, networkMode = "proxy", configured = false;
   let active = "", home = options.homepage ?? "https://www.bing.com/", displayScale = options.displayScale ?? 2;
+  const homepageRedirects = new WeakMap();
+  const isNativeNewTab = url => /^chrome:\/\/(newtab|new-tab-page|new-tab-page-third-party)\/?(?:[?#].*)?$/.test(url);
+  function restoreHomepage(page) {
+    if (page.isClosed() || !isNativeNewTab(page.url())) return Promise.resolve();
+    if (homepageRedirects.has(page)) return homepageRedirects.get(page);
+    const pending = page.goto(home, { waitUntil: "commit", timeout: 8000 })
+      .finally(() => homepageRedirects.delete(page));
+    homepageRedirects.set(page, pending);
+    return pending;
+  }
   let timezone, language;
   let viewport = { width: 1140, height: 700 }, persistQueue = Promise.resolve();
   const tabs = new Map(), byPage = new WeakMap(), sessions = new Map(), frameSessions = new WeakMap(), internalPages = new WeakSet();
@@ -415,6 +425,7 @@ export function createNativeBrowserService(options = {}) {
     });
     page.on("framenavigated", frame => {
       if (frame === page.mainFrame()) {
+        void restoreHomepage(page).catch(() => {});
         if (active === id) invalidateCopies();
         if (tab.kind !== "editor") {
           try {
@@ -464,6 +475,7 @@ export function createNativeBrowserService(options = {}) {
     }
     })();
     await tab.ready;
+    await restoreHomepage(page);
     if (!active) active = id;
     changed(); return tab;
   }
@@ -1135,7 +1147,11 @@ export function createNativeBrowserService(options = {}) {
       if (url !== "about:blank") await page.goto(url, { waitUntil: "commit", timeout: 8000 });
       remember(); return { id: tab.id };
     }
-    if (action === "homepage") { home = checkedBrowserURL(input.url); return { ok: true }; }
+    if (action === "homepage") {
+      home = checkedBrowserURL(input.url);
+      for (const tab of tabs.values()) await restoreHomepage(tab.page);
+      return { ok: true };
+    }
     if (action === "resize") {
       if (![input.width, input.height].every(Number.isInteger) || input.width < 320 || input.height < 240 || input.width > 8192 || input.height > 8192 || input.width * input.height > 16000000) throw failure("invalid_input", "Invalid display size");
       viewport = { width: Math.ceil(input.width / displayScale), height: Math.ceil(input.height / displayScale) };

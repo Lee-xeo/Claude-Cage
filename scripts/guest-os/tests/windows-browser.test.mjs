@@ -98,6 +98,33 @@ async function fixture(t, configured = {}) {
   } };
 }
 
+integration("native new-tab pages use the configured homepage without replacing ordinary pages", async t => {
+  const f = await fixture(t);
+  await f.open("/retained");
+  await f.call("homepage", { url: f.url + "/home" });
+  const cdp = await f.context().browser().newBrowserCDPSession();
+  for (const [index, url] of ["chrome://newtab/", "chrome://new-tab-page/", "chrome://new-tab-page-third-party/"].entries()) {
+    await cdp.send("Target.createTarget", { url });
+    let state;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      state = await f.call("tabs", {}, "GET");
+      if (state.tabs.filter(tab => tab.url === f.url + "/home").length === index + 1) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(state.tabs.filter(tab => tab.url === f.url + "/home").length, index + 1);
+    assert.ok(state.tabs.some(tab => tab.url === f.url + "/retained"));
+  }
+  const blank = await f.context().newPage();
+  await blank.waitForLoadState("domcontentloaded");
+  await f.call("tabs", {}, "GET");
+  assert.equal(blank.url(), "about:blank", "blank popup/login pages must not be redirected");
+  await blank.close();
+  await cdp.detach();
+  const restored = await f.restart();
+  assert.ok(restored.tabs.some(tab => tab.url === f.url + "/retained"));
+  assert.ok(!restored.tabs.some(tab => /^chrome:\/\/new/.test(tab.url)));
+});
+
 integration("interactive browser identity is native in normal and private documents", async t => {
   const f = await fixture(t);
   for (const incognito of [false, true]) {
