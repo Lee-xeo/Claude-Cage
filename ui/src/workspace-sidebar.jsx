@@ -9,7 +9,6 @@ import {
   Home,
   Monitor,
   Network,
-  MessageCircle,
   PanelLeftClose,
   Plus,
   RefreshCw,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react";
 import { EnvironmentShield } from "./environment-shield";
 import logo from "./logo.png";
+import claudeLogo from "./claude-logo.svg";
 import { projectName } from "./workspace-state.mjs";
 import { WorkspaceTabs } from "./workspace-tabs";
 import { projectSessionRows, sessionKey } from "./session-order.mjs";
@@ -112,22 +112,30 @@ export function WorkspaceSidebar({
           <Home size={17} />
           工作台
         </button>
-        <button
-          className={`sidebar-link ${!desktopOpen && !home && tabs.some((tab) => tab.id === active && tab.kind !== "terminal") ? "selected" : ""}`}
-          onClick={onBrowser}
-          disabled={!ready || busy}
-          aria-label="打开浏览器"
-          title="打开浏览器"
-        >
-          <Globe2 size={17} />
-          浏览器
-        </button>
+        <div className={`sidebar-browser-row ${!desktopOpen && !home && tabs.some((tab) => tab.id === active && tab.kind !== "terminal") ? "selected" : ""}`}>
+          <button
+            className="sidebar-link"
+            onClick={onBrowser}
+            disabled={!ready || busy}
+            aria-label="打开浏览器"
+            title="打开浏览器"
+          >
+            <Globe2 size={17} />
+            浏览器
+          </button>
+          <button
+            className="icon-button sidebar-claude-shortcut"
+            onClick={onClaudeWeb}
+            disabled={!ready || busy}
+            aria-label="claude.ai"
+            title="打开 claude.ai"
+          >
+            <img src={claudeLogo} width="18" height="18" alt="" />
+          </button>
+        </div>
         <button className="sidebar-link" onClick={onTailscale} aria-label="打开 Tailscale"><Network size={17} />Tailscale</button>
         {ssh && <button className="sidebar-link ssh-navigation" onClick={ssh.open} aria-label="SSH 主机"><Server size={17} />SSH</button>}
-        <div className="claude-shortcuts">
-          <button className="sidebar-link" onClick={onClaudeWeb} disabled={!ready || busy} title="在 Cage 浏览器打开 claude.ai"><MessageCircle size={17} />claude.ai</button>
-          <button className={`sidebar-link ${desktopOpen ? "selected" : ""}`} onClick={onClaudeDesktop} disabled={!running || busy} title="安装或打开 Claude Desktop"><Monitor size={17} />Claude Desktop</button>
-        </div>
+        <button className={`sidebar-link ${desktopOpen ? "selected" : ""}`} onClick={onClaudeDesktop} disabled={!running || busy} title="安装或打开 Claude Desktop"><Monitor size={17} />Claude Desktop</button>
         {downloadAction}
       </nav>
       <div className="sidebar-scroll">
