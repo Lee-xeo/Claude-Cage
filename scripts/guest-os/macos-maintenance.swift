@@ -51,7 +51,7 @@ enum MacProjectSetup {
 // Only Apple system settings and its authorization UI can supply a target.
 @MainActor
 enum MacMaintenance {
-    private static let applications: Set<String> = ["com.apple.systempreferences", "com.apple.authorizationhost"]
+    private static let applications: Set<String> = ["com.apple.systempreferences", "com.apple.authorizationhost", "com.apple.UserNotificationCenter"]
     private static let panes = [
         "projects": "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.fskit.fsmodule",
         "screen": "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
@@ -123,7 +123,10 @@ enum MacMaintenance {
                   let bounds = CGRect(dictionaryRepresentation: raw as CFDictionary), bounds.width > 0, bounds.height > 0,
                   (window[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { continue }
             let owner = window[kCGWindowOwnerPID as String] as? Int32
-            if owner == front.processIdentifier && bounds.width >= 100 && bounds.height >= 60 {
+            let app = owner.flatMap { NSRunningApplication(processIdentifier: $0) }
+            let consent = app.flatMap { $0.bundleIdentifier == "com.apple.UserNotificationCenter" && verified($0) ? $0 : nil }
+            let target = owner == front.processIdentifier ? front : consent
+            if let target, bounds.width >= 100 && bounds.height >= 60 {
                 let region = bounds.intersection(display)
                 guard !region.isNull, region.width >= 80, region.height >= 40,
                       let id = window[kCGWindowNumber as String] as? UInt32 else {
@@ -138,9 +141,9 @@ enum MacMaintenance {
                     return ["error": "maintenance_window_obscured", "blocking_pid": blocker.pid ?? 0,
                             "blocking_window": blocker.window ?? 0, "blocking_bundle": bundle ?? ""]
                 }
-                return ["version": 1, "session": session, "user": NSUserName(), "pid": front.processIdentifier,
-                    "window": id, "bundle": front.bundleIdentifier!,
-                    "password_focused": MacSetupPassword.passwordFocused(front, window: bounds),
+                return ["version": 1, "session": session, "user": NSUserName(), "pid": target.processIdentifier,
+                    "window": id, "bundle": target.bundleIdentifier!,
+                    "password_focused": MacSetupPassword.passwordFocused(target, window: bounds),
                     "rect": [region.minX, region.minY, region.width, region.height],
                     "display": [display.minX, display.minY, display.width, display.height]]
             }

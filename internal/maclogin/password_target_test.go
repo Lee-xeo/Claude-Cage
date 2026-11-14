@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+func TestSystemConsentDialogCanBeShownWithoutReceivingPasswords(t *testing.T) {
+	window := maintenanceFixture()
+	window.Bundle = "com.apple.UserNotificationCenter"
+	if !window.valid("trial") {
+		t.Fatal("Apple consent dialog was rejected as a display target")
+	}
+	target := passwordTarget{maintenanceWindow: window, Accessibility: true}
+	target.PasswordFocused = true
+	if target.valid("trial") || (passwordSelection{}).permits(target, "trial", time.Now()) {
+		t.Fatal("notification consent UI was granted password entry")
+	}
+}
+
 func TestFirstAuthorizationUsesFreshSelectedSystemPanelBeforeAccessibility(t *testing.T) {
 	now := time.Now()
 	target := passwordTarget{maintenanceWindow: maintenanceFixture(), SelectionRequired: true}

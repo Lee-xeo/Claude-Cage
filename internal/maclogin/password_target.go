@@ -11,7 +11,7 @@ type passwordTarget struct {
 // Installer is accepted only by first setup's credential probe, with an
 // Accessibility-confirmed secure field. Maintenance keeps its narrower scope.
 func (target passwordTarget) valid(user string) bool {
-	return target.maintenanceWindow.valid(user) || target.Bundle == "com.apple.installer" &&
+	return (target.Bundle == "com.apple.systempreferences" || target.Bundle == "com.apple.authorizationhost") && target.maintenanceWindow.valid(user) || target.Bundle == "com.apple.installer" &&
 		target.Accessibility && target.PasswordFocused && target.maintenanceWindow.validGeometry(user)
 }
 

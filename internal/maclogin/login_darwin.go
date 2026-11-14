@@ -121,7 +121,7 @@ func (s *loginSession) handle(in request) reply {
 		s.setup = in.Setup
 		s.screenID = s.currentScreen()
 		if s.screenID == "" {
-			return reply{Error: "客机已解锁，或尚未进入系统登录画面。"}
+			return reply{Error: "当前没有客机登录画面。客机已登录时可直接使用工作台应用；系统权限请使用授权设置入口。此按钮不打开完整客机桌面。"}
 		}
 		s.token = rand.Text()
 		s.expires = time.Now().Add(2 * time.Minute)

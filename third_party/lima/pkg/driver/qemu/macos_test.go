@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lima-vm/lima/v2/pkg/guestidentity"
 	"github.com/lima-vm/lima/v2/pkg/limatype"
 	"github.com/lima-vm/lima/v2/pkg/limatype/filenames"
 )
@@ -99,12 +100,16 @@ func TestMacOSArgumentsRequireControlledNetworkAndPrivateDisks(t *testing.T) {
 func TestMacOSArgumentsKeepOneNetworkForInstallerAndRuntime(t *testing.T) {
 	for _, install := range []bool{true, false} {
 		cfg, options := macOSFixture(t)
+		cfg.LimaYAML.GuestIdentity = &guestidentity.Identity{MACAddress: "52:54:00:12:34:56"}
 		options.Installer = install
 		args, err := macOSArguments(cfg, options)
 		if err != nil {
 			t.Fatal(err)
 		}
 		joined := strings.Join(args, " ")
+		if !strings.Contains(joined, "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56") {
+			t.Fatal("macOS NIC must match the per-instance network lease identity")
+		}
 		if !strings.Contains(joined, "-name lima-"+cfg.Name+" ") {
 			t.Fatal("macOS process must retain Lima's verifiable instance name")
 		}

@@ -135,7 +135,7 @@ func macOSArguments(cfg Config, options *limatype.QEMUMacOSOpts) ([]string, erro
 		"-drive", "id=cidata,if=none,format=raw,readonly=on,file=" + file(filenames.CIDataISO),
 		"-device", "ide-cd,bus=sata.3,drive=cidata",
 		"-netdev", "dgram,id=net0,local.type=fd,local.str={{ fd_dgram }}",
-		"-device", "virtio-net-pci,netdev=net0,mac=" + limayaml.MACAddress(cfg.InstanceDir),
+		"-device", "virtio-net-pci,netdev=net0,mac=" + limayaml.GuestMACAddress(y, cfg.InstanceDir),
 		"-display", "none", "-monitor", "none", "-parallel", "none",
 		"-chardev", "file,id=serial,path=" + file(filenames.SerialLog) + ",append=on",
 		"-serial", "chardev:serial", "-qmp", "unix:" + file(filenames.QMPSock) + ",server=on,wait=off",

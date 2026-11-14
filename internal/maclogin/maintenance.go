@@ -65,7 +65,7 @@ func (w maintenanceWindow) probeMessage() string {
 }
 
 func (w maintenanceWindow) valid(user string) bool {
-	return (w.Bundle == "com.apple.systempreferences" || w.Bundle == "com.apple.authorizationhost") && w.validGeometry(user)
+	return (w.Bundle == "com.apple.systempreferences" || w.Bundle == "com.apple.authorizationhost" || w.Bundle == "com.apple.UserNotificationCenter") && w.validGeometry(user)
 }
 
 func (w maintenanceWindow) validGeometry(user string) bool {
