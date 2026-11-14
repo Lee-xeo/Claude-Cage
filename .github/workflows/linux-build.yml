@@ -92,6 +92,7 @@ jobs:
           runuser -u cage -- go vet ./internal/managedproxy ./internal/workbench ./cmd/cage
           runuser -u cage -- uv run --no-project --python 3.11 internal/cage/desktop-downloads.test.py
           runuser -u cage -- uv run --no-project --python 3.11 internal/cage/display-governor.test.py
+          runuser -u cage -- uv run --no-project --python 3.11 internal/workbench/cache_maintenance_test.py
       - name: Ubuntu guest browser, extensions and noVNC dependencies
         run: runuser -u cage -- bash scripts/test-ubuntu-guest.sh
       - name: Install, render native workbench, reinstall and remove

@@ -9,7 +9,7 @@ namespace Cage.GuestClipboard;
 
 internal static class GuestOperations
 {
-    internal static readonly HashSet<string> Names = ["stream", "status", "import", "export", "terminal", "cli", "browser", "desktop", "attachments", "audio", "resources", "diagnostics", "versions", "safety", "project-mount", "network-stream", "network-settings"];
+    internal static readonly HashSet<string> Names = ["stream", "status", "import", "export", "terminal", "cli", "browser", "desktop", "attachments", "audio", "resources", "diagnostics", "versions", "safety", "project-mount", "network-stream", "network-settings", "cache-maintenance"];
     static readonly Dictionary<string, Func<Stream, CancellationToken, Func<bool>, Task>> handlers = new(StringComparer.Ordinal);
     internal static void Register(string name, Func<Stream, CancellationToken, Func<bool>, Task> handler)
     {

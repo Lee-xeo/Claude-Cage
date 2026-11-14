@@ -1,0 +1,12 @@
+.environment-cache { border-top: 1px solid var(--border); padding-top: 18px; margin-top: 18px; }
+.cache-items { display: grid; gap: 8px; margin: 14px 0; }
+.environment-cache .cache-item { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.cache-item > input { flex: 0 0 auto; width: auto; margin-top: 3px; }
+.cache-item > span:first-of-type { flex: 1; min-width: 0; }
+.cache-item strong { font-size: 14px; }
+.cache-item small { display: block; opacity: .72; font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
+.cache-size { text-align: right; white-space: nowrap; }
+.cache-protected, .cache-result { padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-top: 12px; }
+.cache-protected p, .cache-result p { margin: 6px 0 0; font-size: 13px; }
+.cache-recovery { margin-top: 16px; }
+@media (max-width: 520px) { .cache-item { flex-wrap: wrap; } .cache-size { width: 100%; text-align: left; padding-left: 24px; } }

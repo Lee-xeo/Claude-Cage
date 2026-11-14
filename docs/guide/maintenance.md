@@ -3,7 +3,7 @@ title: 维护、资源与数据
 description: 管理环境存储、CPU 和内存，分别更新应用与环境工具，保留可恢复的个人数据。
 group: 设置与维护
 order: 10
-keywords: 更新 升级 卸载 备份 迁移 存储 D盘 内存 CPU OOM 资源 组件 恢复
+keywords: 更新 升级 卸载 备份 迁移 存储 D盘 内存 CPU OOM 资源 组件 恢复 缓存 清理 盘点
 ---
 ## 数据保存在哪里
 
@@ -15,6 +15,23 @@ keywords: 更新 升级 卸载 备份 迁移 存储 D盘 内存 CPU OOM 资源 �
   <a href="../../www/public/docs/screenshots/environment-maintenance.jpg" target="_blank" rel="noopener" aria-label="查看原图：环境存储位置与版本组件入口"><img src="../../www/public/docs/screenshots/environment-maintenance.jpg" alt="环境存储位置与版本组件入口" width="2560" height="1764" loading="lazy" decoding="async" /></a>
   <figcaption>环境存储位置与版本组件入口。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/environment-maintenance.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
 </figure>
+
+## 环境清理
+
+入口：“设置 → 环境与恢复 → 环境清理”。macOS、Windows 和 Linux 共用这一流程，操作只作用于当前选中的工作环境。需要先启动环境；Windows 新增的维护能力需要同步当前应用的环境组件。
+
+1. 点击“只读盘点”。Cage 查看允许清单内缓存的大小、文件数量，以及账户、网站登录和会话存储等受保护位置是否存在。盘点不写入环境，也不读取凭据、Cookie 值或会话正文。文件存在状态不能判断是否已登录，以账户页和客户端实际显示为准。
+2. 勾选可清理项，点击“清理所选缓存”，核对确认框中的项目与大小。预览有效期为 10 分钟，执行前会重新核对进程和文件状态；缓存变化后需重新盘点。
+3. 查看结果。选定缓存移入环境内的私有恢复批次，原权限与内容保留。运行中的相关客户端、链接、挂载点、未知或不可访问目录均保留。不会强制关闭应用、终端或任务。
+4. 需要撤销时，在同一面板找到“缓存恢复批次”，点击“恢复此批缓存”。原位置已有新文件或客户端正在运行时，该项保留恢复副本并说明原因，不覆盖新数据。
+
+清理范围仅包含已知位置的 Claude Code `cache`、浏览器及 Claude Desktop 的 `Cache`、`Code Cache`、`GPUCache`。账户配置、登录凭据、钥匙串、Cookie、网站存储、会话、项目、技能、插件、浏览器历史与持久磁盘均不清理。没有发现某项缓存时不会创建它；相关应用仍在运行时，对应缓存会保留，关闭网页标签不一定结束浏览器进程。
+
+恢复副本仍占用空间，不会自动删除，因此清理完成不代表已释放磁盘空间。缓存可由客户端重新生成，首次加载可能稍慢。中途失败或连接中断后，保留原文件与恢复记录，重新盘点查看已完成的批次；不要直接重放旧清单或删除恢复目录。
+
+盘点、清理和恢复均由 Cage 内置程序执行，无需 Agent。打开设置、启动环境和后台运行都不会自动盘点或清理。该功能用于本地缓存维护，不改变账号状态或承诺解除平台限制。
+
+盘点、保护资料与可恢复处理的流程借鉴了 [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup) 和 [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian)。感谢社区项目提供参考；Cage 根据自身多账户与三平台边界独立实现，未集成其账户重置、ID 轮换或整机环境修改脚本。
 
 ## 迁移环境到另一块磁盘
 

@@ -400,6 +400,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
+	s.registerCacheMaintenance(mux)
 	mux.HandleFunc("GET /api/environment/guest-systems", s.guestInstallation)
 	mux.HandleFunc("GET /api/environment/guest-systems/clone", s.hostClone)
 	mux.HandleFunc("DELETE /api/environment/guest-systems", s.guestInstallation)

@@ -139,6 +139,7 @@ Cage — это независимый общественный проект, н
 - [code-server](https://github.com/coder/code-server): редактор кода на основе браузера.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): ссылки на рабочую среду и дизайн взаимодействия.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) и [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): ссылки для проверки сети и диагностики безопасности.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): пример точной инвентаризации, защиты данных и очистки кэша с восстановлением; независимая реализация в Cage.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

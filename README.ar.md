@@ -139,6 +139,7 @@ Cage هو مشروع مجتمعي مستقل ولا ينتمي إلى Anthropic.
 - [code-server](https://github.com/coder/code-server): محرر التعليمات البرمجية القائم على المتصفح.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): مراجع لبيئة العمل وتصميم التفاعل.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) و [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): مراجع لفحوصات الشبكة والتشخيص الأمني.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): مرجع لجرد البيانات وحمايتها وتنظيف الذاكرة المؤقتة مع إمكانية الاستعادة؛ تنفيذ مستقل في Cage.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

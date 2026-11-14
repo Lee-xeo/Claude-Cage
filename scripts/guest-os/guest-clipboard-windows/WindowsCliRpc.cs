@@ -127,6 +127,7 @@ internal static class WindowsCliRpc
         var tool=JsonNode.Parse(File.ReadAllBytes(toolsFile))as JsonObject??throw new InvalidDataException("cli_tools_invalid");
         return new Tools(CheckTool(tool,"python"),CheckTool(tool,"claude"),CheckTool(tool,"git_bash"),tool["gh"] is null?null:CheckTool(tool,"gh"));
     }
+    internal static string MaintenancePython() => LoadTools().Python;
     // Used by ordinary terminals as well as Claude, including before a new login.
     internal static Dictionary<string,string> ToolEnvironment()
     {
