@@ -59,16 +59,26 @@ function Start-Fixture([string]$Executable, [string]$Profile, [string[]]$Argumen
     foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
     return [Diagnostics.Process]::Start($start)
 }
-function Run-Installer([string]$Installer, [string]$Target) {
+function Run-Installer([string]$Installer, [string]$Target, [string]$Diagnostic) {
     $start = [Diagnostics.ProcessStartInfo]::new($Installer)
     $start.UseShellExecute = $false
     $start.WorkingDirectory = $root
-    $start.Arguments = '/S /DESKTOPSHORTCUT=0 /STARTMENUSHORTCUT=0 /D=' + $Target
+    $start.Arguments = '/S /DESKTOPSHORTCUT=0 /STARTMENUSHORTCUT=0 /DIAGNOSTICS="' + $Diagnostic + '" /D=' + $Target
     $process = [Diagnostics.Process]::Start($start)
     try {
         Check ($process.WaitForExit(180000)) 'The fixture installer timed out.'
         Check ($process.ExitCode -eq 0) "The fixture installer exited $($process.ExitCode)."
     } finally { $process.Dispose() }
+}
+function Read-InstallerDiagnostic([string]$Path) {
+    try {
+        $file = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+        if ($file -and !$file.PSIsContainer -and $file.Length -le 8192) {
+            return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+        }
+    } catch {
+        Write-Warning "Could not read installer diagnostic: $(Split-Path $Path -Leaf)"
+    }
 }
 function Build-Package([string]$Version) {
     $directory = Join-Path $root $Version
@@ -124,22 +134,25 @@ try {
             $bytes[1024] = $bytes[1024] -bxor 1
             [IO.File]::WriteAllBytes($installer, $bytes)
         }
-        Write-Text (Join-Path $profile 'fixture.json') (@{mode = $mode; installer = $installer} | ConvertTo-Json)
-        Run-Installer $old.setup $target
-        $originalHash = (Get-FileHash -LiteralPath (Join-Path $target 'Cage.exe')).Hash
-        $personal = @{
-            'account.json' = 'existing-account'; 'favorites.json' = 'existing-favorites';
-            'credentials/private.txt' = 'existing-login'; 'config.json' = 'existing-config'
-        }
-        foreach ($entry in $personal.GetEnumerator()) { Write-Text (Join-Path $profile $entry.Key) $entry.Value }
-        Write-Text (Join-Path $target 'my-project/work.txt') 'original project'
-        Write-Text (Join-Path $target 'CageData/state/persistent.img') 'existing-disk'
-        Write-Text (Join-Path $scenario 'outside-project/file.txt') 'outside-project'
-        $linkCommand = 'mklink /J "' + (Join-Path $target 'linked-project') + '" "' + (Join-Path $scenario 'outside-project') + '"'
-        & cmd.exe /d /c $linkCommand | Out-Null
-        Check ($LASTEXITCODE -eq 0) 'Could not create the isolated project junction.'
+        $initialDiagnostic = Join-Path $profile 'initial-installer.json'
+        $updateDiagnostic = Join-Path $profile 'update-installer.json'
         $holder = $null; $parent = $null; $helper = $null; $disk = $null
         try {
+            Write-Text (Join-Path $profile 'fixture.json') (@{mode = $mode; installer = $installer} | ConvertTo-Json)
+            Run-Installer $old.setup $target $initialDiagnostic
+            Check ((Read-InstallerDiagnostic $initialDiagnostic).status -eq 'success') 'The initial installer did not record success.'
+            $originalHash = (Get-FileHash -LiteralPath (Join-Path $target 'Cage.exe')).Hash
+            $personal = @{
+                'account.json' = 'existing-account'; 'favorites.json' = 'existing-favorites';
+                'credentials/private.txt' = 'existing-login'; 'config.json' = 'existing-config'
+            }
+            foreach ($entry in $personal.GetEnumerator()) { Write-Text (Join-Path $profile $entry.Key) $entry.Value }
+            Write-Text (Join-Path $target 'my-project/work.txt') 'original project'
+            Write-Text (Join-Path $target 'CageData/state/persistent.img') 'existing-disk'
+            Write-Text (Join-Path $scenario 'outside-project/file.txt') 'outside-project'
+            $linkCommand = 'mklink /J "' + (Join-Path $target 'linked-project') + '" "' + (Join-Path $scenario 'outside-project') + '"'
+            & cmd.exe /d /c $linkCommand | Out-Null
+            Check ($LASTEXITCODE -eq 0) 'Could not create the isolated project junction.'
             if ($mode -eq 'success') {
                 # A registered VM can keep its disk open while the update runs.
                 # CageData stays in place, so the open disk must not block it (#108).
@@ -172,6 +185,8 @@ try {
                 if ($helper) { Check ($helper.WaitForExit(180000)) 'The updater helper did not exit.' }
                 $result = Wait-File (Join-Path $profile 'updates/last-result.json')
                 Check ([bool]$result.success -eq ($mode -eq 'success')) "Unexpected installation result: $($result.message)"
+                $expectedInstallerStatus = if ($mode -eq 'installer-failure') { 'failed' } else { 'success' }
+                Check ((Read-InstallerDiagnostic $updateDiagnostic).status -eq $expectedInstallerStatus) "The update installer did not record $expectedInstallerStatus."
                 Check ($finished.exit -eq $(if ($mode -eq 'success') { 0 } else { 1 })) 'The helper result and transaction return value disagreed.'
                 if ($helper) { Check ($helper.ExitCode -eq $finished.exit) "The helper process exit ($($helper.ExitCode)) disagreed with the transaction result ($($finished.exit))." }
             }
@@ -206,7 +221,14 @@ try {
             $results += @{scenario = $mode; passed = $true; signatureVerification = $true; personalDataPreserved = $true}
             Write-Host "PASS: complete Windows update transaction ($mode)."
         } catch {
-            $results += @{scenario = $mode; passed = $false; error = $_.Exception.Message}
+            $diagnostics = @{
+                initialInstaller = Read-InstallerDiagnostic $initialDiagnostic
+                initialFileHelper = Read-InstallerDiagnostic "$initialDiagnostic.helper.json"
+                updateInstaller = Read-InstallerDiagnostic $updateDiagnostic
+                updateFileHelper = Read-InstallerDiagnostic "$updateDiagnostic.helper.json"
+            }
+            $results += @{scenario = $mode; passed = $false; error = $_.Exception.Message; diagnostics = $diagnostics}
+            Write-Host "Windows installer diagnostics ($mode): $($diagnostics | ConvertTo-Json -Depth 6 -Compress)"
             throw
         } finally {
             if ($disk) { $disk.Dispose() }
@@ -234,7 +256,7 @@ try {
     }
     $passed = $true
 } finally {
-    @{success = $passed; scenarios = $results; transport = 'local fixture'; readiness = 'headless acknowledgement'} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $reportPath
+    @{success = $passed; scenarios = $results; transport = 'local fixture'; readiness = 'headless acknowledgement'} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath
     if ($certificate) {
         foreach ($storeName in @('Root','TrustedPublisher')) { Remove-Item "Cert:\LocalMachine\$storeName\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue }
         Remove-Item "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -DeleteKey -Force -ErrorAction SilentlyContinue

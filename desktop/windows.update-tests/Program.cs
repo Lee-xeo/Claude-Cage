@@ -10,7 +10,7 @@ if (args is ["--install-update"])
     WriteRecord(Path.Combine(Backend.Root, "helper.json"), new {
         pid = Environment.ProcessId, directory = Environment.CurrentDirectory,
     });
-    var exit = await UpdateInstaller.Run();
+    var exit = await UpdateInstaller.Run(Path.Combine(Backend.Root, "update-installer.json"));
     WriteRecord(Path.Combine(Backend.Root, "helper-finished.json"), new { exit });
     return exit;
 }
