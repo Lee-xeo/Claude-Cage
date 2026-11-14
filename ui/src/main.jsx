@@ -179,7 +179,7 @@ function App() {
     ? nativeSplit?.left === leftId && nativeSplit?.right === rightId
     : !nativeSplit;
   const liveBrowser = webPanes.find(tab => tab.id === browser.active) || webPanes[0];
-  const liveBrowserVisible = !desktopOpen && !showHome && status?.ready &&
+  const liveBrowserVisible = !claudeAccountsOpen && !desktopOpen && !showHome && status?.ready &&
     liveBrowser && splitReady && (!split || browser.active === liveBrowser.id);
   const viewBeforeBrowser = useRef(null);
   const browserDismissed = useRef(false);
@@ -318,6 +318,7 @@ function App() {
     setSettingsOpen(true);
   };
   const select = async (id, focusContent = true) => {
+    setClaudeAccountsOpen(false);
     const tab = tabs.find((t) => t.id === id);
     if (tab && tab.kind !== "terminal") browserDismissed.current = false;
     setDesktopOpen(false);
@@ -377,6 +378,7 @@ function App() {
     browserDismissed.current = false;
     const result = await action("/browser/new", { url, incognito });
     if (result) {
+      setClaudeAccountsOpen(false);
       setDesktopOpen(false);
       setHome(false);
       setTabs((list) =>
@@ -401,7 +403,7 @@ function App() {
   const showBrowserResult = result => {
     if (!result?.id) return;
     browserDismissed.current = false;
-    setDesktopOpen(false); setHome(false);
+    setClaudeAccountsOpen(false); setDesktopOpen(false); setHome(false);
     setTabs(previous => previous.some(tab => tab.id === result.id)
       ? previous.map(tab => tab.id === result.id ? { ...tab, ...result } : tab)
       : [...previous, result]);
@@ -445,6 +447,7 @@ function App() {
     }
   };
   const showTerminal = result => {
+    setClaudeAccountsOpen(false);
     const tab = {
       ...result, id: "terminal:" + result.id, sessionId: result.id,
       terminalKind: result.kind, kind: "terminal",
@@ -515,6 +518,7 @@ function App() {
     browserDismissed.current = false;
     const result = await action("/browser/editor", { workspace: path });
     if (result) {
+      setClaudeAccountsOpen(false);
       setDesktopOpen(false);
       setHome(false);
       setTabs((list) =>
@@ -853,6 +857,15 @@ function App() {
     return () => clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
+    if (!claudeAccountsOpen) return;
+    document.getElementById("claude-accounts-title")?.focus();
+    const close = () => {
+      if (!document.querySelector('[role="dialog"], .settings-page')) setClaudeAccountsOpen(false);
+    };
+    document.addEventListener("cage-close-modal", close);
+    return () => document.removeEventListener("cage-close-modal", close);
+  }, [claudeAccountsOpen]);
+  useEffect(() => {
     const key = (event) => {
       if (document.querySelector("[data-environment-dialog]") || !primaryModifier(event)) return;
       const k = event.key.toLowerCase();
@@ -872,7 +885,7 @@ function App() {
         }
         return;
       }
-      if (k === "," && !projectDialog && !rename && !hostGitOpen && !claudeAccountsOpen) {
+      if (k === "," && !projectDialog && !rename && !hostGitOpen) {
         event.preventDefault();
         event.stopImmediatePropagation();
         openSettings();
@@ -978,7 +991,7 @@ function App() {
         return;
       }
       if (command === "settings") {
-        if (!projectDialog && !rename && !dialog && !claudeAccountsOpen) openSettings();
+        if (!projectDialog && !rename && !dialog) openSettings();
         return;
       }
       if (storageRecovery && ["openProject", "newTab", "newTerminal"].includes(command)) {
@@ -1360,11 +1373,12 @@ function App() {
     <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <div
         className="workbench-shell"
-        inert={settingsOpen || claudeAccountsOpen || hostGitOpen || undefined}
+        inert={settingsOpen || hostGitOpen || undefined}
       >
         {!sidebarCollapsed && (
           <WorkspaceSidebar
             onClaudeAccounts={() => setClaudeAccountsOpen(true)}
+            claudeAccountsOpen={claudeAccountsOpen}
             updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
             guestSystem={account?.guest_system || status.guest_system || guestSystem?.guest_system || "debian-13"}
@@ -1382,14 +1396,14 @@ function App() {
             onSessionPin={pinSession}
             onSessionRename={session => setRename({id:session.id, title:session.title, session:true})}
             saved={metadata}
-            active={active}
-            home={showHome}
+            active={claudeAccountsOpen ? "" : active}
+            home={!claudeAccountsOpen && showHome}
             busy={busy || storageRecovery}
             ready={status.ready}
             running={running}
             runtimeLabel={runtimeLabel}
             network={network}
-            onHome={() => { setDesktopOpen(false); setHome(true); }}
+            onHome={() => { setClaudeAccountsOpen(false); setDesktopOpen(false); setHome(true); }}
             onOpenProject={(path = "") => setProjectDialog({ path })}
             onSelect={select}
             onClose={closeTab}
@@ -1404,9 +1418,9 @@ function App() {
             terminalMenuAt={terminalMenuAt}
             onBrowser={openBrowser}
             onTailscale={() => setTailscaleOpen(true)}
-            desktopOpen={desktopOpen}
+            desktopOpen={!claudeAccountsOpen && desktopOpen}
             onClaudeWeb={() => openBrowserPage("https://claude.ai/")}
-            onClaudeDesktop={() => { setHome(false); setDesktopOpen(true); }}
+            onClaudeDesktop={() => { setClaudeAccountsOpen(false); setHome(false); setDesktopOpen(true); }}
             onEditor={openEditor}
             onSettings={openSettings}
             onAccountConfirm={confirm}
@@ -1418,7 +1432,7 @@ function App() {
           />
         )}
         <div className="workbench-main">
-          {showHome && terminalHeader(null)}
+          {!claudeAccountsOpen && showHome && terminalHeader(null)}
           {browserError && running && !connectionError && <div className="connection-banner" role="status">
             <span>客机浏览器暂时无法连接。{browserError}</span>
             <button onClick={() => refreshStatus.current?.()}>重试</button>
@@ -1435,16 +1449,29 @@ function App() {
               </button>
             </div>
           )}
-          <main className={`workspace ${split ? "workspace-split" : ""}`} ref={workspaceBox}
+          {claudeAccountsOpen && (
+            <main className="claude-accounts-page" aria-labelledby="claude-accounts-title">
+              <header className="chrome claude-accounts-header">
+                {sidebarButton()}
+                <h1 id="claude-accounts-title" tabIndex={-1}>Claude 账号管理</h1>
+              </header>
+              <div className="claude-accounts-content">
+                <ClaudeAccountsPanel store={claudeProfiles} tabs={tabs} onConfirm={confirm}
+                  running={status.vm_running} environmentBusy={busy || storageRecovery}
+                  login={(id) => createTerminal(workspace, "claude-login", id)} />
+              </div>
+            </main>
+          )}
+          <main className={`workspace ${split ? "workspace-split" : ""}`} ref={workspaceBox} hidden={claudeAccountsOpen}
             style={{ "--split-left": `${100 * (dualBrowser && nativeSplit?.fraction || 0.5)}%` }}>
             {dropSide && <div aria-hidden="true" className={`split-drop split-${dropSide}`}>{dropSide === "left" ? "放到左侧" : "放到右侧"}</div>}
             {!storageRecovery && desktopOpen && macGuest && <MacOSClaudeWindow uploads={desktopFiles.uploads} keyboard={status.keyboard} remoteRef={remote}
-              onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })} visible={!settingsOpen} onConfirm={confirm}
+              onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })} visible={!settingsOpen && !claudeAccountsOpen} onConfirm={confirm}
               sidebarCollapsed={sidebarCollapsed} onExpand={() => persist("cage-sidebar-collapsed", false, setSidebarCollapsed)} />}
             {!storageRecovery && desktopOpen && !macGuest && <ClaudeDesktop
               uploads={desktopFiles.uploads}
               onProjectOpened={() => refreshStatus.current?.()}
-              status={status} visible={!settingsOpen} remoteRef={remote}
+              status={status} visible={!settingsOpen && !claudeAccountsOpen} remoteRef={remote}
               onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })}
               onConfirm={confirm} onDetails={() => setDetails(true)}
               sidebarCollapsed={sidebarCollapsed}
@@ -1510,7 +1537,7 @@ function App() {
                             ? terminalControls.current.set(tab.id, control)
                             : terminalControls.current.delete(tab.id)
                         }
-                        visible={visible && !settingsOpen}
+                        visible={visible && !settingsOpen && !claudeAccountsOpen}
                         focused={active === tab.id}
                         onStatus={notify}
                         onAccountChanged={view => { if (view?.desktop_terminal_id && view.desktop_terminal_id !== tab.sessionId) void openSessionTerminal({id:tab.cli_session_id}); }}
@@ -1818,18 +1845,6 @@ function App() {
           onSaved={refreshSettings}
           onConfirm={confirm}
         />
-      )}
-      {claudeAccountsOpen && (
-        <Modal title="Claude 账号管理" wide onClose={() => setClaudeAccountsOpen(false)}>
-          <div className="claude-accounts-content">
-            <ClaudeAccountsPanel store={claudeProfiles} tabs={tabs} onConfirm={confirm}
-              running={status.vm_running} environmentBusy={busy || storageRecovery}
-              login={async (id) => {
-                await createTerminal(workspace, "claude-login", id);
-                setClaudeAccountsOpen(false);
-              }} />
-          </div>
-        </Modal>
       )}
       {tailscaleOpen && <TailscalePanel status={status} onClose={() => setTailscaleOpen(false)}
         onConfirm={confirm} onInstall={async () => {
