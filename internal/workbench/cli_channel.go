@@ -92,20 +92,20 @@ type terminalConversation struct {
 func cliChannelCommand(mode, argument string) string {
 	// Versioned helpers let an open terminal keep its original protocol while a
 	// rebuilt host begins new sessions. No account configuration is overwritten.
-	bootstrap := fmt.Sprintf(`import base64, gzip, os, pathlib, sys, tempfile
-folder = pathlib.Path.home() / ".local/share/cage/cli-channel-code"
-folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-name = "%x"
-files = gzip.decompress(base64.b85decode("%s")).decode("utf-8").split("\0")
-for suffix, content in zip((".py", ".resume.md", ".account-resume.md"), files):
-    path = folder / (name + suffix)
-    if not path.exists():
-        with tempfile.NamedTemporaryFile(dir=folder, delete=False) as stream:
-            stream.write(content.encode("utf-8"))
-            temporary = stream.name
-        os.replace(temporary, path)
-path = folder / (name + ".py")
-os.execv(sys.executable, [sys.executable, "-I", str(path), *sys.argv[1:]])
+	bootstrap := fmt.Sprintf(`import base64,gzip,os,pathlib,sys,tempfile
+folder=pathlib.Path.home()/".local/share/cage/cli-channel-code"
+folder.mkdir(parents=True,exist_ok=True,mode=0o700)
+name="%x"
+files=gzip.decompress(base64.b85decode("%s")).decode("utf-8").split("\0")
+for suffix,content in zip((".py",".resume.md",".account-resume.md"),files):
+ path=folder/(name+suffix)
+ if not path.exists():
+  with tempfile.NamedTemporaryFile(dir=folder,delete=False) as stream:
+   stream.write(content.encode("utf-8"))
+   temporary=stream.name
+  os.replace(temporary,path)
+path=folder/(name+".py")
+os.execv(sys.executable,[sys.executable,"-I",str(path),*sys.argv[1:]])
 `, sha256.Sum256([]byte(cliChannelHelper+cliResumePrompt+claudeAccountResumePrompt)), cliChannelEncoded)
 	return shellescape.QuoteCommand([]string{"python3", "-I", "-c", bootstrap, mode, argument})
 }
