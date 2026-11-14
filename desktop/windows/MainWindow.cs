@@ -25,6 +25,7 @@ internal sealed class MainWindow : Form
     public MainWindow()
     {
         nativeInput = new NativeInput(value => Script("window.dispatchEvent(new CustomEvent('cage-native-input',{detail:" + JsonSerializer.Serialize(value) + "}));"));
+        Deactivate += (_, _) => Script("window.dispatchEvent(new Event('cage-window-deactivated'));");
         AutoScaleMode = AutoScaleMode.Dpi; AutoScaleDimensions = new SizeF(96, 96);
         Text = "Cage";
         StartPosition = FormStartPosition.CenterScreen; BackColor = Color.FromArgb(247, 247, 247);
@@ -357,7 +358,11 @@ internal sealed class MainWindow : Form
             object? result;
             switch (request.Text("action"))
             {
-                case "remoteInput": result = nativeInput.ProcessRequest(request, web, web.ZoomFactor); break;
+                case "remoteInput":
+                    var accepted = nativeInput.ProcessRequest(request, web, web.ZoomFactor, out var returnedFocus);
+                    result = request.TryGetProperty("returnFocus", out var restore) && restore.ValueKind == JsonValueKind.True
+                        ? new { returnedFocus = accepted && returnedFocus } : accepted;
+                    break;
                 case "exportDiagnostics":
                     using (var picker = new SaveFileDialog { Title = "导出诊断包", Filter = "诊断包 (*.zip)|*.zip", FileName = "cage-diagnostics.zip", DefaultExt = "zip", AddExtension = true })
                     {

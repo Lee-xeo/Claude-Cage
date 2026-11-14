@@ -39,6 +39,7 @@ export function installRemoteInput(
     nativeTarget = "",
     nativeOwned = false,
     nativeFailed = false,
+    focusHandoff = null,
     disposed = false;
   const target = document.createElement("textarea");
   target.setAttribute("aria-label", inputLabel);
@@ -85,12 +86,35 @@ export function installRemoteInput(
       if (copyContext === context) cancelCopy();
     });
   };
-  const deactivateNative = () => {
+  const deactivateNative = (returnFocus = false) => {
     const owner = nativeOwner;
+    const handoff = owner && returnFocus && window.chrome?.webview
+      ? { tabId: nativeTarget }
+      : null;
+    focusHandoff = handoff;
     nativeOwned = false;
     nativeOwner = "";
     nativeTarget = "";
-    if (owner) void native("remoteInput", { operation: "deactivate", owner }).catch(() => {});
+    if (!owner) return;
+    if (composing) {
+      queueComposition({ mode: "cancel" });
+      resetComposition();
+    }
+    void native("remoteInput", {
+      operation: "deactivate",
+      owner,
+      ...(handoff && { returnFocus: true }),
+    }).then((reply) => {
+      if (!handoff || focusHandoff !== handoff) return;
+      focusHandoff = null;
+      if (reply?.returnedFocus === true && !disposed && !nativeOwned && isActive() &&
+          handoff.tabId === getTargetId() && document.hasFocus() &&
+          document.visibilityState !== "hidden" && target.isConnected) {
+        target.focus({ preventScroll: true });
+      }
+    }, () => {
+      if (handoff && focusHandoff === handoff) focusHandoff = null;
+    });
   };
   const updateNative = (rect) => {
     if (nativeFailed || !window.cageNativeIMEAvailable || !nativeAvailable() || !focused()) return;
@@ -124,7 +148,7 @@ export function installRemoteInput(
       }
       if (cursorOnly) return;
       caretState = value?.available ? { ...value, target: id, time: Date.now() } : null;
-      if (!value?.available) { deactivateNative(); return; }
+      if (!value?.available) { deactivateNative(true); return; }
       if (!value.rect || value.rect[3] <= 0) return;
       const canvas = surface?.() || container.querySelector("canvas");
       const width = value.width || canvas?.width, imageHeight = value.height || canvas?.height;
@@ -283,10 +307,14 @@ export function installRemoteInput(
     if (nativeOwned && !container.contains(event.target)) deactivateNative();
   });
   on(document, "pointerdown", (event) => {
+    focusHandoff = null;
     if (!container.contains(event.target)) cancelCopy();
   }, true);
   on(document, "visibilitychange", () => {
-    if (document.visibilityState === "hidden") cancelCopy();
+    if (document.visibilityState === "hidden") {
+      focusHandoff = null;
+      cancelCopy();
+    }
   });
   on(window, "cage-native-input", (event) => {
     const value = event.detail;
@@ -481,11 +509,18 @@ export function installRemoteInput(
     physical.clear();
     handled.clear();
   };
-  on(window, "blur", release);
+  on(window, "cage-input-interrupted", () => { focusHandoff = null; });
+  on(window, "cage-window-deactivated", () => { focusHandoff = null; });
+  on(window, "blur", () => {
+    // Moving between the native editor and WebView2 also raises DOM blur.
+    if (!window.chrome?.webview) focusHandoff = null;
+    release();
+  });
   on(
     document,
     "keydown",
     (event) => {
+      focusHandoff = null;
       if (!focused()) return;
       acted();
       if ((event.isTrusted || event.cageNativeInput) && (!copyContext || ["Enter", " ", "Tab"].includes(event.key) ||
