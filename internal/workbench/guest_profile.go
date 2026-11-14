@@ -5,6 +5,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"net/http"
+	"strings"
 )
 
 func (s *Server) linuxTemplate(script string) (string, error) {
@@ -16,6 +17,11 @@ func (s *Server) linuxTemplate(script string) (string, error) {
 		return "", err
 	}
 	return p.Linux(script), nil
+}
+
+func (s *Server) linuxPathHasPrefix(path, prefix string) bool {
+	rendered, err := s.linuxTemplate(prefix)
+	return err == nil && strings.HasPrefix(path, rendered)
 }
 
 func (s *Server) guestProfileOptions(w http.ResponseWriter, r *http.Request) {

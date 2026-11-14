@@ -36,6 +36,9 @@ func TestCreationPreferencesSurviveRetry(t *testing.T) {
 	if e != nil || script != "sudo -u alex cat /home/alex/file" {
 		t.Fatal("control command does not follow saved account")
 	}
+	if !s.linuxPathHasPrefix("/home/alex/.local/files/a", "/home/cage/.local/files/") || s.linuxPathHasPrefix("/home/cage/.local/files/a", "/home/cage/.local/files/") {
+		t.Fatal("attachment validator did not follow the configured home")
+	}
 }
 
 func TestGuestProfilePreviewRequiresTrustedWindow(t *testing.T) {

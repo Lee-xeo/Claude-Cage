@@ -145,6 +145,7 @@ func New(o Options) (*Profile, error) {
 		}
 		o.Hostname = i.Hostname
 	}
+	userRandom := o.Username == ""
 	for _, dst := range []*string{&o.Username, &o.BrowserUsername, &o.AudioName} {
 		if *dst == "" {
 			s, e := randomText(10)
@@ -154,8 +155,16 @@ func New(o Options) (*Profile, error) {
 			*dst = "u" + s
 		}
 	}
-	if o.Username == o.BrowserUsername {
-		return New(oWithoutBrowserUser(o))
+	for o.Username == o.BrowserUsername {
+		s, e := randomText(10)
+		if e != nil {
+			return nil, e
+		}
+		if userRandom {
+			o.Username = "u" + s
+		} else {
+			o.BrowserUsername = "u" + s
+		}
 	}
 	if o.AudioDescription == "" {
 		names := []string{"Speakers", "Headphones", "Digital Audio", "Stereo Output", "Built-in Audio", "Line Out"}
@@ -224,8 +233,6 @@ func New(o Options) (*Profile, error) {
 	p := &Profile{Version: 1, Options: o, ExtensionSuffix: string(s)}
 	return p, p.Validate()
 }
-
-func oWithoutBrowserUser(o Options) Options { o.BrowserUsername = ""; return o }
 
 func (p *Profile) Validate() error {
 	if p == nil || p.Version != 1 || !suffix.MatchString(p.ExtensionSuffix) {

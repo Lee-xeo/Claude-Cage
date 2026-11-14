@@ -83,13 +83,14 @@ func (r *Runtime) InstallAccess(ctx context.Context) error {
 if ! id "$1" >/dev/null 2>&1; then
   test "$(id -u cage)" = 1000
   usermod -l "$1" -d "/home/$1" -m cage
-  groupmod -n "$1" cage
 fi
 test "$(id -u "$1")" = 1000
+if getent group cage >/dev/null; then groupmod -n "$1" cage; fi
+test "$(id -gn "$1")" = "$1"
 if id cage-browser >/dev/null 2>&1; then
   usermod -l "$2" -d "/home/$2" -m cage-browser
-  groupmod -n "$2" cage-browser
 fi
+if getent group cage-browser >/dev/null; then groupmod -n "$2" cage-browser; fi
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$1" > /etc/sudoers.d/cage
 chmod 0440 /etc/sudoers.d/cage
 sed -i "s/^AllowUsers cage$/AllowUsers $1/" /etc/ssh/sshd_config.d/10-cage.conf

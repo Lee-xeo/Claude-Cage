@@ -448,7 +448,7 @@ func (s *Server) fileInputUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if target == "terminal" {
 		path, _ := result["path"].(string)
-		valid := strings.HasPrefix(path, "/home/cage/.local/share/cage/attachments/files/") && !strings.ContainsAny(path, "\x00\r\n")
+		valid := s.linuxPathHasPrefix(path, "/home/cage/.local/share/cage/attachments/files/") && !strings.ContainsAny(path, "\x00\r\n")
 		if s.windowsGuest != nil {
 			valid = validWindowsAttachmentPath(path, name)
 		}
