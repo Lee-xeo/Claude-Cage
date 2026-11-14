@@ -251,7 +251,7 @@ try {
 
     $extras=Join-Path $scratch 'extras'
     $null=New-Item -ItemType Directory $extras
-    foreach ($name in @('modules','split-extension','windows-browser.mjs','windows-browser-extensions.mjs','windows-phone-browser.mjs','install-windows-workbench-user-tools.ps1','install-cli.ps1','cli-dependencies.json')) {
+    foreach ($name in @('modules','split-extension','cage-tailnet.exe','tailnet-client.mjs','windows-browser.mjs','windows-browser-extensions.mjs','windows-phone-browser.mjs','install-windows-workbench-user-tools.ps1','install-cli.ps1','cli-dependencies.json')) {
         Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $extras -Recurse
     }
     if ($componentManifest) {

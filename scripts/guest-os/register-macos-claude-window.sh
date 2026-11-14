@@ -8,6 +8,7 @@ uid=$(id -u)
 [[ $uid -ge 500 && ( ${1:-} == --prepare || $(stat -f %u /dev/console) == "$uid" ) ]] || { echo 'Log into the guest as the intended desktop user.' >&2; exit 4; }
 app='/Applications/Cage Guest Window.app'
 codesign --verify --strict -R '=identifier "dev.cage.GuestClaudeWindow"' "$app"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app"
 label=dev.cage.GuestClaudeWindow
 cache="$HOME/Library/Caches/$label"
 agent="$HOME/Library/LaunchAgents/$label.plist"

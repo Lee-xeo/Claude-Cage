@@ -309,19 +309,16 @@ func TestInteractiveAuthorizationFlow(t *testing.T) {
 	defer n.stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if _, err = n.run(ctx, request{Action: "connect"}); err != nil {
+	value, err := n.run(ctx, request{Action: "connect"})
+	if err != nil || value.URL == "" {
+		t.Fatalf("connect did not deliver the local control server's login URL: %v", err)
+	}
+	if err := recordBrowserReturn(n.dir); err != nil {
 		t.Fatal(err)
 	}
-	var value state
-	for ctx.Err() == nil {
-		value, err = n.run(ctx, request{Action: "status"})
-		if err == nil && value.URL != "" {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if value.URL == "" {
-		t.Fatal("interactive flow did not publish auth URL")
+	pending, err := n.run(ctx, request{Action: "status"})
+	if err != nil || pending.ReturnID == "" || pending.Backend == "Running" {
+		t.Fatal("browser return must notify the workbench without authorizing a device")
 	}
 	if !control.CompleteAuth(value.URL) {
 		t.Fatal("auth flow not accepted")

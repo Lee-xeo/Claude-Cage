@@ -403,6 +403,16 @@ internal static class BrowserRpc
             StandardInputEncoding = Protocol.Utf8, StandardOutputEncoding = Protocol.Utf8, StandardErrorEncoding = Protocol.Utf8,
         };
         start.ArgumentList.Add(script);
+        var tailnet = Path.Combine(AppContext.BaseDirectory, "cage-tailnet.exe");
+        if (File.Exists(tailnet))
+        {
+            using var protocol = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\tailscale");
+            protocol.SetValue("", "URL:Tailscale");
+            protocol.SetValue("URL Protocol", "");
+            using var command = protocol.CreateSubKey(@"shell\open\command");
+            // Device authorization is completed by the node. Never pass web-supplied arguments.
+            command.SetValue("", $"\"{tailnet}\" --browser-return");
+        }
         browser = Process.Start(start) ?? throw new InvalidDataException("browser_unavailable");
         var process = browser;
         try { browserJob = new GuestProcessJob(process); }

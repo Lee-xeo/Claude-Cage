@@ -1,5 +1,5 @@
-.tailscale-panel { display: flex; flex-direction: column; gap: 20px; }
-.tailscale-overview { padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--chrome); }
+.tailscale-panel { width: 100%; max-width: 720px; container-type: inline-size; margin-inline: auto; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.tailscale-overview { padding-block: 4px; }
 .tailscale-state { display: flex; align-items: center; gap: 12px; }
 .tailscale-state > div:nth-child(2) { flex: 1; min-width: 0; }
 .tailscale-network-icon { display: flex; padding: 10px; background: var(--hover); border-radius: 10px; }
@@ -52,9 +52,8 @@
 .tailscale-notice { display: flex; gap: 6px; align-items: center; font-size: 12px; margin: 0; color: var(--accent); }
 .tailscale-health { border-left: 2px solid var(--accent); padding: 0 12px; font-size: 12px; }
 .tailscale-health p { margin: 6px 0 0; overflow-wrap: anywhere; }
-@media (max-width: 600px) {
+@container (max-width: 600px) {
   .tailscale-panel { gap: 16px; }
-  .tailscale-overview { padding: 14px; }
   .tailscale-peer-row { flex-wrap: wrap; gap: 9px; }
   .tailscale-peer-info { flex-basis: calc(100% - 100px); }
   .tailscale-presence { margin-left: 32px; }
@@ -68,4 +67,4 @@
 .tailscale-forward > span { flex: 1; min-width: 0; }
 .tailscale-forward strong { display: block; font-size: 11px; margin-bottom: 4px; }
 .tailscale-forward code { font-size: 12px; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .tailscale-forward { flex-wrap: wrap; } }
+@container (max-width: 600px) { .tailscale-forward { flex-wrap: wrap; } }

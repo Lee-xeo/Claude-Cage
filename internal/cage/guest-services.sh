@@ -20,6 +20,13 @@ if cage_is_ubuntu; then cage_browser_policy_dir=/etc/opt/chrome_for_testing/poli
 sudo install -d -m 0755 "$cage_browser_policy_dir"
 printf '%s\n' '{"PasswordManagerEnabled":false}' | sudo tee "$cage_browser_policy_dir/cage-password-vault.json" >/dev/null
 sudo chmod 0644 "$cage_browser_policy_dir/cage-password-vault.json"
+# Resolve Tailscale application links in the workbench browser's user session.
+if ! command -v xdg-mime >/dev/null; then
+  sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends xdg-utils </dev/null
+fi
+sudo install -d -m 0755 /usr/local/share/applications
+printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Tailscale' 'NoDisplay=true' 'Exec=/usr/local/bin/cage-open %u' 'MimeType=x-scheme-handler/tailscale;' | sudo tee /usr/local/share/applications/tailnet-login.desktop >/dev/null
+sudo -Hu cage-browser xdg-mime default tailnet-login.desktop x-scheme-handler/tailscale
 sudo tee /usr/local/bin/cage-editor-start >/dev/null <<'SCRIPT'
 #!/bin/sh
 set -eu
