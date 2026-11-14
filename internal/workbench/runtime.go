@@ -685,8 +685,6 @@ func (s *Server) monitorNetworkTick() {
 }
 
 func (s *Server) monitorNetwork(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
 	skipped := 0
 	for ctx.Err() == nil {
 		if s.op.TryLock() {
@@ -700,10 +698,16 @@ func (s *Server) monitorNetwork(ctx context.Context) {
 			timing.stages = append(timing.stages, fmt.Sprintf("consecutive_lock_skips=%d", skipped))
 			s.recordMonitorTiming("network", timing)
 		}
+		// Wait after completing the round, not from its start. A slow Windows
+		// interface probe can exceed this interval; a ticker would then deliver
+		// an overdue tick immediately and repeatedly monopolize the operation
+		// lock. Lease supervision also runs independently in startMonitors.
+		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }

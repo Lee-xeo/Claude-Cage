@@ -599,6 +599,9 @@ func (s *Server) handler() http.Handler {
 				return
 			}
 			ctx, cancel := context.WithCancel(r.Context())
+			if r.URL.Path == "/api/environment/initialization" {
+				ctx = context.WithValue(ctx, initializationEpochKey{}, epoch)
+			}
 			if strings.HasPrefix(r.URL.Path, "/api/mobile/") || strings.HasPrefix(r.URL.Path, "/api/cli/") {
 				ctx = context.WithValue(ctx, mobileEpochKey{}, epoch)
 			}
