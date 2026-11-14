@@ -112,6 +112,7 @@ def running_roles():
             executable = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
             result = subprocess.run([str(executable), "-NoProfile", "-NonInteractive", "-Command",
                                      "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process | Select-Object ProcessId,Name,CommandLine) -Compress"],
+                                    env={**os.environ, "PSModulePath": str(executable.parent / "Modules")},
                                     capture_output=True, text=True, encoding="utf-8", timeout=15, check=True)
             rows = json.loads(result.stdout.lstrip("\ufeff"))
             if not isinstance(rows, list) or not rows:
