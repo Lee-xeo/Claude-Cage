@@ -55,6 +55,7 @@ type state struct {
 	Enabled   bool           `json:"enabled"`
 	Backend   string         `json:"backend"`
 	URL       string         `json:"auth_url,omitempty"`
+	ReturnID  string         `json:"return_id,omitempty"`
 	Name      string         `json:"name,omitempty"`
 	Hostname  string         `json:"hostname,omitempty"`
 	OS        string         `json:"os,omitempty"`
@@ -186,6 +187,9 @@ func (n *node) snapshot(ctx context.Context) (state, error) {
 		return out, err
 	}
 	applyStatus(&out, status)
+	if marker, err := os.ReadFile(filepath.Join(n.dir, "browser-return")); err == nil {
+		out.ReturnID = string(marker)
+	}
 	out.Forwards = n.forwardsSnapshot()
 	if out.Backend == "Running" {
 		out.ProxyURL = n.proxyURL()
@@ -268,9 +272,7 @@ func (n *node) run(ctx context.Context, r request) (state, error) {
 			return state{}, err
 		}
 		if r.Action == "login" || !status.HaveNodeKey || status.BackendState == "NeedsLogin" {
-			if err := n.client.StartLoginInteractive(ctx); err != nil {
-				return state{}, err
-			}
+			return n.interactiveLogin(ctx)
 		}
 	case "disconnect":
 		n.config.Enabled = false
@@ -327,6 +329,42 @@ func (n *node) run(ctx context.Context, r request) (state, error) {
 		return state{}, errors.New("Tailscale 操作无效")
 	}
 	return n.snapshot(ctx)
+}
+
+// Subscribe before requesting login so an immediately reissued URL is received.
+func (n *node) interactiveLogin(ctx context.Context) (state, error) {
+	wait, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	watcher, err := n.client.WatchIPNBus(wait, 0)
+	if err != nil {
+		return state{}, err
+	}
+	defer watcher.Close()
+	if err := n.client.StartLoginInteractive(ctx); err != nil {
+		return state{}, err
+	}
+	var address string
+	for {
+		event, err := watcher.Next()
+		if err != nil {
+			if wait.Err() == context.DeadlineExceeded {
+				break
+			} // Slow control plane: status polling continues.
+			return state{}, err
+		}
+		if event.BrowseToURL != nil && *event.BrowseToURL != "" {
+			address = *event.BrowseToURL
+			break
+		}
+		if event.State != nil && (*event.State == ipn.Running || *event.State == ipn.NeedsMachineAuth) {
+			break
+		}
+	}
+	value, err := n.snapshot(ctx)
+	if address != "" && value.Backend != "Running" && value.Backend != "NeedsMachineAuth" {
+		value.URL = address
+	}
+	return value, err
 }
 func (n *node) sshServer() (*gliderssh.Server, error) {
 	forwarding := &gliderssh.ForwardedTCPHandler{}
@@ -453,7 +491,31 @@ func safeHost(s string) bool {
 	return true
 }
 
+// Protocol handlers signal navigation only. The control plane owns authentication.
+func recordBrowserReturn(dir string) error {
+	marker, err := os.CreateTemp(dir, "browser-return-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(marker.Name())
+	_, err = marker.WriteString(filepath.Base(marker.Name()))
+	closeErr := marker.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(marker.Name(), filepath.Join(dir, "browser-return"))
+}
+
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--browser-return" {
+		if err := recordBrowserReturn(dataDir()); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "dial" {
 		if len(os.Args) != 4 {
 			os.Exit(2)

@@ -1,5 +1,5 @@
 .workspace[hidden] { display: none; }
-.claude-accounts-page {
+.management-page {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -7,7 +7,7 @@
   overflow: hidden;
   background: var(--paper);
 }
-.claude-accounts-header {
+.management-header {
   min-height: var(--workbench-header-height);
   display: flex;
   align-items: center;
@@ -15,12 +15,12 @@
   padding: 0 24px;
   border-bottom: 1px solid var(--line);
 }
-.claude-accounts-header h1 {
+.management-header h1 {
   margin: 0;
   font-size: 1.1429rem;
   font-weight: 600;
 }
-.claude-accounts-content {
+.management-content {
   display: flex;
   flex-direction: column;
   flex: 1;
