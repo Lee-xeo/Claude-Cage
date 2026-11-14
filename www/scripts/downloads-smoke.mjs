@@ -46,7 +46,11 @@ try {
   }
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage(); await page.goto(origin);
-  for (const { downloadURL: url } of Object.values(expected)) await page.locator(`noscript a[href="${url}"]`).waitFor({ state: 'visible' });
+  for (const entry of Object.values(expected)) {
+    const link = page.locator(`noscript a[href="${entry.downloadURL}"]`);
+    await link.waitFor({ state: 'visible' });
+    assert.ok((await link.textContent()).includes(`v${entry.version}`), 'No-JavaScript download must show the package version');
+  }
   await context.close();
   console.log('PASS: per-platform public installer links and versions, unsigned Windows label, desktop/mobile/RTL layout, modal open/close, deep link and no-JavaScript downloads');
 } finally { await browser.close(); }
