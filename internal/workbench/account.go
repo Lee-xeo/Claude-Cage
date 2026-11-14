@@ -44,7 +44,7 @@ func (s *Server) accountAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action != "create" && action != "unlock" && action != "device-unlock" {
-		if _, ok := s.account.accessFor(s.hasTrustedView(r)); !ok {
+		if _, ok := s.account.accessFor(s.hasTrustedView(r), false); !ok {
 			http.Error(w, "请先解锁 Cage", http.StatusLocked)
 			return
 		}

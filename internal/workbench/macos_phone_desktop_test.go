@@ -157,6 +157,7 @@ func TestMacOSPhoneDesktopHandlerHonorsRoomGateAndRevocation(t *testing.T) {
 		return 0, true
 	})
 	s := guest.s
+	resumeRememberedPhoneHost(t, s)
 	room, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	s.phones.record = &phoneRecord{}
@@ -202,11 +203,12 @@ func TestMacOSPhoneDesktopHandlerHonorsRoomGateAndRevocation(t *testing.T) {
 			t.Fatalf("native handler: %d %s", response.Code, response.Body.String())
 		}
 	}
-	s.account.trustedSession = true
-	if response := windowsPhoneRequest(t, s, "GET", "/api/mobile/desktop/"+id+"/frame", "", "current-room"); response.Code != 423 {
-		t.Fatal("desktop-only unlock leaked to phone")
+	if err := s.account.lockAccess(false); err != nil {
+		t.Fatal(err)
 	}
-	s.account.trustedSession = false
+	if response := windowsPhoneRequest(t, s, "GET", "/api/mobile/desktop/"+id+"/frame", "", "current-room"); response.Code != 423 {
+		t.Fatal("locked account returned a desktop frame")
+	}
 	cancel()
 	if response := windowsPhoneRequest(t, s, "GET", "/api/mobile/desktop/"+id+"/frame", "", "current-room"); response.Code != 403 {
 		t.Fatal("revoked phone retained frames")
