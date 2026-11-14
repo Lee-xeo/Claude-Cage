@@ -101,8 +101,9 @@ export const RemoteView = forwardRef(function RemoteView(
           },
         );
         rfb.current = client;
-        if (!["windows", "darwin", "macos"].includes(guestPlatform)) {
-          // A Linux guest takes key events as sent; see guest-keys.mjs.
+        if (!/^(windows|darwin|macos)/.test(guestPlatform || "")) {
+          // A Linux guest takes key events as sent; see guest-keys.mjs. The
+          // other systems arrive here as "macos" and "windows-11".
           keys = guestKeys(client.sendKey.bind(client));
           client.sendKey = keys.sendKey;
         }
