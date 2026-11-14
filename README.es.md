@@ -139,6 +139,7 @@ Gracias a los siguientes proyectos por capacidades fundamentales y referencias d
 - [code-server](https://github.com/coder/code-server): el editor de código basado en navegador.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): referencias para el ambiente de trabajo y el diseño de interacción.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) y [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): referencias para comprobaciones de red y diagnósticos de seguridad.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): referencia para el inventario preciso, la protección de datos y la limpieza recuperable de caché; implementación independiente en Cage.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

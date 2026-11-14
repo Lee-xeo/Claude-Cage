@@ -139,6 +139,7 @@ Cage ናጻ ማሕበረሰባዊ ፕሮጀክት ኮይኑ ምስ ኣንትሮ�
 - [code-server](https://github.com/coder/code-server): እቲ ኣብ መርበብ ሓበሬታ ዝተመርኮሰ ናይ ኮድ ኣርታዒ።
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): መወከሲታት ንሃዋህው ስራሕን ዲዛይን ምትእስሳርን.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) ከምኡ’ውን... [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): መወከሲታት ንናይ መርበብ ምፍታሽን ናይ ድሕነት መርመራታትን።
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): ንትኽክለኛ ቆጸራ፣ ንሓለዋ ዳታን ክምለስ ንዝኽእል ምጽራይ መሸጎጫን መወከሲ፤ Cage ብናጻ ኣተግቢሩዎ።
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

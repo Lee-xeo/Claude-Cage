@@ -147,6 +147,7 @@ Cage 是独立社区项目，与 Anthropic 无隶属关系。
 - [code-server](https://github.com/coder/code-server)：浏览器中的代码编辑器。
 - [AIO Sandbox](https://github.com/agent-infra/sandbox)：工作环境和交互体验参考。
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) 和 [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian)：网络检查和安全诊断方法参考。
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): 精确盘点、保护用户资料与可恢复缓存清理的流程参考；Cage 独立实现。
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
   <picture>

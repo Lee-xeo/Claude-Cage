@@ -23,7 +23,7 @@ keywords: 设置 账户 保险箱 记住登录 Touch ID 主题 外观 字体 无
 | 远程连接 | 本机手机配对、远程浏览器授权、官方或自建中继 | 保存后生效；中继迁移需重新配对 |
 | 网络与代理 | 来源、节点、代理链、DNS、出口规则及核心诊断 | 应用代理或保存，部分更改需重启 |
 | 时区与语言 | 自动跟随出口，或手动指定系统与浏览器语言 | 应用并按提示重启 |
-| 环境与恢复 | 存储、资源、组件工具版本、配置恢复、诊断 | 具体影响见[维护说明](maintenance.md) |
+| 环境与恢复 | 存储、资源、组件工具版本、只读盘点、缓存清理与恢复、配置恢复、诊断 | 具体影响见[维护说明](maintenance.md) |
 
 <figure class="guide-shot">
   <a href="../../www/public/docs/screenshots/account-settings.jpg" target="_blank" rel="noopener" aria-label="查看原图：账户资料、密码与登录解锁设置"><img src="../../www/public/docs/screenshots/account-settings.jpg" alt="账户资料、密码与登录解锁设置" width="2560" height="1764" loading="lazy" decoding="async" /></a>
