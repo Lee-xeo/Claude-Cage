@@ -314,7 +314,7 @@ function App() {
     window.cageSyncClipboard = () => clipboard.sync();
     return () => { clipboard.dispose(); delete window.cageSyncClipboard; };
   }, [status?.ready, clipboardConnection]);
-  const desktopFiles = useDesktopFiles(Boolean(status?.ready), notify);
+  const desktopFiles = useDesktopFiles(Boolean(status?.ready), notify, desktopOpen && !settingsOpen && !storageRecovery && windowVisible);
   const downloads = [...(browser.downloads || []), ...desktopFiles.downloads];
   useDownloadNotifications(downloads, notify, Boolean(browser.uploads?.length || desktopFiles.uploads.length));
   const refreshSettings = async () => {

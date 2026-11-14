@@ -46,9 +46,7 @@ func TestDesktopDownloadsRegisterOnlyCompletedFilesInSharedDownloadDirectory(t *
 	item := map[string]any{"id": testBrowserFileID, "name": name, "state": "saved",
 		"path": strings.TrimRight(guestPath(s.environmentDir()), "/") + "/Downloads/" + name}
 	result := map[string]any{"downloads": []any{item}}
-	if err := s.rememberDesktopDownloads(result); err != nil {
-		t.Fatal(err)
-	}
+	s.rememberDesktopDownloads(result)
 	saved, err := readSavedDownload(s.profile, testBrowserFileID)
 	if err != nil || saved.Path != filepath.Join(s.environmentDir(), "Downloads", name) {
 		t.Fatal(saved, err)
@@ -59,35 +57,64 @@ func TestDesktopDownloadsRegisterOnlyCompletedFilesInSharedDownloadDirectory(t *
 		t.Fatal(err)
 	}
 	item["path"] = strings.TrimRight(guestPath(s.environmentDir()), "/") + "/Downloads/" + name
-	if err := s.rememberDesktopDownloads(result); err != nil {
-		t.Fatal(err)
-	}
+	s.rememberDesktopDownloads(result)
 	again, _ := readSavedDownload(s.profile, testBrowserFileID)
 	if again.Path != saved.Path {
 		t.Fatal("poll replaced user destination", again)
 	}
-	for _, path := range []string{"/etc/passwd", strings.TrimRight(guestPath(s.environmentDir()), "/") + "/Downloads/../secret"} {
-		item["path"] = path
-		if s.rememberDesktopDownloads(result) == nil {
-			t.Fatal("untrusted path accepted", path)
-		}
+	item["path"] = "/old-workspace/Downloads/" + name
+	s.rememberDesktopDownloads(result)
+	if item["path"] != saved.Path {
+		t.Fatal("stale guest path replaced host receipt", item)
 	}
-	item["name"] = "../secret"
-	if s.rememberDesktopDownloads(result) == nil {
-		t.Fatal("path-like name accepted")
-	}
-	item["name"], item["state"] = name, "downloading"
 	if err := os.Remove(savedDownloadPath(s.profile, testBrowserFileID)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.rememberDesktopDownloads(result); err != nil {
-		t.Fatal(err)
+	for _, path := range []string{"/etc/passwd", strings.TrimRight(guestPath(s.environmentDir()), "/") + "/Downloads/../secret"} {
+		item["path"], item["state"] = path, "saved"
+		s.rememberDesktopDownloads(result)
+		if item["state"] != "failed" || item["path"] != nil {
+			t.Fatal("untrusted path accepted", item)
+		}
 	}
+	item["name"] = "../secret"
+	s.rememberDesktopDownloads(result)
+	if len(result["downloads"].([]any)) != 0 {
+		t.Fatal("path-like name accepted")
+	}
+	item["name"], item["state"] = name, "downloading"
+	result["downloads"] = []any{item}
+	s.rememberDesktopDownloads(result)
 	if _, err := readSavedDownload(s.profile, testBrowserFileID); err == nil {
 		t.Fatal("partial file registered")
 	}
 	if _, exists := item["path"]; exists {
 		t.Fatal("partial host path leaked")
+	}
+}
+
+func TestDesktopFilePollKeepsChooserAlongsideStaleDownload(t *testing.T) {
+	s := testServer(t)
+	const chooser = "61c716bb-5e8f-4a32-b872-cfa099a695ef"
+	const current = "769fca45-8026-44bc-8952-79a4501f6998"
+	result := map[string]any{
+		"uploads": []any{map[string]any{"id": chooser, "target": "desktop"}},
+		"downloads": []any{
+			map[string]any{"id": testBrowserFileID, "name": "old.mp4", "state": "saved", "path": "/previous/Downloads/old.mp4"},
+			map[string]any{"id": current, "name": "new.mp4", "state": "saved", "path": guestPath(filepath.Join(s.environmentDir(), "Downloads", "new.mp4"))},
+		},
+	}
+	s.rememberDesktopDownloads(result)
+	pending := result["uploads"].([]any)
+	items := result["downloads"].([]any)
+	if len(pending) != 1 || pending[0].(map[string]any)["id"] != chooser || len(items) != 2 {
+		t.Fatal("poll lost independent file requests", result)
+	}
+	if _, err := readSavedDownload(s.profile, testBrowserFileID); err == nil {
+		t.Fatal("old guest location became a host receipt")
+	}
+	if _, err := readSavedDownload(s.profile, current); err != nil {
+		t.Fatal("old download blocked a new download", err)
 	}
 }
 

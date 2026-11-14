@@ -75,9 +75,11 @@ export function useDownloadNotifications(
   }, [downloads, uploading]);
 }
 
-export function useDesktopFiles(ready, onStatus) {
+export function useDesktopFiles(ready, onStatus, desktopVisible) {
   const connection = getClientContext().connection_id;
   const [files, setFiles] = useState({ uploads: [], downloads: [] });
+  const viewVisible = useRef(desktopVisible);
+  viewVisible.current = desktopVisible;
   const status = useRef(onStatus);
   status.current = onStatus;
   useEffect(() => {
@@ -98,6 +100,28 @@ export function useDesktopFiles(ready, onStatus) {
             uploads: value.uploads || [],
             downloads: value.downloads || [],
           });
+        for (const request of value.uploads || []) {
+          if (disposed || !viewVisible.current || !nativeAvailable()) break;
+          if (request.directory || (request.kind && request.kind !== "chooser") || handled.has(request.id)) continue;
+          const body = { target: "desktop", id: request.id };
+          try {
+            assertConnection(connection);
+            const selection = await native("chooseUploadFiles", { multiple: request.multiple });
+            assertConnection(connection);
+            if (selection.canceled) {
+              await api("/input/files/cancel", body);
+            } else {
+              await native("uploadHostFiles", { ...body, selection: selection.fileSelection });
+              await api("/input/files/finish", body);
+              status.current?.("所选文件已交给 Claude Desktop");
+            }
+          } catch (error) {
+            assertConnection(connection);
+            await api("/input/files/cancel", body);
+            status.current?.(error.message);
+          }
+          handled.add(request.id);
+        }
         for (const request of value.opens || []) {
           if (disposed || handled.has(request.id)) continue;
           handled.add(request.id);
