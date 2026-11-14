@@ -58,8 +58,15 @@ printf '%s\n' "$display_scale" > "$XDG_RUNTIME_DIR/base-display-scale"
 scale_args=(--force-device-scale-factor="$display_scale")
 if command -v xsettingsd >/dev/null; then
   dpi=$(awk -v scale="$display_scale" 'BEGIN {printf "%.0f", scale * 96 * 1024}')
+  # Settings that stay as they are when a viewer changes the density.
   # Cage owns the embedded app's window controls; keep its native buttons hidden.
-  printf 'Xft/DPI %s\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI %s\nGtk/DecorationLayout ":"\n' "$dpi" "$dpi" > "$XDG_RUNTIME_DIR/xsettings.conf"
+  printf 'Gtk/DecorationLayout ":"\n' > "$XDG_RUNTIME_DIR/xsettings.fixed"
+  if [ "$display_scale" = 1.5 ]; then
+    # Favoring smoothness gives up the app's animations too: while one plays,
+    # the app repaints its whole message area on every frame.
+    printf 'Gtk/EnableAnimations 0\n' >> "$XDG_RUNTIME_DIR/xsettings.fixed"
+  fi
+  { printf 'Xft/DPI %s\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI %s\n' "$dpi" "$dpi"; cat "$XDG_RUNTIME_DIR/xsettings.fixed"; } > "$XDG_RUNTIME_DIR/xsettings.conf"
   xsettingsd --config="$XDG_RUNTIME_DIR/xsettings.conf" &
   printf '%s\n' "$!" > "$XDG_RUNTIME_DIR/xsettings.pid"
   /usr/bin/python3 - <<'CAGE_DESKTOP_DPI_READY'

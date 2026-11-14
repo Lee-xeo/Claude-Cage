@@ -292,7 +292,9 @@ printf '%%s %%s %%s\n' %d %d "$scale" > /run/cage-desktop/desktop-size
 if test -f /run/cage-phone-desktop/layout.json; then exit 0; fi
 if test -n "$manager" && test "$(cat /run/cage-desktop/display-scale 2>/dev/null)" != "$scale"; then
   dpi=$(awk -v scale="$scale" 'BEGIN {printf "%%.0f", scale * 96 * 1024}')
-  printf 'Xft/DPI %%s\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI %%s\nGtk/DecorationLayout ":"\n' "$dpi" "$dpi" > /run/cage-desktop/xsettings.conf.new
+  # A session started by an earlier version has no list of its other settings.
+  { printf 'Xft/DPI %%s\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI %%s\n' "$dpi" "$dpi"
+    cat /run/cage-desktop/xsettings.fixed 2>/dev/null || printf 'Gtk/DecorationLayout ":"\n'; } > /run/cage-desktop/xsettings.conf.new
   mv /run/cage-desktop/xsettings.conf.new /run/cage-desktop/xsettings.conf
   kill -HUP "$manager"
   printf '%%s\n' "$scale" > /run/cage-desktop/display-scale
