@@ -96,3 +96,11 @@ export function AboutSettings() {
       {result?.checkedAt && <span className="footnote">检查时间：{new Date(result.checkedAt).toLocaleString()}</span>}
     </div>
     <p className="footnote">优先通过主机网络与系统代理检查主分支提交和最新发行版，包含预发行版；主机连接失败时尝试 Cage 所选代理。检查后可前往发布页下载。</p>
+    {busy && <p role="status">正在核对源码提交与发行版…</p>}
+    {error && <p className="error-message" role="alert">{error}</p>}
+    <div className="about-results" aria-live="polite" aria-busy={busy}>
+      <CheckResult label="源码更新" item={result?.source} source onError={setError} />
+      <CheckResult label="发行版更新（含预发行）" item={result?.release} onError={setError} />
+    </div>
+  </section>;
+}

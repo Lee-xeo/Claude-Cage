@@ -535,3 +535,410 @@ func (s *Server) handler() http.Handler {
 			mux.ServeHTTP(w, r)
 			return
 		}
+		if s.macosGuest == nil && !s.desktopEntry && !s.clientOnly && strings.HasPrefix(r.URL.Path, "/api/") {
+			pending, err := guestos.LoadInstallation(s.profile)
+			if err != nil {
+				if !macOSInstallRecoveryRoute(r.Method, r.URL.Path) {
+					http.Error(w, "安装记录无法读取，请保留现有数据", http.StatusConflict)
+					return
+				}
+			}
+			if pending != nil && pending.System == guestos.MacOS && !macOSInstallRecoveryRoute(r.Method, r.URL.Path) {
+				http.Error(w, "macOS 客机尚未完成安装", http.StatusConflict)
+				return
+			}
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/agent/native") || r.URL.Path == "/api/agent/routes" {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		if s.windowsGuest != nil && !windowsWorkbenchRoute(r.URL.Path) {
+			s.windowsUnavailable(w)
+			return
+		}
+		if s.macosGuest != nil && (!macOSWorkbenchRoute(r.URL.Path) || s.macSetupPending() && !macOSSetupRoute(r.URL.Path)) {
+			http.Error(w, "此功能尚未接入 macOS 客机", http.StatusConflict)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/mobile/") {
+			// Device trust is scoped to this host. Never forward a paired phone
+			// into a different host selected by the desktop SSH client.
+			if s.desktopEntry && !s.clientOnly && s.remote != nil && s.remote.desktop != nil && r.Header.Get(connectionHeader) != "" {
+				// The desktop's own viewer pins the selected local workload's
+				// connection generation. routeRemote checks the acquired target.
+				if s.routeRemote(w, r) {
+					return
+				}
+			}
+			if s.clientOnly || s.desktopEntry {
+				http.Error(w, "请连接运行 Cage 环境的主机", http.StatusConflict)
+				return
+			}
+		} else if s.macosGuest == nil && s.windowsGuest == nil && s.routeRemote(w, r) {
+			return
+		}
+		ctx, finish, err := s.beginActivity(r.Context())
+		if err != nil {
+			http.Error(w, "后台正在更新，请重新打开 Cage。", http.StatusServiceUnavailable)
+			return
+		}
+		defer finish()
+		r = r.WithContext(ctx)
+		accountRoute := r.URL.Path == "/api/account" || strings.HasPrefix(r.URL.Path, "/api/account/")
+		bootstrapRoute := r.URL.Path == "/api/session" || r.URL.Path == "/api/launch" || r.URL.Path == "/api/handoff" || r.URL.Path == "/api/remote/manifest"
+		trustedDesktop := s.hasTrustedView(r)
+		phoneRoom := s.pairedPhoneRoom(r)
+		if (s.windowsGuest != nil || s.macosGuest != nil) && strings.HasPrefix(r.URL.Path, "/api/") && !bootstrapRoute && !trustedDesktop && phoneRoom == nil {
+			http.Error(w, "请通过本机 Cage 窗口或当前配对手机打开客机", http.StatusForbidden)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") && !accountRoute && !bootstrapRoute && !strings.HasPrefix(r.URL.Path, "/api/diagnostics") && !(r.Method == "GET" && r.URL.Path == "/api/appearance") {
+			epoch, unlocked := s.account.accessFor(trustedDesktop, phoneRoom != nil)
+			if !unlocked {
+				http.Error(w, "Cage 已锁定，请先登录", http.StatusLocked)
+				return
+			}
+			ctx, cancel := context.WithCancel(r.Context())
+			if strings.HasPrefix(r.URL.Path, "/api/mobile/") || strings.HasPrefix(r.URL.Path, "/api/cli/") {
+				ctx = context.WithValue(ctx, mobileEpochKey{}, epoch)
+			}
+			stop := context.AfterFunc(epoch, cancel)
+			defer func() { stop(); cancel() }()
+			if phoneRoom != nil {
+				stopPhone := context.AfterFunc(phoneRoom, cancel)
+				defer stopPhone()
+			}
+			r = r.WithContext(ctx)
+		}
+		defer interruptHTTPOnCancel(w, r)()
+		response := &diagnosticResponse{ResponseWriter: w}
+		w = response
+		defer func() {
+			if response.status >= 400 && r.URL.Path != "/api/diagnostics/events" {
+				_ = diagnostics.New(s.profile).Record("warn", "http", fmt.Sprintf("%s %s returned %d", r.Method, r.Pattern, response.status))
+			}
+		}()
+		defer func() {
+			if failure := recover(); failure != nil {
+				diagnostics.Log("error", "http", fmt.Sprintf("handler panic: %v\n%s", failure, debug.Stack()))
+				panic(failure)
+			}
+		}()
+		if !storageRecoveryRoute(r) {
+			if err := s.requireStorageReady(); err != nil {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+func readJSON(w http.ResponseWriter, r *http.Request, v any, limits ...int64) bool {
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		http.Error(w, "需要 JSON 请求", 415)
+		return false
+	}
+	limit := int64(64 << 10)
+	if len(limits) > 0 {
+		limit = limits[0]
+	}
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
+	d.DisallowUnknownFields()
+	if err := d.Decode(v); err != nil {
+		http.Error(w, "请求格式无效", 400)
+		return false
+	}
+	var extra any
+	if d.Decode(&extra) != io.EOF {
+		http.Error(w, "请求格式无效", 400)
+		return false
+	}
+	return true
+}
+func jsonReply(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(v)
+}
+func requestError(w http.ResponseWriter, err error) {
+	diagnostics.Log("error", "api", fmt.Sprintf("%v; cause=%v", err, errors.Unwrap(err)))
+	http.Error(w, err.Error(), http.StatusBadRequest)
+}
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	if s.windowsGuest != nil && !s.storageRecoveryStatus().Required {
+		s.refreshWindowsComponents()
+	}
+	projects, err := s.projectPaths()
+	if err != nil {
+		requestError(w, errors.New("无法读取项目列表，请检查项目配置"))
+		return
+	}
+	groups, err := s.projectGroups()
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	running := s.vmRunning()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, e := os.Stat(filepath.Join(s.profile, "previous-profile.json"))
+	projectError := ""
+	if len(s.projectErrors) > 0 {
+		projectError = "部分项目文件夹尚未连接，环境和浏览器可继续使用。"
+	}
+	if m := s.clientMounts[s.clientWorkspace]; s.clientWorkspace != "" && (m == nil || !m.live()) {
+		projectError = "当前本机项目已断开，请重新共享或选择其他项目。"
+	}
+	view := map[string]any{
+		"projects": projects, "project_groups": groups, "ready": s.ready, "vm_running": running,
+		"workspace": s.workspaceLocked(), "environment_directory": s.environmentDir(),
+		"environment_identity_directory": cage.EnvironmentIdentityDir(s.profile),
+		"local_vm_storage":               s.localVMStorage(), "project_error": projectError, "project_errors": s.projectErrors,
+		"storage_recovery": s.storageRecoveryStatusLocked(),
+		"keyboard":         s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.jobs.snapshot(),
+		"location": s.location, "network_error": s.currentNetworkErrorLocked(), "can_restore": e == nil,
+		"safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError,
+	}
+	if s.windowsGuest != nil {
+		view["guest_system"] = guestos.Windows11
+		view["guest_capabilities"] = s.windowsCapabilitiesLocked()
+		view["location"] = nil
+		if s.safety.Gate == nil && view["network_error"] == "" {
+			view["network_error"] = "Windows 客机网络组件尚未连接，外网保持关闭"
+		}
+	} else if s.macosGuest != nil {
+		view["guest_system"] = guestos.MacOS
+	} else if system, err := s.installedLinuxSystem(); err != nil {
+		view["guest_system_error"] = err.Error()
+	} else if system != guestos.Debian13 {
+		view["guest_system"] = system
+	}
+	jsonReply(w, view)
+}
+func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
+	c, err := loadConfig(s.configPath)
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	s.mu.Lock()
+	p := s.preferences
+	s.mu.Unlock()
+	jsonReply(w, settingsView(c, p))
+}
+func (s *Server) proposed(w http.ResponseWriter, r *http.Request) (savedProfile, bool) {
+	var input Settings
+	// Older clients omit preferences introduced after their release.
+	s.mu.Lock()
+	input.MobileRelay = s.preferences.MobileRelay
+	input.BalancedDisplay = s.preferences.BalancedDisplay
+	input.ProjectFileCache = s.preferences.ProjectFileCache
+	input.BrowserHomeURL = browserHomeURL(s.preferences)
+	s.mu.Unlock()
+	if !readJSON(w, r, &input) {
+		return savedProfile{}, false
+	}
+	old, err := loadConfig(s.configPath)
+	if err != nil {
+		requestError(w, err)
+		return savedProfile{}, false
+	}
+	c, p, err := proposedSettings(input, old, s.profile)
+	if err != nil {
+		requestError(w, err)
+		return savedProfile{}, false
+	}
+	return savedProfile{c, p}, true
+}
+func (s *Server) probe(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.proposed(w, r)
+	if !ok {
+		return
+	}
+	if err := v.Config.RequireManagedProxy(s.profile); err != nil {
+		requestError(w, err)
+		return
+	}
+	loc, err := probeLocation(r.Context(), v.Config)
+	if finishErr := s.finishLocationProbe(v.Config, loc, err); finishErr != nil {
+		requestError(w, finishErr)
+		return
+	}
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	jsonReply(w, loc)
+}
+func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.proposed(w, r)
+	if !ok {
+		return
+	}
+	kind := "settings"
+	old, err := loadConfig(s.configPath)
+	s.mu.Lock()
+	previous := s.preferences
+	s.mu.Unlock()
+	if err == nil && old == v.Config && previous.AutoTimezone == v.Preferences.AutoTimezone && previous.AutoLanguage == v.Preferences.AutoLanguage && previous.Workspace != v.Preferences.Workspace {
+		kind = "project"
+	}
+	s.launch(w, kind, func() error {
+		s.mu.Lock()
+		v.Preferences.BrowserHomeURL = s.preferences.BrowserHomeURL
+		s.mu.Unlock()
+		return s.apply(v, true)
+	})
+}
+func (s *Server) restore(w http.ResponseWriter, r *http.Request) {
+	var v savedProfile
+	b, e := os.ReadFile(filepath.Join(s.profile, "previous-profile.json"))
+	if e != nil || json.Unmarshal(b, &v) != nil {
+		requestError(w, errors.New("没有可恢复的配置"))
+		return
+	}
+	s.launch(w, "restore", func() error {
+		if err := s.apply(v, false); err != nil {
+			return err
+		}
+		return s.startEnvironment(false)
+	})
+}
+func (s *Server) start(w http.ResponseWriter, r *http.Request) {
+	var input guestInstallRequest
+	if r.ContentLength != 0 && !readJSON(w, r, &input) {
+		return
+	}
+	if s.windowsGuest != nil {
+		if input.System != "" && input.System != guestos.Windows11 {
+			http.Error(w, "此配置已绑定 Windows 客机", http.StatusConflict)
+			return
+		}
+		s.launch(w, "start", s.startWindowsGuest)
+		return
+	}
+	if s.macosGuest != nil {
+		if input.System != "" && input.System != guestos.MacOS {
+			http.Error(w, "此配置已绑定 macOS 客机", http.StatusConflict)
+			return
+		}
+		s.launch(w, "start", s.startMacOSGuest)
+		return
+	}
+	if input.System == guestos.MacOS {
+		pending, err := guestos.LoadInstallation(s.profile)
+		if err != nil {
+			requestError(w, err)
+			return
+		}
+		if pending != nil && pending.System == guestos.MacOS {
+			if recovery, loadErr := guestos.LoadMacOSInstallRecovery(s.profile); loadErr != nil {
+				requestError(w, loadErr)
+				return
+			} else if recovery != nil {
+				s.resumePendingMacOSInstall(w, r, pending.ID)
+				return
+			}
+		}
+	}
+	if input.System == guestos.MacOS || input.System == guestos.Windows11 || input.CloneKey != "" {
+		s.beginGuestInstall(w, r, input)
+		return
+	}
+	pending, err := guestos.LoadInstallation(s.profile)
+	if err != nil {
+		http.Error(w, "客户机安装记录无法读取，请保留现有数据", http.StatusConflict)
+		return
+	}
+	if pending != nil && pending.System == guestos.MacOS {
+		s.resumePendingMacOSInstall(w, r, pending.ID)
+		return
+	}
+	if pending != nil && !hostimage.IsLinux(pending.System) {
+		http.Error(w, "已有原生客户机安装，请继续原安装", http.StatusConflict)
+		return
+	}
+	if pending != nil && input.System != "" && pending.System != input.System {
+		http.Error(w, "此环境已绑定所选 Linux 系统，请继续原安装", http.StatusConflict)
+		return
+	}
+	if pending != nil {
+		input.System = pending.System
+		s.beginGuestInstall(w, r, input)
+		return
+	}
+	boundSystem, err := s.installedLinuxSystem()
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	if input.System != "" && input.System != boundSystem {
+		if canInstallCatalogLinux(input.System) {
+			s.beginGuestInstall(w, r, input)
+		} else {
+			http.Error(w, "当前环境无法启动所选客户机系统，请保留原环境并重新检查安装选择", http.StatusConflict)
+		}
+		return
+	}
+	s.launch(w, "start", func() error {
+		if err := s.prepareEnvironment(); err != nil {
+			return err
+		}
+		return s.startEnvironment(true)
+	})
+}
+func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
+	s.requestStop(w, false)
+}
+
+func (s *Server) requestStop(w http.ResponseWriter, logout bool) {
+	if err := s.requireStorageReady(); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	for _, name := range []string{cage.InstanceName(s.profile, s.environmentDir()), "base-building"} {
+		if owner := cage.InstanceJobID(filepath.Join(s.profile, "state"), name); owner != "" {
+			_ = cage.RequestJobStop(s.profile, owner)
+		}
+	}
+	jobID := s.jobs.cancelRunning()
+	if jobID != "" {
+		_ = cage.RequestJobStop(s.profile, jobID)
+	}
+	if s.macosGuest != nil {
+		// Stopping the guest revokes its current grant. A user's saved pause
+		// remains distinct so the next Mac start can honor the same intent.
+		_ = s.revokeNetworkNow("正在停止环境", false)
+	} else if s.windowsGuest == nil {
+		_ = s.pauseNetworkNow("正在停止环境")
+	}
+	kind := "stop"
+	if logout {
+		kind = "logout"
+	}
+	s.launch(w, kind, s.stopEnvironment)
+}
+
+func (s *Server) cookieName() string { u, _ := url.Parse(s.origin); return cookieName + "_" + u.Port() }
+
+func (s *Server) issueTicket() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tickets == nil {
+		s.tickets = map[string]time.Time{}
+	}
+	for token, expires := range s.tickets {
+		if time.Now().After(expires) {
+			delete(s.tickets, token)
+		}
+	}
+	token := randomToken()
+	s.tickets[token] = time.Now().Add(time.Minute)
+	return token
+}
+func (s *Server) consumeTicket(token string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	expires, ok := s.tickets[token]
+	delete(s.tickets, token)
+	return ok && time.Now().Before(expires)
+}

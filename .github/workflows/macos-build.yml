@@ -73,4 +73,111 @@ jobs:
           uv run internal/cage/display-governor.test.py
           uv run internal/cage/save-download.test.py
           uv run internal/cage/editor-migrate.test.py
+          uv run --no-project scripts/guest-os/tests/native-maintenance.py
+          uv run --no-project scripts/guest-os/tests/macos-release-downloads.py
           uv run --no-project internal/workbench/cache_maintenance_test.py
+      - name: Go tests and vet
+        run: |
+          make test-go
+          go test -race ./internal/cage ./internal/managedproxy ./internal/workbench
+          go vet ./cmd/cage ./internal/cage ./internal/managedproxy ./internal/workbench
+      - name: Native application updater
+        run: bash scripts/test-app-updates.sh
+      - name: External Agent CLI with an isolated profile
+        run: node scripts/agent-cli-smoke.mjs "$PWD/_output/Cage.app/Contents/Resources/cage"
+      - name: Native account credential status
+        run: bash scripts/test-account-device.sh
+      - name: Patched networking and shared files
+        run: go test github.com/containers/gvisor-tap-vsock/pkg/services/dns github.com/lima-vm/lima/v2/pkg/hostagent/dns github.com/lima-vm/lima/v2/pkg/networks/usernet github.com/lima-vm/sshocker/pkg/reversesshfs
+      - name: Dependency licenses
+        run: bash scripts/licenses --check
+      - name: Verify the application bundle
+        run: |
+          codesign --verify --deep --strict _output/Cage.app
+          _output/Cage.app/Contents/Resources/cage --help
+          _output/Cage.app/Contents/Resources/mihomo -v
+          [[ "$(lipo -archs _output/Cage.app/Contents/MacOS/Cage)" == arm64 ]]
+      - name: Archive a complete development App with executable permissions
+        if: ${{ !inputs.release }}
+        run: |
+          version=$(tr -d '\r\n' < VERSION)
+          mkdir -p _output/ci-macos-test
+          archive="$PWD/_output/ci-macos-test/Cage-$version-macos-arm64-test.tar.gz"
+          tar -czf "$archive" -C _output Cage.app
+          check=$(mktemp -d "$RUNNER_TEMP/cage-app-archive.XXXXXX")
+          trap 'rm -rf "$check"' EXIT
+          tar -xzf "$archive" -C "$check"
+          codesign --verify --deep --strict "$check/Cage.app"
+          for executable in Contents/MacOS/Cage Contents/Resources/cage Contents/Resources/mihomo Contents/Resources/CageUpdateInstaller; do
+            test -x "$check/Cage.app/$executable"
+          done
+          (cd _output/ci-macos-test && shasum -a 256 "${archive##*/}" > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.release }}
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: _output/ci-macos-test/
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    if: ${{ inputs.release && github.event_name == 'workflow_dispatch' }}
+    needs: checks
+    runs-on: macos-15
+    environment: cage-release
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Verify the exact source and Apple Silicon runner
+        env:
+          BUILD_REF: ${{ inputs.ref }}
+        run: |
+          [[ "$BUILD_REF" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$BUILD_REF" ]]
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build, sign, notarize and verify using a temporary keychain
+        env:
+          CAGE_MACOS_P12_BASE64: ${{ secrets.CAGE_MACOS_P12_BASE64 }}
+          CAGE_MACOS_P12_PASSWORD: ${{ secrets.CAGE_MACOS_P12_PASSWORD }}
+          CAGE_MACOS_SIGNING_IDENTITY: ${{ secrets.CAGE_MACOS_SIGNING_IDENTITY }}
+          CAGE_MACOS_NOTARY_KEY_BASE64: ${{ secrets.CAGE_MACOS_NOTARY_KEY_BASE64 }}
+          CAGE_MACOS_NOTARY_KEY_ID: ${{ secrets.CAGE_MACOS_NOTARY_KEY_ID }}
+          CAGE_MACOS_NOTARY_ISSUER_ID: ${{ secrets.CAGE_MACOS_NOTARY_ISSUER_ID }}
+          CAGE_MACOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.CAGE_MACOS_PROVISIONING_PROFILE_BASE64 }}
+        run: bash scripts/ci-macos-signing.sh run
+      - name: Remove temporary signing credentials
+        if: ${{ always() }}
+        run: bash scripts/ci-macos-signing.sh cleanup
+      - name: Stage only public release files
+        run: |
+          version=$(tr -d '\r\n' < VERSION)
+          source_version=$(sed -n 's/^version=//p' scripts/fetch-proxy-core.sh)
+          release="$PWD/_output/releases/$version"
+          node scripts/release-version.mjs metadata macos "$release/build-metadata.json"
+          mkdir -p _output/ci-macos-release
+          cp "$release/Cage-$version-macos-arm64.dmg" "$release/mihomo-$source_version-source.tar.gz" "$release/cage-macos-guest-$version-source.tar.gz" "$release/SHA256SUMS" "$release/build-metadata.json" _output/ci-macos-release/
+          (cd _output/ci-macos-release && shasum -a 256 --check SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: _output/ci-macos-release/
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0
+          retention-days: 14
