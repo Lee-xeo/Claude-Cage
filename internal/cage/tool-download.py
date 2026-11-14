@@ -13,6 +13,10 @@ import time
 artifact = Path(sys.argv[1])
 arguments = sys.argv[2:]
 idle_timeout = 60
+low_speed_time = 60
+# A trickle of bytes must not keep a practically stalled connection alive.
+# curl applies this rolling speed check to both single and ranged requests.
+arguments += ['--speed-limit', '1024', '--speed-time', str(low_speed_time)]
 name = artifact.name.removesuffix('.part').removesuffix('.mirror')
 show_progress = os.environ.get('CAGE_SETUP_PROGRESS') == '1'
 

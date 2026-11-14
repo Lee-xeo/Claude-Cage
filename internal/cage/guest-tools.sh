@@ -20,7 +20,9 @@ cage_download_tool() (
   for ((attempt=1; attempt<=attempts; attempt++)); do
     url="$upstream"
     part="$artifact.part"
-    if [ "$attempt" = 2 ] && [ -n "$mirror" ] && [ ! -s "$part" ]; then
+    # Keep each source's partial separate so a failed mirror can return to the
+    # official source's saved offset, even when it stopped after receiving data.
+    if [ "$attempt" = 2 ] && [ -n "$mirror" ]; then
       url="$mirror"
       part="$artifact.mirror.part"
     fi
@@ -38,7 +40,7 @@ cage_download_tool() (
       if printf '%s  %s\n' "$checksum" "$part" | "$hash" --check --status; then
         mv -f "$part" "$artifact" || return 1
         rm -rf "$artifact.part.ranges" "$artifact.mirror.part.ranges"
-        rm -f "$artifact.mirror.part"
+        rm -f "$artifact.part" "$artifact.mirror.part"
         return 0
       fi
       rm -f "$part"
@@ -58,7 +60,7 @@ cage_download_tool() (
       fi
       continue
     fi
-    if [ "$attempt" = 1 ] && [ -n "$mirror" ] && [ ! -s "$part" ]; then
+    if [ "$attempt" = 1 ] && [ -n "$mirror" ]; then
       echo 'Official download unavailable; trying the fallback mirror.' >&2
       continue
     fi

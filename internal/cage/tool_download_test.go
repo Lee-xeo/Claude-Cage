@@ -255,3 +255,160 @@ exit 99
 		})
 	}
 }
+
+func TestToolDownloadRecoversFromSustainedLowSpeed(t *testing.T) {
+	for _, mode := range []string{"single", "parallel"} {
+		t.Run(mode, func(t *testing.T) {
+			data := toolFixtureBytes()
+			if mode == "single" {
+				data = data[:32768]
+			}
+			var recovered atomic.Bool
+			var bounded, resumed atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodHead {
+					w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+					return
+				}
+				start, end := 0, len(data)-1
+				if value := r.Header.Get("Range"); value != "" {
+					if strings.HasSuffix(value, "-") {
+						fmt.Sscanf(value, "bytes=%d-", &start)
+					} else {
+						fmt.Sscanf(value, "bytes=%d-%d", &start, &end)
+						bounded.Add(1)
+					}
+					if recovered.Load() && start > 0 {
+						resumed.Add(1)
+					}
+					w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+				}
+				w.Header().Set("Content-Length", fmt.Sprint(end-start+1))
+				if r.Header.Get("Range") != "" {
+					w.WriteHeader(http.StatusPartialContent)
+				}
+				if recovered.Load() {
+					w.Write(data[start : end+1])
+					return
+				}
+				// Keep sending data so the inactivity watchdog cannot end this transfer.
+				for i := start; i <= end; i++ {
+					if _, err := w.Write(data[i : i+1]); err != nil {
+						return
+					}
+					w.(http.Flusher).Flush()
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(50 * time.Millisecond):
+					}
+				}
+			}))
+			defer server.Close()
+			dir, env := parallelToolFixture(t, server)
+			target := filepath.Join(dir, "package.part")
+			// Shorten only the low-speed window; keep the real curl and idle monitor.
+			source := strings.Replace(toolDownload, "low_speed_time = 60", "low_speed_time = 1", 1)
+			command := exec.Command("python3", "-c", source, target, "--fail", "--location", "--continue-at", "-", "--write-out", "%{http_code}", server.URL, "-o", target)
+			command.Env = env
+			var output bytes.Buffer
+			command.Stdout, command.Stderr = &output, &output
+			if err := command.Start(); err != nil {
+				t.Fatal(err)
+			}
+			deadline := time.AfterFunc(7*time.Second, func() { _ = command.Process.Signal(syscall.SIGTERM) })
+			err := command.Wait()
+			deadline.Stop()
+			if err == nil || command.ProcessState.ExitCode() != 28 {
+				t.Fatalf("low-speed transfer did not time out: %v %s", err, &output)
+			}
+			info, err := os.Stat(target)
+			if err != nil || info.Size() == 0 || info.Size() >= int64(len(data)) {
+				t.Fatalf("partial data not retained: %v %v", info, err)
+			}
+			if mode == "parallel" && bounded.Load() < 4 {
+				t.Fatal("parallel low-speed path not exercised")
+			}
+			recovered.Store(true)
+			command = exec.CommandContext(t.Context(), "bash", "-c", ToolInstallPrelude()+`cage_download_tool "$DOWNLOAD_URL" "$DOWNLOAD_HASH" "$HOME/package"`)
+			command.Env = append(env, "DOWNLOAD_URL="+server.URL, fmt.Sprintf("DOWNLOAD_HASH=%x", sha256.Sum256(data)))
+			if out, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("continuation failed: %v %s", err, out)
+			}
+			got, err := os.ReadFile(filepath.Join(dir, "package"))
+			if err != nil || !bytes.Equal(got, data) || resumed.Load() == 0 {
+				t.Fatalf("download not resumed and verified: resumed=%d err=%v", resumed.Load(), err)
+			}
+		})
+	}
+}
+
+func TestToolMirrorFallbackPreservesOfficialProgress(t *testing.T) {
+	for _, mode := range []string{"complete", "corrupt", "missing", "interrupted"} {
+		t.Run(mode, func(t *testing.T) {
+			const data = "verified package contents"
+			var official, mirror atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodHead {
+					w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+					return
+				}
+				if r.URL.Path == "/mirror" {
+					mirror.Add(1)
+					if r.Header.Get("Range") != "" {
+						t.Error("mirror reused official partial")
+					}
+					switch mode {
+					case "missing":
+						w.WriteHeader(404)
+					case "corrupt":
+						io.WriteString(w, "invalid package contents")
+					case "interrupted":
+						w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+						io.WriteString(w, data[:3])
+					default:
+						io.WriteString(w, data)
+					}
+					return
+				}
+				call := official.Add(1)
+				if call == 1 {
+					w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+					io.WriteString(w, data[:5])
+					return
+				}
+				if r.Header.Get("Range") != "bytes=5-" {
+					t.Errorf("official progress lost: Range=%q", r.Header.Get("Range"))
+				}
+				if mirror.Load() == 0 {
+					w.WriteHeader(503)
+					return
+				}
+				http.ServeContent(w, r, "package", time.Time{}, strings.NewReader(data))
+			}))
+			defer server.Close()
+			dir, env := parallelToolFixture(t, server)
+			if err := os.WriteFile(filepath.Join(dir, "sleep"), []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			command := exec.CommandContext(t.Context(), "bash", "-c", ToolInstallPrelude()+`cage_download_tool "$DOWNLOAD_URL/official" "$DOWNLOAD_HASH" "$HOME/package" sha256sum "$DOWNLOAD_URL/mirror"`)
+			command.Env = append(env, "DOWNLOAD_URL="+server.URL, fmt.Sprintf("DOWNLOAD_HASH=%x", sha256.Sum256([]byte(data))))
+			if out, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("fallback failed: %v %s", err, out)
+			}
+			wantOfficial := int32(2)
+			if mode == "complete" {
+				wantOfficial = 1
+			}
+			got, err := os.ReadFile(filepath.Join(dir, "package"))
+			if err != nil || string(got) != data || mirror.Load() != 1 || official.Load() != wantOfficial {
+				t.Fatalf("package=%q err=%v official=%d mirror=%d", got, err, official.Load(), mirror.Load())
+			}
+			for _, suffix := range []string{".part", ".mirror.part", ".part.ranges", ".mirror.part.ranges"} {
+				if _, err := os.Stat(filepath.Join(dir, "package"+suffix)); !os.IsNotExist(err) {
+					t.Errorf("verified download left cache %s: %v", suffix, err)
+				}
+			}
+		})
+	}
+}
