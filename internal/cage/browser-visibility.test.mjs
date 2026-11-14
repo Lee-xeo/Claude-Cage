@@ -1,6 +1,49 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BrowserVisibility } from "./browser-visibility.mjs";
+import { BrowserVisibility, rememberOpener, targetAfterClose } from "./browser-visibility.mjs";
+
+test("closing a popup returns to its opener rather than the oldest tab", () => {
+  const unrelated = { targetId: "unrelated" }, opener = { targetId: "login" };
+  const targets = new Map([[unrelated.targetId, unrelated], [opener.targetId, opener]]);
+  assert.equal(targetAfterClose(targets, { targetId: "popup", openerId: "login" }), "login");
+});
+
+test("navigation and target refresh preserve the popup return target", () => {
+  const popup = { targetId: "popup", openerId: "login", url: "about:blank" };
+  const navigated = rememberOpener({ targetId: "popup", url: "https://example.org/" }, popup);
+  const refreshed = rememberOpener({ targetId: "popup", url: "https://example.org/" }, navigated);
+  assert.equal(refreshed.openerId, "login");
+  assert.equal(refreshed.url, "https://example.org/");
+});
+
+test("new opener metadata takes precedence", () => {
+  const next = { targetId: "popup", openerId: "new" };
+  assert.equal(rememberOpener(next, { targetId: "popup", openerId: "old" }), next);
+});
+
+test("an opener is never copied from another target or browser context", () => {
+  const previous = { targetId: "popup", browserContextId: "one", openerId: "login" };
+  for (const next of [{ targetId: "other", browserContextId: "one" },
+                      { targetId: "popup", browserContextId: "two" }]) {
+    assert.equal(rememberOpener(next, previous).openerId, undefined);
+  }
+});
+
+test("closed openers retain the existing first-live-tab fallback", () => {
+  const targets = new Map([["unrelated", { targetId: "unrelated" }]]);
+  assert.equal(targetAfterClose(targets, { targetId: "popup", openerId: "closed" }), "unrelated");
+});
+
+test("ordinary and final tab closures preserve their existing fallback", () => {
+  assert.equal(targetAfterClose(new Map([["one", { targetId: "one" }]]), { targetId: "closed" }), "one");
+  assert.equal(targetAfterClose(new Map(), { targetId: "closed" }), "");
+});
+
+test("a return target in another context is not treated as an opener", () => {
+  const targets = new Map([["one", { targetId: "one", browserContextId: "private" }],
+                           ["login", { targetId: "login" }]]);
+  assert.equal(targetAfterClose(targets, { targetId: "popup", openerId: "login", browserContextId: "private" }), "one");
+});
 
 function fixture() {
   const windows = new Map([[1, { windowState: "fullscreen", left: 0, top: 0, width: 1200, height: 800 }]]);

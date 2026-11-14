@@ -1,3 +1,18 @@
+export function rememberOpener(target, previous) {
+  // Navigation can omit openerId. Keep its UI return target without restoring
+  // page-to-page access or changing Chromium's cross-origin opener policy.
+  if (target.openerId || !previous?.openerId || target.targetId !== previous.targetId ||
+      target.browserContextId !== previous.browserContextId) return target;
+  return { ...target, openerId: previous.openerId };
+}
+
+export function targetAfterClose(targets, closed) {
+  const opener = targets.get(closed?.openerId);
+  if (opener && opener.targetId !== closed.targetId &&
+      opener.browserContextId === closed.browserContextId) return opener.targetId;
+  return targets.keys().next().value || "";
+}
+
 // Chromium must observe a minimized window to throttle its hidden pages.
 // Withdrawing an X window alone leaves document.visibilityState visible.
 export class BrowserVisibility {
