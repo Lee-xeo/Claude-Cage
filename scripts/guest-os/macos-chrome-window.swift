@@ -156,11 +156,17 @@ final class MacChromeWindow {
             let browser_height: Int
             let webgl: String
             let canvas: String
+            let graphics_backend: String?
         }
         let value = try JSONDecoder().decode(Preferences.self, from: Data(contentsOf: file))
         guard (800...3840).contains(value.browser_width), (600...2160).contains(value.browser_height),
               ["native", "disabled"].contains(value.webgl), ["native", "blocked"].contains(value.canvas) else { throw Failure(8, "invalid_profile") }
         var flags = ["--window-size=\(value.browser_width),\(value.browser_height)"]
+        let backend = value.graphics_backend ?? "auto"
+        guard ["auto", "metal", "opengl", "software"].contains(backend), value.webgl != "disabled" || backend == "auto" else { throw Failure(8, "invalid_profile") }
+        if backend != "auto" {
+            flags += ["--use-gl=angle", "--use-angle=" + (backend == "opengl" ? "gl" : backend == "software" ? "swiftshader" : "metal")]
+        }
         if value.webgl == "disabled" { flags += ["--disable-3d-apis", "--disable-webgl"] }
         if value.canvas == "blocked" { flags.append("--disable-reading-from-canvas") }
         return flags

@@ -39,7 +39,10 @@ jobs:
       - name: Validate workflow syntax
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -color
       - name: Guest creation preference contracts
-        run: node scripts/guest-os/tests/browser-profile.test.mjs
+        run: |
+          node scripts/guest-os/tests/browser-profile.test.mjs
+          node internal/cage/device-observation.test.mjs
+          node internal/cage/browser-audit.test.mjs
   macos:
     needs: workflow-checks
     uses: ./.github/workflows/macos-build.yml

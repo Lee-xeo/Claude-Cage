@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { api, writeClipboard } from "./api";
 import { Modal } from "./views";
+import { DeviceChecks } from "./device-checks";
 import { networkState, reportForSharing } from "./safety-state.mjs";
 
 const diagnostics = [
@@ -232,6 +233,7 @@ export function SafetyPanel({
             检查涵盖出站规则、代理故障关闭、DNS、共享目录、宿主管理接口，以及系统和浏览器的实际配置。关键项失败或未知时保持外网关闭。
           </p>
         )}
+        <DeviceChecks disabled={busy || !status.vm_running} />
         {report?.checks?.some((check) => !check.critical) && (
           <div className="safety-advisories">
             {report.checks

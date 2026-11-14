@@ -14,6 +14,16 @@ test("creation preferences accept only bounded typed fields", () => {
   assert.deepEqual(browserProfileFlags(options), ["--window-size=1280,800", "--disable-3d-apis", "--disable-webgl", "--disable-reading-from-canvas"]);
   assert.deepEqual(browserProfileFlags({ ...options, webgl: "native", canvas: "native" }), ["--window-size=1280,800"]);
 });
+test("real graphics APIs are selected only for compatible guest platforms", () => {
+  const native = { ...options, webgl: "native", canvas: "native" };
+  assert(browserProfileFlags({ ...native, graphics_backend: "metal" }, "darwin").includes("--use-angle=metal"));
+  assert(browserProfileFlags({ ...native, graphics_backend: "d3d11" }, "win32").includes("--use-angle=d3d11"));
+  assert(browserProfileFlags({ ...native, graphics_backend: "vulkan" }, "linux").includes("--use-angle=vulkan"));
+  assert(browserProfileFlags({ ...native, graphics_backend: "software" }, "linux").includes("--use-angle=swiftshader"));
+  assert.throws(() => browserProfileFlags({ ...native, graphics_backend: "metal" }, "win32"), { code: "invalid_configuration" });
+  assert.throws(() => checkedBrowserProfile({ ...options, graphics_backend: "metal" }), { code: "invalid_configuration" });
+  assert.deepEqual(checkedBrowserProfile({ ...native, graphics_backend: "auto" }), native);
+});
 test("macOS creation settings are stored before opening a browser window", async () => {
   let saved;
   const dispatch = nativeBrowserDispatch({ profile: value => { saved = checkedBrowserProfile(value); }, window: () => { throw Error("window must stay closed"); } });

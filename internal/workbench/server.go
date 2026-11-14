@@ -393,6 +393,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
+	mux.HandleFunc("POST /api/environment/device-check", s.deviceCheck)
 	mux.HandleFunc("GET /api/environment/guest-profile", s.guestProfileOptions)
 	mux.HandleFunc("POST /api/environment/guest-profile/preview", s.guestProfileOptions)
 	mux.HandleFunc("GET /api/environment/guest-systems", s.guestInstallation)
@@ -880,7 +881,7 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.launch(w, "start", func() error {
-		if err := s.prepareGuestProfile(input.GuestProfile); err != nil {
+		if err := s.prepareGuestProfile(input.GuestProfile, input.System); err != nil {
 			return err
 		}
 		if err := s.prepareEnvironment(); err != nil {

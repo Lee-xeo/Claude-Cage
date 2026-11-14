@@ -11,6 +11,9 @@ func (s *Server) syncNativeBrowserProfile(ctx context.Context) error {
 		return err
 	}
 	input := map[string]any{"browser_width": p.BrowserWidth, "browser_height": p.BrowserHeight, "webgl": p.WebGL, "canvas": p.Canvas}
+	if p.GraphicsBackend != "" {
+		input["graphics_backend"] = p.GraphicsBackend
+	}
 	_, err = s.nativeBrowserClient().request(ctx, "POST", "/profile", input)
 	return err
 }

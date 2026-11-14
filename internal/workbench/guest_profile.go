@@ -3,8 +3,10 @@ package workbench
 import (
 	"errors"
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"net/http"
+	"runtime"
 	"strings"
 )
 
@@ -53,17 +55,35 @@ func (s *Server) guestProfileOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonReply(w, struct {
-		Profile  *guestprofile.Profile `json:"profile"`
-		Editable bool                  `json:"editable"`
-	}{p, p == nil && !location.HasEnvironment && !s.busy()})
+		Profile     *guestprofile.Profile     `json:"profile"`
+		Editable    bool                      `json:"editable"`
+		HostOS      string                    `json:"host_os"`
+		Container   bool                      `json:"container"`
+		AudioModels []guestprofile.AudioModel `json:"audio_models"`
+	}{p, p == nil && !location.HasEnvironment && !s.busy(), runtime.GOOS, containerenv.Configured(s.profile), guestprofile.AudioModels()})
 }
 
 // Called inside the installation operation lock, before any disk is created.
 // Legacy environments retain their accounts and settings on ordinary upgrades.
-func (s *Server) prepareGuestProfile(options *guestprofile.Options) error {
+func (s *Server) prepareGuestProfile(options *guestprofile.Options, systems ...string) error {
 	if options != nil {
 		if err := options.Validate(); err != nil {
 			return err
+		}
+		platform := "linux"
+		if len(systems) > 0 {
+			if systems[0] == "macos" {
+				platform = "darwin"
+			}
+			if systems[0] == "windows-11" {
+				platform = "windows"
+			}
+		}
+		if err := options.ValidatePlatform(platform); err != nil {
+			return err
+		}
+		if options.GPUBackend == "virgl" && (runtime.GOOS != "linux" || containerenv.Configured(s.profile)) {
+			return errors.New("VirGL 目前仅支持 Linux 主机上的 QEMU 客机")
 		}
 	}
 	p, err := guestprofile.Load(s.profile)

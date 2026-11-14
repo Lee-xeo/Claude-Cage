@@ -94,7 +94,7 @@ if (process.argv[2] !== "--service") {
     await mkdir(data, { recursive: true, mode: 0o700 });
     const file = path.join(data, "guest-profile.json");
     try { await writeFile(file, value, { flag: "wx", mode: 0o600 }); }
-    catch (error) { if (error.code !== "EEXIST" || await readFile(file, "utf8") !== value) throw error; }
+    catch (error) { if (error.code !== "EEXIST" || JSON.stringify(checkedBrowserProfile(JSON.parse(await readFile(file, "utf8")))) !== value) throw error; }
   };
   const dispatch = nativeBrowserDispatch({ settingsInputs: info => browserSettingsInputs(info, path.join(data, "Browser")), window: (action, fields, signal) => windowRequest(socket, action, fields, signal), editor: openEditor, tailnet, profile });
   const close = async () => {

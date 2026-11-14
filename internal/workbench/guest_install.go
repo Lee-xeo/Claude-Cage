@@ -312,7 +312,7 @@ func (s *Server) beginGuestInstallMode(w http.ResponseWriter, r *http.Request, i
 				return errors.New(check.Detail)
 			}
 		}
-		if err := s.prepareGuestProfile(in.GuestProfile); err != nil {
+		if err := s.prepareGuestProfile(in.GuestProfile, in.System); err != nil {
 			return err
 		}
 		if err := guestos.SaveInstallation(s.profile, install); err != nil {

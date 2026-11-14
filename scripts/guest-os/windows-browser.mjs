@@ -1,4 +1,5 @@
 import { lines, checkedBrowserProfile, browserProfileFlags } from "./browser-protocol.mjs";
+import { collectDeviceObservation } from "./device-observation.mjs";
 export { lines };
 import { createTailnetClient } from "./tailnet-client.mjs";
 // The GUI-session broker owns this process. Playwright uses inherited DevTools
@@ -656,7 +657,7 @@ export function createNativeBrowserService(options = {}) {
           ...(networkMode === "proxy" ? { proxy: { server: proxy, bypass: proxyBypass } } : {}),
           // CDP transports the user's input. Preserve the native browser identity
           // in every context, including private pages that cannot load extensions.
-          args: [...(creationProfile ? browserProfileFlags(creationProfile) : []),"--disable-blink-features=AutomationControlled", "--disable-quic", "--no-first-run", "--no-default-browser-check", "--restore-last-session", "--disable-session-crashed-bubble", "--host-resolver-rules=MAP *.cage-editor.localhost 127.0.0.1", ...(networkMode === "packet" ? ["--no-proxy-server"] : []), ...(extensionTools ? ["--enable-unsafe-extension-debugging", `--load-extension=${splitDirectory}`] : [])],
+          args: [...(creationProfile ? browserProfileFlags(creationProfile, mac ? "darwin" : options.testing ? process.platform : "win32") : []),"--disable-blink-features=AutomationControlled", "--disable-quic", "--no-first-run", "--no-default-browser-check", "--restore-last-session", "--disable-session-crashed-bubble", "--host-resolver-rules=MAP *.cage-editor.localhost 127.0.0.1", ...(networkMode === "packet" ? ["--no-proxy-server"] : []), ...(extensionTools ? ["--enable-unsafe-extension-debugging", `--load-extension=${splitDirectory}`] : [])],
           ignoreDefaultArgs: ["--enable-automation", ...(extensionTools ? ["--disable-extensions"] : []), ...(mac ? ["--mute-audio"] : [])], timeout: 20000,
         });
       } catch (error) { if (error.code) throw error; throw failure("browser_unavailable", "Windows 客机图形浏览器未能启动，请检查 GUI 会话和安装组件"); }
@@ -1193,7 +1194,7 @@ export function createNativeBrowserService(options = {}) {
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const file = path.join(directory, "guest-profile.json"), encoded = JSON.stringify(value);
       try { await writeFile(file, encoded, { flag: "wx", mode: 0o600 }); }
-      catch (error) { if (error.code !== "EEXIST" || await readFile(file, "utf8") !== encoded) throw error; }
+      catch (error) { if (error.code !== "EEXIST" || JSON.stringify(checkedBrowserProfile(JSON.parse(await readFile(file, "utf8")))) !== encoded) throw error; }
       creationProfile = value;
       viewport = { width: value.browser_width, height: value.browser_height };
       return { ok: true };
@@ -1288,6 +1289,7 @@ export function createNativeBrowserService(options = {}) {
       try {
         const auditPage = await isolated.newPage();
         const result = await auditPage.evaluate(() => ({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, language: navigator.language, platform: navigator.platform }));
+        result.device = await auditPage.evaluate(collectDeviceObservation);
         result.expected_timezone = expected;
         if (input.network === true) {
           try {

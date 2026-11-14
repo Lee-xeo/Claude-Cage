@@ -11,4 +11,5 @@ install -m 644 "$modules"/browser-{phone,phone-network}.mjs "$dest/modules/"
 
 install -m 644 "$modules/browser-check.html" "$dest/"
 install -m 644 "$modules/tailnet-client.mjs" "$dest/"
+install -m 644 "$modules/device-observation.mjs" "$dest/"
 bash "$src/../build-tailnet.sh" darwin arm64 "$dest/cage-tailnet"

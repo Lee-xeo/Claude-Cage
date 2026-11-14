@@ -22,7 +22,8 @@ import (
 )
 
 //go:embed browser-check.html
-var browserCheckPage []byte
+var rawBrowserCheckPage []byte
+var browserCheckPage = []byte(strings.Replace(string(rawBrowserCheckPage), "/*CAGE_DEVICE_PROBE*/", strings.Replace(deviceObservation, "export ", "", 1), 1))
 
 // ProbeExitIP sends a fixed request through the configured proxy. It does not
 // include user headers, credentials, a report or arbitrary guest data.
