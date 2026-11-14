@@ -205,6 +205,23 @@ export function installRemoteInput(
       if (!disposed) onStatus("文字输入未完成，请重新连接画面后重试");
     });
   };
+  // ASCII punctuation is left to the host input method so it can choose e.g.
+  // fullwidth "？". Some methods (Sogou) never answer with an input event, so
+  // the key would be dropped and the surface appears stuck. Keep the literal
+  // character as a fallback until the method answers or the key is released.
+  let pendingSymbol;
+  const cancelPendingSymbol = () => {
+    if (!pendingSymbol) return;
+    clearTimeout(pendingSymbol.timer);
+    pendingSymbol = undefined;
+  };
+  const flushPendingSymbol = () => {
+    const pending = pendingSymbol;
+    if (!pending) return;
+    pendingSymbol = undefined;
+    clearTimeout(pending.timer);
+    if (!composing) commit(pending.text);
+  };
   const queueComposition = (value) => {
     const targetId = compositionTarget;
     if (!insertComposition || !compositionSession || !targetId || disposed ||
@@ -224,6 +241,7 @@ export function installRemoteInput(
   };
   const startComposition = () => {
     acted();
+    cancelPendingSymbol();
     composing = true;
     compositionTarget = getTargetId();
     if (insertComposition && caretState?.context && caretState.target === compositionTarget &&
@@ -248,6 +266,7 @@ export function installRemoteInput(
   };
   on(target, "compositionend", (event) => endComposition(event.data || ""));
   on(target, "input", (event) => {
+    cancelPendingSymbol();
     if (document.activeElement !== target) {
       if (!composing) target.value = "";
       return;
@@ -476,6 +495,7 @@ export function installRemoteInput(
   });
   const release = () => {
     cancelCopy();
+    cancelPendingSymbol();
     for (const [code, keysym] of remote) transport.sendKey(keysym, code, false);
     remote.clear();
     physical.clear();
@@ -611,6 +631,17 @@ export function installRemoteInput(
           event.key.length === 1 && /[^a-zA-Z0-9 ]/.test(event.key)) {
         // Let the host input method choose punctuation (e.g. ? -> ？).
         // The resulting input event carries the actual character to insert.
+        // If it never arrives (some third-party methods), submit the literal
+        // key on release or after a short wait instead of dropping it.
+        flushPendingSymbol();
+        const pending = {
+          code,
+          text: event.key,
+          timer: setTimeout(() => {
+            if (pendingSymbol === pending) flushPendingSymbol();
+          }, 150),
+        };
+        pendingSymbol = pending;
         event.stopImmediatePropagation();
       } else if (macGuest()) {
         // noVNC's host-Mac modifier conversion targets non-Mac guests.
@@ -627,6 +658,13 @@ export function installRemoteInput(
     "keyup",
     (event) => {
       const code = getKeycode(event);
+      // The host input method had no answer for this punctuation key; commit
+      // the literal character before its release could reach noVNC.
+      if (pendingSymbol && pendingSymbol.code === code) {
+        flushPendingSymbol();
+        event.stopImmediatePropagation();
+        return;
+      }
       // noVNC ignores releases for keys it never sent. Let keyup through so a
       // modifier pressed before composition can still be released normally.
       physical.delete(code);
