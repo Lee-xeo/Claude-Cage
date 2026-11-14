@@ -7,8 +7,8 @@ fi
 if systemctl is-active --quiet cage-webvnc; then
   sudo systemctl stop cage-webvnc
 fi
-if ! command -v X0tigervnc >/dev/null || ! command -v Xtigervnc >/dev/null || ! command -v openbox >/dev/null || ! command -v xrandr >/dev/null || ! command -v xdotool >/dev/null || ! command -v ibus-daemon >/dev/null || ! /usr/bin/python3 -c 'import gi; gi.require_version("IBus", "1.0"); gi.require_version("Gtk", "3.0")' 2>/dev/null; then
-  sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-scraping-server tigervnc-tools openbox x11-xserver-utils xdotool libgtk-3-0 ibus ibus-gtk3 gir1.2-ibus-1.0 gir1.2-gtk-3.0 python3-gi python3-xlib xsettingsd
+if ! command -v Xtigervnc >/dev/null || ! command -v openbox >/dev/null || ! command -v xrandr >/dev/null || ! command -v xdotool >/dev/null || ! command -v ibus-daemon >/dev/null || ! /usr/bin/python3 -c 'import gi; gi.require_version("IBus", "1.0"); gi.require_version("Gtk", "3.0")' 2>/dev/null; then
+  sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-tools openbox x11-xserver-utils xdotool libgtk-3-0 ibus ibus-gtk3 gir1.2-ibus-1.0 gir1.2-gtk-3.0 python3-gi python3-xlib xsettingsd
 fi
 cage_novnc_root=/usr/share/novnc
 if cage_is_ubuntu; then
@@ -69,7 +69,7 @@ Wants=cage-display-governor.service
 [Service]
 User=cage-browser
 ExecStartPre=/usr/bin/rm -f /home/cage-browser/.vnc/display.sock
-ExecStart=/usr/local/bin/cage-log-run /usr/bin/Xtigervnc :77 -geometry 2880x1800 -depth 24 -rfbport -1 -rfbunixpath /home/cage-browser/.vnc/display.sock -rfbunixmode 0600 -nolisten tcp -localhost -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd
+ExecStart=/usr/local/bin/cage-log-run /usr/bin/Xtigervnc :77 -geometry 2880x1800 -depth 24 -rfbport 15900 -localhost -nolisten tcp -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd -AlwaysShared
 LogNamespace=cage
 Restart=on-failure
 UNIT
@@ -128,23 +128,17 @@ LogNamespace=cage
 Restart=on-failure
 RestartSec=5
 UNIT
-sudo tee /etc/systemd/system/cage-vnc.service >/dev/null <<'UNIT'
-[Unit]
-Description=Claude Cage browser screen
-Requires=cage-display.service
-After=cage-display.service
-[Service]
-User=cage-browser
-ExecStart=/usr/local/bin/cage-log-run /usr/bin/X0tigervnc -display :77 -rfbport 15900 -localhost -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd -AlwaysShared
-LogNamespace=cage
-Restart=on-failure
-RestartSec=2
-UNIT
+# The display serves its viewers itself. Earlier versions ran a second server
+# that copied the screen for them; it holds the same port until stopped.
+if [ -e /etc/systemd/system/cage-vnc.service ]; then
+  sudo systemctl stop cage-vnc 2>/dev/null || true
+  sudo rm -f /etc/systemd/system/cage-vnc.service
+fi
 sudo tee /etc/systemd/system/cage-webvnc.service >/dev/null <<'UNIT'
 [Unit]
 Description=Claude Cage browser web access
-Requires=cage-vnc.service
-After=cage-vnc.service
+Requires=cage-display.service
+After=cage-display.service
 [Service]
 User=cage-browser
 ExecStart=/usr/local/bin/cage-log-run /usr/bin/websockify --web=/usr/local/share/cage-webvnc 127.0.0.1:16080 127.0.0.1:15900

@@ -5,7 +5,7 @@ if ! cage_is_ubuntu && [[ ! -x /usr/bin/chromium ]]; then
   echo 'Missing chromium; run cage setup first.' >&2
   exit 1
 fi
-for app in code-server X0tigervnc Xtigervnc openbox websockify; do
+for app in code-server Xtigervnc openbox websockify; do
   command -v "$app" >/dev/null || { echo "Missing $app; run cage setup first." >&2; exit 1; }
 done
 mkdir -p "$HOME/.config/claude-cage"
@@ -62,9 +62,9 @@ d["credentials_enable_service"] = False
 d.setdefault("profile", {})["password_manager_enabled"] = False
 p.write_text(json.dumps(d))
 PYCODE
-sudo systemctl reset-failed cage-display cage-window-manager cage-browser cage-vnc cage-webvnc 2>/dev/null || true
+sudo systemctl reset-failed cage-display cage-window-manager cage-browser cage-webvnc 2>/dev/null || true
 sudo systemctl reset-failed cage-display-governor 2>/dev/null || true
-sudo systemctl restart cage-display cage-window-manager cage-browser cage-vnc cage-webvnc
+sudo systemctl restart cage-display cage-window-manager cage-browser cage-webvnc
 # Seed only appearance settings for a new editor profile. Existing preferences stay intact.
 python3 - <<'PYEDITOR'
 import shutil
