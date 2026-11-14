@@ -32,7 +32,7 @@
   --link: #414141;
   --success: #27835c;
   --danger: #c43d3d;
-  --sidebar-width: 248px;
+  --sidebar-width: 272px;
 }
 .safety-body {
   display: flex;
@@ -1409,7 +1409,7 @@ svg {
 .sidebar-navigation {
   display: grid;
   gap: 3px;
-  padding: 0 0 24px;
+  padding: 0 0 8px;
 }
 .workspace-sidebar:has(.account-menu) .sidebar-navigation {
   overflow-y: auto;
@@ -2258,7 +2258,7 @@ svg {
 }
 @media (max-width: 1050px) {
   :root {
-    --sidebar-width: 224px;
+    --sidebar-width: 248px;
   }
   .content-breadcrumb > button {
     max-width: 180px;
@@ -2276,7 +2276,7 @@ svg {
 }
 @media (max-width: 720px) {
   :root {
-    --sidebar-width: 192px;
+    --sidebar-width: 208px;
   }
   .workspace-sidebar {
     padding: 0 8px;
