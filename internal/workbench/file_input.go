@@ -131,6 +131,11 @@ func (s *Server) guestFiles(ctx context.Context, target, method, path string, bo
 		script += " " + shellescape.Quote("http://localhost"+path)
 	}
 	var stderr fileControlStderr
+	var renderErr error
+	script, renderErr = s.linuxTemplate(script)
+	if renderErr != nil {
+		return nil, renderErr
+	}
 	var data []byte
 	var err, readErr error
 	shared := false
@@ -443,7 +448,7 @@ func (s *Server) fileInputUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if target == "terminal" {
 		path, _ := result["path"].(string)
-		valid := strings.HasPrefix(path, "/home/cage/.local/share/cage/attachments/files/") && !strings.ContainsAny(path, "\x00\r\n")
+		valid := s.linuxPathHasPrefix(path, "/home/cage/.local/share/cage/attachments/files/") && !strings.ContainsAny(path, "\x00\r\n")
 		if s.windowsGuest != nil {
 			valid = validWindowsAttachmentPath(path, name)
 		}

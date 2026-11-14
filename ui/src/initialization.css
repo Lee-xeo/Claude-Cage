@@ -69,3 +69,9 @@
 .initialization-checks li { margin: 10px 0; }
 .initialization-checks p { margin: 4px 0; }
 @media (prefers-reduced-motion: reduce) { .mac-setup-checklist li { transition: none; } }
+.guest-profile-options { margin: 1rem 0; }
+.guest-profile-options summary { cursor: pointer; }
+.guest-profile-options fieldset { border: 0; padding: 0; display: grid; gap: .75rem; }
+.guest-profile-options label { display: grid; gap: .25rem; }
+.guest-profile-size { display: flex; gap: .5rem; align-items: center; }
+.guest-profile-size input { min-width: 0; width: 45%; }

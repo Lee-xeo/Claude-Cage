@@ -15,17 +15,19 @@ import (
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/guestos"
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/hostimage"
 	"github.com/sylvinus/agent-vm/internal/hostproxy"
 )
 
 type guestInstallRequest struct {
-	EditorTerms bool   `json:"editor_terms"`
-	System      string `json:"guest_system"`
-	Media       string `json:"media"`
-	SHA256      string `json:"sha256"`
-	CloneKey    string `json:"clone_key,omitempty"`
+	GuestProfile *guestprofile.Options `json:"guest_profile,omitempty"`
+	EditorTerms  bool                  `json:"editor_terms"`
+	System       string                `json:"guest_system"`
+	Media        string                `json:"media"`
+	SHA256       string                `json:"sha256"`
+	CloneKey     string                `json:"clone_key,omitempty"`
 }
 
 type guestInstallView struct {
@@ -309,6 +311,9 @@ func (s *Server) beginGuestInstallMode(w http.ResponseWriter, r *http.Request, i
 			if !check.HostCheckPassed {
 				return errors.New(check.Detail)
 			}
+		}
+		if err := s.prepareGuestProfile(in.GuestProfile, in.System); err != nil {
+			return err
 		}
 		if err := guestos.SaveInstallation(s.profile, install); err != nil {
 			return err

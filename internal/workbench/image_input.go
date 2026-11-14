@@ -298,7 +298,7 @@ func (s *Server) guestImage(ctx context.Context, target string, data []byte, win
 	}
 	if target == "terminal" {
 		path, ok := result["path"].(string)
-		if !ok || !strings.HasPrefix(path, "/home/cage/.local/share/cage/attachments/image-") || strings.ContainsAny(path, "'\r\n\x00") {
+		if !ok || !s.linuxPathHasPrefix(path, "/home/cage/.local/share/cage/attachments/image-") || strings.ContainsAny(path, "'\r\n\x00") {
 			return nil, errors.New("图片保存路径无效")
 		}
 	}

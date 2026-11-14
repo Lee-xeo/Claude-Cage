@@ -22,6 +22,7 @@ import (
 	"github.com/coreos/go-semver/semver"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
 
 	"github.com/lima-vm/lima/v2/pkg/driver/external/server"
 	"github.com/lima-vm/lima/v2/pkg/driverutil"
@@ -332,6 +333,25 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 			if err != nil {
 				return err
 			}
+			profile, err := guestprofile.Create(filepath.Dir(path), guestprofile.Options{})
+			if err != nil {
+				return err
+			}
+			if profile.GPUBackend == "virgl" {
+				if runtime.GOOS != "linux" || tmpl.Config.OS != nil && *tmpl.Config.OS != limatype.LINUX {
+					return errors.New("VirGL requires a Linux host and Linux QEMU guest")
+				}
+				if err := virGLHostReady(); err != nil {
+					return err
+				}
+				e = append(e, `.vmType = "qemu"`, `.video.display = "egl-headless"`)
+			}
+			identity.Hostname = profile.Hostname
+			data, err = json.Marshal(identity)
+			if err != nil {
+				return err
+			}
+			e = append(e, ".guestIdentity = "+string(data))
 			if template == "template:debian-13" {
 				images, err := cageDebianImages(tmpl.Config.Images)
 				if err != nil {
@@ -347,7 +367,7 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 			if tmpl.Config.OS != nil && *tmpl.Config.OS == limatype.DARWIN {
 				e = append(e, `.user.name = "cageprovision"`, `.user.home = "/Users/cageprovision"`, `.user.comment = "Cage Provisioning"`, ".user.uid = 501", `.video.display = "offscreen"`)
 			} else {
-				e = append(e, `.user.name = "cage"`, `.user.home = "/home/cage"`, ".user.uid = 1000")
+				e = append(e, `.user.name = `+strconv.Quote(profile.Username), `.user.home = `+strconv.Quote(profile.WorkHomePath()), `.user.comment = ""`, ".user.uid = 1000")
 			}
 		}
 		if len(e) > 0 {
@@ -397,7 +417,20 @@ func (l *Lima) Clone(ctx context.Context, from, to string) error {
 	if sock := filepath.Join(dir, filenames.LongestSock); len(sock) >= osutil.UnixPathMax {
 		return fmt.Errorf("%w: its sockets in %s would need %d characters, at most %d", ErrNameTooLong, filepath.Dir(dir), len(sock), osutil.UnixPathMax-1)
 	}
-	_, err = instance.CloneOrRename(ctx, inst, to, false)
+	identity, err := guestidentity.New()
+	if err != nil {
+		return err
+	}
+	if path := os.Getenv(cage.ConfigEnv); path != "" {
+		profile, e := guestprofile.Load(filepath.Dir(path))
+		if e != nil {
+			return e
+		}
+		if profile != nil {
+			identity.Hostname = profile.Hostname
+		}
+	}
+	_, err = instance.CloneWithIdentity(ctx, inst, to, identity)
 	return err
 }
 

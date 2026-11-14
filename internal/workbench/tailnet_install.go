@@ -58,7 +58,11 @@ func (s *Server) installTailnet() error {
 		return err
 	}
 	defer reader.Close()
-	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", "/bin/bash -c "+shellescape.Quote(tailnetInstallScript))
+	script, err := s.linuxTemplate(tailnetInstallScript)
+	if err != nil {
+		return err
+	}
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", "/bin/bash -c "+shellescape.Quote(script))
 	cmd.Stdin = reader
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard

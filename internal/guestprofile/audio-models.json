@@ -1,0 +1,14 @@
+[
+  {"id":"scarlett-solo-4","vendor":"Focusrite","model":"Scarlett Solo 4th Gen","label":"Focusrite Scarlett Solo USB","stem":"Focusrite_Scarlett_Solo","source":"https://us.focusrite.com/scarlett"},
+  {"id":"scarlett-2i2-4","vendor":"Focusrite","model":"Scarlett 2i2 4th Gen","label":"Focusrite Scarlett 2i2 USB","stem":"Focusrite_Scarlett_2i2","source":"https://focusrite.com/products/scarlett-2i2"},
+  {"id":"scarlett-4i4-4","vendor":"Focusrite","model":"Scarlett 4i4 4th Gen","label":"Focusrite Scarlett 4i4 USB","stem":"Focusrite_Scarlett_4i4","source":"https://us.focusrite.com/scarlett"},
+  {"id":"scarlett-16i16-4","vendor":"Focusrite","model":"Scarlett 16i16 4th Gen","label":"Focusrite Scarlett 16i16 USB","stem":"Focusrite_Scarlett_16i16","source":"https://us.focusrite.com/scarlett"},
+  {"id":"scarlett-18i16-4","vendor":"Focusrite","model":"Scarlett 18i16 4th Gen","label":"Focusrite Scarlett 18i16 USB","stem":"Focusrite_Scarlett_18i16","source":"https://us.focusrite.com/scarlett"},
+  {"id":"scarlett-18i20-4","vendor":"Focusrite","model":"Scarlett 18i20 4th Gen","label":"Focusrite Scarlett 18i20 USB","stem":"Focusrite_Scarlett_18i20","source":"https://us.focusrite.com/scarlett"},
+  {"id":"umc202hd","vendor":"Behringer","model":"U-PHORIA UMC202HD","label":"Behringer UMC202HD","stem":"Behringer_UMC202HD","source":"https://www.behringer.com/en/products/0805-AAR"},
+  {"id":"ur22c","vendor":"Steinberg","model":"UR22C","label":"Steinberg UR22C","stem":"Steinberg_UR22C","source":"https://www.steinberg.net/audio-interfaces/ur-c-series/"},
+  {"id":"ur44c","vendor":"Steinberg","model":"UR44C","label":"Steinberg UR44C","stem":"Steinberg_UR44C","source":"https://www.steinberg.net/audio-interfaces/ur-c-series/"},
+  {"id":"ur816c","vendor":"Steinberg","model":"UR816C","label":"Steinberg UR816C","stem":"Steinberg_UR816C","source":"https://www.steinberg.net/audio-interfaces/ur-c-series/"},
+  {"id":"ag03mk2","vendor":"Yamaha","model":"AG03MK2","label":"Yamaha AG03MK2","stem":"Yamaha_AG03MK2","source":"https://manual.yamaha.com/pa/live_streaming/ag03_06/en-US/8365321099.html"},
+  {"id":"ag06mk2","vendor":"Yamaha","model":"AG06MK2","label":"Yamaha AG06MK2","stem":"Yamaha_AG06MK2","source":"https://manual.yamaha.com/pa/live_streaming/ag03_06/en-US/8365321099.html"}
+]

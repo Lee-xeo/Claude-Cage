@@ -1,0 +1,8 @@
+.device-checks { margin-block: 1rem; }
+.device-check-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.device-check-results { list-style: none; padding: 0; display: grid; gap: .75rem; }
+.device-check-results li { border: 1px solid var(--border, #8886); border-radius: .5rem; padding: .75rem; }
+.device-check-results li > span { margin-inline-start: .75rem; }
+.device-check-results li[data-state="failed"] > span { color: var(--error, #b23434); }
+.device-check-results li p, .device-checks dd { overflow-wrap: anywhere; }
+.device-checks dd { margin: .25rem 0 .75rem; }

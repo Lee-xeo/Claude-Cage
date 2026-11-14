@@ -101,6 +101,11 @@ func (s *Server) guest(ctx context.Context, script string) ([]byte, error) {
 }
 
 func (s *Server) guestControl(ctx context.Context, script, diagnosticSource string) ([]byte, error) {
+	var renderErr error
+	script, renderErr = s.linuxTemplate(script)
+	if renderErr != nil {
+		return nil, renderErr
+	}
 	if s.windowsGuest != nil {
 		return nil, errors.New("Windows 客机不支持 Linux 控制脚本")
 	}

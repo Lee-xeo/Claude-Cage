@@ -386,6 +386,9 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
+	mux.HandleFunc("POST /api/environment/device-check", s.deviceCheck)
+	mux.HandleFunc("GET /api/environment/guest-profile", s.guestProfileOptions)
+	mux.HandleFunc("POST /api/environment/guest-profile/preview", s.guestProfileOptions)
 	mux.HandleFunc("GET /api/environment/guest-systems", s.guestInstallation)
 	mux.HandleFunc("GET /api/environment/guest-systems/clone", s.hostClone)
 	mux.HandleFunc("DELETE /api/environment/guest-systems", s.guestInstallation)
@@ -789,6 +792,16 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 && !readJSON(w, r, &input) {
 		return
 	}
+	if input.GuestProfile != nil {
+		if err := input.GuestProfile.Validate(); err != nil {
+			requestError(w, err)
+			return
+		}
+		if s.windowsGuest != nil || s.macosGuest != nil {
+			http.Error(w, "已有客机不能替换创建配置", http.StatusConflict)
+			return
+		}
+	}
 	if s.windowsGuest != nil {
 		if input.System != "" && input.System != guestos.Windows11 {
 			http.Error(w, "此配置已绑定 Windows 客机", http.StatusConflict)
@@ -861,6 +874,9 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.launch(w, "start", func() error {
+		if err := s.prepareGuestProfile(input.GuestProfile, input.System); err != nil {
+			return err
+		}
 		if err := s.prepareEnvironment(); err != nil {
 			return err
 		}

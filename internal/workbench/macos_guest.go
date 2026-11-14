@@ -108,6 +108,9 @@ func (s *Server) attachMacOSGuest() error {
 	ctx, cancel := s.controlContext()
 	defer cancel()
 	err := s.checkMacOSGuest(ctx)
+	if err == nil {
+		err = s.syncNativeBrowserProfile(ctx)
+	}
 	s.mu.Lock()
 	newlyReady := !s.ready && err == nil
 	checkAfterReconnect := newlyReady && !s.closing && !s.networkPaused && !s.jobs.snapshot().Running

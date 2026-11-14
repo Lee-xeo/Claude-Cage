@@ -207,6 +207,7 @@ func RunMaintenanceScript(ctx context.Context, configPath, script string, stdout
 		return err
 	}
 	profile := filepath.Dir(configPath)
+	script = cfg.GuestProfile.Linux(script)
 	if err = cfg.RequireManagedProxy(profile); err != nil {
 		return err
 	}
@@ -233,6 +234,7 @@ func RunMaintenanceScript(ctx context.Context, configPath, script string, stdout
 	s := &Server{profile: profile}
 	forward := fmt.Sprintf("127.0.0.1:%d:%s", maintenancePort, listener.Addr().String())
 	command := "sudo systemd-run --quiet --pipe --wait --collect --unit=cage-maintenance-operation --property=User=cage --property=RuntimeMaxSec=infinity --property=KillMode=control-group --setenv=HOME=/home/cage --working-directory=" + shellescape.Quote(guestPath(s.environmentDir())) + " /bin/bash -se"
+	command = cfg.GuestProfile.Linux(command)
 	cmd := s.sshCommandWithForwarding(ctx, "-o", "ExitOnForwardFailure=yes", "-R", forward, "-T", s.sshTarget(), "--", command)
 	cmd.Stdin = strings.NewReader(maintenanceScript(cage.DebianPrepareScript+"\n"+script, proxy.token))
 	var output failureOutput

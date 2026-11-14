@@ -52,7 +52,7 @@ func generate(random io.Reader) (*Identity, error) {
 	}, nil
 }
 
-var hostnamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,13}[A-Za-z0-9]$`)
+var hostnamePattern = regexp.MustCompile(`^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?$`)
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 func (i *Identity) Validate() error {

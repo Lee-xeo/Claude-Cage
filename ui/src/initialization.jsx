@@ -5,6 +5,7 @@ import { isRemoteClient } from "./client-context.mjs";
 import { MacOSAccountGate, useAccount } from "./account";
 import { GuestSystemPicker, HostCloneSummary, validGuestChoice } from "./guest-system-picker";
 import { InitializationStorage } from "./initialization-storage";
+import { GuestProfileOptions } from "./guest-profile";
 import { ProxySettings } from "./proxy-settings";
 import { SetupProgress } from "./setup-progress";
 import { DiagnosticSettings } from "./diagnostics.jsx";
@@ -58,6 +59,7 @@ function Initialization({ initial, onComplete }) {
   const [status, setStatus] = useState(null);
   const [proxy, setProxy] = useState(null);
   const [choice, setChoice] = useState(undefined);
+  const [guestProfile, setGuestProfile] = useState({});
   const [storage, setStorage] = useState(null);
   const [pending, setPending] = useState(null);
   const [macRecovery, setMacRecovery] = useState(null);
@@ -153,7 +155,7 @@ function Initialization({ initial, onComplete }) {
     if (account?.guest_system) return {};
     if (pending) return { guest_system: pending.system };
     if (!choice) return job.setup_progress?.system ? { guest_system: job.setup_progress.system } : {};
-    return { guest_system: choice.guest_system, media: choice.media, sha256: choice.sha256, clone_key: choice.clone_key, editor_terms: choice.editor_terms };
+    return { guest_system: choice.guest_system, media: choice.media, sha256: choice.sha256, clone_key: choice.clone_key, editor_terms: choice.editor_terms, ...(guestProfile ? { guest_profile: guestProfile } : {}) };
   }
   async function install() {
     if (needsProxySetup(null, status, proxy)) { setError("请先选择并应用代理节点。"); setStep("proxy"); return; }
@@ -262,6 +264,7 @@ function Initialization({ initial, onComplete }) {
           {step === "system" && <>
             <GuestSystemPicker system={choice} onChange={setChoice} preserveOnUnmount deferMatch />
             <InitializationStorage value={storage} onChange={setStorage} disabled={busy} />
+            <GuestProfileOptions value={guestProfile} onChange={setGuestProfile} disabled={busy} system={choice?.guest_system} />
           </>}
           {step === "proxy" && <><ProxySettings initializing status={status} onConfirm={confirm} onDirty={setProxyDirty} onApplied={async () => { setProxy(await api("/proxy")); pollNow.current?.(); }} />{choice?.clone && !needsProxySetup(null, status, proxy) && <HostCloneSummary pending={choice.pending} onChange={setChoice} />}</>}
           {step === "install" && (ready ? <div className="initialization-ready"><ShieldCheck size={36} /><h2>环境已就绪</h2><p>独立客机已安装，工具、文件和登录状态会持续保存。以后打开 Cage 可直接进入工作台。</p></div> : <>

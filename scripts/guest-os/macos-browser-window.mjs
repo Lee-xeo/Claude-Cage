@@ -1,5 +1,6 @@
 // The signed window helper is the only owner of the ordinary Chrome process.
 import net from "node:net";
+import { collectDeviceObservation } from "./device-observation.mjs";
 import http from "node:http";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -100,7 +101,7 @@ export async function auditBrowser(input, launch) {
     // The synthetic gateway serves the same fixed page only while checking
     // network policy. Routine language/timezone checks stay entirely local.
     if (!input.network) {
-      const html = await readFile(new URL("./browser-check.html", import.meta.url));
+      const html = (await readFile(new URL("./browser-check.html", import.meta.url), "utf8")).replace("/*CAGE_DEVICE_PROBE*/",collectDeviceObservation.toString());
       localPage = await browserCallback("127.0.0.1", (_, res) => {
         res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(html);
       });
@@ -135,7 +136,7 @@ export async function browserSettingsInputs(info, profile) {
     prefs.intl ?? null, local.intl ?? null]);
 }
 
-export function nativeBrowserDispatch({ window, editor, tailnet, settingsInputs }) {
+export function nativeBrowserDispatch({ window, editor, tailnet, settingsInputs, profile }) {
   let homepage, observed, focusSequence = 0, sequence = 1;
   let lastEventStatus, sampledAt = 0;
   const capabilities = { nativeWindow: true, login: true, editor: true };
@@ -150,6 +151,7 @@ export function nativeBrowserDispatch({ window, editor, tailnet, settingsInputs 
   return async ({ method, path, input = {}, operation }, { signal } = {}) => {
     signal?.throwIfAborted();
     if (operation === "configure") return { ok: true };
+    if (method === "POST" && path === "/profile" && profile) { await profile(input); return { ok: true }; }
     if (method === "POST" && path === "/tailnet") return tailnet.request(input);
     if (method === "POST" && path === "/homepage") {
       homepage = input.url === "about:blank" ? undefined : webURL(input.url).href;

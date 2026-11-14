@@ -19,17 +19,19 @@ param(
     [Parameter(Mandatory)][string]$InstanceDirectory,
     [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ExpectedIsoSha256,
     [string]$PowerShellZip,
+    [ValidatePattern('^(?:\*|[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?)$')][string]$ComputerName = '*',
     [switch]$AcceptEvaluationTerms,
     [switch]$Start
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'windows-guest-media.ps1')
 
-function New-EvaluationAnswer([string]$Template, [int]$ImageIndex, [long]$DiskBytes, [bool]$TermsAccepted) {
+function New-EvaluationAnswer([string]$Template, [int]$ImageIndex, [long]$DiskBytes, [bool]$TermsAccepted, [string]$ComputerName = '*') {
+    if ($ComputerName -cne '*' -and $ComputerName -cnotmatch '^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?$') { throw 'Invalid guest computer name.' }
     if ($ImageIndex -lt 1 -or $DiskBytes -lt 64GB) { throw 'Invalid evaluation image index or disk capacity.' }
     # Preserve 1.5 GiB for WinRE, plus GPT alignment, the ESP and MSR.
     $osMiB = [long][Math]::Floor($DiskBytes / 1MB) - 1536 - 2 - 260 - 16
-    return $Template.Replace('OS_SIZE_MIB', "$osMiB").Replace('EVAL_IMAGE_INDEX', "$ImageIndex").Replace('ACCEPT_EULA', $TermsAccepted.ToString().ToLowerInvariant())
+    return $Template.Replace('<ComputerName>*</ComputerName>', ('<ComputerName>'+$ComputerName+'</ComputerName>')).Replace('OS_SIZE_MIB', "$osMiB").Replace('EVAL_IMAGE_INDEX', "$ImageIndex").Replace('ACCEPT_EULA', $TermsAccepted.ToString().ToLowerInvariant())
 }
 
 function Get-EvaluationImage([string]$Path) {
@@ -115,7 +117,7 @@ try {
         $stageReceipt = Join-Path $stage 'receipt.json'
         $null = [IO.Directory]::CreateDirectory($stage)
         try {
-            $answer = New-EvaluationAnswer ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-evaluation-autounattend.xml'))) $edition.ImageIndex $vhd.Size $AcceptEvaluationTerms.IsPresent
+            $answer = New-EvaluationAnswer ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-evaluation-autounattend.xml'))) $edition.ImageIndex $vhd.Size $AcceptEvaluationTerms.IsPresent $ComputerName
             New-WindowsGuestAnswerISO $stageISO ([xml]$answer) $PowerShellZip $genericAnswer
             Grant-VMAnswerReadAccess $stageISO $VMId
             $metadata = [ordered]@{

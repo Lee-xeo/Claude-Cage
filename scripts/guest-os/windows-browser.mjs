@@ -1,4 +1,5 @@
-import { lines } from "./browser-protocol.mjs";
+import { lines, checkedBrowserProfile, browserProfileFlags } from "./browser-protocol.mjs";
+import { collectDeviceObservation } from "./device-observation.mjs";
 export { lines };
 import { createTailnetClient } from "./tailnet-client.mjs";
 // The GUI-session broker owns this process. Playwright uses inherited DevTools
@@ -136,6 +137,7 @@ export function createNativeBrowserService(options = {}) {
   let context, owner, browserCDP, initialized, closing, proxy, networkMode = "proxy", configured = false;
   let active = "", home = options.homepage ?? "https://www.bing.com/", displayScale = options.displayScale ?? 2;
   let timezone, language;
+  let creationProfile;
   let viewport = { width: 1140, height: 700 }, persistQueue = Promise.resolve();
   const tabs = new Map(), byPage = new WeakMap(), sessions = new Map(), frameSessions = new WeakMap(), internalPages = new WeakSet();
   const captures = new Map(), stoppingCaptures = new Map();
@@ -637,6 +639,11 @@ export function createNativeBrowserService(options = {}) {
           await import(new URL("./modules/browser-vault.mjs", import.meta.url)));
       } catch { throw failure("browser_unavailable", "Windows 客机浏览器组件尚未完整安装"); }
       await mkdir(directory, { recursive: true, mode: 0o700 });
+      if (!creationProfile) {
+        try { creationProfile = checkedBrowserProfile(JSON.parse(await readFile(path.join(directory, "guest-profile.json"), "utf8"))); }
+        catch (error) { if (error.code !== "ENOENT") throw error; }
+      }
+      if (creationProfile) viewport = { width: creationProfile.browser_width, height: creationProfile.browser_height };
       // Remove only this controller's scratch uploads. Profiles, downloads and
       // editor buffers are persistent and are never initialized away.
       await rm(uploadDirectory, { recursive: true, force: true });
@@ -650,7 +657,7 @@ export function createNativeBrowserService(options = {}) {
           ...(networkMode === "proxy" ? { proxy: { server: proxy, bypass: proxyBypass } } : {}),
           // CDP transports the user's input. Preserve the native browser identity
           // in every context, including private pages that cannot load extensions.
-          args: ["--disable-blink-features=AutomationControlled", "--disable-quic", "--no-first-run", "--no-default-browser-check", "--restore-last-session", "--disable-session-crashed-bubble", "--host-resolver-rules=MAP *.cage-editor.localhost 127.0.0.1", ...(networkMode === "packet" ? ["--no-proxy-server"] : []), ...(extensionTools ? ["--enable-unsafe-extension-debugging", `--load-extension=${splitDirectory}`] : [])],
+          args: [...(creationProfile ? browserProfileFlags(creationProfile, mac ? "darwin" : options.testing ? process.platform : "win32") : []),"--disable-blink-features=AutomationControlled", "--disable-quic", "--no-first-run", "--no-default-browser-check", "--restore-last-session", "--disable-session-crashed-bubble", "--host-resolver-rules=MAP *.cage-editor.localhost 127.0.0.1", ...(networkMode === "packet" ? ["--no-proxy-server"] : []), ...(extensionTools ? ["--enable-unsafe-extension-debugging", `--load-extension=${splitDirectory}`] : [])],
           ignoreDefaultArgs: ["--enable-automation", ...(extensionTools ? ["--disable-extensions"] : []), ...(mac ? ["--mute-audio"] : [])], timeout: 20000,
         });
       } catch (error) { if (error.code) throw error; throw failure("browser_unavailable", "Windows 客机图形浏览器未能启动，请检查 GUI 会话和安装组件"); }
@@ -1180,6 +1187,18 @@ export function createNativeBrowserService(options = {}) {
     signal?.throwIfAborted();
     if (method === "POST" && route === "/tailnet") return tailnet.request(input);
     if (operation === "configure") return configure(input);
+    if (method === "POST" && route === "/profile") {
+      const value = checkedBrowserProfile(input);
+      if (creationProfile && JSON.stringify(creationProfile) !== JSON.stringify(value)) throw failure("invalid_configuration", "创建配置已保存，请继续原环境");
+      if (context && !creationProfile) throw failure("browser_restart_required", "请关闭客机浏览器后重新连接，以应用创建配置");
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      const file = path.join(directory, "guest-profile.json"), encoded = JSON.stringify(value);
+      try { await writeFile(file, encoded, { flag: "wx", mode: 0o600 }); }
+      catch (error) { if (error.code !== "EEXIST" || JSON.stringify(checkedBrowserProfile(JSON.parse(await readFile(file, "utf8")))) !== encoded) throw error; }
+      creationProfile = value;
+      viewport = { width: value.browser_width, height: value.browser_height };
+      return { ok: true };
+    }
     if (operation === "input-release-pointer") {
       const held = rfbPointer, mask = rfbMask;
       rfbMask = 0; rfbPane = undefined; rfbPointer = undefined;
@@ -1284,6 +1303,7 @@ export function createNativeBrowserService(options = {}) {
       try {
         const auditPage = await isolated.newPage();
         const result = await auditPage.evaluate(() => ({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, language: navigator.language, platform: navigator.platform }));
+        result.device = await auditPage.evaluate(collectDeviceObservation);
         result.expected_timezone = expected;
         if (input.network === true) {
           try {

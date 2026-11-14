@@ -24,6 +24,7 @@ try {
     Push-Location (Join-Path $root 'tools/tailnet')
     try { go build -trimpath -ldflags '-s -w' -o (Join-Path $dest 'cage-tailnet.exe') .; if ($LASTEXITCODE) { throw 'Could not build Cage Tailscale.' } } finally { Pop-Location }
     Copy-Item -LiteralPath (Join-Path $root 'internal/cage/tailnet-client.mjs') -Destination $dest
+    Copy-Item -LiteralPath (Join-Path $root 'internal/cage/device-observation.mjs') -Destination $dest
     foreach ($file in @('windows-browser.mjs','browser-protocol.mjs','windows-browser-extensions.mjs','windows-phone-browser.mjs','windows-workbench-packages.json','install-windows-workbench-user-tools.ps1','claude-desktop-windows.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $dest
     }

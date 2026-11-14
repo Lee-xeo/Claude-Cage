@@ -33,6 +33,7 @@ internal static class BrowserRpc
     internal static void Register()
     {
         Routes.UnionWith(["paste-start", "paste-chunk", "paste-finish", "paste-cancel", "tailnet", "phone-browser/open", "phone-browser/frame", "phone-browser/action", "phone-browser/close"]);
+        Routes.Add("profile");
         GuestOperations.Register("browser", Run);
         ProjectRpc.Revoked += (project, grant) =>
         {
@@ -185,6 +186,7 @@ internal static class BrowserRpc
             }
             if(route=="/input"&&BrowserWindowCapture.ReleaseInput(lease,input))return new JsonObject { ["ok"] = true };
             await Start(timeout.Token);
+            if (route == "/profile") return await Control(request, timeout.Token);
             if (pagePointerReleasePending) await ReleasePagePointer(timeout.Token);
             if (pagePointerOwner is not null && route is "/resize" or "/navigate" or "/new" or "/close" or "/activate" or "/split" or "/back" or "/forward" or "/reload" or "/paste" or "/cut" or "/copy" or "/select-all" or "/insert-text")
                 await ReleasePagePointer(timeout.Token);

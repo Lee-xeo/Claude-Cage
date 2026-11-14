@@ -1,0 +1,51 @@
+diff --git a/pkg/guestidentity/identity.go b/pkg/guestidentity/identity.go
+index fe4bdb3..bb41f1c 100644
+--- a/pkg/guestidentity/identity.go
++++ b/pkg/guestidentity/identity.go
+@@ -52,7 +52,7 @@ func generate(random io.Reader) (*Identity, error) {
+ 	}, nil
+ }
+ 
+-var hostnamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,13}[A-Za-z0-9]$`)
++var hostnamePattern = regexp.MustCompile(`^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?$`)
+ var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+ 
+ func (i *Identity) Validate() error {
+diff --git a/pkg/instance/clone.go b/pkg/instance/clone.go
+index a78fffa..c19c44d 100644
+--- a/pkg/instance/clone.go
++++ b/pkg/instance/clone.go
+@@ -26,6 +26,18 @@ import (
+ )
+ 
+ func CloneOrRename(ctx context.Context, oldInst *limatype.Instance, newInstName string, rename bool) (*limatype.Instance, error) {
++	return cloneOrRename(ctx, oldInst, newInstName, rename, nil)
++}
++
++// CloneWithIdentity prepares the target identity before publishing its config.
++func CloneWithIdentity(ctx context.Context, oldInst *limatype.Instance, newInstName string, identity *guestidentity.Identity) (*limatype.Instance, error) {
++	if err := identity.Validate(); err != nil {
++		return nil, err
++	}
++	return cloneOrRename(ctx, oldInst, newInstName, false, identity)
++}
++
++func cloneOrRename(ctx context.Context, oldInst *limatype.Instance, newInstName string, rename bool, identity *guestidentity.Identity) (*limatype.Instance, error) {
+ 	verb := "clone"
+ 	if rename {
+ 		verb = "rename"
+@@ -58,9 +70,11 @@ func CloneOrRename(ctx context.Context, oldInst *limatype.Instance, newInstName
+ 
+ 	var clonedConfig []byte
+ 	if !rename {
+-		identity, err := guestidentity.New()
+-		if err != nil {
+-			return nil, err
++		if identity == nil {
++			identity, err = guestidentity.New()
++			if err != nil {
++				return nil, err
++			}
+ 		}
+ 		data, err := json.Marshal(identity)
+ 		if err != nil {
