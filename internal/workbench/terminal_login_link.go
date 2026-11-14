@@ -14,8 +14,11 @@ func claudeAuthorizationURL(raw string) bool {
 		return false
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery == "" ||
-		(u.EscapedPath() != "/oauth/authorize" && u.EscapedPath() != "/oauth/authorize/") {
+	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery == "" {
+		return false
+	}
+	path := strings.TrimSuffix(u.EscapedPath(), "/")
+	if path != "/oauth/authorize" && path != "/cai/oauth/authorize" {
 		return false
 	}
 	switch strings.ToLower(u.Host) {

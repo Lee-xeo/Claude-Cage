@@ -11,7 +11,7 @@ $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $utf8=[Text.UTF8Encoding]::new($false)
 $copiedFixtureText=$utf8.GetString([Convert]::FromBase64String('Q2FnZSBuYXRpdmUgY29weSDkuK3mlofwn5mC'))
-$binding=Get-Content -LiteralPath $ProfilePath -Raw|ConvertFrom-Json
+$binding=Get-Content -LiteralPath $ProfilePath -Raw -Encoding UTF8|ConvertFrom-Json
 $vm=Get-VM -Id ([guid]$binding.vm_id)
 if($binding.version -ne 1 -or $vm.State -ne 'Running' -or @(Get-VMNetworkAdapter -VM $vm).Count -ne 0){throw 'The independently bound offline guest is not ready.'}
 $credential=Import-Clixml -LiteralPath $CredentialFile
@@ -29,7 +29,7 @@ function Bridge([string]$Operation){
 function Send($p,$value){$bytes=$utf8.GetBytes((ConvertTo-Json -InputObject $value -Compress -Depth 12)+"`n");$p.StandardInput.BaseStream.Write($bytes,0,$bytes.Length);$p.StandardInput.BaseStream.Flush()}
 function Read($p){$pending=$p.StandardOutput.ReadLineAsync();if(!$pending.Wait(45000) -or !$pending.Result){throw ('The owned browser response did not complete: '+$script:phase)};return $pending.Result|ConvertFrom-Json}
 function Call([string]$Path,$Payload=@{},[string]$Method='POST'){Send $browser @{method=$Method;path=$Path;input=$Payload};$value=Read $browser;if($value.error){throw ($script:phase+': '+$value.error)};return $value}
-function State {return Invoke-Command -Session $session -ArgumentList $guestDirectory -ScriptBlock {param($dir);$file=Join-Path $dir 'fixture-state.json';if(Test-Path -LiteralPath $file){foreach($report in (Get-Content -LiteralPath $file -Raw|ConvertFrom-Json)){$report}}}}
+function State {return Invoke-Command -Session $session -ArgumentList $guestDirectory -ScriptBlock {param($dir);$file=Join-Path $dir 'fixture-state.json';if(Test-Path -LiteralPath $file){foreach($report in (Get-Content -LiteralPath $file -Raw -Encoding UTF8|ConvertFrom-Json)){$report}}}}
 function Frame([string]$Name){
     $f=Call '/frame' @{} 'GET';if($f.width -lt 1 -or $f.height -lt 1 -or !$f.target){throw 'The native frame receipt is invalid.'}
     Add-Type -AssemblyName System.Drawing
@@ -142,6 +142,20 @@ try {
     if(!(@(State)|Where-Object {$_.type -eq 'png' -and $_.width -eq 17 -and $_.height -eq 9})){throw 'The native OS PNG did not reach the fixture paste event.'};$results.native_png_paste=$true;$null=Frame '09-png-pasted'
     $script:phase='native_permission';$frame=Frame '10-before-permission';Click $frame 330 215;Start-Sleep -Milliseconds 250
     $permission=Frame '11-native-permission';if(@($permission.overlays).Count -eq 0){throw 'The native permission prompt was not captured.'};$results.native_permission_prompt=$true;Key $permission 65307 $true;Key $permission 65307 $false
+    $script:phase='verification_popup';$frame=Frame '11a-opener';Click $frame 45 36
+    $popup=$null
+    for($i=0;$i-lt 40;$i++){
+        $snapshot=Call '/tabs' @{} 'GET'
+        $popup=@($snapshot.tabs|Where-Object {$_.incognito -and $_.url -like '*/verification-popup'})[0]
+        if($popup -and $snapshot.active -eq $popup.id){break};Start-Sleep -Milliseconds 50
+    }
+    if(!$popup -or $snapshot.active -ne $popup.id){throw 'The verification popup did not become active.'};$tabs.Add($popup.id)
+    $popupFrame=Frame '11a-verification-popup'
+    if($popupFrame.id -ne $popup.id){throw 'The verification frame still shows the opener.'}
+    Click $popupFrame 45 36
+    for($i=0;$i-lt 40;$i++){if(@(State)|Where-Object {$_.page -eq '/verification-popup' -and $_.type -eq 'verified'}){break};Start-Sleep -Milliseconds 50}
+    if($i -eq 40){throw 'The verification popup did not receive the click.'}
+    $null=Call '/close' @{id=$popup.id};$null=Call '/activate' @{id=$tab.id};$results.native_verification_popup=$true
     $script:phase='native_private_tabs';$frame=Frame '11a-private-one';Click $frame ($frame.width/$frame.scale-120) 36
     $privateSecond=$null;for($i=0;$i-lt 40;$i++){$snapshot=Call '/tabs' @{} 'GET';$privateSecond=@($snapshot.tabs|Where-Object {$_.incognito -and $_.url -like '*/private-two'})[0];if($privateSecond){break};Start-Sleep -Milliseconds 50}
     if(!$privateSecond){throw 'The native private popup was not registered.'};$tabs.Add($privateSecond.id)

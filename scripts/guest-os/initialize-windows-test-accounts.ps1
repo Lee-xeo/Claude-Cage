@@ -23,7 +23,7 @@ $qaDir = Get-Item -LiteralPath $qa
 if (($root.Attributes -band [IO.FileAttributes]::ReparsePoint) -or ($qaDir.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
     throw 'The private QA directories cannot be redirected.'
 }
-$receipt = Get-Content -LiteralPath (Join-Path $qa 'receipt.json') -Raw | ConvertFrom-Json
+$receipt = Get-Content -LiteralPath (Join-Path $qa 'receipt.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $vm = Get-VM -Id $VMId
 $disks = @(Get-VMHardDiskDrive -VM $vm)
 if ([guid]$receipt.VMId -ne $VMId -or $receipt.InstanceDirectory -ne $root.FullName -or $vm.State -ne 'Running' -or

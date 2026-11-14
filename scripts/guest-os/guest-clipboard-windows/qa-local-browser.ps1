@@ -8,7 +8,7 @@ param(
 )
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
 $utf8=[Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=$utf8
-$binding=Get-Content -LiteralPath $ProfilePath -Raw|ConvertFrom-Json;$vm=Get-VM -Id ([guid]$binding.vm_id)
+$binding=Get-Content -LiteralPath $ProfilePath -Raw -Encoding UTF8|ConvertFrom-Json;$vm=Get-VM -Id ([guid]$binding.vm_id)
 if($vm.State -ne 'Running' -or @(Get-VMNetworkAdapter -VM $vm).Count -ne 0){throw 'The bound local-only guest must have zero normal NICs.'}
 $credential=Import-Clixml -LiteralPath $CredentialFile
 if(($credential.UserName -split '\\')[-1] -cne 'CageLabSetup'){throw 'The retained QA administrator identity does not match.'}
@@ -41,7 +41,7 @@ try {
     $port=Invoke-Command -Session $session -ArgumentList $setup.Directory -ScriptBlock {param($dir);[int](Get-Content (Join-Path $dir 'deny-proxy-port') -Raw)}
     $changed=$true;$windowStartUtc=[DateTime]::UtcNow.ToString('o')
     Invoke-Command -Session $session -ArgumentList $setup.Config,$port -ScriptBlock {
-        param($file,$port);$config=Get-Content -LiteralPath $file -Raw|ConvertFrom-Json
+        param($file,$port);$config=Get-Content -LiteralPath $file -Raw -Encoding UTF8|ConvertFrom-Json
         $config|Add-Member -NotePropertyName network_mode -NotePropertyValue 'proxy' -Force
         $config|Add-Member -NotePropertyName browser_proxy -NotePropertyValue ('http://127.0.0.1:'+$port) -Force
         [IO.File]::WriteAllText($file,($config|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
@@ -53,7 +53,7 @@ try {
     $known=@((Call '/tabs' @{} 'GET').tabs|ForEach-Object {$_.id})
     $null=Call '/new' @{url='http://example.com/'};$null=Call '/new' @{url=('http://'+$privateHost+'/')}
     $connectDenied=$false;try{$null=Call '/new' @{url='https://example.com/'}}catch{$connectDenied=$true}
-    $counts=Invoke-Command -Session $session -ArgumentList $setup.Directory -ScriptBlock {param($dir);Get-Content (Join-Path $dir 'deny-proxy-counts.json') -Raw|ConvertFrom-Json}
+    $counts=Invoke-Command -Session $session -ArgumentList $setup.Directory -ScriptBlock {param($dir);Get-Content (Join-Path $dir 'deny-proxy-counts.json') -Raw -Encoding UTF8|ConvertFrom-Json}
     if($counts.public_probe -lt 1 -or $counts.private_probe -lt 1 -or $counts.connect_probe -lt 1 -or !$connectDenied){throw 'The actual Chrome public/private host HTTP and HTTPS CONNECT probes were not all denied.'}
     foreach($tab in (Call '/tabs' @{} 'GET').tabs){if($tab.id -notin $known){$null=Call '/close' @{id=$tab.id}}}
     $tests=[ordered]@{local_only=$true;normal_nics=0;browser_version=$version.product;browser_audit_status=$audited.network.status;actual_public_http_denied=$true;actual_private_host_http_denied=$true;actual_https_connect_denied=$true;packet_network_verified=$false}

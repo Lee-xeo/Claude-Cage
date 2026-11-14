@@ -12,7 +12,7 @@ Set-StrictMode -Version Latest
 if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) { throw 'Native Windows is required.' }
 $user = [Security.Principal.WindowsIdentity]::GetCurrent()
 if ((New-Object Security.Principal.WindowsPrincipal($user)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Use the paired ordinary GUI user.' }
-$manifest = Get-Content (Join-Path $BundleDirectory 'resolved-cli-dependencies.json') -Raw | ConvertFrom-Json
+$manifest = Get-Content (Join-Path $BundleDirectory 'resolved-cli-dependencies.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $bundle = [IO.Path]::GetFullPath($BundleDirectory)
 $bridge = [IO.Path]::GetFullPath($BridgeDirectory)
 if (-not (Test-Path (Join-Path $bridge 'Cage.GuestClipboard.exe') -PathType Leaf)) { throw 'The paired GUI bridge must be installed first.' }
@@ -61,7 +61,7 @@ function Select-ClaudeCodeBinary([string]$Claude, [string]$Version, [string]$Dig
     $claudeDigest=$Digest
     $previousReceipt=Join-Path $BridgeDirectory 'cli-tools.json'
     if (Test-Path -LiteralPath $previousReceipt) {
-        $previous=Get-Content -LiteralPath $previousReceipt -Raw | ConvertFrom-Json
+        $previous=Get-Content -LiteralPath $previousReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
         Assert-NoReparse $previous.claude
         if ((Get-FileHash -LiteralPath $previous.claude -Algorithm SHA256).Hash -ne $previous.claude_sha256) { throw 'The installed Claude Code no longer matches its protected receipt.' }
         $signature=Get-AuthenticodeSignature -LiteralPath $previous.claude

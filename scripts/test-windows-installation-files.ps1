@@ -315,6 +315,53 @@ try {
     $retained = @(Get-ChildItem (Join-Path $old 'Cage-preserved-files') -File -Recurse)
     Check (@($retained | Where-Object { (Get-Content $_.FullName -Raw) -eq 'obsolete library' }).Count -eq 1) 'Legacy DLL bytes were lost.'
     Check (@($retained | Where-Object { (Get-Content $_.FullName -Raw) -eq 'user directory' }).Count -eq 1) 'Conflicting user directory was lost.'
+    # Packaged Windows installations keep their default storage in CageData.
+    # A registered VM may hold its disk open; the update must neither move
+    # nor wait for it, and the installation folder itself stays (#108).
+    $scenario = Join-Path $root 'kept-data'
+    $old = Join-Path $scenario 'installed'; $stage = Join-Path $scenario 'staged'; $receipt = Join-Path $scenario 'receipt.json'
+    $backup = $old + '-backup'
+    App $old 'old'; App $stage 'new'
+    Write-File (Join-Path $old 'CageData/vm/disk.vhdx') 'persistent disk'
+    Write-File (Join-Path $old 'my-project/work.txt') 'kept project'
+    $disk = [IO.File]::Open((Join-Path $old 'CageData/vm/disk.vhdx'), 'Open', 'Read', 'Read')
+    try {
+        Invoke-Helper @('-Operation','prepare','-Source',$old,'-Target',$stage,'-Receipt',$receipt,'-Backup',$backup,'-KeepInPlace','CageData')
+        Check (!(@((Get-Content $receipt -Raw | ConvertFrom-Json).moves) | Where-Object { $_.path -like 'CageData*' })) 'Preparation scheduled the kept data folder for a move.'
+        Invoke-Helper @('-Operation','detach','-Source',$old,'-Target',$backup,'-Receipt',$receipt)
+        Check ((@(Get-ChildItem -LiteralPath $old -Force).Name -join ',') -eq 'CageData') 'Detaching left program entries or moved the kept data folder.'
+        Invoke-Helper @('-Operation','move','-Source',$backup,'-Target',$stage,'-Receipt',$receipt)
+        Invoke-Helper @('-Operation','attach','-Source',$stage,'-Target',$old,'-Receipt',$receipt)
+        Check (!(Test-Path -LiteralPath $stage)) 'Attaching left the staged folder behind.'
+        Invoke-Helper @('-Operation','cleanup','-Source',$backup,'-Target',$old,'-Receipt',$receipt)
+    } finally { $disk.Dispose() }
+    Check ((Get-Content (Join-Path $old 'program.txt') -Raw) -eq 'new') 'The kept-data update did not publish the new program.'
+    Check ((Get-Content (Join-Path $old 'CageData/vm/disk.vhdx') -Raw) -eq 'persistent disk') 'The kept data changed.'
+    Check ((Get-Content (Join-Path $old 'my-project/work.txt') -Raw) -eq 'kept project') 'The kept-data update lost a project.'
+    Check (!(Test-Path -LiteralPath $backup) -and !(Test-Path -LiteralPath $receipt)) 'The kept-data update left its backup or receipt.'
+    if ($windows) {
+        # An open program file blocks detaching; every moved entry returns and
+        # the diagnostic names only the kind of entry, never its path.
+        $scenario = Join-Path $root 'detach-rollback'
+        $old = Join-Path $scenario 'installed'; $stage = Join-Path $scenario 'staged'; $receipt = Join-Path $scenario 'receipt.json'
+        $backup = $old + '-backup'; $diagnostic = Join-Path $scenario 'detach.json'
+        App $old 'old'; App $stage 'new'
+        Write-File (Join-Path $old 'CageData/vm/disk.vhdx') 'persistent disk'
+        Write-File (Join-Path $old 'my-project/work.txt') 'kept project'
+        $before = @(Get-ChildItem -LiteralPath $old -Force).Name -join ','
+        Invoke-Helper @('-Operation','prepare','-Source',$old,'-Target',$stage,'-Receipt',$receipt,'-Backup',$backup,'-KeepInPlace','CageData')
+        $held = [IO.File]::Open((Join-Path $old 'program.txt'), 'Open', 'Read', 'Read')
+        try { Invoke-Helper @('-Operation','detach','-Source',$old,'-Target',$backup,'-Receipt',$receipt,'-Diagnostics',$diagnostic) 1 }
+        finally { $held.Dispose() }
+        Check ((@(Get-ChildItem -LiteralPath $old -Force).Name -join ',') -eq $before) 'A failed detach did not return every moved entry.'
+        Check (!(Test-Path -LiteralPath $backup)) 'A failed detach left an empty backup folder.'
+        $text = Get-Content -LiteralPath $diagnostic -Raw
+        $failure = $text | ConvertFrom-Json
+        Check ($failure.operation -eq 'detach' -and $failure.blocked -eq 'program') 'The detach diagnostic did not classify the blocking entry.'
+        Check (!$text.Contains($root) -and !$text.Contains('program.txt')) 'The detach diagnostic contains file paths.'
+        Invoke-Helper @('-Operation','complete','-Target',$old,'-Receipt',$receipt)
+        Check (!(Test-Path -LiteralPath $receipt)) 'Completing a failed detach left its receipt.'
+    }
     $scenario = Join-Path $root 'legacy-automatic-rollback'
     $old = Join-Path $scenario 'installed'; $stage = Join-Path $scenario 'restored'; $receipt = Join-Path $scenario 'receipt.json'
     App $stage 'old-program'

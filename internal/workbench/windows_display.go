@@ -56,7 +56,7 @@ func (e windowsWindowFailure) Error() string {
 // Session, identity, permission and transport failures are never suppressed.
 func transientWindowFrame(code string) bool {
 	switch code {
-	case "browser_target_changed", "target_changed", "desktop_target_changed", "desktop_capture_busy", "desktop_empty_frame":
+	case "browser_window_unavailable", "browser_target_changed", "target_changed", "desktop_target_changed", "desktop_capture_busy", "desktop_empty_frame":
 		return true
 	}
 	return false

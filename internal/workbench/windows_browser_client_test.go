@@ -216,7 +216,7 @@ func TestWindowsBrowserCanceledFrameCannotBecomeNextViewerReply(t *testing.T) {
 }
 
 func TestWindowsBrowserPreservesPopupFrameFailure(t *testing.T) {
-	for _, code := range []string{"desktop_target_changed", "desktop_capture_busy", "desktop_empty_frame", "frame_unavailable"} {
+	for _, code := range []string{"browser_window_unavailable", "desktop_target_changed", "desktop_capture_busy", "desktop_empty_frame", "frame_unavailable"} {
 		t.Run(code, func(t *testing.T) {
 			client := fixtureWindowsBrowserClient(t)
 			start := client.start

@@ -127,13 +127,17 @@ func controllerVMState(profile string) (bool, error) {
 	return len(owners) != 0, err
 }
 
+// A bound Windows guest is probed through the Hyper-V host manager. A cold
+// Windows PowerShell start alone can take most of this budget.
+const windowsVMProbeTimeout = 15 * time.Second
+
 func controllerVMOwners(profile string) ([]string, error) {
 	binding, err := guestos.LoadWindowsProfile(profile)
 	if err != nil {
 		return nil, err
 	}
 	if binding != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), windowsVMProbeTimeout)
 		defer cancel()
 		state, err := guestos.WindowsVMResources(ctx, profile, 0, 0)
 		if err != nil {

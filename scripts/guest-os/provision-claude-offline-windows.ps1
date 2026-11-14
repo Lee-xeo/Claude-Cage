@@ -87,7 +87,7 @@ $diskFile = Get-Item -LiteralPath (Join-Path $root.FullName 'system.vhdx')
 foreach ($entry in @($qa,$receiptFile,$diskFile)) {
     if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Unexpected reparse point in the instance or receipt.' }
 }
-$receipt = Get-Content -LiteralPath $receiptFile.FullName -Raw | ConvertFrom-Json
+$receipt = Get-Content -LiteralPath $receiptFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
 $packageFile = Get-Item -LiteralPath $MsixPath
 if ($packageFile -isnot [IO.FileInfo] -or $packageFile.Extension -ne '.msix' -or
     ($packageFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $packageFile.FullName.StartsWith('\\') -or

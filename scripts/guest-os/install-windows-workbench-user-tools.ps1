@@ -7,7 +7,7 @@ $ErrorActionPreference='Stop'
 $user=[Security.Principal.WindowsIdentity]::GetCurrent()
 if ([Security.Principal.WindowsPrincipal]::new($user).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run as the dedicated standard guest user.' }
 . (Join-Path $PSScriptRoot 'claude-desktop-windows.ps1')
-$packages=Get-Content -LiteralPath (Join-Path $BundleDirectory 'resolved-workbench-packages.json') -Raw | ConvertFrom-Json
+$packages=Get-Content -LiteralPath (Join-Path $BundleDirectory 'resolved-workbench-packages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $wanted=[version]($packages.desktop.version+'.0')
 $registered=Get-RegisteredClaude
 if (!$registered -or [version]$registered.Version -lt $wanted) {

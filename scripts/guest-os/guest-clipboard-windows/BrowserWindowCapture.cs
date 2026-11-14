@@ -39,8 +39,21 @@ internal static class BrowserWindowCapture
         }
         return false;
     }
-    internal static bool FocusRenderer(Process node,JsonObject proof)
-    {var view=Resolve(node,proof);if(view.NativeUI)return false;Focus(view);return true;}
+    internal static bool NeedsPageActivation(Process node, JsonObject proof, JsonObject input)
+    {
+        var pressed = input["kind"]?.GetValue<string>() switch
+        {
+            "pointer" => ((input["mask"]?.GetValue<int>() ?? 0) & 7) != 0,
+            "key" => input["down"]?.GetValue<bool>() == true,
+            _ => false,
+        };
+        if (!pressed) return false;
+        var view = Resolve(node, proof);
+        if (last?.Token != view.Token || input["target"]?.GetValue<string>() != publicTarget ||
+            proof["focusAmbiguous"]?.GetValue<bool>() == true)
+            throw new InvalidDataException("browser_target_changed");
+        return !view.NativeUI && !IsForeground(view);
+    }
     private sealed record Pin(Process Process, DateTime Started, string Executable, IntPtr Window);
     private sealed record Popup(IntPtr Window, Rectangle Bounds, Rectangle Client);
     private sealed record View(Pin Pin, Rectangle Window, Rectangle Client, Rectangle Surface, Popup[] Popups, bool NativeUI, bool InlineUI,
@@ -137,6 +150,19 @@ internal static class BrowserWindowCapture
         }
         return false;
     }
+    // An owned Chrome popup can itself be a CDP page. Do not follow its
+    // owner chain through another pinned page when routing menus or input.
+    private static bool BelongsToWindow(IntPtr window, Pin page)
+    {
+        if (GetWindowThreadProcessId(window, out var pid) == 0 || pid != page.Process.Id) return false;
+        for (var current = GetAncestor(window, 2); current != IntPtr.Zero; current = GetWindow(current, 4))
+        {
+            if (current == page.Window) return true;
+            if (Windows.Values.Any(pin => pin.Window == current)) return false;
+        }
+        return false;
+    }
+    private static bool IsForeground(View view) => BelongsToWindow(GetForegroundWindow(), view.Pin);
     private static View Resolve(Process node,JsonObject proof)
     {
         ValidateNode(node);
@@ -146,29 +172,45 @@ internal static class BrowserWindowCapture
             var windowInfo=proof["window"] as JsonObject??throw new InvalidDataException("browser_window_proof_invalid");
             var id=windowInfo["windowId"]?.GetValue<int>()??0;
             var bounds=windowInfo["bounds"] as JsonObject??throw new InvalidDataException("browser_window_proof_invalid");
+            var focusedPage = proof["documentFocused"]?.GetValue<bool>() == true;
+            var foreground = GetAncestor(GetForegroundWindow(), 2);
             Pin? pin=null;
             if(Windows.TryGetValue(id,out var existing))
             {
-                try {Validate(existing);if(Matches(existing.Window,bounds))pin=existing;else{Windows.Remove(id);existing.Process.Dispose();}}
+                try {Validate(existing);if(Matches(existing.Window,bounds) && (!focusedPage || existing.Window == foreground))pin=existing;else{Windows.Remove(id);existing.Process.Dispose();}}
                 catch {Windows.Remove(id);existing.Process.Dispose();}
             }
             if(pin is null)
             {
                 var process=Chrome(node);var candidates=new List<IntPtr>();
-                EnumWindows((window,_)=>{if(GetWindowThreadProcessId(window,out var pid)!=0 && pid==process.Id && IsWindowVisible(window) && !IsIconic(window) && GetWindow(window,4)==IntPtr.Zero && Class(window)=="Chrome_WidgetWin_1" && Matches(window,bounds))candidates.Add(window);return true;},IntPtr.Zero);
-                var foreground=GetAncestor(GetForegroundWindow(),3);
-                if(proof["documentFocused"]?.GetValue<bool>()==true && candidates.Contains(foreground))candidates=[foreground];
-                if(candidates.Count!=1){process.Dispose();throw new InvalidDataException("browser_window_unavailable");}
+                EnumWindows((window,_)=>{
+                    if(GetWindowThreadProcessId(window,out var pid)!=0 && pid==process.Id &&
+                        IsWindowVisible(window) && !IsIconic(window) && Class(window)=="Chrome_WidgetWin_1" &&
+                        Matches(window,bounds)) candidates.Add(window);
+                    return true;
+                },IntPtr.Zero);
+                if(focusedPage) candidates.RemoveAll(window => window != foreground);
+                // Count owned windows too: if both the opener and its popup
+                // match, their geometry alone identifies neither document.
+                if(candidates.Count!=1 || (!focusedPage && GetWindow(candidates[0],4)!=IntPtr.Zero))
+                {process.Dispose();throw new InvalidDataException("browser_window_unavailable");}
+                foreach (var previous in Windows.Where(entry => entry.Value.Window == candidates[0]).ToArray())
+                {
+                    // A closed window's handle can be reused. Only a focused
+                    // document can establish a different CDP window binding.
+                    if (!focusedPage || foreground != candidates[0]) { process.Dispose(); throw new InvalidDataException("browser_window_unavailable"); }
+                    Windows.Remove(previous.Key); previous.Value.Process.Dispose();
+                }
                 pin=new Pin(process,process.StartTime.ToUniversalTime(),process.MainModule!.FileName,candidates[0]);Windows[id]=pin;
             }
             Validate(pin);
             if(!GetWindowRect(pin.Window,out var outside))throw new InvalidDataException("browser_target_changed");
             var client=Client(pin.Window);var surface=RendererSurface(pin.Window,client);
             var popups=new List<Popup>();
-            EnumWindows((window,_)=>{if(window!=pin.Window && GetWindowThreadProcessId(window,out var pid)!=0 && pid==pin.Process.Id && GetAncestor(window,3)==pin.Window && IsWindowVisible(window) && !IsIconic(window) && GetWindowRect(window,out var rect))
+            EnumWindows((window,_)=>{if(window!=pin.Window && BelongsToWindow(window,pin) && IsWindowVisible(window) && !IsIconic(window) && GetWindowRect(window,out var rect))
                 {var c=Client(window);if(c.Width>0&&c.Height>0&&(long)c.Width*c.Height<=40_000_000)popups.Add(new Popup(window,rect.Box,c));}return true;},IntPtr.Zero);
             var thread=GetWindowThreadProcessId(pin.Window,out _);var info=new GuiThread{Size=(uint)Marshal.SizeOf<GuiThread>()};
-            var inlineUI=GetGUIThreadInfo(thread,ref info) && info.Focus!=IntPtr.Zero && GetAncestor(info.Focus,2)==pin.Window && proof["documentFocused"]?.GetValue<bool>()!=true && Class(info.Focus)!="Chrome_RenderWidgetHostHWND";
+            var inlineUI=BelongsToWindow(GetForegroundWindow(),pin) && GetGUIThreadInfo(thread,ref info) && info.Focus!=IntPtr.Zero && GetAncestor(info.Focus,2)==pin.Window && !focusedPage && Class(info.Focus)!="Chrome_RenderWidgetHostHWND";
             var ui=popups.Count>0 || inlineUI;
             var target=proof["target"]?.GetValue<string>()??"";var document=proof["document"]?.GetValue<string>()??"";
             var signature=new JsonArray(target,document,id,pin.Window.ToInt64(),outside.Left,outside.Top,outside.Right,outside.Bottom,surface.X,surface.Y,surface.Width,surface.Height,ui,inlineUI,
@@ -208,7 +250,7 @@ internal static class BrowserWindowCapture
                 }
                 foreach(var popup in view.Popups.Reverse())
                 {
-                    void Check(){Validate(view.Pin);if(GetWindowThreadProcessId(popup.Window,out var pid)==0||pid!=view.Pin.Process.Id||GetAncestor(popup.Window,3)!=view.Pin.Window||!GetWindowRect(popup.Window,out var rect)||rect.Box!=popup.Bounds||Client(popup.Window)!=popup.Client)throw new InvalidDataException("browser_target_changed");}
+                    void Check(){Validate(view.Pin);if(!BelongsToWindow(popup.Window,view.Pin)||!GetWindowRect(popup.Window,out var rect)||rect.Box!=popup.Bounds||Client(popup.Window)!=popup.Client)throw new InvalidDataException("browser_target_changed");}
                     var png=await GuestWindowCapture.Capture(popup.Window,view.Pin.Process.Id,popup.Client.Width,popup.Client.Height,Check,preserveAlpha:true);
                     var sx=(double)view.Width/view.Surface.Width;var sy=(double)view.Height/view.Surface.Height;
                     var destination=new Rectangle(view.X+(int)Math.Round((popup.Client.X-view.Surface.X)*sx),view.Y+(int)Math.Round((popup.Client.Y-view.Surface.Y)*sy),(int)Math.Round(popup.Client.Width*sx),(int)Math.Round(popup.Client.Height*sy));
@@ -264,7 +306,6 @@ internal static class BrowserWindowCapture
         var before=last??throw new InvalidDataException("browser_target_changed");var now=Resolve(node,proof);
         if(pagePointerHeld && now.InlineUI && input["kind"]?.GetValue<string>()=="pointer")throw new InvalidDataException("browser_target_changed");
         if(proof["focusAmbiguous"]?.GetValue<bool>()==true)throw new InvalidDataException("browser_target_changed");
-        if(!now.NativeUI&&proof["documentFocused"]?.GetValue<bool>()!=true)throw new InvalidDataException("browser_target_changed");
         var mouseMask=NativeGuestInput.PressedButtons(lease);
         var released=input["kind"]?.GetValue<string>()=="key"&&input["down"]?.GetValue<bool>()==false || mouseMask!=0&&input["kind"]?.GetValue<string>()=="pointer"&&input["mask"]?.GetValue<int>()==0;
         if(input["target"]?.GetValue<string>()!=publicTarget || now.Token!=before.Token && !released)throw new InvalidDataException("browser_target_changed");
@@ -285,7 +326,6 @@ internal static class BrowserWindowCapture
                 }
             }
         }
-        Focus(now);
         if(input["kind"]?.GetValue<string>()=="pointer" && !now.InlineUI && mouseMask==0)
         {
             var x=input["x"]?.GetValue<int>()??-1;
@@ -294,11 +334,14 @@ internal static class BrowserWindowCapture
             var screenY=now.Surface.Y+(int)Math.Round((y-now.Y)*(double)now.Surface.Height/now.Height);
             if(pagePointerHeld || !now.Popups.Any(p=>p.Client.Contains(screenX,screenY)))
             {
-                // CDP page coordinates remain valid beyond the guest desktop.
+                // CDP targets the verified page directly, even if another
+                // application owns the foreground or covers this screen point.
                 input["modifiers"]=(NativeGuestInput.PressedKey(18)?1:0)|(NativeGuestInput.PressedKey(17)?2:0)|(NativeGuestInput.PressedKey(91)||NativeGuestInput.PressedKey(92)?4:0)|(NativeGuestInput.PressedKey(16)?8:0);
                 return false;
             }
         }
+        Focus(now);
+        if(!now.NativeUI && proof["documentFocused"]?.GetValue<bool>()!=true)throw new InvalidDataException("browser_target_changed");
         if(input["kind"]?.GetValue<string>()=="pointer")Pointer(now,lease,input);
         else if(input["kind"]?.GetValue<string>()=="key")Keyboard(now,lease,input);
         else throw new InvalidDataException("browser_input_invalid");
@@ -344,8 +387,8 @@ internal static class BrowserWindowCapture
     }
     private static void Focus(View view)
     {
-        Validate(view.Pin);if(GetAncestor(GetForegroundWindow(),3)!=view.Pin.Window)SetForegroundWindow(view.Pin.Window);
-        if(GetAncestor(GetForegroundWindow(),3)!=view.Pin.Window)throw new InvalidDataException("browser_focus_required");
+        Validate(view.Pin);if(!IsForeground(view))SetForegroundWindow(view.Pin.Window);
+        if(!IsForeground(view))throw new InvalidDataException("browser_focus_required");
     }
     private static Func<bool> ReleaseAllowed(View view)
     {
@@ -367,7 +410,7 @@ internal static class BrowserWindowCapture
     }
     private static void Emit(View view,InputLease lease,InputStroke[] strokes)
     {
-        NativeGuestInput.Emit(lease,strokes,()=>{Validate(view.Pin);if(GetAncestor(GetForegroundWindow(),3)!=view.Pin.Window)throw new InvalidDataException("browser_focus_required");},ReleaseAllowed(view));
+        NativeGuestInput.Emit(lease,strokes,()=>{Validate(view.Pin);if(!IsForeground(view))throw new InvalidDataException("browser_focus_required");},ReleaseAllowed(view));
     }
     private static void Tap(View view,InputStroke[] strokes)
     {

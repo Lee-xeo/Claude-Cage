@@ -256,8 +256,18 @@ internal static class BrowserRpc
                 }
                 var proof = await Control(new JsonObject { ["method"] = "GET", ["path"] = "/frame-proof" }, timeout.Token);
                 AssertEditorTab(proof["id"]?.GetValue<string>());
-                if(BrowserWindowCapture.FocusRenderer(browser!,proof))
-                {proof=await Control(new JsonObject{["method"]="GET",["path"]="/frame-proof"},timeout.Token);AssertEditorTab(proof["id"]?.GetValue<string>());}
+                if (BrowserWindowCapture.NeedsPageActivation(browser!, proof, input))
+                {
+                    var resultAfterActivation = await Control(new JsonObject {
+                        ["operation"] = "input-focus-page", ["input"] = new JsonObject {
+                            ["id"] = proof["id"]!.DeepClone(), ["document"] = proof["document"]!.DeepClone(),
+                            ["target"] = proof["target"]!.DeepClone(),
+                        },
+                    }, timeout.Token);
+                    if (resultAfterActivation["error"] is not null) return resultAfterActivation;
+                    proof = resultAfterActivation;
+                    AssertEditorTab(proof["id"]?.GetValue<string>());
+                }
                 if (pagePointerOwner != lease && BrowserWindowCapture.SelectPane(browser!, lease, input, proof))
                 {
                     await Control(new JsonObject { ["operation"] = "input-select-pane", ["input"] = new JsonObject { ["target"] = proof["target"]!.DeepClone(), ["x"] = input["x"]!.DeepClone() } }, timeout.Token);

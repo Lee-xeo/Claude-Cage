@@ -14,7 +14,7 @@ $archive=Join-Path $Stage 'update.zip'
 if ((Get-FileHash -LiteralPath $archive).Hash -ne $ArchiveSHA256) { throw '传入客机的组件包校验失败。' }
 & (Join-Path $env:SystemRoot 'System32/tar.exe') -xf $archive -C $Stage
 if ($LASTEXITCODE) { throw '无法展开已校验的组件包。' }
-$manifest=Get-Content -LiteralPath (Join-Path $Stage 'native-components.json') -Raw | ConvertFrom-Json
+$manifest=Get-Content -LiteralPath (Join-Path $Stage 'native-components.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($manifest.protocol -ne 1 -or $manifest.system -cne 'windows-11' -or $manifest.revision -notmatch '^[a-f0-9]{64}$' -or @($manifest.files).Count -notin 1..10000) { throw '客机组件清单无效。' }
 $roots=@{bridge=(Join-Path $env:ProgramFiles ('Cage Guest Bridge\'+$VMId));network=(Join-Path $env:ProgramFiles ('Cage Guest Network\'+$VMId))}
 foreach ($root in $roots.Values) { Assert-LocalFile $root }

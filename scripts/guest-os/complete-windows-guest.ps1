@@ -23,7 +23,7 @@ if ($ManifestPath) {
         $manifestFile.Attributes -band [IO.FileAttributes]::ReparsePoint -or (Get-FileHash -LiteralPath $ManifestPath).Hash -ne $ManifestSHA256) {
         throw '组件清单无法核验，请从 Cage 重新继续安装。'
     }
-    $componentManifest=Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+    $componentManifest=Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($componentManifest.protocol -ne 1 -or $componentManifest.system -cne 'windows-11' -or $componentManifest.revision -notmatch '^[a-f0-9]{64}$') { throw '原生组件清单无效。' }
     $kitRoot=[IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')+'\'
     foreach ($entry in $componentManifest.files) {
@@ -50,7 +50,7 @@ function Get-LocalDirectory([string]$Path) {
 function Read-CageBinding([string]$Path) {
     $item=Get-Item -LiteralPath $Path -Force
     if ($item -isnot [IO.FileInfo] -or $item.Attributes -band [IO.FileAttributes]::ReparsePoint -or $item.Length -gt 16384) { throw 'Invalid existing Windows guest binding.' }
-    $data=Get-Content -LiteralPath $item.FullName -Raw | ConvertFrom-Json
+    $data=Get-Content -LiteralPath $item.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($data.version -ne 1 -or [guid]$data.vm_id -ne $VMId -or $data.instance_directory -ne $instance -or
         $data.relay_executable -ne (Join-Path $pairDirectory 'Cage.GuestClipboard.exe') -or
         $data.pairing_file -ne (Join-Path $pairDirectory 'pairing.dpapi') -or
@@ -149,7 +149,7 @@ function Publish-ReadyBinding {
 $instance=Get-LocalDirectory $InstanceDirectory
 $profile=Get-LocalDirectory $HostProfileDirectory
 $null=Get-LocalDirectory $payload
-$choice=Get-Content -LiteralPath (Join-Path $profile 'guest-install.json') -Raw | ConvertFrom-Json
+$choice=Get-Content -LiteralPath (Join-Path $profile 'guest-install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $installID=[guid]$choice.id
 $anchor=Get-Item -LiteralPath (Join-Path $profile 'state') -Force
 if(!$StateDirectory){$StateDirectory=if($anchor.Attributes -band [IO.FileAttributes]::ReparsePoint){$targets=@($anchor.Target);if($targets.Count -ne 1){throw 'The selected physical state directory changed.'};$targets[0]}else{$anchor.FullName}}
@@ -220,8 +220,8 @@ try {
     $cache=Join-Path $workRoot 'downloads'
     $null=New-Item -ItemType Directory -Force $cache
     $null=Get-LocalDirectory $cache
-    $packages=Get-Content -LiteralPath (Join-Path $payload 'windows-workbench-packages.json') -Raw | ConvertFrom-Json
-    $cli=Get-Content -LiteralPath (Join-Path $payload 'cli-dependencies.json') -Raw | ConvertFrom-Json
+    $packages=Get-Content -LiteralPath (Join-Path $payload 'windows-workbench-packages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $cli=Get-Content -LiteralPath (Join-Path $payload 'cli-dependencies.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Resolve-ClaudePackages $packages $cli $cache
     $files=@{}
     Write-Output 'CAGE_GUEST_STAGE windows-11 media'

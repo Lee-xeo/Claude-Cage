@@ -165,7 +165,7 @@ func (d *desktopLocal) Connect(ctx context.Context) (_ *remotehost.Session, retu
 			}
 		}()
 	}
-	bootstrap, cancel := context.WithTimeout(ctx, 12*time.Second)
+	bootstrap, cancel := context.WithTimeout(ctx, localBootstrapTimeout)
 	defer cancel()
 	for {
 		c, err := openController(d.profile)
@@ -266,7 +266,7 @@ func (d *desktopLocal) ReleaseUnused(ctx context.Context, session *remotehost.Se
 // The process started for a cancelled handshake may publish its record after
 // cancellation. Only hand off a controller bearing this launcher's own nonce.
 func (d *desktopLocal) releaseFailedLaunch(id string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), localBootstrapTimeout)
 	defer cancel()
 	for ctx.Err() == nil {
 		c, err := openController(d.profile)

@@ -77,7 +77,7 @@ try {
         $package=New-TestPackage
         & $Updater $vm $sid $package.Stage $package.Hash $false '{}' '{}'
         Assert-Value ([IO.File]::ReadAllText($old) -ceq 'new helper') 'retry did not install helper'
-        $receipt=Get-Content -LiteralPath (Join-Path $bridge 'native-components.json') -Raw | ConvertFrom-Json
+        $receipt=Get-Content -LiteralPath (Join-Path $bridge 'native-components.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         Assert-Value ($receipt.revision -ceq ('a'*64)) 'receipt did not follow installed files'
         Assert-Value ([IO.File]::ReadAllText($account) -ceq 'account and project data') 'personal data changed'
         $acl=Get-Acl -LiteralPath (Join-Path $bridge 'native-components.json')

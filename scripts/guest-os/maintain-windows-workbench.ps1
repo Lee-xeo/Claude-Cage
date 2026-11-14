@@ -70,7 +70,7 @@ if (![Security.Principal.WindowsPrincipal]::new($identity).IsInRole([Security.Pr
     exit 0
 }
 $maintenanceExitCode=41
-$binding=Get-Content -LiteralPath $bindingPath -Raw | ConvertFrom-Json
+$binding=Get-Content -LiteralPath $bindingPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($binding.version -ne 1 -or [guid]$binding.vm_id -eq [guid]::Empty) { throw 'Windows 客机绑定无法核验。' }
 if (!$HostOnly) {
 $maintenanceExitCode=43
@@ -94,7 +94,7 @@ for ($entry=Get-Item -LiteralPath $binding.relay_executable -Force; $entry; $ent
 } else {
     $vm=[pscustomobject]@{Id=[guid]$binding.vm_id}
 }
-$manifest=Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+$manifest=Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($manifest.protocol -ne 1 -or $manifest.system -cne 'windows-11' -or $manifest.revision -notmatch '^[a-f0-9]{64}$' -or @($manifest.files).Count -notin 1..10000) { throw '原生组件清单无效。' }
 $kit=[IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')+'\'
 foreach ($entry in $manifest.files) {
@@ -108,7 +108,7 @@ foreach ($entry in $manifest.files) {
 $managerBindingPath=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) ('Cage\HyperVManager\'+$vm.Id.ToString('D')+'\binding.json')
 $managerBindingFile=Get-Item -LiteralPath $managerBindingPath -Force
 if ($managerBindingFile.Attributes -band [IO.FileAttributes]::ReparsePoint -or $managerBindingFile.Length -gt 65536) { throw 'Windows 管理助手的登记文件无法核验。' }
-$managerBinding=Get-Content -LiteralPath $managerBindingPath -Raw | ConvertFrom-Json
+$managerBinding=Get-Content -LiteralPath $managerBindingPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ([guid]$managerBinding.vm_id -ne $vm.Id -or $managerBinding.host_sid -notmatch '^S-1-(5-21|12-1)-(\d+-){3}\d+$') { throw 'Windows 管理助手的用户或客机身份不匹配。' }
 $managerPayload=Join-Path $kit 'payload/Cage.HyperVManager.exe'
 $maintenanceExitCode=42
@@ -146,8 +146,8 @@ try {
         if ((Get-FileHash -LiteralPath $target).Hash -ne $entry.installed_sha256) { throw '复制后的组件摘要不匹配。' }
     }
     [IO.File]::WriteAllText((Join-Path $stage 'native-components.json'),($manifest | ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
-    $packages=Get-Content -LiteralPath (Join-Path $kit 'payload/windows-workbench-packages.json') -Raw | ConvertFrom-Json
-    $cli=Get-Content -LiteralPath (Join-Path $kit 'payload/cli-dependencies.json') -Raw | ConvertFrom-Json
+    $packages=Get-Content -LiteralPath (Join-Path $kit 'payload/windows-workbench-packages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $cli=Get-Content -LiteralPath (Join-Path $kit 'payload/cli-dependencies.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($Tools) {
         . (Join-Path $kit 'windows-workbench-packages.ps1')
         $cache=Join-Path $work 'packages'

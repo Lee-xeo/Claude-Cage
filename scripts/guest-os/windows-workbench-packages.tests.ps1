@@ -62,8 +62,8 @@ function Expect-ReleaseFailure([scriptblock]$Action) {
     if (!$failed) { throw 'Invalid release was accepted.' }
 }
 try {
-    $packages=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'windows-workbench-packages.json') -Raw | ConvertFrom-Json
-    $cli=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'guest-clipboard-windows/cli-dependencies.json') -Raw | ConvertFrom-Json
+    $packages=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'windows-workbench-packages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $cli=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'guest-clipboard-windows/cli-dependencies.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $python=$cli.python|ConvertTo-Json -Compress
     Resolve-ClaudePackages $packages $cli $root
     if ($cli.claude.version -ne '2.1.999' -or $packages.desktop.version -ne '5.1231.2') { throw 'Customer operation did not select the official latest releases.' }

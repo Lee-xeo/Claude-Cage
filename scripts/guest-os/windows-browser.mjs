@@ -1209,6 +1209,16 @@ export function createNativeBrowserService(options = {}) {
       return { ok: true };
     }
     if (operation === "input-reset") { rfbMask = 0; heldKeys.clear(); rfbPane = undefined; rfbPointer = undefined; pointer = undefined; return { ok: true }; }
+    if (operation === "input-focus-page") {
+      const tab = target(input);
+      const geometry = split?.generation ?? tab.geometry;
+      if (input.target !== geometry) throw failure("target_changed", "Input target changed");
+      await tab.page.bringToFront();
+      const proof = await nativeFrameProof();
+      if (proof.id !== input.id || proof.document !== input.document || proof.target !== geometry)
+        throw failure("target_changed", "Input target changed");
+      return proof;
+    }
     if (operation === "input-select-pane") {
       const tab = tabs.get(active);
       if (input.target !== (split?.generation ?? tab?.geometry) || !Number.isFinite(input.x) || input.x < 0 || input.x >= viewport.width * displayScale) throw failure("target_changed", "Input target changed");
@@ -1276,9 +1286,13 @@ export function createNativeBrowserService(options = {}) {
       const context = await owner.newContext({ viewport, deviceScaleFactor: displayScale, ...(timezone ? { timezoneId: timezone } : {}), ...(language ? { locale: language } : {}), ...(networkMode === "proxy" ? { proxy: { server: proxy, bypass: proxyBypass } } : {}) });
       privateContexts.add(context);
       const entry = { context, expiry: setTimeout(() => { logins.delete(input.login); privateContexts.delete(context); void context.close().catch(() => {}); }, 15 * 60000) }; entry.expiry.unref(); logins.set(input.login, entry);
-      context.on("page", page => { void addPage(page, { login: true }).then(tab => activate(tab.id)).catch(() => {}); });
-      const page = await context.newPage(), tab = await addPage(page, { login: true });
-      await page.goto(url.href, { waitUntil: "commit", timeout: 8000 }); await activate(tab.id); return { id: tab.id };
+      const page = await context.newPage();
+      const tab = await addPage(page, { login: true });
+      await activate(tab.id);
+      context.on("page", popup => { void addPage(popup, { login: true }).then(next => activate(next.id)).catch(() => {}); });
+      await page.goto(url.href, { waitUntil: "commit", timeout: 8000 });
+      const current = tabs.get(active);
+      return { id: current?.page.context() === context ? current.id : tab.id };
     }
     if (action === "audit") {
       if (options.audit) return options.audit(context, input);

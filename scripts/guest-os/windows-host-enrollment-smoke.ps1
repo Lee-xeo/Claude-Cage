@@ -25,7 +25,7 @@ try {
 param($ContextPath,$Module,$Pair,$Result)
 $ErrorActionPreference='Stop'
 . $Module
-$ctx=Get-Content -LiteralPath $ContextPath -Raw|ConvertFrom-Json
+$ctx=Get-Content -LiteralPath $ContextPath -Raw -Encoding UTF8|ConvertFrom-Json
 Start-Sleep -Milliseconds 500
 $sid='S-1-5-21-111-222-333-1001';$key=[byte[]](1..32)
 try {
@@ -45,7 +45,7 @@ try {
     # kernel handle/PID binding and CurrentUser DPAPI, not alternate-admin UAC.
     Set-CageHostEnrollmentAdmin $context $sender
     if(!$sender.WaitForExit(30000) -or $sender.ExitCode -ne 0){throw 'The native fixture sender did not complete.'}
-    $passed=Get-Content -LiteralPath $result -Raw|ConvertFrom-Json
+    $passed=Get-Content -LiteralPath $result -Raw -Encoding UTF8|ConvertFrom-Json
     if(!$passed.sameCipher -or !$passed.changedKeyRejected -or !$passed.guestChangedRejected -or !$passed.cipherPreserved){throw 'Native enrollment mutation guards failed.'}
     Add-Type -AssemblyName System.Security
     $entropy=[Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes('Cage.HyperV.v1:'+$vm.ToString('D')+':S-1-5-21-111-222-333-1001'))

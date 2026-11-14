@@ -36,6 +36,30 @@ type controllerClient struct {
 
 var errControllerUnavailable = errors.New("control service is unavailable")
 
+const (
+	// Ordinary launcher requests only read controller memory.
+	controllerRequestTimeout = 5 * time.Second
+	// Status and handoff probe the VM synchronously. A bound Windows guest is
+	// queried through Hyper-V, so their budget must outlast that probe.
+	controllerVMRequestTimeout = windowsVMProbeTimeout + 5*time.Second
+	// Release probes once for its decision and once more before handing off.
+	controllerReleaseRequestTimeout = 2*windowsVMProbeTimeout + 5*time.Second
+	// Connecting may start a controller and then wait for its first status.
+	localBootstrapTimeout = controllerVMRequestTimeout + 12*time.Second
+)
+
+// controllerRequestBudget extends the client timeout only for the requests
+// whose handlers wait on a VM state probe.
+func controllerRequestBudget(path string) time.Duration {
+	switch path {
+	case "/api/desktop-local/status", "/api/handoff":
+		return controllerVMRequestTimeout
+	case "/api/desktop-local/release":
+		return controllerReleaseRequestTimeout
+	}
+	return 0
+}
+
 func openController(profile string) (*controllerClient, error) {
 	path := filepath.Join(profile, "control.json")
 	if err := host.CheckPrivateFile(path); err != nil {
@@ -56,7 +80,7 @@ func openController(profile string) (*controllerClient, error) {
 		return nil, errors.New("后台记录无效，请保留现有环境并检查私有配置。")
 	}
 	jar, _ := cookiejar.New(nil)
-	c := &controllerClient{profile: profile, record: record, origin: fmt.Sprintf("http://localhost:%d", record.Port), client: &http.Client{Timeout: 5 * time.Second, Jar: jar, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}}
+	c := &controllerClient{profile: profile, record: record, origin: fmt.Sprintf("http://localhost:%d", record.Port), client: &http.Client{Timeout: controllerRequestTimeout, Jar: jar, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}}
 	return c, nil
 }
 
@@ -161,7 +185,13 @@ func (c *controllerClient) callContext(ctx context.Context, method, path string,
 	if c.connectionID != "" {
 		req.Header.Set(connectionHeader, c.connectionID)
 	}
-	res, err := c.client.Do(req)
+	client := c.client
+	if budget := controllerRequestBudget(path); client.Timeout != 0 && client.Timeout < budget {
+		longer := *client
+		longer.Timeout = budget
+		client = &longer
+	}
+	res, err := client.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -287,16 +317,12 @@ func PrepareUpdate(configPath string, stop bool) (DesktopResult, error) {
 	if c.launch.Controller.Protocol == controlProtocol {
 		// Routine status probes also hold the operation lock. Retry briefly.
 		// every request still checks running jobs, terminals and VM ownership.
-		handoffCtx, cancelHandoff := context.WithTimeout(ctx, 3*time.Second)
-		defer cancelHandoff()
-		conflicted := false
-	handoff:
+		// The retry window bounds conflicts only: each request keeps its own
+		// VM probe budget, which a Windows guest needs in full.
+		retryUntil := time.Now().Add(3 * time.Second)
 		for {
-			status, err := c.callContext(handoffCtx, "POST", "/api/handoff", map[string]string{"token": c.record.Token}, nil)
+			status, err := c.call("POST", "/api/handoff", map[string]string{"token": c.record.Token}, nil)
 			if err != nil {
-				if conflicted && handoffCtx.Err() != nil {
-					break
-				}
 				return DesktopResult{}, err
 			}
 			if status == http.StatusOK {
@@ -305,15 +331,10 @@ func PrepareUpdate(configPath string, stop bool) (DesktopResult, error) {
 				}
 				return DesktopResult{Status: "prepared"}, nil
 			}
-			if status != http.StatusConflict {
+			if status != http.StatusConflict || time.Now().After(retryUntil) {
 				break
 			}
-			conflicted = true
-			select {
-			case <-handoffCtx.Done():
-				break handoff
-			case <-time.After(50 * time.Millisecond):
-			}
+			time.Sleep(50 * time.Millisecond)
 		}
 	}
 	return DesktopResult{Status: "stop_required", Message: "请保存文件后确认停止环境并安装更新。终端任务会结束，项目和登录状态会保留。"}, nil

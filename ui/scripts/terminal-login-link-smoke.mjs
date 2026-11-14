@@ -2,8 +2,12 @@
 import assert from "node:assert/strict";
 import { createWorkbench } from "./workbench-fixture.mjs";
 
-const url = "https://claude.ai/oauth/authorize?state=" + "fixture".repeat(22);
-for (const format of ["printed", "OSC 8"]) {
+for (const [format, base] of [
+  ["printed", "https://claude.ai/oauth/authorize"],
+  ["printed", "https://claude.com/cai/oauth/authorize"],
+  ["OSC 8", "https://claude.com/cai/oauth/authorize"],
+]) {
+  const url = base + "?state=" + "fixture".repeat(22);
   const opened = [];
   const { browser, page, errors } = await createWorkbench({ mockWebSockets: false });
   try {
@@ -20,7 +24,7 @@ for (const format of ["printed", "OSC 8"]) {
     await page.getByRole("button", { name: "新建终端", exact: true }).first().click();
     await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
     const row = page.locator(".xterm-rows > div").first();
-    await row.filter({ hasText: format === "printed" ? "claude.ai" : "Open Claude" }).waitFor();
+    await row.filter({ hasText: format === "printed" ? new URL(url).host : "Open Claude" }).waitFor();
     const rect = await row.boundingBox();
     await page.mouse.move(rect.x + 20, rect.y + rect.height / 2);
     await page.waitForFunction(() => !!document.querySelector(".xterm-cursor-pointer"));

@@ -219,6 +219,25 @@ actualFocus("a native page activation updates the private document proof and the
   assert.notEqual(frame.target, before.target);
 });
 
+actualFocus("a focus request restores a background page only for its displayed document and geometry", async t => {
+  const f = await fixture(t);
+  const first = await f.open("/first"), second = await f.open("/second");
+  const frame = await f.call("frame", {}, "GET");
+  const separateWindow = await f.context().browser().newContext();
+  const otherPage = await separateWindow.newPage();
+  await otherPage.bringToFront();
+  assert.equal(await second.page.evaluate(() => document.hasFocus()), false);
+  const activate = input => f.privateRequest({ operation: "input-focus-page", input });
+  const receipt = { id: second.id, document: frame.document, target: frame.target };
+  for (const mismatch of [{ id: first.id }, { document: "old-document" }, { target: "old-geometry" }])
+    await assert.rejects(activate({ ...receipt, ...mismatch }), { code: "target_changed" });
+  assert.equal(await second.page.evaluate(() => document.hasFocus()), false);
+  const proof = await activate(receipt);
+  assert.equal(proof.id, second.id);
+  assert.equal(proof.documentFocused, true);
+  assert.equal((await f.call("tabs", {}, "GET")).active, second.id);
+});
+
 integration("private window popups are tracked and closing one tab retains its sibling", async t => {
   const f = await fixture(t), one = await f.open("/private-one", true);
   const created = one.page.context().waitForEvent("page");
@@ -229,6 +248,56 @@ integration("private window popups are tracked and closing one tab retains its s
   const second=snapshot.tabs.find(t=>t.url.endsWith("/private-two"));assert(second?.incognito);
   await f.call("close",{id:one.id});
   assert.equal(two.isClosed(),false);assert.equal((await f.call("tabs",{},"GET")).tabs.some(t=>t.id===second.id),true);
+});
+
+integration("a login popup receives clicks from its own frame and closes with its login", async t => {
+  const f = await fixture(t);
+  await f.call("health", {}, "GET");
+  const browser = f.context().browser();
+  const login = "a".repeat(24), origin = "https://claude.com";
+  const url = origin + "/cai/oauth/authorize?state=fixture";
+  browser.once("context", context => {
+    const pages = new Map([
+      [url, `<button onclick="window.open('/verify?state=fixture','verify','popup,width=500,height=400')">Open verification</button>`],
+      [origin + "/verify?state=fixture", '<iframe src="https://verify.example.test/check"></iframe>'],
+      ["https://verify.example.test/check", `<button onclick="this.textContent='Verified'">Verify</button>`],
+    ]);
+    void context.route("**/*", route => route.fulfill({
+      contentType: "text/html", body: pages.get(route.request().url()) || "",
+    }));
+  });
+  const { id } = await f.call("login-open", { login, url });
+  const opener = browser.contexts().flatMap(context => context.pages()).find(page => page.url() === url);
+  assert(opener);
+  const popupEvent = opener.waitForEvent("popup");
+  await f.click(id, opener, "button");
+  const popup = await popupEvent;
+  const verify = popup.frameLocator("iframe").getByRole("button");
+  await verify.waitFor();
+  await t.waitFor(async () => (await f.call("tabs", {}, "GET")).active !== id);
+  // A frame already in flight when the popup opens can be rejected once.
+  // Use the same bounded read retries as the display transport.
+  let frame;
+  for (let attempt = 0; ; attempt++) {
+    try { frame = await f.call("frame", {}, "GET"); break; }
+    catch (error) {
+      if (error.code !== "target_changed" || attempt >= 5) throw error;
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+  }
+  assert.notEqual(frame.id, id);
+  assert.equal(frame.native.id, frame.id);
+  const state = await f.call("tabs", {}, "GET");
+  const tab = state.tabs.find(tab => tab.id === frame.id);
+  assert(tab.login);
+  assert.equal(tab.url, origin);
+  const box = await verify.boundingBox();
+  const x = Math.round((box.x + box.width / 2) * frame.scale);
+  const y = Math.round((box.y + box.height / 2) * frame.scale);
+  for (const mask of [1, 0]) await f.call("input", { kind: "pointer", target: frame.target, mask, x, y });
+  await popup.frameLocator("iframe").getByRole("button", { name: "Verified" }).waitFor();
+  await f.call("login-finish", { login });
+  assert(opener.isClosed() && popup.isClosed());
 });
 
 integration("native page copy completion carries current context and ignores a synthetic copy", async t => {

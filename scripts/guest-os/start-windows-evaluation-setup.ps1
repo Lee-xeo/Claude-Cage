@@ -140,7 +140,7 @@ try {
         }
     }
     $mediaReceipt = Join-Path $mediaDir 'receipt.json'
-    $receipt = Get-Content -LiteralPath $mediaReceipt -Raw | ConvertFrom-Json
+    $receipt = Get-Content -LiteralPath $mediaReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
     if ([guid]$receipt.VMId -ne $VMId -or $receipt.Disk -ne $diskFile.FullName -or $receipt.AnswerISO -ne $answerISO -or
         $receipt.WindowsIsoSHA256 -ne $ExpectedIsoSha256 -or $receipt.LicenseUI -ne $mode -or
         $receipt.PowerShellSHA256 -ne $GuestPowerShellSHA256 -or

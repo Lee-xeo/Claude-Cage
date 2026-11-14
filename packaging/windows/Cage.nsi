@@ -374,9 +374,12 @@ Function RestorePreservedFiles
     SetErrorLevel 2
     Abort "安装恢复尚未完成。文件分别保留在 $BackupDir 和 $StageDir，请保留这两个目录后重试。"
   ${EndIf}
-  ClearErrors
-  Rename "$BackupDir" "$INSTDIR"
-  ${If} ${Errors}
+  ; The installation folder was kept, so the previous entries move back into it.
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation attach -Target "$INSTDIR" -Source "$BackupDir" $DiagnosticArguments'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint "$1"
     SetErrorLevel 2
     Abort "原安装目录未能恢复。文件保留在 $BackupDir，新程序保留在 $StageDir。"
   ${EndIf}
@@ -457,7 +460,9 @@ Section "Cage" Main
   File /oname=verified-file-deletion.cs "verified-file-deletion.cs"
   DetailPrint "正在检查并保留已有项目和修改文件…"
   !insertmacro InstallPhase "preparing_file_transaction"
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation prepare -Target "$StageDir" -Source "$INSTDIR" -Backup "$BackupDir" -Receipt "$TransactionRecord" $DiagnosticArguments'
+  ; CageData is the default storage of a packaged Windows installation. It
+  ; stays in place: a VM registered on it keeps its paths and open handles.
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation prepare -Target "$StageDir" -Source "$INSTDIR" -Backup "$BackupDir" -Receipt "$TransactionRecord" -KeepInPlace CageData $DiagnosticArguments'
   Pop $0
   Pop $1
   StrCpy $HelperExit $0
@@ -472,15 +477,21 @@ Section "Cage" Main
   SetOutPath "$TEMP"
   ${If} $ExistingInstall == "1"
     !insertmacro InstallPhase "moving_previous_application"
-    ClearErrors
-    Rename "$INSTDIR" "$BackupDir"
-    ${If} ${Errors}
+    ; The installation folder itself stays; only its program and personal
+    ; entries move, so kept data and open handles below it are untouched.
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation detach -Target "$BackupDir" -Source "$INSTDIR" -Receipt "$TransactionRecord" $DiagnosticArguments'
+    Pop $0
+    Pop $1
+    StrCpy $HelperExit $0
+    Call WriteInstallDiagnostic
+    ${If} $0 != 0
+      DetailPrint "$1"
       nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation complete -Target "$INSTDIR" -Receipt "$TransactionRecord" $DiagnosticArguments'
       Pop $0
       Pop $1
       RMDir /r "$StageDir"
       SetErrorLevel 2
-      Abort "Could not move the installed application. Quit Cage and retry."
+      Abort "Could not move the installed application. Quit Cage, close programs using files in its folder, and retry."
     ${EndIf}
     DetailPrint "正在迁入个人文件并保留原有链接…"
     !insertmacro InstallPhase "moving_personal_files"
@@ -501,7 +512,20 @@ Section "Cage" Main
   ${EndIf}
   !insertmacro InstallPhase "publishing_application"
   ClearErrors
-  Rename "$StageDir" "$INSTDIR"
+  ${If} $BackupDir != ""
+    ; The kept installation folder receives the staged entries one by one.
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation attach -Target "$INSTDIR" -Source "$StageDir" $DiagnosticArguments'
+    Pop $0
+    Pop $1
+    StrCpy $HelperExit $0
+    Call WriteInstallDiagnostic
+    ${If} $0 != 0
+      DetailPrint "$1"
+      SetErrors
+    ${EndIf}
+  ${Else}
+    Rename "$StageDir" "$INSTDIR"
+  ${EndIf}
   ${If} ${Errors}
     ${If} $BackupDir != ""
       Call RestorePreservedFiles

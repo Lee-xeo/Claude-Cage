@@ -17,17 +17,22 @@ type runningProfile struct {
 	JobID       string `json:"job_id,omitempty"`
 }
 
-// ProcessStartMatches reports false only when pid now belongs to a process
-// started at a different time than the record. After a reboot or crash the
-// recorded PID can be reused by an unrelated process. Records from older
-// versions carry no start time and an unreadable start time cannot prove
-// reuse; both keep the previous PID-only behavior.
+// ProcessStartMatches reports false when pid now belongs to a process started
+// at a different time than the record. After a reboot or crash the recorded
+// PID can be reused by an unrelated process. Records from older versions carry
+// no start time and keep the previous PID-only behavior. Where the platform
+// exposes start times, Cage can always read those of its own processes; an
+// unreadable one belongs to another account or a protected system process,
+// such as a Windows service that took over the PID after a reboot.
 func ProcessStartMatches(pid int, started string) bool {
 	if started == "" {
 		return true
 	}
 	current := processStartToken(pid)
-	return current == "" || current == started
+	if current == "" {
+		return processStartToken(os.Getpid()) == ""
+	}
+	return current == started
 }
 
 func (r runningProfile) alive() bool {

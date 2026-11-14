@@ -1,7 +1,7 @@
 #requires -Version 5.1
 param([Parameter(Mandatory)][string]$ProfilePath,[Parameter(Mandatory)][string]$EvidenceDirectory)
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
-$profile=Get-Content -LiteralPath $ProfilePath -Raw|ConvertFrom-Json
+$profile=Get-Content -LiteralPath $ProfilePath -Raw -Encoding UTF8|ConvertFrom-Json
 $executable=$profile.relay_executable;$helper=Join-Path ([IO.Path]::GetDirectoryName($executable)) 'cage-guest-files.exe'
 $utf8=[Text.UTF8Encoding]::new($false)
 $owned=[Collections.Generic.List[Diagnostics.Process]]::new()

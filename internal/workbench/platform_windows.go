@@ -17,13 +17,18 @@ func unlockController(f *os.File) error {
 	return windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, new(windows.Overlapped))
 }
 func controllerLockContended(err error) bool { return errors.Is(err, windows.ERROR_LOCK_VIOLATION) }
+
+// The PIDs checked here are Cage's own processes, which the same user can
+// always open for limited queries. Access denied means the PID was reused by
+// another account or a protected system process. Unknown failures stay
+// conservative.
 func processExists(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
-		return !errors.Is(err, windows.ERROR_INVALID_PARAMETER)
+		return !errors.Is(err, windows.ERROR_INVALID_PARAMETER) && !errors.Is(err, windows.ERROR_ACCESS_DENIED)
 	}
 	defer windows.CloseHandle(h)
 	var code uint32

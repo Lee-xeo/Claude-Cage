@@ -17,7 +17,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -180,15 +179,9 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	if err != nil {
 		return err
 	}
-	var listener net.Listener
-	port := 17777
-	for ; port < 17808; port++ {
-		listener, err = net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
-		if err == nil {
-			break
-		}
-	}
+	listener, port, err := listenController(profile)
 	if err != nil {
+		diagnostics.Log("error", "controller", err.Error())
 		return err
 	}
 	defer listener.Close()

@@ -84,6 +84,7 @@ func TestBrowserFrameTransitionRetry(t *testing.T) {
 		{"transient", "browser_target_changed", 1, 2, false},
 		{"document transition", "target_changed", 1, 2, false},
 		{"popup capture transition", "desktop_target_changed", 2, 3, false},
+		{"popup window appearing", "browser_window_unavailable", 2, 3, false},
 		{"popup capture busy", "desktop_capture_busy", 1, 2, false},
 		{"persistent", "browser_target_changed", 8, 6, true},
 		{"permission", "desktop_capture_permission_required", 1, 1, true},
@@ -173,6 +174,7 @@ func TestBrowserFocusRecoveryPreservesBoundaries(t *testing.T) {
 		name, code, tabs string
 		fatal            bool
 	}{
+		{"popup window appearing", "browser_window_unavailable", "", false},
 		{"other tab", "browser_focus_required", `{"active":"other","tabs":[{"id":"tab","document":"doc"}]}`, false},
 		{"new document", "browser_focus_required", `{"active":"tab","tabs":[{"id":"tab","document":"new"}]}`, false},
 		{"target changed", "browser_target_changed", "", false},

@@ -64,7 +64,7 @@ if (-not (Test-Path -LiteralPath $runtime)) {
 }
 Assert-NoReparse $runtime
 $manifest=Join-Path $runtime 'runtime-files.json'
-$files=Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
+$files=Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
 foreach($entry in $files.PSObject.Properties) {
     $file=[IO.Path]::GetFullPath((Join-Path $runtime $entry.Name))
     if(-not $file.StartsWith($runtime+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'CCS runtime contains an invalid path.'}

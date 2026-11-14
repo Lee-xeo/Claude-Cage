@@ -10,7 +10,7 @@ const reports = [];
 const copiedText = "Cage native copy 中文🙂 " + path.basename(output);
 const html = `<!doctype html><meta charset="utf-8"><title>Cage native browser acceptance</title>
 <style>body{margin:0;background:#eef3f8;color:#17233b;font:18px Arial}header{height:42px;padding:12px;background:#1e4363;color:white}main{padding:20px}textarea,#images{display:block;box-sizing:border-box;width:420px;max-width:90vw;height:90px;margin:12px 0;padding:8px;border:2px solid #345;border-radius:4px;background:white}button{height:42px;margin:0 8px 12px 0}#images{height:100px}#images img{max-height:64px}#drop{height:64px;border:2px dashed #678;width:400px;max-width:90vw}input{margin:10px 0}p{margin:8px}</style>
-<header>Cage Windows native browser acceptance</header><button id="another" style="position:fixed;right:20px;top:18px">Open fixture tab</button><main>
+<header>Cage Windows native browser acceptance</header><button id="verify" style="position:fixed;left:20px;top:18px">Verify</button><button id="another" style="position:fixed;right:20px;top:18px">Open fixture tab</button><main>
 <textarea id="text" aria-label="Acceptance text"></textarea>
 <button id="copy">Copy fixture text</button><button id="permission">Request fixture permission</button>
 <div id="images" contenteditable="true" tabindex="0" aria-label="Acceptance images">Paste image here</div>
@@ -25,6 +25,7 @@ document.addEventListener('scroll',()=>report({type:'scroll',y:scrollY}),{passiv
 copy.onclick=async()=>{await navigator.clipboard.writeText(${JSON.stringify(copiedText)});report({type:'copied'})};
 permission.onclick=async()=>report({type:'permission',value:await Notification.requestPermission()});
 another.onclick=()=>window.open('/private-two','_blank');
+verify.onclick=()=>location.pathname==='/verification-popup' ? report({type:'verified'}) : window.open('/verification-popup','verification','popup,width=480,height=420');
 images.addEventListener('paste',async e=>{const files=[...e.clipboardData.files];if(!files.length)return; e.preventDefault();for(const f of files){const b=new Uint8Array(await f.arrayBuffer());const image=new Image();image.src=URL.createObjectURL(f);await image.decode();images.replaceChildren(image);report({type:'png',mime:f.type,width:image.naturalWidth,height:image.naturalHeight,bytes:b.length})}});
 const selected=async(files,type)=>report({type,files:await Promise.all([...files].map(async f=>({name:f.name,bytes:[...new Uint8Array(await f.arrayBuffer())]})))});
 upload.onchange=()=>selected(upload.files,'upload');drop.ondragover=e=>e.preventDefault();drop.ondrop=e=>{e.preventDefault();selected(e.dataTransfer.files,'drop')};

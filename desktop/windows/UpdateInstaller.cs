@@ -150,16 +150,18 @@ internal static class UpdateInstaller
                     CopyTree(backup, restored);
                     var receipt = plan.Target + ".cage-installation.json";
                     await PreserveFiles("prepare", plan.Target, restored, receipt, failed);
-                    Directory.Move(plan.Target, failed);
+                    // The installation folder and its CageData stay in place,
+                    // as in NSIS: only the other top-level entries move.
+                    await PreserveFiles("detach", plan.Target, failed, receipt);
                     try
                     {
                         await PreserveFiles("move", failed, restored, receipt);
-                        Directory.Move(restored, plan.Target);
+                        await PreserveFiles("attach", restored, plan.Target, receipt);
                     }
                     catch
                     {
                         await PreserveFiles("restore", restored, failed, receipt);
-                        Directory.Move(failed, plan.Target);
+                        await PreserveFiles("attach", failed, plan.Target, receipt);
                         await PreserveFiles("complete", "", plan.Target, receipt);
                         throw;
                     }
@@ -237,7 +239,7 @@ internal static class UpdateInstaller
             using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(10));
             var executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
             var arguments = new List<string> { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
-                "-Operation", operation, "-Source", source, "-Target", target, "-Receipt", receipt, "-LegacyTarget" };
+                "-Operation", operation, "-Source", source, "-Target", target, "-Receipt", receipt, "-LegacyTarget", "-KeepInPlace", "CageData" };
             if (backupPath != null) { arguments.Add("-Backup"); arguments.Add(backupPath); }
             using var process = new Process { StartInfo = Backend.StartInfo(executable, arguments.ToArray()) };
             if (!process.Start()) throw new IOException("无法启动安装文件保留组件");

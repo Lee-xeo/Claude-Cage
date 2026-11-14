@@ -26,6 +26,10 @@ void Record(string name, object value) => WriteRecord(Path.Combine(root, name + 
 if (args is ["--hold-directory", var directory])
 {
     Directory.SetCurrentDirectory(directory);
+    // A working directory alone no longer blocks an update: NSIS keeps the
+    // installation folder and moves its entries. An open program file
+    // without delete sharing still does.
+    using var held = new FileStream(Path.Combine(directory, "Cage.install-id"), FileMode.Open, FileAccess.Read, FileShare.Read);
     Record("held", new { pid = Environment.ProcessId });
     while (!File.Exists(Path.Combine(root, "release.json"))) await Task.Delay(100);
     return 0;

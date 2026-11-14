@@ -36,7 +36,7 @@ function Assert-ClaudeCodeReceipt($Value, $Selected, [string]$PreviousReceipt) {
     if ($Value.claude_sha256 -eq $Selected.sha256) {
         if ($Value.claude_version -cne $Selected.version) { throw 'The Claude Code receipt differs from the selected release.' }
     } else {
-        $previous=Get-Content -LiteralPath $PreviousReceipt -Raw | ConvertFrom-Json
+        $previous=Get-Content -LiteralPath $PreviousReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
         # A retained version must already be bound by the administrator's
         # receipt. Legacy receipts without a version cannot certify a newer
         # release from a user's claim; fail while leaving that receipt intact.

@@ -257,6 +257,11 @@ func (e *app) swapBase(ctx context.Context, b vm.Backend) bool {
 		fmt.Fprintf(w, "Error: could not copy the new base VM to '%s': %v\nThere is no base now. The new one is VM '%s'; 'agent-vm setup' again builds another.\n", vmname.Template, err, building)
 		return false
 	}
+	// The clone copies the build's running record. The base never runs, and a
+	// record whose PID is later reused would hold every configuration change.
+	if err := os.Remove(filepath.Join(LimaHome(e.state), vmname.Template, "cage-running.json")); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(w, "Warning: could not remove the copied running record from the base VM: %v\n", err)
+	}
 	// The version last: it says the base can be cloned.
 	if err := e.state.Write(state.BaseBuiltBy, []byte(version.Version+"\n")); err != nil {
 		fmt.Fprintf(w, "Error: could not record the version that built the base: %v\nThe base VM is not marked ready: 'agent-vm setup' again.\n", err)

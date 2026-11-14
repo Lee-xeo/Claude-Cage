@@ -1,7 +1,7 @@
 #requires -Version 5.1
 param([Parameter(Mandatory)][string]$ProfilePath,[Parameter(Mandatory)][string]$EvidenceDirectory)
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
-$profile=Get-Content -LiteralPath $ProfilePath -Raw|ConvertFrom-Json;$utf8=[Text.UTF8Encoding]::new($false)
+$profile=Get-Content -LiteralPath $ProfilePath -Raw -Encoding UTF8|ConvertFrom-Json;$utf8=[Text.UTF8Encoding]::new($false)
 $owned=[Collections.Generic.List[Diagnostics.Process]]::new()
 function Start-Transfer([string]$Operation,[bool]$Helper=$false){
     $s=[Diagnostics.ProcessStartInfo]::new();$s.FileName=if($Helper){Join-Path ([IO.Path]::GetDirectoryName($profile.relay_executable)) 'cage-guest-files.exe'}else{$profile.relay_executable}

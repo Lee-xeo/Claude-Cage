@@ -370,7 +370,12 @@ func (s *Server) nativeBrowserVNC(w http.ResponseWriter, r *http.Request) {
 func recoverBrowserInputFocus(ctx context.Context, request func(context.Context, string, string, any) ([]byte, error), input map[string]any, release func()) ([]byte, error) {
 	data, err := request(ctx, "POST", "/input", input)
 	var failure windowsBrowserFailure
-	if release == nil || !errors.As(err, &failure) || (failure.code != "browser_focus_required" && failure.code != "browser_target_changed" && failure.code != "target_changed") {
+	if release == nil || !errors.As(err, &failure) {
+		return data, err
+	}
+	switch failure.code {
+	case "browser_focus_required", "browser_window_unavailable", "browser_target_changed", "target_changed":
+	default:
 		return data, err
 	}
 	// End this viewer's input lease so a rejected key-up cannot leave a held

@@ -9,7 +9,7 @@ import (
 )
 
 func TestTerminalLoginLinkUsesGuestPrivateBrowser(t *testing.T) {
-	const address = "https://claude.ai/oauth/authorize?state=fixture"
+	const address = "https://claude.com/cai/oauth/authorize?state=fixture&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback"
 	s := testServer(t)
 	s.ready = true
 	terminal := newTerminalSession(nil)
@@ -40,11 +40,6 @@ func TestTerminalLoginLinkUsesGuestPrivateBrowser(t *testing.T) {
 	defer guest.Close()
 	s.browserControl = localBrowserClient(t, s.lifetimeContext(), guest)
 	defer s.browserControl.close()
-	for _, invalid := range []string{"http://claude.ai/oauth/authorize?x=1", "https://claude.ai:90/oauth/authorize?x=1", "https://claude.ai@elsewhere.test/oauth/authorize?x=1", "https://claude.ai/redirect?x=1", "https://claude.ai/oauth/authorize"} {
-		if claudeAuthorizationURL(invalid) {
-			t.Fatalf("accepted %q", invalid)
-		}
-	}
 	w := request(s, "POST", "/api/terminals/"+terminal.id+"/login-link", s.origin, `{"url":"`+address+`"}`, true)
 	if w.Code != 200 || w.Body.String() != "{\"id\":\"tab\"}\n" {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
@@ -54,5 +49,30 @@ func TestTerminalLoginLinkUsesGuestPrivateBrowser(t *testing.T) {
 	case <-finished:
 	case <-time.After(2 * time.Second):
 		t.Fatal("closing the terminal retained its login tab")
+	}
+}
+
+func TestClaudeAuthorizationURL(t *testing.T) {
+	for _, valid := range []string{
+		"https://claude.ai/oauth/authorize?x=1",
+		"https://claude.com/cai/oauth/authorize/?x=1",
+	} {
+		if !claudeAuthorizationURL(valid) {
+			t.Fatalf("rejected %q", valid)
+		}
+	}
+	for _, invalid := range []string{
+		"https://example.org/cai/oauth/authorize?x=1",
+		"https://claude.com/extra/cai/oauth/authorize?x=1",
+		"https://claude.com/cai/oauth/authorize/next?x=1",
+		"http://claude.ai/oauth/authorize?x=1",
+		"https://claude.ai:90/oauth/authorize?x=1",
+		"https://claude.ai@elsewhere.test/oauth/authorize?x=1",
+		"https://claude.ai/redirect?x=1",
+		"https://claude.ai/oauth/authorize",
+	} {
+		if claudeAuthorizationURL(invalid) {
+			t.Fatalf("accepted %q", invalid)
+		}
 	}
 }

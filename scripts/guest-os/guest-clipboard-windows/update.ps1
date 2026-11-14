@@ -11,7 +11,7 @@ param(
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
 $profile=Get-Item -LiteralPath $ProfilePath
 if($profile -isnot [IO.FileInfo] -or $profile.Length -gt 16384 -or $profile.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Invalid protected guest binding.'}
-$binding=Get-Content -LiteralPath $profile.FullName -Raw|ConvertFrom-Json
+$binding=Get-Content -LiteralPath $profile.FullName -Raw -Encoding UTF8|ConvertFrom-Json
 $vm=Get-VM -Id ([guid]$binding.vm_id)
 if($binding.version -ne 1 -or $vm.State -ne 'Running' -or @(Get-VMNetworkAdapter -VM $vm).Count -ne 0 -or
     $profile.Directory.FullName -ne [IO.Path]::GetDirectoryName($binding.relay_executable) -or

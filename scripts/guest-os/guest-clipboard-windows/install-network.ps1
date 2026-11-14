@@ -10,7 +10,7 @@ param(
     [object]$HostEnrollment
 )
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
-$binding=Get-Content -LiteralPath $ProfilePath -Raw|ConvertFrom-Json
+$binding=Get-Content -LiteralPath $ProfilePath -Raw -Encoding UTF8|ConvertFrom-Json
 if($HostEnrollment -and [guid]$HostEnrollment.VMID -ne [guid]$binding.vm_id){throw 'Original host enrollment does not match this packet bridge.'}
 $vm=Get-VM -Id ([guid]$binding.vm_id)
 if($binding.version -ne 1 -or $vm.State -ne 'Running' -or $binding.gui_user_sid -notmatch '^S-1-5-21-' -or

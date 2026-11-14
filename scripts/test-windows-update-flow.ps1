@@ -138,8 +138,13 @@ try {
         $linkCommand = 'mklink /J "' + (Join-Path $target 'linked-project') + '" "' + (Join-Path $scenario 'outside-project') + '"'
         & cmd.exe /d /c $linkCommand | Out-Null
         Check ($LASTEXITCODE -eq 0) 'Could not create the isolated project junction.'
-        $holder = $null; $parent = $null; $helper = $null
+        $holder = $null; $parent = $null; $helper = $null; $disk = $null
         try {
+            if ($mode -eq 'success') {
+                # A registered VM can keep its disk open while the update runs.
+                # CageData stays in place, so the open disk must not block it (#108).
+                $disk = [IO.File]::Open((Join-Path $target 'CageData/state/persistent.img'), 'Open', 'Read', 'Read')
+            }
             if ($mode -eq 'installer-failure') {
                 $holder = Start-Fixture (Join-Path $old.app 'Cage.exe') $profile @('--hold-directory', $target)
                 $null = Wait-File (Join-Path $profile 'held.json')
@@ -204,6 +209,7 @@ try {
             $results += @{scenario = $mode; passed = $false; error = $_.Exception.Message}
             throw
         } finally {
+            if ($disk) { $disk.Dispose() }
             Write-Text (Join-Path $profile 'release.json') '{}'
             foreach ($owned in @($parent, $helper, $holder)) {
                 if (!$owned) { continue }

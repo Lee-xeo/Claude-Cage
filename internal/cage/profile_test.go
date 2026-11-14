@@ -3,6 +3,7 @@ package cage
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -60,5 +61,27 @@ func TestRunningRecordRejectsReusedPID(t *testing.T) {
 	c.Timezone = "Asia/Tokyo"
 	if err := c.CheckRunning(dir); err != nil {
 		t.Fatalf("stale record blocked a configuration change: %v", err)
+	}
+}
+
+// A PID reused by a process whose start time cannot be read, such as a
+// protected Windows service after a reboot, is not the recorded owner (#167).
+func TestRunningRecordRejectsUnreadableStartTime(t *testing.T) {
+	if processStartToken(os.Getpid()) == "" {
+		t.Skip("process start time is unavailable on this platform")
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	gone := cmd.Process.Pid
+	if processStartToken(gone) != "" {
+		t.Skip("the exited child's PID was reused")
+	}
+	if ProcessStartMatches(gone, "1") {
+		t.Fatal("an unreadable start time matched a recorded owner")
+	}
+	if !ProcessStartMatches(gone, "") {
+		t.Fatal("a legacy record without a start time lost its PID-only check")
 	}
 }

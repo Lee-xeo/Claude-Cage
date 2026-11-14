@@ -64,18 +64,45 @@ if($LASTEXITCODE -ne 0){throw 'The exact VM/disk binding could not be verified.'
 $binding=$raw|ConvertFrom-Json
 if($binding.version -ne 1 -or [guid]$binding.vm_id -ne $VMId -or $binding.host_sid -cne $HostSID){throw 'The prepared manager binding does not match.'}
 if(Test-Path -LiteralPath $bindingPath){
-    Assert-NoLink $bindingPath;$old=Get-Content -LiteralPath $bindingPath -Raw|ConvertFrom-Json
+    Assert-NoLink $bindingPath;$old=Get-Content -LiteralPath $bindingPath -Raw -Encoding UTF8|ConvertFrom-Json
     foreach($key in @('version','vm_id','host_sid','disk_path','disk_volume','disk_file_id')){if([string]$old.$key -cne [string]$binding.$key){throw 'The existing protected VM/disk binding changed; preserved it.'}}
 }
-$rollback=$null;$cleanupRollback=$false;$wasRunning=$service -and $service.Status -eq 'Running'
+# Cage starts the registered manager on demand, so a status request during this
+# update could restart the old image between the stop and the copy. Disabling
+# the service holds it stopped; every path below restores automatic start.
+# SCM also reports Stopped before the process has released its image.
+function Stop-ManagerForReplacement{
+    Set-Service -Name $name -StartupType Disabled
+    $current=Get-CimInstance Win32_Service -Filter ("Name='"+$name+"'")
+    if($current.PathName -cne $binary -or $current.StartName -notin @('LocalSystem','NT AUTHORITY\SYSTEM')){throw 'The fixed manager service identity changed before stopping; preserved the original files.'}
+    $managerPID=[int]$current.ProcessId
+    if((Get-Service -Name $name).Status -ne 'Stopped'){Stop-Service -Name $name}
+    (Get-Service -Name $name).WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))
+    $deadline=[DateTime]::UtcNow.AddSeconds(30)
+    while($managerPID -gt 0){
+        $process=Get-CimInstance Win32_Process -Filter ('ProcessId='+$managerPID)
+        if(!$process -or ![string]::Equals([string]$process.ExecutablePath,$exe,[StringComparison]::OrdinalIgnoreCase)){break}
+        if([DateTime]::UtcNow -gt $deadline){throw 'The stopped manager process did not exit in time; preserved the original files.'}
+        Start-Sleep -Milliseconds 200
+    }
+}
+# A scanner or the exiting process may still hold the image briefly.
+function Copy-ManagerImage([string]$Source){
+    for($attempt=1;;$attempt++){
+        try{Copy-Item -LiteralPath $Source -Destination $exe -Force;return}
+        catch{if($attempt -ge 20 -or $_.Exception -isnot [IO.IOException]){throw};Start-Sleep -Milliseconds 500}
+    }
+}
+$rollback=$null;$cleanupRollback=$false;$replaced=$false;$wasRunning=$service -and $service.Status -eq 'Running'
 try{
     if($service){
         Assert-NoLink $exe
         $rollback=Join-Path $program ('manager-rollback-'+[guid]::NewGuid().ToString('N')+'.exe')
         Copy-Item -LiteralPath $exe -Destination $rollback;Protect-ManagerPath $rollback
-        if($service.Status -ne 'Stopped'){Stop-Service -Name $name;$service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))}
+        Stop-ManagerForReplacement
     }
-    Copy-Item -LiteralPath $payload.FullName -Destination $exe -Force;Protect-ManagerPath $exe
+    $replaced=$true
+    Copy-ManagerImage $payload.FullName;Protect-ManagerPath $exe
     if((Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $PayloadSHA256.ToLowerInvariant()){throw 'The copied manager checksum does not match.'}
     if(!(Test-Path -LiteralPath $bindingPath)){[IO.File]::WriteAllText($bindingPath,($binding|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))}
     Protect-ManagerPath $bindingPath
@@ -85,15 +112,23 @@ try{
     if($LASTEXITCODE -ne 0){throw 'The manager service permission could not be protected.'}
     & ($env:windir+'\System32\sc.exe') failure $name reset= 86400 actions= restart/5000/restart/15000/restart/60000|Out-Null
     if($LASTEXITCODE -ne 0){throw 'The manager recovery policy could not be configured.'}
+    Set-Service -Name $name -StartupType Automatic
     Start-Service -Name $name;(Get-Service -Name $name).WaitForStatus('Running',[TimeSpan]::FromSeconds(30))
     $cleanupRollback=$true
 }catch{
     if($rollback){
-        Stop-Service -Name $name -ErrorAction SilentlyContinue
-        (Get-Service -Name $name).WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))
-        Copy-Item -LiteralPath $rollback -Destination $exe -Force;Protect-ManagerPath $exe
-        if($wasRunning){Start-Service -Name $name}
-        $cleanupRollback=$true
+        try{
+            # Nothing was replaced when the stop guard failed; the original
+            # image stays in place and only automatic start is restored.
+            if($replaced){
+                Stop-ManagerForReplacement
+                Copy-ManagerImage $rollback;Protect-ManagerPath $exe
+            }
+            $cleanupRollback=$true
+        }finally{
+            Set-Service -Name $name -StartupType Automatic -ErrorAction SilentlyContinue
+            if($wasRunning){Start-Service -Name $name -ErrorAction SilentlyContinue}
+        }
     }
     throw
 }finally{if($rollback -and $cleanupRollback -and (Test-Path -LiteralPath $rollback)){Remove-Item -LiteralPath $rollback}}
