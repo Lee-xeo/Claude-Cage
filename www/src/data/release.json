@@ -4,6 +4,7 @@
   "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-macos-arm64.dmg",
   "windowsDownloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-windows-amd64-setup.exe",
   "linuxDownloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-linux-amd64.deb",
+  "androidDownloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-android-arm64.apk",
   "platforms": {
     "macos": {
       "version": "0.1.8-rc",
@@ -21,9 +22,9 @@
       "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-linux-amd64.deb"
     },
     "android": {
-      "version": "0.1.7",
-      "releaseURL": "https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.7",
-      "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.7/Cage-0.1.7-android-arm64.apk"
+      "version": "0.1.8-rc",
+      "releaseURL": "https://github.com/Lee-xeo/Claude-Cage/releases/tag/v0.1.8-rc",
+      "downloadURL": "https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.1.8-rc/Cage-0.1.8-rc-android-arm64.apk"
     }
   }
 }
