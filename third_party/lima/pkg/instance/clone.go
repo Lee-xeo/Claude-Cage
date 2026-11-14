@@ -26,6 +26,18 @@ import (
 )
 
 func CloneOrRename(ctx context.Context, oldInst *limatype.Instance, newInstName string, rename bool) (*limatype.Instance, error) {
+	return cloneOrRename(ctx, oldInst, newInstName, rename, nil)
+}
+
+// CloneWithIdentity prepares the target identity before publishing its config.
+func CloneWithIdentity(ctx context.Context, oldInst *limatype.Instance, newInstName string, identity *guestidentity.Identity) (*limatype.Instance, error) {
+	if err := identity.Validate(); err != nil {
+		return nil, err
+	}
+	return cloneOrRename(ctx, oldInst, newInstName, false, identity)
+}
+
+func cloneOrRename(ctx context.Context, oldInst *limatype.Instance, newInstName string, rename bool, identity *guestidentity.Identity) (*limatype.Instance, error) {
 	verb := "clone"
 	if rename {
 		verb = "rename"
@@ -58,9 +70,11 @@ func CloneOrRename(ctx context.Context, oldInst *limatype.Instance, newInstName 
 
 	var clonedConfig []byte
 	if !rename {
-		identity, err := guestidentity.New()
-		if err != nil {
-			return nil, err
+		if identity == nil {
+			identity, err = guestidentity.New()
+			if err != nil {
+				return nil, err
+			}
 		}
 		data, err := json.Marshal(identity)
 		if err != nil {

@@ -310,8 +310,10 @@ func (c Config) EnvironmentScript() string {
 
 func (c Config) StartScript() string {
 	body := c.EnvironmentScript() + "\n" + componentStartScript()
-	return markGuestStart(body)
+	return c.GuestProfile.Linux(markGuestStart(body))
 }
+
+func (c Config) SetupScript() string { return c.GuestProfile.Linux(GuestSetup) }
 
 func componentStartScript() string {
 	return APTBootstrapScript + "\n" + claudeAccountScript() + browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet cage-editor.service; then sudo systemctl stop cage-editor.service; fi\n" + guestStart

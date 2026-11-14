@@ -131,6 +131,11 @@ func (s *Server) guestFiles(ctx context.Context, target, method, path string, bo
 		script += " " + shellescape.Quote("http://localhost"+path)
 	}
 	var stderr fileControlStderr
+	var renderErr error
+	script, renderErr = s.linuxTemplate(script)
+	if renderErr != nil {
+		return nil, renderErr
+	}
 	var data []byte
 	var err, readErr error
 	shared := false

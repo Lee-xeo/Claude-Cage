@@ -9,22 +9,26 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"time"
 	_ "time/tzdata"
+
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
 )
 
 const ConfigEnv = "CLAUDE_CAGE_CONFIG"
 
 type Config struct {
-	ProxyURL        string     `json:"proxy_url"`
-	ProxyRevision   string     `json:"proxy_revision,omitempty"`
-	DNSURL          string     `json:"dns_url"`
-	Timezone        string     `json:"timezone"`
-	Locale          string     `json:"locale"`
-	BrowserLanguage string     `json:"browser_language"`
-	ExitPolicy      ExitPolicy `json:"exit_policy"`
+	GuestProfile    *guestprofile.Profile `json:"-"`
+	ProxyURL        string                `json:"proxy_url"`
+	ProxyRevision   string                `json:"proxy_revision,omitempty"`
+	DNSURL          string                `json:"dns_url"`
+	Timezone        string                `json:"timezone"`
+	Locale          string                `json:"locale"`
+	BrowserLanguage string                `json:"browser_language"`
+	ExitPolicy      ExitPolicy            `json:"exit_policy"`
 }
 
 func DefaultConfig() Config {
@@ -48,7 +52,11 @@ func Load(path string) (Config, error) {
 		return c, errors.New("cage configuration must contain one JSON object")
 	}
 	c.ExitPolicy = c.ExitPolicy.Normalized()
-	return c, c.Validate()
+	if err = c.Validate(); err != nil {
+		return c, err
+	}
+	c.GuestProfile, err = guestprofile.Load(filepath.Dir(path))
+	return c, err
 }
 
 func (c Config) Validate() error {

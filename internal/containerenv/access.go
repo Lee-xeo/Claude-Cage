@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,11 +72,40 @@ func (r *Runtime) InstallAccess(ctx context.Context) error {
 	if !inspection.State.Running {
 		return errors.New("请先启动容器")
 	}
+	profile, err := guestprofile.Load(r.profile)
+	if err != nil {
+		return err
+	}
+	if profile != nil {
+		// Only a newly created container has this profile. Never rename an
+		// existing legacy environment or provide compatibility account aliases.
+		script := `set -eu
+if ! id "$1" >/dev/null 2>&1; then
+  test "$(id -u cage)" = 1000
+  usermod -l "$1" -d "/home/$1" -m cage
+  groupmod -n "$1" cage
+fi
+test "$(id -u "$1")" = 1000
+if id cage-browser >/dev/null 2>&1; then
+  usermod -l "$2" -d "/home/$2" -m cage-browser
+  groupmod -n "$2" cage-browser
+fi
+printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$1" > /etc/sudoers.d/cage
+chmod 0440 /etc/sudoers.d/cage
+sed -i "s/^AllowUsers cage$/AllowUsers $1/" /etc/ssh/sshd_config.d/10-cage.conf
+visudo -cf /etc/sudoers.d/cage >/dev/null
+sshd -t
+systemctl reload ssh
+`
+		if _, err = r.output(ctx, "exec", "--user", "0", inspection.State.ContainerID, "/bin/sh", "-c", script, "sh", profile.Username, profile.BrowserUsername); err != nil {
+			return errors.New("无法初始化新容器账户；原容器文件已保留")
+		}
+	}
 	public, err := r.ensureSSHKey()
 	if err != nil {
 		return err
 	}
-	command := r.command(ctx, "exec", "-i", "--user", "0", inspection.State.ContainerID, "/bin/sh", "-c", `set -eu
+	accessScript := profile.Linux(`set -eu
 test -d /home/cage
 umask 077
 cat > /etc/ssh/cage_authorized_keys
@@ -83,6 +113,7 @@ chmod 0644 /etc/ssh/cage_authorized_keys
 ssh-keygen -A
 cat /etc/ssh/ssh_host_ed25519_key.pub
 `)
+	command := r.command(ctx, "exec", "-i", "--user", "0", inspection.State.ContainerID, "/bin/sh", "-c", accessScript)
 	command.Stdin = bytes.NewReader(public)
 	var output bytes.Buffer
 	command.Stdout = &limitedWriter{writer: &output, left: 4096}
@@ -120,6 +151,10 @@ func (r *Runtime) writeSSHConfig(port int) error {
 	if port < 1024 || port > 65535 {
 		return errors.New("容器 SSH 入口端口无效")
 	}
+	profile, err := guestprofile.Load(r.profile)
+	if err != nil {
+		return err
+	}
 	identity, err := sshConfigValue(filepath.Join(r.InstanceDir(), "id_ed25519"))
 	if err != nil {
 		return err
@@ -129,6 +164,7 @@ func (r *Runtime) writeSSHConfig(port int) error {
 		return err
 	}
 	data := fmt.Sprintf("Host cage-container\n HostName 127.0.0.1\n Port %d\n User cage\n IdentityFile %s\n IdentitiesOnly yes\n HostKeyAlias cage-container-%s\n HostKeyAlgorithms ssh-ed25519\n UserKnownHostsFile %s\n StrictHostKeyChecking yes\n PasswordAuthentication no\n KbdInteractiveAuthentication no\n ForwardAgent no\n ForwardX11 no\n PermitLocalCommand no\n", port, identity, r.identity, known)
+	data = strings.Replace(data, "\n User cage\n", "\n User "+profile.WorkUser()+"\n", 1)
 	return os.WriteFile(r.SSHConfig(), []byte(data), 0600)
 }
 

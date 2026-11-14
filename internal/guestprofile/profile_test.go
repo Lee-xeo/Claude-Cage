@@ -9,7 +9,7 @@ import (
 
 func TestCreationAndReload(t *testing.T) {
 	dir := t.TempDir()
-	o := Options{Hostname: "MY-PC", Username: "alex", BrowserUsername: "web", AudioName: "speakers", AudioDescription: "Desktop Speakers", DisplayWidth: 1920, DisplayHeight: 1080, BrowserWidth: 1280, BrowserHeight: 720, ExtensionName: "My Tabs", WebGL: "disabled", ColorScheme: "dark"}
+	o := Options{Hostname: "MY-PC", Username: "alex", BrowserUsername: "web", AudioName: "speakers", AudioDescription: "Desktop Speakers", DisplayWidth: 1920, DisplayHeight: 1080, BrowserWidth: 1280, BrowserHeight: 720, ExtensionName: "My Tabs", WebGL: "disabled", Canvas: "blocked"}
 	p, e := Create(dir, o)
 	if e != nil {
 		t.Fatal(e)
@@ -59,7 +59,7 @@ func TestRandomProfiles(t *testing.T) {
 }
 
 func TestInvalidOptions(t *testing.T) {
-	for _, o := range []Options{{Hostname: "bad\nname"}, {Hostname: "-abc"}, {Hostname: "0123"}, {Username: "root"}, {Username: "cage"}, {Username: "a;id"}, {Username: "same", BrowserUsername: "same"}, {AudioName: "a.monitor"}, {AudioDescription: "x\nload-module bad"}, {ExtensionName: "\"; id"}, {DisplayWidth: 1920}, {BrowserWidth: 8000, BrowserHeight: 600}, {DisplayWidth: 800, DisplayHeight: 600, BrowserWidth: 1280, BrowserHeight: 720}, {WebGL: "fake-gpu"}, {ColorScheme: "unknown"}} {
+	for _, o := range []Options{{Hostname: "bad\nname"}, {Hostname: "-abc"}, {Hostname: "0123"}, {Username: "root"}, {Username: "cage"}, {Username: "a;id"}, {Username: "same", BrowserUsername: "same"}, {AudioName: "a.monitor"}, {AudioDescription: "x\nload-module bad"}, {ExtensionName: "\"; id"}, {DisplayWidth: 1920}, {BrowserWidth: 8000, BrowserHeight: 600}, {DisplayWidth: 800, DisplayHeight: 600, BrowserWidth: 1280, BrowserHeight: 720}, {WebGL: "fake-gpu"}, {Canvas: "unknown"}} {
 		if _, e := New(o); e == nil {
 			t.Fatalf("accepted invalid options %+v", o)
 		}

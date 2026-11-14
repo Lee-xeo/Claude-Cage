@@ -32,13 +32,28 @@ type Options struct {
 	BrowserHeight    int    `json:"browser_height"`
 	ExtensionName    string `json:"extension_name"`
 	WebGL            string `json:"webgl"`
-	ColorScheme      string `json:"color_scheme"`
+	Canvas           string `json:"canvas"`
 }
 
 type Profile struct {
 	Version int `json:"version"`
 	Options
 	ExtensionSuffix string `json:"extension_suffix"`
+}
+
+// Matches treats unspecified inputs as requests to reuse the generated value.
+func (o Options) Matches(saved Options) bool {
+	for _, p := range [][2]string{{o.Hostname, saved.Hostname}, {o.Username, saved.Username}, {o.BrowserUsername, saved.BrowserUsername}, {o.AudioName, saved.AudioName}, {o.AudioDescription, saved.AudioDescription}, {o.ExtensionName, saved.ExtensionName}, {o.WebGL, saved.WebGL}, {o.Canvas, saved.Canvas}} {
+		if p[0] != "" && p[0] != p[1] {
+			return false
+		}
+	}
+	for _, p := range [][2]int{{o.DisplayWidth, saved.DisplayWidth}, {o.DisplayHeight, saved.DisplayHeight}, {o.BrowserWidth, saved.BrowserWidth}, {o.BrowserHeight, saved.BrowserHeight}} {
+		if p[0] != 0 && p[0] != p[1] {
+			return false
+		}
+	}
+	return true
 }
 
 var hostname = regexp.MustCompile(`^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?$`)
@@ -84,8 +99,8 @@ func (o Options) Validate() error {
 	if o.WebGL != "" && o.WebGL != "native" && o.WebGL != "disabled" {
 		return errors.New("WebGL 选项无效")
 	}
-	if o.ColorScheme != "" && o.ColorScheme != "system" && o.ColorScheme != "light" && o.ColorScheme != "dark" {
-		return errors.New("浏览器配色选项无效")
+	if o.Canvas != "" && o.Canvas != "native" && o.Canvas != "blocked" {
+		return errors.New("Canvas 读取选项无效")
 	}
 	return nil
 }
@@ -152,6 +167,13 @@ func New(o Options) (*Profile, error) {
 	}
 	if o.DisplayWidth == 0 {
 		sizes := [][2]int{{1920, 1080}, {1920, 1200}, {2560, 1440}, {2560, 1600}, {2880, 1800}, {3840, 2160}}
+		var fitting [][2]int
+		for _, size := range sizes {
+			if size[0] >= o.BrowserWidth && size[1] >= o.BrowserHeight {
+				fitting = append(fitting, size)
+			}
+		}
+		sizes = fitting
 		i, e := choose(len(sizes))
 		if e != nil {
 			return nil, e
@@ -187,8 +209,8 @@ func New(o Options) (*Profile, error) {
 	if o.WebGL == "" {
 		o.WebGL = "native"
 	}
-	if o.ColorScheme == "" {
-		o.ColorScheme = "system"
+	if o.Canvas == "" {
+		o.Canvas = "native"
 	}
 	b := make([]byte, 8)
 	if _, e := io.ReadFull(rand.Reader, b); e != nil {
@@ -209,7 +231,7 @@ func (p *Profile) Validate() error {
 	if p == nil || p.Version != 1 || !suffix.MatchString(p.ExtensionSuffix) {
 		return errors.New("客机创建配置版本或扩展标识无效")
 	}
-	if p.Hostname == "" || p.Username == "" || p.BrowserUsername == "" || p.AudioName == "" || p.AudioDescription == "" || p.ExtensionName == "" || p.DisplayWidth == 0 || p.BrowserWidth == 0 || p.WebGL == "" || p.ColorScheme == "" {
+	if p.Hostname == "" || p.Username == "" || p.BrowserUsername == "" || p.AudioName == "" || p.AudioDescription == "" || p.ExtensionName == "" || p.DisplayWidth == 0 || p.BrowserWidth == 0 || p.WebGL == "" || p.Canvas == "" {
 		return errors.New("客机创建配置不完整")
 	}
 	return p.Options.Validate()
@@ -218,8 +240,15 @@ func (p *Profile) Validate() error {
 // Load returns nil for legacy environments. A corrupt record never falls back.
 func Load(directory string) (*Profile, error) {
 	path := filepath.Join(directory, Filename)
-	if _, e := os.Lstat(path); os.IsNotExist(e) {
+	info, e := os.Lstat(path)
+	if os.IsNotExist(e) {
 		return nil, nil
+	}
+	if e != nil {
+		return nil, e
+	}
+	if info.Size() > 8192 {
+		return nil, errors.New("客机创建配置超过大小限制")
 	}
 	if e := host.CheckPrivateFile(path); e != nil {
 		return nil, e

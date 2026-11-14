@@ -157,7 +157,7 @@ if ! grep -q 'CAGE_WORKBENCH_PROMPT' /home/cage/.bashrc; then
   sudo tee -a /home/cage/.bashrc >/dev/null <<'PROMPT'
 # CAGE_WORKBENCH_PROMPT
 if [ "${CAGE_WORKBENCH:-}" = 1 ]; then
-  PS1='\[\e[32m\]cage\[\e[0m\]:\[\e[34m\]\W\[\e[0m\]\$ '
+  PS1='\[\e[32m\]\u\[\e[0m\]:\[\e[34m\]\W\[\e[0m\]\$ '
 fi
 PROMPT
 fi

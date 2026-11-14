@@ -84,7 +84,12 @@ func (s *Server) audio(w http.ResponseWriter, r *http.Request) {
 		s.windowsAudioCapture(w, r, ctx, cancel)
 		return
 	}
-	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", audioCaptureCommand)
+	command, renderErr := s.linuxTemplate(audioCaptureCommand)
+	if renderErr != nil {
+		http.Error(w, "音频创建配置无效", http.StatusConflict)
+		return
+	}
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", command)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		http.Error(w, "声音连接未能建立", http.StatusBadGateway)
