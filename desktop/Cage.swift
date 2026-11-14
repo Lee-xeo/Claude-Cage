@@ -425,6 +425,15 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             guard !controllerNeedsUpdate else { replyHandler(nil,"后台版本尚未同步，更新未完成"); return }
             appUpdater?.markLaunchReady()
             replyHandler(true,nil)
+        case "appReference":
+            let path: String
+            switch body["kind"] as? String {
+            case "source": path = "commits/main"
+            case "releases": path = "releases"
+            default: replyHandler(nil,"未知的项目页面"); return
+            }
+            let opened = NSWorkspace.shared.open(URL(string: "https://github.com/Lee-xeo/Claude-Cage/" + path)!)
+            replyHandler(opened ? true : nil, opened ? nil : "无法打开项目页面，请检查默认浏览器")
         case "appUpdate":
             guard let operation = body["operation"] as? String, ["status", "check", "install", "cancel"].contains(operation) else { replyHandler(nil,"更新操作无效"); return }
             replyHandler(appUpdater.handle(operation),nil)

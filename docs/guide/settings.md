@@ -24,11 +24,20 @@ keywords: 设置 账户 保险箱 记住登录 Touch ID 主题 外观 字体 无
 | 网络与代理 | 来源、节点、代理链、DNS、出口规则及核心诊断 | 应用代理或保存，部分更改需重启 |
 | 时区与语言 | 自动跟随出口，或手动指定系统与浏览器语言 | 应用并按提示重启 |
 | 环境与恢复 | 存储、资源、组件工具版本、配置恢复、诊断 | 具体影响见[维护说明](maintenance.md) |
+| 关于 | 软件版本、构建提交、手动检测源码与发行版更新 | 点击“检测更新”后显示结果，包含预发行版 |
 
 <figure class="guide-shot">
   <a href="../../www/public/docs/screenshots/account-settings.jpg" target="_blank" rel="noopener" aria-label="查看原图：账户资料、密码与登录解锁设置"><img src="../../www/public/docs/screenshots/account-settings.jpg" alt="账户资料、密码与登录解锁设置" width="2560" height="1764" loading="lazy" decoding="async" /></a>
   <figcaption>账户资料、密码与登录解锁设置。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/account-settings.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
 </figure>
+
+## 关于与手动检测更新
+
+打开“设置 → 关于”查看当前软件版本与构建提交。点击“检测更新”后，页面分别显示主分支的最新提交与最新公开发行版；发行版检查包含预发行版，并提供发行说明和下载入口。检查使用本机已应用且正在运行的所选代理，连接失败时会显示原因，可在恢复代理后重试。
+
+源码检查会区分已同步、有新提交、当前构建领先和分叉。构建未记录提交时，页面会说明无法核对；包含未提交修改的构建会额外提示。源码有新提交时，可能还没有对应的新版安装包。手动检查只读取更新信息；需要安装时前往发布页选择对应平台的安装包。
+
+连接远程主机时，“关于”显示本机软件信息。环境组件和工具版本仍在“环境与恢复”中查看。
 
 ## 账户与登录
 
