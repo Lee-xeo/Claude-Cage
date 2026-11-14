@@ -285,7 +285,7 @@ func TestMacOSWorkbenchTerminal(t *testing.T) {
 				if _, scan := fmt.Sscanf(string(result), "%d %d", &x, &y); err == nil && scan == nil {
 					for click := 1; click <= 2; click++ {
 						for _, phase := range []string{"down", "up"} {
-							action(map[string]any{"action": "pointer", "pid": frame["pid"], "window": frame["window"], "geometry": frame["geometry"], "x": float64(x) / frame["pixelWidth"].(float64), "y": float64(y) / frame["pixelHeight"].(float64), "phase": phase, "button": 0, "buttons": 0, "clicks": click})
+							action(map[string]any{"action": "pointer", "pid": frame["pid"], "window": frame["window"], "geometry": frame["geometry"], "x": float64(x) / frame["pixelWidth"].(float64), "y": float64(y) / frame["pixelHeight"].(float64), "phase": phase, "button": 0, "buttons": map[string]int{"down": 1, "up": 0}[phase], "clicks": click})
 						}
 					}
 					break

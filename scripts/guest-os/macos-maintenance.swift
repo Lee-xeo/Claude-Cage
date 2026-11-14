@@ -85,8 +85,8 @@ enum MacMaintenance {
         return session
     }
 
-    private static func verified(_ app: NSRunningApplication) -> Bool {
-        guard let bundle = app.bundleIdentifier, applications.contains(bundle) else { return false }
+    private static func verified(_ app: NSRunningApplication, identifiers: Set<String>? = nil) -> Bool {
+        guard let bundle = app.bundleIdentifier, (identifiers ?? applications).contains(bundle) else { return false }
         var code: SecCode?, requirement: SecRequirement?
         return SecRequirementCreateWithString("anchor apple and identifier \"\(bundle)\"" as CFString, [], &requirement) == errSecSuccess &&
             SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid as String: app.processIdentifier] as CFDictionary, [], &code) == errSecSuccess &&
@@ -145,6 +145,16 @@ enum MacMaintenance {
                     "display": [display.minX, display.minY, display.width, display.height]]
             }
             if owner != front.processIdentifier {
+                #if arch(x86_64)
+                if let owner, let app = NSRunningApplication(processIdentifier: owner),
+                   let bundle = app.bundleIdentifier,
+                   macMaintenanceCompositorSurface(bundle: bundle,
+                       appleSigned: verified(app, identifiers: ["com.apple.dock", "com.apple.notificationcenterui"]),
+                       layer: window[kCGWindowLayer as String] as? Int ?? -1,
+                       bounds: bounds, display: display, systemMajor: ProcessInfo.processInfo.operatingSystemVersion.majorVersion) {
+                    continue
+                }
+                #endif
                 covering.append((bounds, owner, window[kCGWindowNumber as String] as? UInt32))
             }
         }

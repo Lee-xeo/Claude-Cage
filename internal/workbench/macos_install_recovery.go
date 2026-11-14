@@ -140,7 +140,12 @@ func (s *Server) macOSInstallRecovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		jsonReply(w, map[string]any{"available": true, "phase": recovery.Phase, "running": macOSInstanceRunning(filepath.Join(s.profile, "state", "lima", "mac"))})
+		identity, err := guestos.LoadMacOSProfileOrRecovery(s.profile)
+		if err != nil || identity == nil {
+			http.Error(w, "无法核对恢复客机身份", http.StatusConflict)
+			return
+		}
+		jsonReply(w, map[string]any{"available": true, "phase": recovery.Phase, "running": macOSInstanceRunning(filepath.Join(s.profile, "state", "lima", "mac"), identity.Backend)})
 		return
 	}
 	var input guestos.MacLoginRequest

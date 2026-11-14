@@ -81,6 +81,8 @@ jobs:
           trap 'rm -rf "$check"' EXIT
           xcrun swiftc -parse-as-library -O scripts/guest-os/macos-chrome-window-selection.swift scripts/guest-os/tests/macos-chrome-window-selection-test.swift -o "$check/test"
           "$check/test"
+          xcrun swiftc -parse-as-library -O scripts/guest-os/macos-maintenance-compositor.swift scripts/guest-os/tests/macos-maintenance-compositor-test.swift -o "$check/maintenance-test"
+          "$check/maintenance-test"
       - name: Go tests and vet
         run: |
           make test-go

@@ -102,10 +102,10 @@ func runMacGuest(ctx context.Context, profile, state string, args []string) erro
 				return errors.New("macOS 恢复缺少原安装记录")
 			}
 			media := install.Media
-			if media == "" {
+			if media == "" && m.Backend != guestos.MacOSQEMU {
 				media = filepath.Join(state, "guest-media", install.System, "MacOS.ipsw")
 			}
-			if err := lima.MatchMacOSInstallSource(ctx, m.Instance, media); err != nil {
+			if err := matchMacOSGuestSource(ctx, profile, lima, m.Instance, media); err != nil {
 				return err
 			}
 		} else if err := lima.CheckMacOSGuest(ctx, m.Instance); err != nil {
