@@ -1478,6 +1478,10 @@ svg {
   height: 28px;
   min-height: 28px;
 }
+.sidebar-section-actions {
+  display: flex;
+  align-items: center;
+}
 .project-heading {
   display: flex;
   align-items: center;

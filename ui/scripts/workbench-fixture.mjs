@@ -205,6 +205,11 @@ export async function createWorkbench({
       result = state.settings;
     else if (path === "/status")
       result = { ...state.status, workspace: state.settings.workspace };
+    else if (path === "/projects/refresh") {
+      if (state.failRefresh) return route.fulfill({ status: 502, contentType: "text/plain; charset=utf-8", body: "项目文件未能刷新，请稍后重试" });
+      state.projectRefreshes = (state.projectRefreshes || 0) + 1;
+      result = { refreshed: true };
+    }
     else if (path === "/projects/remove") {
       if (!body.workspace) return route.fulfill({ status: 400, body: "请选择已添加的项目" });
       if (state.failRemove || state.terminals.some(terminal => terminal.workspace === body.workspace && !terminal.closed) || state.tabs.some(tab => tab.kind === "editor" && tab.workspace === body.workspace)) return route.fulfill({ status: 409, contentType: "text/plain; charset=utf-8", body: "请先关闭此项目的终端和编辑器，再移除项目" });

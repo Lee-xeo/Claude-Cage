@@ -94,6 +94,8 @@ export function SettingsPanel({
   );
   const busy =
     Boolean(status.job?.running) || Boolean(status.storage_recovery?.required) || probing || submitting || Boolean(jobId);
+  // Project folders of the other guest systems are always read directly.
+  const linuxGuest = !/^(windows|macos)/.test(status.guest_system || "");
   const update = (key, value) => {
     setDraft((p) => ({ ...p, [key]: value }));
     if (["dns_url"].includes(key)) setProbe(null);
@@ -507,6 +509,14 @@ export function SettingsPanel({
                   </span>
                   <input type="checkbox" role="switch" checked={draft.balanced_display}
                     onChange={(event) => update("balanced_display", event.target.checked)} />
+                </label>}
+                {typeof current.project_file_cache === "boolean" && linuxGuest && <label className="toggle-row">
+                  <span>
+                    <strong>项目文件缓存</strong>
+                    <small>减少读取项目文件时与本机的往返。在本机上所做的改动最多 20 秒后在环境中可见，也可以在项目栏点“刷新项目文件”立即同步。下次启动环境时生效。</small>
+                  </span>
+                  <input type="checkbox" role="switch" checked={draft.project_file_cache}
+                    onChange={(event) => update("project_file_cache", event.target.checked)} />
                 </label>}
                 <h4>键盘习惯</h4>
                 <div className="choice-list">

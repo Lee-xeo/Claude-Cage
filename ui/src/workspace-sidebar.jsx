@@ -39,6 +39,8 @@ export function WorkspaceSidebar({
   sessionError,
   sessionRefreshing,
   onSessionRefresh,
+  onProjectRefresh,
+  projectRefreshing,
   onSessionOpen,
   openingSession,
   sessionOpenError,
@@ -146,15 +148,28 @@ export function WorkspaceSidebar({
       <div className="sidebar-scroll">
         <div className="sidebar-section-heading">
           <span>项目</span>
-          <button
-            className="icon-button"
-            onClick={() => onOpenProject()}
-            aria-label="添加项目"
-            title="添加项目"
-            disabled={busy}
-          >
-            <Plus size={15} />
-          </button>
+          <span className="sidebar-section-actions">
+            {onProjectRefresh && (
+              <button
+                className="icon-button"
+                onClick={onProjectRefresh}
+                aria-label="刷新项目文件"
+                title="刷新项目文件：让环境立即看到在本机上所做的改动"
+                disabled={busy || !running || projectRefreshing}
+              >
+                <RefreshCw size={14} className={projectRefreshing ? "spin" : undefined} />
+              </button>
+            )}
+            <button
+              className="icon-button"
+              onClick={() => onOpenProject()}
+              aria-label="添加项目"
+              title="添加项目"
+              disabled={busy}
+            >
+              <Plus size={15} />
+            </button>
+          </span>
         </div>
         {sessionError && (
           <div className="sidebar-session-error">

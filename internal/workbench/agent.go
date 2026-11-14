@@ -87,6 +87,7 @@ func AgentOperations() []AgentOperation {
 	post("project.open", "Grant access only to a user-authorized directory; add=true remembers the grant", "/api/projects/open", object(map[string]string{"workspace": "string", "add": "boolean", "activate": "boolean"}))
 	post("project.save", "Save a named project with user-authorized folders. For a new project, omit workspace; the first folder becomes its stable default directory. To edit, provide its existing workspace and keep that folder. Returns approval if macOS authorization is needed; retry the same request after approval", "/api/projects/save", from(projectGroup{}))
 	post("project.remove", "Remove a project and revoke every bound folder share. Close its terminals, running sessions and editors first. Preserve files and history", "/api/projects/remove", object(map[string]string{"workspace": "string"}))
+	post("project.refresh", "Linux guests only: forget cached names and attributes of project files so host-side changes show at once", "/api/projects/refresh", object(nil))
 
 	for _, action := range []string{"profile", "password", "lock", "logout", "suspend"} {
 		schema := object(nil)

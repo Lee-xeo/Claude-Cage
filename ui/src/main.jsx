@@ -113,6 +113,7 @@ function App() {
     [projectDialog, setProjectDialog] = useState(null),
     [rename, setRename] = useState(null),
     [toast, setToast] = useState(""),
+    [projectRefreshing, setProjectRefreshing] = useState(false),
     [fatal, setFatal] = useState(""),
     [connectionError, setConnectionError] = useState(""),
     [browserError, setBrowserError] = useState(""),
@@ -288,6 +289,20 @@ function App() {
           ? status?.environment_update_required ? "环境待更新" : "浏览器待恢复"
           : "已停止";
   const notify = (text) => setToast(text);
+  // A Linux environment keeps what it learned about project files for a while.
+  const projectFilesCached = settings?.project_file_cache === true &&
+    !/^(windows|macos)/.test(account?.guest_system || status?.guest_system || "");
+  const refreshProjectFiles = async () => {
+    setProjectRefreshing(true);
+    try {
+      await api("/projects/refresh", {});
+      setToast("项目文件已刷新");
+    } catch (error) {
+      setToast(error.message);
+    } finally {
+      setProjectRefreshing(false);
+    }
+  };
   const clipboardConnection = getClientContext().connection_id;
   useEffect(() => {
     if (!status?.ready || !nativeAvailable()) return;
@@ -1378,6 +1393,8 @@ function App() {
             sessionError={cliSessions.error}
             sessionRefreshing={cliSessions.loading}
             onSessionRefresh={cliSessions.refresh}
+            onProjectRefresh={projectFilesCached ? refreshProjectFiles : undefined}
+            projectRefreshing={projectRefreshing}
             onSessionOpen={openSessionTerminal}
             openingSession={openingSession}
             sessionOpenError={sessionOpenError}

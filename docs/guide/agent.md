@@ -153,6 +153,8 @@ cage agent call network.check --wait 5m
 
 移除已添加项目使用 `project.remove`，传入 `{"workspace":"项目列表中的路径"}`。关闭该目录的终端、运行中会话和编辑器后可解除共享，原文件与会话历史保留。移除当前项目后切换到剩余项目；移除最后一个项目后没有当前项目。
 
+Linux 环境默认缓存项目文件的名称与属性，主机上的改动最多 20 秒后可见。刚在主机上改过文件、需要环境立即看到时调用 `project.refresh`，无需参数；macOS 和 Windows 环境始终直接读取，调用会返回 409。
+
 ## JSON 结果和异步任务
 
 除流式 `socket` 外，每次命令的 stdout 只有一个 JSON 对象；`socket` 的 NDJSON 格式见下文。格式示例：

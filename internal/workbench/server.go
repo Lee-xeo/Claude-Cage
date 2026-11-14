@@ -187,7 +187,7 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 		return err
 	}
 	defer listener.Close()
-	s := &Server{profile: profile, configPath: configPath, exe: exe, clientOnly: clientOnly, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard(), AutoTimezone: true, AutoLanguage: true, BalancedDisplay: true}}
+	s := &Server{profile: profile, configPath: configPath, exe: exe, clientOnly: clientOnly, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard(), AutoTimezone: true, AutoLanguage: true, BalancedDisplay: true, ProjectFileCache: true}}
 	s.desktopEntry = fullConfigPath != ""
 	s.appUpdateConfigPath = configPath
 	if fullConfigPath != "" {
@@ -392,6 +392,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/open", s.openProject)
 	mux.HandleFunc("POST /api/projects/save", s.saveProject)
 	mux.HandleFunc("POST /api/projects/remove", s.removeProject)
+	mux.HandleFunc("POST /api/projects/refresh", s.refreshProjectFiles)
 	mux.HandleFunc("POST /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
@@ -731,6 +732,7 @@ func (s *Server) proposed(w http.ResponseWriter, r *http.Request) (savedProfile,
 	s.mu.Lock()
 	input.MobileRelay = s.preferences.MobileRelay
 	input.BalancedDisplay = s.preferences.BalancedDisplay
+	input.ProjectFileCache = s.preferences.ProjectFileCache
 	input.BrowserHomeURL = browserHomeURL(s.preferences)
 	s.mu.Unlock()
 	if !readJSON(w, r, &input) {

@@ -248,7 +248,10 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 	}
 	// Present shared files as owned by the guest user. Host UID/GID values differ
 	// across platforms and otherwise make Git reject an explicitly shared repo.
-	script := "exec sshfs " + shellescape.Quote(":"+filepath.ToSlash(path)) + " " + quoted + ` -o slave,allow_other,cache=no,nodev,nosuid,uid="$(id -u)",gid="$(id -g)"`
+	s.mu.Lock()
+	cache := s.preferences.ProjectFileCache
+	s.mu.Unlock()
+	script := "exec sshfs " + shellescape.Quote(":"+filepath.ToSlash(path)) + " " + quoted + " -o " + projectShareOptions(cache)
 	cmd := s.sshCommand(s.lifetimeContext(), "-T", s.sshTarget(), "--", script)
 	share, err := startProjectTransport(cmd, path)
 	if err != nil {
@@ -275,6 +278,52 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 	s.projectShares[path] = share
 	s.mu.Unlock()
 	return nil
+}
+
+// projectFileCacheSeconds is how long the guest may answer from what it
+// already knows about a shared file before asking the host again.
+const projectFileCacheSeconds = 20
+
+// projectShareOptions are the sshfs options of a project folder in a Linux
+// guest. Every lookup and attribute read is otherwise a round trip to the
+// host, and tools repeat them constantly: a status check of a repository
+// asks about each of its files. With the cache the guest kernel keeps names
+// and attributes for projectFileCacheSeconds, so a file the host changes,
+// deletes or extends can show as it was for that long; directory listings
+// are always read from the host. The cache is the kernel's rather than
+// sshfs's own because only the kernel's can be dropped on request
+// (refreshProjectFiles).
+func projectShareOptions(cache bool) string {
+	options := `slave,allow_other,cache=no,nodev,nosuid,uid="$(id -u)",gid="$(id -g)"`
+	if cache {
+		options += fmt.Sprintf(",entry_timeout=%d,attr_timeout=%d", projectFileCacheSeconds, projectFileCacheSeconds)
+	}
+	return options
+}
+
+// refreshProjectFiles makes the guest forget what it cached about shared
+// files, so that changes made on the host are visible at once. A file some
+// process holds open keeps its cached attributes until they expire.
+func (s *Server) refreshProjectFiles(w http.ResponseWriter, r *http.Request) {
+	if s.windowsGuest != nil || s.macosGuest != nil {
+		http.Error(w, "此环境的项目文件始终直接读取，无需刷新", 409)
+		return
+	}
+	s.mu.Lock()
+	ready, closing := s.ready, s.closing
+	s.mu.Unlock()
+	if closing || !ready {
+		http.Error(w, "环境尚未就绪，请稍后重试", 409)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	// Unused directory entries and inodes of every filesystem; nothing is lost.
+	if _, err := s.guest(ctx, "echo 2 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null"); err != nil {
+		http.Error(w, "项目文件未能刷新，请稍后重试", 502)
+		return
+	}
+	jsonReply(w, map[string]bool{"refreshed": true})
 }
 
 type sharedProjects struct {
