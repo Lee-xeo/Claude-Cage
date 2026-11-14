@@ -20,8 +20,8 @@ let lastLoginNotice = "";
 const joins = [];
 const now = Math.floor(Date.now() / 1000);
 const openAccounts = async () => {
-  await page.getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByRole("button", { name: "Claude 账号", exact: true }).click();
+  await page.getByRole("button", { name: "Claude 账号管理", exact: true }).click();
+  await page.locator(".modal-scrim").evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
 };
 
 async function checkLongAccountList() {
@@ -39,7 +39,7 @@ async function checkLongAccountList() {
   const last = list.getByRole("article", { name: "测试账号 " + total, exact: true });
   await last.waitFor({ state: "attached" });
   assert.equal(await list.getByRole("article").count(), total);
-  const header = page.getByRole("heading", { name: "Claude 账号", exact: true });
+  const header = page.getByRole("heading", { name: "Claude 账号管理", exact: true });
   const add = page.getByRole("button", { name: "登录新账号", exact: true });
   const headerY = (await header.boundingBox()).y;
   const addY = (await add.boundingBox()).y;
@@ -84,7 +84,7 @@ async function checkLongAccountList() {
       "5h and 7d progress bars must start and end at the same horizontal positions");
     assert.ok(first.y + first.height <= second.y, "the two limits occupy separate rows");
   }
-  await page.getByRole("button", { name: "返回工作台", exact: true }).click();
+  await page.getByRole("button", { name: "关闭面板", exact: true }).click();
   await page.setViewportSize({ width: 1280, height: 850 });
 }
 
@@ -150,7 +150,7 @@ async function checkUsagePanel() {
   assert.ok(await list.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), "window history fits the narrow account list");
   await page.setViewportSize({ width: 1280, height: 850 });
   assert.equal(waves(), before + 1, "polling the completed query does not start another query");
-  const back = page.getByRole("button", { name: "返回工作台", exact: true });
+  const back = page.getByRole("button", { name: "关闭面板", exact: true });
   await back.click();
   offlineUsage = true;
   await openAccounts();
@@ -235,9 +235,9 @@ try {
   const plus = page.getByRole("button", { name: /^在 .* 新建终端$/ });
   const launchClaude = async () => {
     await plus.click();
-    await page.getByRole("menuitem", { name: "Claude 终端", exact: true }).press("Enter");
+    await page.getByRole("menuitem", { name: /Claude 终端$/ }).press("Enter");
   };
-  const back = () => page.getByRole("button", { name: "返回工作台", exact: true }).click();
+  const back = () => page.getByRole("button", { name: "关闭面板", exact: true }).click();
   const profileCard = (label) => page.getByRole("article", { name: label, exact: true });
   const rename = async (before, label) => {
     const row = profileCard(before);

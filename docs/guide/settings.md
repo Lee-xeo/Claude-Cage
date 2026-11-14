@@ -17,7 +17,6 @@ keywords: 设置 账户 保险箱 记住登录 Touch ID 主题 外观 字体 无
 | --- | --- | --- |
 | 账户 | 头像、用户名、密码、支持时的记住登录与 Touch ID | 按账户页保存；锁定后仍需验证 |
 | 密码保险箱 | 网站账号、密码记录和保存提示 | 记录操作后生效；查看复制需验证 |
-| Claude 账号 | 登录多个订阅、备注、检查额度、参与调度 | 分配选项影响新建 Claude 终端 |
 | 通用 | 键盘习惯、Claude 终端启动命令、浏览器默认网站、流畅画质 | 依具体项，新终端、新页面或下次环境启动 |
 | 外观 | 明暗主题、颜色、字体、字号、终端与交互偏好 | 即时预览并自动保存 |
 | 远程连接 | 本机手机配对、远程浏览器授权、官方或自建中继 | 保存后生效；中继迁移需重新配对 |
@@ -25,6 +24,8 @@ keywords: 设置 账户 保险箱 记住登录 Touch ID 主题 外观 字体 无
 | 时区与语言 | 自动跟随出口，或手动指定系统与浏览器语言 | 应用并按提示重启 |
 | 环境与恢复 | 存储、资源、组件工具版本、配置恢复、诊断 | 具体影响见[维护说明](maintenance.md) |
 | 关于 | 软件版本、构建提交、手动检测源码与发行版更新 | 点击“检测更新”后显示结果，包含预发行版 |
+
+Claude Code 的多账号登录、备注、额度查询和调度在侧栏“Claude 账号管理”中操作，详见[多账号与额度](accounts.md)。分配选项影响新建 Claude 终端。
 
 <figure class="guide-shot">
   <a href="../../www/public/docs/screenshots/account-settings.jpg" target="_blank" rel="noopener" aria-label="查看原图：账户资料、密码与登录解锁设置"><img src="../../www/public/docs/screenshots/account-settings.jpg" alt="账户资料、密码与登录解锁设置" width="2560" height="1764" loading="lazy" decoding="async" /></a>

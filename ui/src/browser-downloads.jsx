@@ -8,7 +8,6 @@ import React, {
 import { createPortal } from "react-dom";
 import {
   ArrowDownToLine,
-  CircleAlert,
   File,
   FolderOpen,
   Save,
@@ -50,7 +49,7 @@ export function useDownloadNotifications(
         previous.current.get(item.id)?.state !== item.state
       ) {
         if (item.state === "downloading")
-          onStatus(`正在下载“${item.name}”，可在侧栏“下载”查看`);
+          onStatus(`正在下载“${item.name}”，可在浏览器右上角的下载列表查看`);
         if (item.state === "saved")
           onStatus(`“${item.name}”已保存到下载暂存目录`);
       }
@@ -164,7 +163,6 @@ export function BrowserDownloads({
   downloads = [],
   ready,
   onStatus,
-  sidebar = false,
   menu = false,
   anchorRef,
 }) {
@@ -262,23 +260,21 @@ export function BrowserDownloads({
       <button
         ref={trigger}
         className={
-          sidebar
-            ? "sidebar-link"
-            : menu
-              ? "browser-menu-item browser-download-button"
-              : "icon-button browser-download-button"
+          menu
+            ? "browser-menu-item browser-download-button"
+            : "icon-button browser-download-button"
         }
         role={menu ? "menuitem" : undefined}
-        aria-label={sidebar ? "下载文件" : "浏览器下载"}
+        aria-label="浏览器下载"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         title={failed ? "有下载需要处理，点击查看" : "下载文件"}
         onClick={() => setOpen((value) => !value)}
       >
-        {sidebar && failed ? <CircleAlert size={16} /> : <ArrowDownToLine size={16} />}
-        {failed && !sidebar && !menu && <span className="browser-download-warning" aria-hidden="true" />}
-        {(sidebar || menu) && <span>下载</span>}
+        <ArrowDownToLine size={16} />
+        {failed && !menu && <span className="browser-download-warning" aria-hidden="true" />}
+        {menu && <span>下载</span>}
       </button>
       {open &&
         createPortal(

@@ -15,6 +15,7 @@ import {
   Settings,
   Server,
   SquareTerminal,
+  UsersRound,
 } from "lucide-react";
 import { EnvironmentShield } from "./environment-shield";
 import logo from "./logo.png";
@@ -64,7 +65,7 @@ export function WorkspaceSidebar({
   terminalMenuAt,
   onBrowser,
   onTailscale,
-  downloadAction,
+  onClaudeAccounts,
   onClaudeWeb,
   onClaudeDesktop,
   desktopOpen,
@@ -136,7 +137,9 @@ export function WorkspaceSidebar({
         <button className="sidebar-link" onClick={onTailscale} aria-label="打开 Tailscale"><Network size={17} />Tailscale</button>
         {ssh && <button className="sidebar-link ssh-navigation" onClick={ssh.open} aria-label="SSH 主机"><Server size={17} />SSH</button>}
         <button className={`sidebar-link ${desktopOpen ? "selected" : ""}`} onClick={onClaudeDesktop} disabled={!running || busy} title="安装或打开 Claude Desktop"><Monitor size={17} />Claude Desktop</button>
-        {downloadAction}
+        <button className="sidebar-link" onClick={onClaudeAccounts} aria-haspopup="dialog">
+          <UsersRound size={17} />Claude 账号管理
+        </button>
       </nav>
       <div className="sidebar-scroll">
         <div className="sidebar-section-heading">
