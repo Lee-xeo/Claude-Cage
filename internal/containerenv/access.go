@@ -82,13 +82,13 @@ func (r *Runtime) InstallAccess(ctx context.Context) error {
 		script := `set -eu
 if ! id "$1" >/dev/null 2>&1; then
   test "$(id -u cage)" = 1000
-  usermod -l "$1" -d "/home/$1" -m cage
+  usermod -l "$1" -d "$3" -m cage
 fi
 test "$(id -u "$1")" = 1000
 if getent group cage >/dev/null; then groupmod -n "$1" cage; fi
 test "$(id -gn "$1")" = "$1"
 if id cage-browser >/dev/null 2>&1; then
-  usermod -l "$2" -d "/home/$2" -m cage-browser
+  usermod -l "$2" -d "$4" -m cage-browser
 fi
 if getent group cage-browser >/dev/null; then groupmod -n "$2" cage-browser; fi
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$1" > /etc/sudoers.d/cage
@@ -98,7 +98,7 @@ visudo -cf /etc/sudoers.d/cage >/dev/null
 sshd -t
 systemctl reload ssh
 `
-		if _, err = r.output(ctx, "exec", "--user", "0", inspection.State.ContainerID, "/bin/sh", "-c", script, "sh", profile.Username, profile.BrowserUsername); err != nil {
+		if _, err = r.output(ctx, "exec", "--user", "0", inspection.State.ContainerID, "/bin/sh", "-c", script, "sh", profile.Username, profile.BrowserUsername, profile.WorkHomePath(), profile.BrowserHomePath()); err != nil {
 			return errors.New("无法初始化新容器账户；原容器文件已保留")
 		}
 	}

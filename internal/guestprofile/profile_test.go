@@ -51,15 +51,15 @@ func TestRandomProfiles(t *testing.T) {
 		if e = p.Validate(); e != nil {
 			t.Fatal(e)
 		}
-		if seen[p.Hostname] || seen[p.Username] || seen[p.ExtensionSuffix] {
+		if seen[p.Hostname] || seen[p.ExtensionSuffix] {
 			t.Fatal("duplicate generated identity")
 		}
-		seen[p.Hostname], seen[p.Username], seen[p.ExtensionSuffix] = true, true, true
+		seen[p.Hostname], seen[p.ExtensionSuffix] = true, true
 	}
 }
 
 func TestInvalidOptions(t *testing.T) {
-	for _, o := range []Options{{Hostname: "bad\nname"}, {Hostname: "-abc"}, {Hostname: "0123"}, {Username: "root"}, {Username: "cage"}, {Username: "a;id"}, {Username: "same", BrowserUsername: "same"}, {AudioName: "a.monitor"}, {AudioDescription: "x\nload-module bad"}, {ExtensionName: "\"; id"}, {DisplayWidth: 1920}, {BrowserWidth: 8000, BrowserHeight: 600}, {DisplayWidth: 800, DisplayHeight: 600, BrowserWidth: 1280, BrowserHeight: 720}, {WebGL: "fake-gpu"}, {Canvas: "unknown"}} {
+	for _, o := range []Options{{Hostname: "bad\nname"}, {Hostname: "-abc"}, {Hostname: "0123"}, {Username: "root"}, {Username: "cage"}, {Username: "a;id"}, {Username: "same", BrowserUsername: "same"}, {AudioName: "a;id"}, {AudioDescription: "x\nload-module bad"}, {ExtensionName: "\"; id"}, {DisplayWidth: 1920}, {BrowserWidth: 8000, BrowserHeight: 600}, {DisplayWidth: 800, DisplayHeight: 600, BrowserWidth: 1280, BrowserHeight: 720}, {WebGL: "fake-gpu"}, {Canvas: "unknown"}} {
 		if _, e := New(o); e == nil {
 			t.Fatalf("accepted invalid options %+v", o)
 		}

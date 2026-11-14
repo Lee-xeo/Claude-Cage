@@ -32,3 +32,44 @@ func TestConfiguredGuestScripts(t *testing.T) {
 		}
 	}
 }
+
+func TestVirGLProvisioningAndCustomHomes(t *testing.T) {
+	p, err := guestprofile.New(guestprofile.Options{Username: "alex", BrowserUsername: "web", WorkHome: "/home/projects", BrowserHome: "/home/browsing", GPUBackend: "virgl", GraphicsBackend: "opengl"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := DefaultConfig()
+	c.GuestProfile = p
+	if !strings.Contains(c.SetupScript(), "--home-dir /home/browsing") {
+		t.Fatal("initial browser account does not use the selected home")
+	}
+	for name, script := range map[string]string{"setup": c.SetupScript(), "start": c.StartScript()} {
+		dependencies := strings.Index(script, "apt-get install -y --no-install-recommends tigervnc")
+		dri := strings.Index(script, "# CAGE_VIRGL_SETUP")
+		if dependencies < 0 || dri <= dependencies {
+			t.Fatalf("%s checks DRI3 before installing TigerVNC", name)
+		}
+		for _, want := range []string{"/home/projects", "/home/browsing", "--use-angle=gl", "/usr/bin/Xtigervnc :77 -rendernode /dev/dri/renderD128"} {
+			if !strings.Contains(script, want) {
+				t.Fatalf("%s misses the configured graphics/home path %q", name, want)
+			}
+		}
+		if p.Linux(script) != script {
+			t.Fatalf("%s changes on repeated profile rendering", name)
+		}
+		cmd := exec.Command("bash", "-n")
+		cmd.Stdin = strings.NewReader(script)
+		if data, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s invalid shell: %v %s", name, err, data)
+		}
+	}
+	desktop := p.Linux(ClaudeDesktopProvisionScript())
+	if !strings.Contains(desktop, `Xtigervnc "$DISPLAY" -rendernode /dev/dri/renderD128`) || p.Linux(desktop) != desktop {
+		t.Fatal("Desktop display does not retain the chosen render node")
+	}
+	cmd := exec.Command("bash", "-n")
+	cmd.Stdin = strings.NewReader(desktop)
+	if data, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("invalid Desktop provision shell: %v %s", err, data)
+	}
+}

@@ -23,6 +23,11 @@ const Filename = "guest-profile.json"
 type Options struct {
 	Hostname         string `json:"hostname"`
 	Username         string `json:"username"`
+	WorkHome         string `json:"work_home,omitempty"`
+	BrowserHome      string `json:"browser_home,omitempty"`
+	GraphicsBackend  string `json:"graphics_backend,omitempty"`
+	GPUBackend       string `json:"gpu_backend,omitempty"`
+	AudioModel       string `json:"audio_model,omitempty"`
 	BrowserUsername  string `json:"browser_username"`
 	AudioName        string `json:"audio_name"`
 	AudioDescription string `json:"audio_description"`
@@ -43,7 +48,7 @@ type Profile struct {
 
 // Matches treats unspecified inputs as requests to reuse the generated value.
 func (o Options) Matches(saved Options) bool {
-	for _, p := range [][2]string{{o.Hostname, saved.Hostname}, {o.Username, saved.Username}, {o.BrowserUsername, saved.BrowserUsername}, {o.AudioName, saved.AudioName}, {o.AudioDescription, saved.AudioDescription}, {o.ExtensionName, saved.ExtensionName}, {o.WebGL, saved.WebGL}, {o.Canvas, saved.Canvas}} {
+	for _, p := range [][2]string{{o.WorkHome, saved.WorkHome}, {o.BrowserHome, saved.BrowserHome}, {o.GraphicsBackend, saved.GraphicsBackend}, {o.GPUBackend, saved.GPUBackend}, {o.AudioModel, saved.AudioModel}, {o.Hostname, saved.Hostname}, {o.Username, saved.Username}, {o.BrowserUsername, saved.BrowserUsername}, {o.AudioName, saved.AudioName}, {o.AudioDescription, saved.AudioDescription}, {o.ExtensionName, saved.ExtensionName}, {o.WebGL, saved.WebGL}, {o.Canvas, saved.Canvas}} {
 		if p[0] != "" && p[0] != p[1] {
 			return false
 		}
@@ -58,7 +63,7 @@ func (o Options) Matches(saved Options) bool {
 
 var hostname = regexp.MustCompile(`^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?$`)
 var username = regexp.MustCompile(`^[a-z][a-z0-9_]{0,23}$`)
-var audioName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`)
+var audioName = regexp.MustCompile(`^[a-z][A-Za-z0-9_.-]{0,119}$`)
 var suffix = regexp.MustCompile(`^[a-f0-9]{16}$`)
 var description = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 .()_-]{0,63}$`)
 
@@ -78,7 +83,7 @@ func (o Options) Validate() error {
 		return errors.New("工作账户与浏览器账户必须不同")
 	}
 	if o.AudioName != "" && !audioName.MatchString(o.AudioName) {
-		return errors.New("音频设备名须为小写字母、数字或下划线，最长 48 位")
+		return errors.New("音频设备名须以小写字母开头，仅含 ASCII 字母、数字、点、连字符或下划线，最长 120 位")
 	}
 	for _, s := range []string{o.AudioDescription, o.ExtensionName} {
 		if s != "" && !description.MatchString(s) {
@@ -101,6 +106,9 @@ func (o Options) Validate() error {
 	}
 	if o.Canvas != "" && o.Canvas != "native" && o.Canvas != "blocked" {
 		return errors.New("Canvas 读取选项无效")
+	}
+	if err := validateHardwareOptions(o); err != nil {
+		return err
 	}
 	return nil
 }
@@ -145,34 +153,24 @@ func New(o Options) (*Profile, error) {
 		}
 		o.Hostname = i.Hostname
 	}
-	userRandom := o.Username == ""
-	for _, dst := range []*string{&o.Username, &o.BrowserUsername, &o.AudioName} {
-		if *dst == "" {
-			s, e := randomText(10)
-			if e != nil {
-				return nil, e
+	if o.Username == "" {
+		var err error
+		o.Username, err = naturalUsername()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if o.BrowserUsername == "" {
+		for o.BrowserUsername == "" || o.BrowserUsername == o.Username {
+			var err error
+			o.BrowserUsername, err = naturalUsername()
+			if err != nil {
+				return nil, err
 			}
-			*dst = "u" + s
 		}
 	}
-	for o.Username == o.BrowserUsername {
-		s, e := randomText(10)
-		if e != nil {
-			return nil, e
-		}
-		if userRandom {
-			o.Username = "u" + s
-		} else {
-			o.BrowserUsername = "u" + s
-		}
-	}
-	if o.AudioDescription == "" {
-		names := []string{"Speakers", "Headphones", "Digital Audio", "Stereo Output", "Built-in Audio", "Line Out"}
-		i, e := choose(len(names))
-		if e != nil {
-			return nil, e
-		}
-		o.AudioDescription = names[i]
+	if err := chooseAudio(&o); err != nil {
+		return nil, err
 	}
 	if o.DisplayWidth == 0 {
 		sizes := [][2]int{{1920, 1080}, {1920, 1200}, {2560, 1440}, {2560, 1600}, {2880, 1800}, {3840, 2160}}
@@ -240,6 +238,9 @@ func (p *Profile) Validate() error {
 	}
 	if p.Hostname == "" || p.Username == "" || p.BrowserUsername == "" || p.AudioName == "" || p.AudioDescription == "" || p.ExtensionName == "" || p.DisplayWidth == 0 || p.BrowserWidth == 0 || p.WebGL == "" || p.Canvas == "" {
 		return errors.New("客机创建配置不完整")
+	}
+	if p.WorkHomePath() == p.BrowserHomePath() {
+		return errors.New("两个账户不能共用主目录")
 	}
 	return p.Options.Validate()
 }

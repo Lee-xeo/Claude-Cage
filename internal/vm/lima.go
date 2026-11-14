@@ -337,6 +337,15 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 			if err != nil {
 				return err
 			}
+			if profile.GPUBackend == "virgl" {
+				if runtime.GOOS != "linux" || tmpl.Config.OS != nil && *tmpl.Config.OS != limatype.LINUX {
+					return errors.New("VirGL requires a Linux host and Linux QEMU guest")
+				}
+				if err := virGLHostReady(); err != nil {
+					return err
+				}
+				e = append(e, `.vmType = "qemu"`, `.video.display = "egl-headless"`)
+			}
 			identity.Hostname = profile.Hostname
 			data, err = json.Marshal(identity)
 			if err != nil {
@@ -358,7 +367,7 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 			if tmpl.Config.OS != nil && *tmpl.Config.OS == limatype.DARWIN {
 				e = append(e, `.user.name = "cageprovision"`, `.user.home = "/Users/cageprovision"`, `.user.comment = "Cage Provisioning"`, ".user.uid = 501", `.video.display = "offscreen"`)
 			} else {
-				e = append(e, `.user.name = `+strconv.Quote(profile.Username), `.user.home = `+strconv.Quote("/home/"+profile.Username), `.user.comment = ""`, ".user.uid = 1000")
+				e = append(e, `.user.name = `+strconv.Quote(profile.Username), `.user.home = `+strconv.Quote(profile.WorkHomePath()), `.user.comment = ""`, ".user.uid = 1000")
 			}
 		}
 		if len(e) > 0 {
