@@ -56,7 +56,7 @@ Claude Cage réunit terminal, navigateur, éditeur et Claude Desktop officiel da
 Envoyez cette demande à votre agent IA (codex, dsh, workbuddy — probablement pas Claude Code 😁) :
 
 ```markdown
-Aide-moi à installer https://github.com/Lee-xeo/Claude-Cage et configurez le proxy réseau de Cage pour utiliser le point de terminaison xxx dans mon installation Clash locale.
+Récupère le code source le plus récent de https://github.com/Lee-xeo/Claude-Cage, compile-le, crée le paquet et installe-le. Configure le proxy de Cage pour utiliser le nœud xx de mon Clash local et sortir par mon IP xx. Surveille toute l’opération, corrige directement les problèmes et, si nécessaire, ouvre une issue sur le projet pour améliorer la compatibilité.
 ```
 
 Tout ce dont vous avez besoin est un point de terminaison proxy réseau fiable. Ce projet ne fait la promotion d'aucun fournisseur de proxy ; vous pouvez trouver un fournisseur vous-même, par exemple en recherchant le site Web Black Error.

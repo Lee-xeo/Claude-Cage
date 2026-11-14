@@ -48,7 +48,7 @@ func (s *Server) phoneFile() string { return filepath.Join(s.profile, "mobile-pa
 
 // The transport proof grants only phone operations and is revoked with the
 // active room. It never grants native desktop administration to a session cookie.
-func (s *Server) nativePhoneRoom(r *http.Request) context.Context {
+func (s *Server) pairedPhoneRoom(r *http.Request) context.Context {
 	if r.URL.Path != "/api/mobile/device" && !strings.HasPrefix(r.URL.Path, "/api/mobile/cli/") && !strings.HasPrefix(r.URL.Path, "/api/mobile/browser/") && !strings.HasPrefix(r.URL.Path, "/api/mobile/desktop/") {
 		return nil
 	}

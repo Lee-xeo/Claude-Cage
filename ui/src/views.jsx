@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import { useAppearance } from "./appearance";
 import { terminalTheme, systemCodeFont } from "./appearance-state.mjs";
-import { Terminal } from "@xterm/xterm";
+import { Terminal } from "../.generated/xterm.mjs";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { claudeLoginLink, isClaudeLoginLink } from "./terminal-login-link.mjs";
 import { FitAddon } from "@xterm/addon-fit";

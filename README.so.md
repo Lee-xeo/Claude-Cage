@@ -56,7 +56,7 @@ Claude Cage wuxuu terminalka, biraawsarka, tafatiraha iyo Claude Desktop-ka rasm
 U dir codsigan wakiilkaaga AI (codex, dsh, workbuddy - malaha maaha Claude Code 😁):
 
 ```markdown
-Iga caawi in aan rakibo https://github.com/Lee-xeo/Claude-Cage oo habee wakiilka shabakada Cage si aad u isticmaasho xxx dhamaadka rakibida xaafadayda.
+Soo qaado koodhkii ugu dambeeyay ee https://github.com/Lee-xeo/Claude-Cage, dhis, xirmo ka samee oo rakib. U habee proxy-ga Cage inuu isticmaalo node-ka xx ee Clash-kayga maxalliga ah oo uu ka baxo IP-gayga xx. La soco hawsha oo dhan, si toos ah u sax dhibaatooyinka, haddii loo baahdana issue u gudbi mashruuca si loo wanaajiyo iswaafajinta.
 ```
 
 Waxa kaliya ee aad u baahan tahay waa barta ugu dambeysa ee wakiil shabakad la isku halayn karo. Mashruucani ma dalacsiinayo bixiye wakiil; Waxaad heli kartaa bixiye laftaada, tusaale ahaan adoo raadiya shabakada qaladka madow.

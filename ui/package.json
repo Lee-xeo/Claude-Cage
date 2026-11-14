@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "prepare-vnc": "node scripts/prepare-vnc.mjs",
-    "dev": "npm run prepare-vnc && vite --host 127.0.0.1",
-    "build": "npm run prepare-vnc && vite build && node scripts/verify-build.mjs",
+    "prepare-ui": "npm run prepare-vnc && node scripts/prepare-xterm.mjs",
+    "dev": "npm run prepare-ui && vite --host 127.0.0.1",
+    "build": "npm run prepare-ui && vite build && node scripts/verify-build.mjs",
     "test": "node --test src/*.test.mjs scripts/verify-build.test.mjs",
     "lint": "eslint src"
   },

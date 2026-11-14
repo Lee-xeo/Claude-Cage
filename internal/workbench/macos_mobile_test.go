@@ -34,11 +34,12 @@ func TestMacOSPhoneRequiresCurrentRoomAndAccountUnlock(t *testing.T) {
 	if response := windowsPhoneRequest(t, s, http.MethodGet, "/api/settings", "", s.phones.roomProof); response.Code != http.StatusForbidden {
 		t.Fatal("phone proof allowed desktop administration")
 	}
-	s.account.trustedSession = true
-	if response := windowsPhoneRequest(t, s, http.MethodGet, path, "", s.phones.roomProof); response.Code != http.StatusLocked {
-		t.Fatal("phone inherited a desktop-only account unlock")
+	if err := s.account.lockAccess(false); err != nil {
+		t.Fatal(err)
 	}
-	s.account.trustedSession = false
+	if response := windowsPhoneRequest(t, s, http.MethodGet, path, "", s.phones.roomProof); response.Code != http.StatusLocked {
+		t.Fatal("locked account allowed the phone to read projects")
+	}
 	cancel()
 	if response := windowsPhoneRequest(t, s, http.MethodGet, path, "", s.phones.roomProof); response.Code != http.StatusForbidden {
 		t.Fatal("revoked phone retained access")

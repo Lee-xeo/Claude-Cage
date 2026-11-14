@@ -189,15 +189,18 @@ func (a *localAccount) viewFor(desktop bool) accountView {
 	return v
 }
 
-func (a *localAccount) access() (context.Context, bool) { return a.accessFor(true) }
+func (a *localAccount) access() (context.Context, bool) { return a.accessFor(true, false) }
 
-func (a *localAccount) accessFor(desktop bool) (context.Context, bool) {
+func (a *localAccount) accessFor(desktop, pairedPhone bool) (context.Context, bool) {
 	if a == nil {
 		return nil, false
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.epoch, len(a.key) == 32 && (!a.trustedSession || desktop)
+	// Remember me also unlocks the enrolled phone's mobile routes. Legacy
+	// passwordless workspaces keep their local desktop-only access.
+	rememberedPhone := pairedPhone && a.record != nil && a.record.TrustedUnlock != nil
+	return a.epoch, len(a.key) == 32 && (!a.trustedSession || desktop || rememberedPhone)
 }
 
 func (a *localAccount) setKey(key []byte) {

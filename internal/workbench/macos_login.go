@@ -274,7 +274,7 @@ func (s *Server) macOSLoginWindow(w http.ResponseWriter, r *http.Request) {
 	if input.Maintenance != "" {
 		timeout = 15 * time.Second
 	}
-	epoch, _ := s.account.accessFor(true)
+	epoch, _ := s.account.access()
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	var dial net.Dialer

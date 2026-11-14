@@ -1,5 +1,7 @@
 export const isWindows = /Win/i.test(globalThis.navigator?.platform || "");
 export const isMac = /Mac/i.test(globalThis.navigator?.platform || "");
+export const isLinux = /^Linux\b/i.test(globalThis.navigator?.platform || "") &&
+  !/Android|CrOS/i.test(globalThis.navigator?.userAgent || "");
 export const usesControl = !isMac;
 export const primaryModifier = (event, control = usesControl) =>
   control ? event.ctrlKey && !event.altKey && !event.metaKey : event.metaKey;

@@ -198,7 +198,7 @@ func (s *Server) macOSInstallRecovery(w http.ResponseWriter, r *http.Request) {
 			s.jobs.cancelRunning()
 		}
 	}
-	epoch, _ := s.account.accessFor(true)
+	epoch, _ := s.account.access()
 	// lifetimeContext takes s.mu; resolve it before the lease critical section
 	// below takes the same lock.
 	lifetime := s.lifetimeContext()

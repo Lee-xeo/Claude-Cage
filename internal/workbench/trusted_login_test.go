@@ -188,6 +188,9 @@ func TestTrustedLocalUnlockIsPrivateToDesktop(t *testing.T) {
 	if !a.viewFor(true).Unlocked || a.viewFor(false).Unlocked {
 		t.Fatal("trusted login escaped desktop view")
 	}
+	if _, allowed := a.accessFor(false, true); allowed {
+		t.Fatal("legacy passwordless workspace granted phone access")
+	}
 	if response := request(s, "GET", "/api/favorites", "", "", true); response.Code != http.StatusLocked {
 		t.Fatalf("session cookie alone opened favorites: %d", response.Code)
 	}

@@ -585,16 +585,14 @@ func (s *Server) handler() http.Handler {
 		r = r.WithContext(ctx)
 		accountRoute := r.URL.Path == "/api/account" || strings.HasPrefix(r.URL.Path, "/api/account/")
 		bootstrapRoute := r.URL.Path == "/api/session" || r.URL.Path == "/api/launch" || r.URL.Path == "/api/handoff" || r.URL.Path == "/api/remote/manifest"
-		var phoneRoom context.Context
-		if (s.windowsGuest != nil || s.macosGuest != nil) && strings.HasPrefix(r.URL.Path, "/api/") && !bootstrapRoute && !s.hasTrustedView(r) {
-			phoneRoom = s.nativePhoneRoom(r)
-			if phoneRoom == nil {
-				http.Error(w, "请通过本机 Cage 窗口或当前配对手机打开客机", http.StatusForbidden)
-				return
-			}
+		trustedDesktop := s.hasTrustedView(r)
+		phoneRoom := s.pairedPhoneRoom(r)
+		if (s.windowsGuest != nil || s.macosGuest != nil) && strings.HasPrefix(r.URL.Path, "/api/") && !bootstrapRoute && !trustedDesktop && phoneRoom == nil {
+			http.Error(w, "请通过本机 Cage 窗口或当前配对手机打开客机", http.StatusForbidden)
+			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") && !accountRoute && !bootstrapRoute && !strings.HasPrefix(r.URL.Path, "/api/diagnostics") && !(r.Method == "GET" && r.URL.Path == "/api/appearance") {
-			epoch, unlocked := s.account.accessFor(s.hasTrustedView(r))
+			epoch, unlocked := s.account.accessFor(trustedDesktop, phoneRoom != nil)
 			if !unlocked {
 				http.Error(w, "Cage 已锁定，请先登录", http.StatusLocked)
 				return
