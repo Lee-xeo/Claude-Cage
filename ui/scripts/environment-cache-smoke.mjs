@@ -40,7 +40,7 @@ for (const system of ["macos", "windows-11", "debian"]) {
   try {
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await page.getByRole("navigation", { name: "设置分组" }).getByRole("button", { name: "环境与恢复", exact: true }).click();
-    const panel = page.getByRole("region", { name: "环境盘点与缓存清理" });
+    const panel = page.getByRole("region", { name: "环境清理" });
     await panel.getByRole("button", { name: "只读盘点", exact: true }).waitFor();
     assert.equal(calls.length, 0, "Opening settings must not inspect or clean");
     await panel.getByRole("button", { name: "只读盘点", exact: true }).click();

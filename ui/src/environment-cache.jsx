@@ -58,8 +58,8 @@ export function EnvironmentCache({ status, onConfirm }) {
     } finally { setWorking(false); }
   }
 
-  return <section className="environment-cache" aria-label="环境盘点与缓存清理" aria-busy={working}>
-    <h4>环境盘点与缓存清理</h4>
+  return <section className="environment-cache" aria-label="环境清理" aria-busy={working}>
+    <h4>环境清理</h4>
     <p className="field-help">手动盘点当前环境的缓存和受保护资料。清理仅移动允许清单中的缓存，保留登录、会话、项目、设置和持久磁盘。</p>
     <div className="environment-version-actions">
       <button disabled={disabled} onClick={refresh}>{working ? "正在处理…" : inventory ? "重新盘点" : "只读盘点"}</button>
