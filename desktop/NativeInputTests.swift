@@ -52,6 +52,19 @@ enum NativeInputTests {
         precondition(abs(moved.minY - lower.minY - 100) < 0.5)
         web.setFrameSize(NSSize(width: 1000, height: 800))
         _ = check(500, 680, 38)
+        // AppKit modifier changes carry a key code and flags, but no characters.
+        for pressed in [true, false] {
+            let cg = CGEvent(keyboardEventSource: nil, virtualKey: 55, keyDown: pressed)!
+            cg.type = .flagsChanged
+            cg.flags = pressed ? .maskCommand : []
+            web.scripts.removeAll()
+            input.flagsChanged(with: NSEvent(cgEvent: cg)!)
+            let kind = pressed ? "keydown" : "keyup"
+            precondition(web.scripts.count == 1)
+            let script = web.scripts[0]
+            precondition(script.contains("\"kind\":\"\(kind)\"") && script.contains("\"code\":\"MetaLeft\""))
+            precondition(script.contains("\"metaKey\":\(pressed)") && script.contains("\"repeat\":false"))
+        }
         for number in 1...20 {
             let code = MacKeyboard.keyCodes["F\(number)"]!
             let character = String(UnicodeScalar(0xf703 + number)!)
