@@ -4,8 +4,11 @@ $ErrorActionPreference = 'Stop'
 function Assert-Check([bool]$Condition, [string]$Message) { if (!$Condition) { throw $Message } }
 $credential = [pscredential]::new('CageAdmin', (ConvertTo-SecureString 'Test-only<&>"Account!123' -AsPlainText -Force))
 $answer = New-CageISOAnswer $credential
+$named = New-CageISOAnswer $credential 'MY-PC'
 $ns = [Xml.XmlNamespaceManager]::new($answer.NameTable)
 $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+Assert-Check ($answer.SelectSingleNode('//u:ComputerName', $ns).InnerText -ceq '*') 'Default ISO computer name is fixed.'
+Assert-Check ($named.SelectSingleNode('//u:ComputerName', $ns).InnerText -ceq 'MY-PC') 'ISO setup ignored the manual name.'
 $roundtrip = [xml]$answer.OuterXml
 Assert-Check ($roundtrip.SelectSingleNode('//u:LocalAccount/u:Name', $ns).InnerText -ceq 'CageAdmin') 'Initial account name changed.'
 Assert-Check ($roundtrip.SelectSingleNode('//u:LocalAccount/u:Password/u:Value', $ns).InnerText -ceq $credential.GetNetworkCredential().Password) 'Password XML escaping changed the credential.'

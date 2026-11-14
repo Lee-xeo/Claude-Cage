@@ -1,6 +1,22 @@
 ﻿#requires -Version 5.1
 # Functions used only for a new private Windows guest disk.
-function New-CageISOAnswer([pscredential]$Administrator) {
+function Assert-CageComputerName([string]$Name) {
+    if ($Name -cne '*' -and $Name -cnotmatch '^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?$') { throw 'Invalid guest computer name. Use 1-15 ASCII letters, digits or hyphens, starting with a letter.' }
+}
+
+function Get-CageGuestComputerName([string]$Profile) {
+    $file = Join-Path $Profile 'guest-profile.json'
+    if (!(Test-Path -LiteralPath $file)) { return '*' }
+    $info = Get-Item -LiteralPath $file -Force
+    if ($info -isnot [IO.FileInfo] -or $info.Length -gt 8192 -or $info.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Invalid guest creation profile.' }
+    $saved = [IO.File]::ReadAllText($file) | ConvertFrom-Json
+    if ($saved.version -ne 1 -or $saved.hostname -isnot [string] -or !$saved.hostname) { throw 'Invalid saved guest computer name.' }
+    Assert-CageComputerName $saved.hostname
+    return $saved.hostname
+}
+
+function New-CageISOAnswer([pscredential]$Administrator, [string]$ComputerName = "*") {
+    Assert-CageComputerName $ComputerName
     if (!$Administrator -or $Administrator.UserName.Length -gt 20 -or
         $Administrator.UserName -match '["/\\\[\]:;|=,+*?<>@\x00-\x1f]' -or
         $Administrator.UserName.Trim() -cne $Administrator.UserName -or $Administrator.UserName.EndsWith('.') -or
@@ -10,7 +26,7 @@ function New-CageISOAnswer([pscredential]$Administrator) {
     }
     $answer = [xml]@'
 <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-  <settings pass="specialize"/>
+  <settings pass="specialize"><component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><ComputerName>*</ComputerName></component></settings>
   <settings pass="oobeSystem">
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <OOBE><HideOnlineAccountScreens>true</HideOnlineAccountScreens><HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE></OOBE>
@@ -22,6 +38,7 @@ function New-CageISOAnswer([pscredential]$Administrator) {
     $ns = [Xml.XmlNamespaceManager]::new($answer.NameTable)
     $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
     $answer.SelectSingleNode('//u:LocalAccount/u:Name', $ns).InnerText = $Administrator.UserName
+    $answer.SelectSingleNode('//u:ComputerName', $ns).InnerText = $ComputerName
     $answer.SelectSingleNode('//u:LocalAccount/u:Password/u:Value', $ns).InnerText = $Administrator.GetNetworkCredential().Password
     return $answer
 }
@@ -50,7 +67,8 @@ function Remove-CageISOAnswer($VM, $Session, [string]$InstanceDirectory) {
     [IO.File]::Delete($answerPath)
 }
 
-function New-CageCloneAnswer([pscredential]$Administrator, [string]$Language) {
+function New-CageCloneAnswer([pscredential]$Administrator, [string]$Language, [string]$ComputerName = "*") {
+    Assert-CageComputerName $ComputerName
     if (!$Administrator -or $Administrator.UserName -cne 'cagesetup' -or $Language -notmatch '^[a-zA-Z]{2,3}-[a-zA-Z0-9-]{2,12}$') {
         throw 'The new guest setup identity or language is invalid.'
     }
@@ -58,7 +76,7 @@ function New-CageCloneAnswer([pscredential]$Administrator, [string]$Language) {
 <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
   <settings pass="specialize">
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-      <ComputerName>CAGE-WINDOWS</ComputerName><TimeZone>UTC</TimeZone>
+      <ComputerName>*</ComputerName><TimeZone>UTC</TimeZone>
     </component>
   </settings>
   <settings pass="oobeSystem">
@@ -77,6 +95,7 @@ function New-CageCloneAnswer([pscredential]$Administrator, [string]$Language) {
     foreach ($name in @('InputLocale', 'SystemLocale', 'UILanguage', 'UserLocale')) {
         $answer.SelectSingleNode('//u:component[@name="Microsoft-Windows-International-Core"]/u:'+$name, $ns).InnerText = $Language
     }
+    $answer.SelectSingleNode('//u:ComputerName', $ns).InnerText = $ComputerName
     $answer.SelectSingleNode('//u:LocalAccount/u:Password/u:Value', $ns).InnerText = $Administrator.GetNetworkCredential().Password
     return $answer
 }

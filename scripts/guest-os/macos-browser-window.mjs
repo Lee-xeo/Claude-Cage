@@ -135,7 +135,7 @@ export async function browserSettingsInputs(info, profile) {
     prefs.intl ?? null, local.intl ?? null]);
 }
 
-export function nativeBrowserDispatch({ window, editor, tailnet, settingsInputs }) {
+export function nativeBrowserDispatch({ window, editor, tailnet, settingsInputs, profile }) {
   let homepage, observed, focusSequence = 0, sequence = 1;
   let lastEventStatus, sampledAt = 0;
   const capabilities = { nativeWindow: true, login: true, editor: true };
@@ -150,6 +150,7 @@ export function nativeBrowserDispatch({ window, editor, tailnet, settingsInputs 
   return async ({ method, path, input = {}, operation }, { signal } = {}) => {
     signal?.throwIfAborted();
     if (operation === "configure") return { ok: true };
+    if (method === "POST" && path === "/profile" && profile) { await profile(input); return { ok: true }; }
     if (method === "POST" && path === "/tailnet") return tailnet.request(input);
     if (method === "POST" && path === "/homepage") {
       homepage = input.url === "about:blank" ? undefined : webURL(input.url).href;

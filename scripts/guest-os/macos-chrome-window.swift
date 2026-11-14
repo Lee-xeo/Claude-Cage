@@ -133,7 +133,7 @@ final class MacChromeWindow {
               let code, SecStaticCodeCheckValidity(code, [], requirement) == errSecSuccess else { throw Failure(5, "identity_error") }
         let process = Process()
         process.executableURL = app.appendingPathComponent("Contents/MacOS/Google Chrome")
-        process.arguments = args
+        process.arguments = args + (try Self.creationArguments())
         process.currentDirectoryURL = fm.homeDirectoryForCurrentUser
         process.environment = ProcessInfo.processInfo.environment.filter { ["HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"].contains($0.key) }
         process.standardInput = FileHandle.nullDevice
@@ -141,6 +141,29 @@ final class MacChromeWindow {
         process.standardError = FileHandle.nullDevice
         try process.run()
         return process
+    }
+
+    // Read only this guest user's public, persisted creation preferences.
+    // These switches also apply to temporary authorization profiles.
+    static func creationArguments() throws -> [String] {
+        let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Cage/guest-profile.json")
+        if !FileManager.default.fileExists(atPath: file.path) { return [] }
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes[.size] as? NSNumber, size.intValue <= 4096 else { throw Failure(8, "invalid_profile") }
+        struct Preferences: Decodable {
+            let browser_width: Int
+            let browser_height: Int
+            let webgl: String
+            let canvas: String
+        }
+        let value = try JSONDecoder().decode(Preferences.self, from: Data(contentsOf: file))
+        guard (800...3840).contains(value.browser_width), (600...2160).contains(value.browser_height),
+              ["native", "disabled"].contains(value.webgl), ["native", "blocked"].contains(value.canvas) else { throw Failure(8, "invalid_profile") }
+        var flags = ["--window-size=\(value.browser_width),\(value.browser_height)"]
+        if value.webgl == "disabled" { flags += ["--disable-3d-apis", "--disable-webgl"] }
+        if value.canvas == "blocked" { flags.append("--disable-reading-from-canvas") }
+        return flags
     }
 
     func launch(_ input: Request) throws {
