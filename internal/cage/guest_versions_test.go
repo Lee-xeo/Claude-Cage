@@ -262,8 +262,16 @@ cache)
   printf cached > "$HOME/cached";;
 install)
   test -f "$HOME/cached" || exit 94
+  test "$3" = --prefix && test "$4" = "$HOME/.local" && test "$5" = --global || exit 97
   test "$6" = '@anthropic-ai/claude-code@9.8.7' || exit 97
   printf installed > "$HOME/installed";;
+prefix)
+  test "$2" = --global || exit 99
+  printf '/usr\n';;
+config)
+  test -f "$HOME/installed" || exit 90
+  test "$2 $3 $4" = 'set --global --location=user' && test "$5" = "prefix=$HOME/.local" || exit 99
+  printf '%s\n' "$5" > "$HOME/npm-prefix";;
 *) exit 95;;
 esac
 `,
@@ -292,6 +300,9 @@ esac
 			}
 			if _, err := os.Stat(filepath.Join(dir, "installed")); err != nil {
 				t.Fatal(err)
+			}
+			if got, err := os.ReadFile(filepath.Join(dir, "npm-prefix")); err != nil || string(got) != "prefix="+filepath.Join(dir, ".local")+"\n" {
+				t.Fatalf("fresh install did not configure npm prefix: %q %v", got, err)
 			}
 			want := "upstream\n"
 			if got, err := os.ReadFile(filepath.Join(dir, "sources")); err != nil || string(got) != want {
@@ -344,6 +355,61 @@ cage_install_tool claude`)
 				}
 			} else if err == nil {
 				t.Fatalf("bad metadata accepted: %s", out)
+			}
+		})
+	}
+}
+
+func TestClaudeToolsUpdateRepairsExistingNPMPrefixWithoutReinstalling(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq unavailable")
+	}
+	if _, err := exec.LookPath("npm"); err != nil {
+		t.Skip("npm unavailable")
+	}
+	for _, install := range []string{"npm", "native"} {
+		t.Run(install, func(t *testing.T) {
+			dir := t.TempDir()
+			cmd := exec.Command("bash", "-c", ToolInstallPrelude()+`
+set -euo pipefail
+unset npm_config_prefix NPM_CONFIG_PREFIX npm_config_userconfig NPM_CONFIG_USERCONFIG
+export PREFIX=/usr npm_config_userconfig="$HOME/.npmrc" npm_config_globalconfig="$HOME/global-npmrc"
+export PATH="$HOME/.local/bin:$PATH"
+package="$HOME/.local/lib/node_modules/@anthropic-ai/claude-code/bin"
+mkdir -p "$HOME/.local/bin" "$package"
+printf 'fund=false\n' > "$HOME/.npmrc"
+printf '#!/bin/sh\nprintf "9.9.9 (Claude Code)\\n"\n' > "$package/claude.exe"
+chmod +x "$package/claude.exe"
+if [ "$TEST_INSTALL" = npm ]; then
+  ln -s ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe "$HOME/.local/bin/claude"
+else
+  # An old npm package may still be on disk after a native install.
+  cp "$package/claude.exe" "$HOME/.local/bin/claude"
+fi
+dpkg() {
+  if [ "$1" = --print-architecture ]; then echo arm64; return; fi
+  test "$*" = '--compare-versions 9.9.9 ge 9.8.7'
+}
+npm() {
+  if [ "$1" = view ]; then printf '"9.8.7"'; return; fi
+  if [ "$1" = config ]; then printf 'config\n' >> "$HOME/config-writes"; fi
+  case "$1" in prefix|config) command npm "$@";; *) return 1;; esac
+}
+test "$(npm prefix --global)" = /usr
+cage_install_tool claude
+cage_install_tool claude
+grep -qx 'fund=false' "$HOME/.npmrc"
+if [ "$TEST_INSTALL" = npm ]; then
+  test "$(npm prefix --global)" = "$HOME/.local"
+  test "$(cat "$HOME/config-writes")" = config
+else
+  test "$(npm prefix --global)" = /usr
+  test ! -e "$HOME/config-writes"
+fi
+`)
+			cmd.Env = append(os.Environ(), "HOME="+dir, "TEST_INSTALL="+install)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("existing %s installation: %v\n%s", install, err, out)
 			}
 		})
 	}
