@@ -23,18 +23,20 @@ func TestValidateEmpty(t *testing.T) {
 	assert.Error(t, err, "field `images` must be set")
 }
 
-func TestOffscreenDisplayRequiresMacOSAndVZ(t *testing.T) {
-	for _, tc := range []struct{ os, driver string }{
-		{limatype.DARWIN, limatype.VZ},
-		{limatype.LINUX, limatype.VZ},
-		{limatype.DARWIN, limatype.QEMU},
+func TestOffscreenDisplayRequiresSupportedMacOSBackend(t *testing.T) {
+	for _, tc := range []struct{ os, driver, arch, options string; allowed bool }{
+		{limatype.DARWIN, limatype.VZ, limatype.AARCH64, "", true},
+		{limatype.LINUX, limatype.VZ, limatype.AARCH64, "", false},
+		{limatype.DARWIN, limatype.QEMU, limatype.X8664, "", false},
+		{limatype.DARWIN, limatype.QEMU, limatype.X8664, "vmOpts: {qemu: {macOS: {uuid: '4cf5e572-6e50-43f1-887f-116a16278861'}}}\n", true},
+		{limatype.LINUX, limatype.QEMU, limatype.X8664, "vmOpts: {qemu: {macOS: {uuid: '4cf5e572-6e50-43f1-887f-116a16278861'}}}\n", false},
 	} {
 		t.Run(tc.os+"-"+tc.driver, func(t *testing.T) {
-			body := fmt.Sprintf("os: %s\nvmType: %s\nvideo: {display: offscreen}\nimages: [{location: /}]\n", tc.os, tc.driver)
+			body := fmt.Sprintf("os: %s\narch: %s\nvmType: %s\nvideo: {display: offscreen}\nimages: [{location: /}]\n%s", tc.os, tc.arch, tc.driver,tc.options)
 			y, err := Load(t.Context(), []byte(body), "lima.yaml")
 			assert.NilError(t, err)
 			err = Validate(y, false)
-			if tc.os == limatype.DARWIN && tc.driver == limatype.VZ {
+			if tc.allowed {
 				assert.NilError(t, err)
 			} else {
 				assert.ErrorContains(t, err, "offscreen requires a macOS guest")

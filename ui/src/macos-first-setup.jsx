@@ -69,12 +69,13 @@ export function MacOSFirstSetup() {
       setReadError("");
       setPermissions(measured);
       const pending = steps.find(({ id }) => !measured[id]);
+      const requestKey = pending?.id === "projects" ? `projects:${Boolean(measured.project_install_required)}` : pending?.id;
       if (pending && c.pending !== pending.id) {
         c.pending = pending.id;
         setPermissionPage(pending.id);
       }
-      if (measured.managed_credential && pending && c.requested !== pending.id) {
-        c.requested = pending.id;
+      if (measured.managed_credential && pending && c.requested !== requestKey) {
+        c.requested = requestKey;
         setPermissionPage(pending.id);
         setBusy(true);
         try { await request(pending.id); setError(""); }
@@ -113,7 +114,7 @@ export function MacOSFirstSetup() {
     if (c.inFlight) return;
     c.inFlight = true;
     if (action === "stop") c.started = true;
-    if (steps.some(({ id }) => id === action)) { setPermissionPage(action); c.requested = action; }
+    if (steps.some(({ id }) => id === action)) { setPermissionPage(action); c.requested = action === "projects" ? `projects:${Boolean(permissions.project_install_required)}` : action; }
     setBusy(true); setError("");
     try {
       await request(action);
@@ -126,6 +127,8 @@ export function MacOSFirstSetup() {
 
   const pending = steps.find(({ id }) => !permissions[id]);
   const selected = steps.find(({ id }) => id === permissionPage);
+  const projectInstallation = permissionPage === "projects" && permissions.project_install_required;
+  const selectedHint = projectInstallation ? "先在客机中完成 macFUSE 官方安装器的安装与管理员授权。安装完成后，Cage 会打开文件系统扩展设置，再开启两个开关。" : selected.hint;
   const running = Boolean(state?.job?.running);
   const canOperate = Boolean(state?.vm_running && !running && !busy);
   const canFinish = Boolean(state?.ready && !account.macos_password_pending && !pending && !readError);
@@ -136,7 +139,7 @@ export function MacOSFirstSetup() {
     pending ? `当前需要确认「${pending.label}」。完成后 Cage 会自动检查并继续。` :
     completionFailed ? "三项权限已验证，最后的设置收尾未完成。请重试完成设置。" : "三项权限已验证，正在保存设置；随后继续工作区授权和联网检查。";
   const controls = <button type="button" className="primary" disabled={!canOperate} onClick={() => act(pending?.id || permissionPage)}>
-    {busy ? "正在处理…" : `打开${pending?.label || selected.label}`}
+    {busy ? "正在处理…" : projectInstallation ? "打开 macFUSE 安装器" : `打开${pending?.label || selected.label}`}
   </button>;
   const failure = error || readError || (!running && state?.job?.error) || (!state?.ready && state?.environment_update_error);
 
@@ -152,7 +155,7 @@ export function MacOSFirstSetup() {
     <section className="initialization-operation mac-setup-task" aria-label="当前设置步骤">
       <h2>{!state?.ready ? "连接虚拟 Mac" : pending ? `确认${pending.label}` : "完成系统设置"}</h2>
       <p role="status">{busy && <LoaderCircle size={16} className="spin" aria-hidden="true" />} {progress}</p>
-      {pending && state?.ready && <><p>{selected.hint}</p>{pending.id === "projects" && permissions.projects_error && <p>{permissions.projects_error}</p>}</>}
+      {pending && state?.ready && <><p>{selectedHint}</p>{pending.id === "projects" && permissions.projects_error && <p>{permissions.projects_error}</p>}</>}
       <div className="initialization-recovery">
         {state && !running && (!state.ready || account.macos_password_pending || state.job?.error) && <button className="primary" disabled={busy} onClick={() => act("start")}>{account.macos_password_pending ? "重试同步客机密码" : "继续启动并连接"}</button>}
         {pending && state?.ready && controls}
@@ -161,7 +164,7 @@ export function MacOSFirstSetup() {
       </div>
       {running && <button disabled={busy} onClick={() => act("stop")}>停止当前操作，保留进度</button>}
       {state?.vm_running && <MacOSLogin initialSetup autoOpen={Boolean(permissions.managed_credential)} managedCredential={permissions.managed_credential} disabled={!canOperate}
-        label="打开客机画面" setupActions={controls} setupHint={`${selected.hint} 系统要求管理员时，用户名填 cagesetup；选中密码框后可点击「填写授权密码」。`}
+        label="打开客机画面" setupActions={controls} setupHint={`${selectedHint} 系统要求管理员时，用户名填 cagesetup；选中密码框后可点击「填写授权密码」。`}
         setupStatus={failure || progress} setupError={Boolean(failure)} />}
     </section>
     {failure && <section className="initialization-notice" role="alert"><h2>这一步尚未完成</h2><p>{failure}</p><p>已有安装进度会保留。可以重新打开当前设置页，或重新检查状态后继续。</p></section>}

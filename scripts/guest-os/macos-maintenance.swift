@@ -1,6 +1,51 @@
 import AppKit
 import IOKit
 import Security
+import CryptoKit
+
+@MainActor
+enum MacProjectSetup {
+    static var vendorURL: URL {
+        #if arch(x86_64)
+        return URL(fileURLWithPath: "/Library/Filesystems/macfuse.fs/Contents/Resources/macfuse.app")
+        #else
+        return URL(fileURLWithPath: "/Applications/macFUSE.app")
+        #endif
+    }
+
+    static var needsInstaller: Bool {
+        #if arch(x86_64)
+        let info = NSDictionary(contentsOfFile: "/Library/Filesystems/macfuse.fs/Contents/Info.plist")
+        let receipt = NSDictionary(contentsOfFile: "/var/db/receipts/io.macfuse.installer.components.core.plist")
+        guard let version = info?["CFBundleShortVersionString"] as? String,
+              version.compare("5.5.0", options: .numeric) != .orderedAscending,
+              let installed = receipt?["PackageVersion"] as? String,
+              installed.compare("5.5.0", options: .numeric) != .orderedAscending else { return true }
+        return !FileManager.default.fileExists(atPath: "/usr/local/lib/libfuse3.4.dylib")
+        #else
+        return false
+        #endif
+    }
+
+    static func openInstallerIfNeeded() async throws -> Bool {
+        guard needsInstaller else { return false }
+        let package = URL(fileURLWithPath: "/usr/local/share/cage/setup/macfuse.pkg")
+        let attributes = try FileManager.default.attributesOfItem(atPath: package.path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+              (attributes[.ownerAccountID] as? NSNumber)?.intValue == 0,
+              let permissions = attributes[.posixPermissions] as? NSNumber, permissions.intValue & 0o022 == 0,
+              let size = attributes[.size] as? NSNumber, size.intValue > 0, size.intValue <= 64 * 1024 * 1024 else {
+            throw Failure(7, "macfuse_installer_unavailable")
+        }
+        let data = try Data(contentsOf: package)
+        guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == "5acf9e30bab227707de8d15eb28472a0cc9ed45709846b3e067d283294dc7f9e" else {
+            throw Failure(7, "macfuse_installer_unavailable")
+        }
+        let installer = URL(fileURLWithPath: "/System/Library/CoreServices/Installer.app")
+        _ = try await NSWorkspace.shared.open([package], withApplicationAt: installer, configuration: NSWorkspace.OpenConfiguration())
+        return true
+    }
+}
 
 // Invoked directly by the installation identity after verifying this bundle.
 // Only Apple system settings and its authorization UI can supply a target.
@@ -56,7 +101,7 @@ enum MacMaintenance {
             if purpose == "projects" {
                 let configuration = NSWorkspace.OpenConfiguration()
                 configuration.activates = false
-                NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/Applications/macFUSE.app"), configuration: configuration)
+                NSWorkspace.shared.openApplication(at: MacProjectSetup.vendorURL, configuration: configuration)
             }
             guard NSWorkspace.shared.open(url) else { throw Failure(8, "maintenance_open_failed") }
             return ["opened": true]

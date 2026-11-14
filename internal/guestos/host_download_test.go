@@ -11,15 +11,38 @@ import (
 	"testing"
 )
 
+func TestMacMediaRejectsUnknownArchitectureBeforeDownloads(t *testing.T) {
+	for _, script := range []string{"prepare-macos-media.sh", "prepare-macos-cli-kit.sh"} {
+		t.Run(script, func(t *testing.T) {
+			output := filepath.Join(t.TempDir(), "media")
+			cmd := exec.CommandContext(t.Context(), "bash", filepath.Join("..", "..", "scripts", "guest-os", script), output)
+			cmd.Env = append(os.Environ(), "CAGE_MACOS_GUEST_ARCH=unsupported-architecture")
+			data, err := cmd.CombinedOutput()
+			if err == nil || !strings.Contains(string(data), "Unsupported macOS guest architecture") {
+				t.Fatalf("unknown architecture was not rejected: %v\n%s", err, data)
+			}
+			if _, err := os.Lstat(output); !os.IsNotExist(err) {
+				t.Fatal("unsupported architecture created media output")
+			}
+		})
+	}
+}
+
 // Run both real shell entry points, including concurrent CLI downloads and the
 // GitHub asset fallback. A host helper path with spaces must remain one command.
 func TestMacMediaUsesHostDownloaderForEveryPackage(t *testing.T) {
+	for _, arch := range []string{"arm64", "x86_64"} {
+		t.Run(arch, func(t *testing.T) { testMacMediaUsesHostDownloader(t, arch) })
+	}
+}
+
+func testMacMediaUsesHostDownloader(t *testing.T, arch string) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash unavailable")
 	}
 	dir := t.TempDir()
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte("fixture")))
-	for _, name := range []string{"prepare-macos-media.sh", "prepare-macos-cli-kit.sh"} {
+	for _, name := range []string{"prepare-macos-media.sh", "prepare-macos-cli-kit.sh", "macos-guest-arch.sh"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "guest-os", name))
 		if err != nil {
 			t.Fatal(err)
@@ -56,7 +79,7 @@ printf 'CAGE_HOST_BYTES %s 7 7\n' "$4"
 	environment := filepath.Join(dir, "environment.sh")
 	if err := os.WriteFile(environment, []byte(`codesign() { :; }
 plutil() {
-  case "$2" in version) printf 2.1.322;; platforms.darwin-arm64.binary) printf claude;; platforms.darwin-arm64.checksum) printf '%s' "$FIXTURE_DIGEST";; *) return 1;; esac
+  case "$2" in version) printf 2.1.322;; platforms.darwin-*.binary) printf claude;; platforms.darwin-*.checksum) printf '%s' "$FIXTURE_DIGEST";; *) return 1;; esac
 }
 `), 0600); err != nil {
 		t.Fatal(err)
@@ -71,7 +94,7 @@ plutil() {
 	}
 	run := func() ([]byte, error) {
 		cmd := exec.CommandContext(t.Context(), "bash", filepath.Join(dir, "prepare-macos-media.sh"), media)
-		cmd.Env = append(os.Environ(), "BASH_ENV="+environment, "CAGE_HOST_DOWNLOADER="+helper, "CAGE_REFRESH_TOOLS=1", "FIXTURE_MEDIA="+media, "FIXTURE_DIGEST="+digest, "FIXTURE_DOWNLOADS="+filepath.Join(dir, "requests"))
+		cmd.Env = append(os.Environ(), "BASH_ENV="+environment, "CAGE_MACOS_GUEST_ARCH="+arch, "CAGE_HOST_DOWNLOADER="+helper, "CAGE_REFRESH_TOOLS=1", "FIXTURE_MEDIA="+media, "FIXTURE_DIGEST="+digest, "FIXTURE_DOWNLOADS="+filepath.Join(dir, "requests"))
 		return cmd.CombinedOutput()
 	}
 	output, err := run()
@@ -87,6 +110,15 @@ plutil() {
 	}
 	output = append(output, retry...)
 	requests, _ := os.ReadFile(filepath.Join(dir, "requests"))
+	packageArch, nodeArch, rustArch := "arm64", "arm64", "aarch64"
+	if arch == "x86_64" {
+		packageArch, nodeArch, rustArch = "amd64", "x64", "x86_64"
+	}
+	for _, target := range []string{"macos-" + packageArch + ".tar.gz", "darwin-" + nodeArch + ".tar.gz", "/darwin-" + nodeArch + "/claude", "uv-" + rustArch + "-apple-darwin", "macOS_" + packageArch + ".zip"} {
+		if !strings.Contains(string(requests), target) {
+			t.Fatalf("wrong native package selection for %s: missing %s\n%s", arch, target, requests)
+		}
+	}
 	if strings.Count(string(requests), " macos-cli-claude ") != 1 {
 		t.Fatal("completed CLI package was fetched again on retry")
 	}

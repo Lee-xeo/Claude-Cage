@@ -16,11 +16,12 @@ keywords: 客机 客户机 克隆 本机 系统选择 macOS Windows Debian Ubunt
 | 你的电脑 | 可选客机 | 适合的工作 |
 | --- | --- | --- |
 | Apple Silicon Mac，macOS 14+ | macOS、Debian 13 或 Ubuntu 22.04，均为 ARM64 | macOS 原生开发、Mac 版 Claude Desktop，或 Linux 工具与服务。macOS 客机版本需与硬件和主机兼容。 |
+| Intel Mac，macOS 15.4+，独立实验构建 | macOS x86_64 | 本机硬件虚拟化与加速图形，沿用 Cage 工作台。条件与验证范围见 [Intel 开发说明](../intel-macos-development.md)。 |
 | Windows 11 x64 专业版、企业版或教育版，具备完整 Hyper-V | Windows 11、Debian 13 或 Ubuntu 22.04，均为 x86_64 | PowerShell、Windows 原生编译与调试、Windows 版 Claude Desktop，或 Linux 开发。 |
 | 其他受支持的 Windows 10 22H2 / 11 x64 主机 | Debian 13 或 Ubuntu 22.04 x86_64 | 在独立 Linux 环境中使用 Claude Code、浏览器与开发工具。需要 Windows 虚拟机监控程序平台。 |
 | Debian 12/13、Ubuntu 22.04/24.04 x86_64 主机 | Debian 13、Ubuntu 22.04，或与本机同发行版的 Linux | Linux 开发与服务。需要 KVM 和当前用户的访问权限。 |
 
-选择与主机同类的系统，可以继续使用对应平台的应用、路径习惯和工具链。Debian 适合希望减少系统安装负担、主要使用命令行与 Linux 服务的用户；三个受支持的桌面平台都可以选择它。Intel Mac、Windows ARM64 和 Linux ARM64 暂不支持。
+选择与主机同类的系统，可以继续使用对应平台的应用、路径习惯和工具链。Debian 适合希望减少系统安装负担、主要使用命令行与 Linux 服务的用户；三个受支持的桌面平台都可以选择它。Intel Mac 的 macOS 路线目前仅在实验构建中提供；Windows ARM64 和 Linux ARM64 暂不支持。
 
 有一点需要注意，Windows 11 客机需要 Hyper-V 平台和管理工具，而 Windows 家庭版（大部分同学可能都是家庭版）并没有这个功能，此时你有两个选择：1、继续使用 Windows 家庭版（如果你平时的主要工作是 Python、Git、bash、Node）。在「启用或关闭 Windows 功能」中勾选「Windows 虚拟机监控程序平台」，按提示重启之后，回到 Cage 选择 Debian 13 或 Ubuntu 22.04 即可。注意，「虚拟机平台」和「适用于 Linux 的 Windows 子系统」是 WSL 2 使用的功能，Cage 不需要。2、升级到 Windows 专业版。如果你的工作的确需要 Windows 环境，你需要 Windows 客机，那么你可以原地升级到 Windows 专业版（这并不难，不知道怎么升级的，多上网搜搜），或在有相应许可时升级到教育版。升级后，在「启用或关闭 Windows 功能」中启用 Hyper-V 平台和管理工具，按提示重启后，回到 Cage 创建 Windows 11 客机即可。
 

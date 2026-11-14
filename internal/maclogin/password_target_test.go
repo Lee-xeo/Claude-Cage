@@ -51,3 +51,22 @@ func TestAuthorizedAccessibilityRequiresSecureFocusForBothAppleHosts(t *testing.
 		}
 	}
 }
+
+func TestFirstSetupInstallerRequiresVerifiedSecureFieldWithoutWideningMaintenance(t *testing.T) {
+	target := passwordTarget{maintenanceWindow: maintenanceFixture(), Accessibility: true}
+	target.Bundle, target.PasswordFocused = "com.apple.installer", true
+	if !target.valid("trial") || target.maintenanceWindow.valid("trial") {
+		t.Fatal("installer credential scope differs from first setup")
+	}
+	if target.valid("another-user") {
+		t.Fatal("installer accepted another GUI user")
+	}
+	target.Accessibility = false
+	if target.valid("trial") {
+		t.Fatal("installer accepted an unverified secure field")
+	}
+	target.Accessibility, target.PasswordFocused = true, false
+	if target.valid("trial") {
+		t.Fatal("installer accepted non-password focus")
+	}
+}

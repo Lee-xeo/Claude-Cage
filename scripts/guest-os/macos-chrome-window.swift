@@ -253,13 +253,18 @@ final class MacChromeWindow {
             guard let id = item[kCGWindowNumber as String] as? CGWindowID else { return nil }
             return candidates.first { $0.windowID == id }
         }
-        // The omnibox suggestion panel is ordered above the browser while
-        // keyboard focus remains in the original Chrome window.
-        let focused = ordered.first { window in
-            guard let pid = window.owningApplication?.processID else { return false }
-            return owningAXWindow(pid, window.frame) != nil
-        }
-        if let window = focused ?? ordered.first, let pid = window.owningApplication?.processID, owns(pid) { return window }
+        let applicationBounds = Dictionary(uniqueKeysWithValues: pids.map { ($0, macApplicationWindowBounds($0)) })
+        let selection = selectMacChromeCaptureWindow(ordered.compactMap { window in
+            guard let pid = window.owningApplication?.processID else { return nil }
+            let actual = applicationBounds[pid, default: []].contains { bounds in
+                abs(bounds.minX-window.frame.minX)<1 && abs(bounds.minY-window.frame.minY)<1 &&
+                abs(bounds.width-window.frame.width)<1 && abs(bounds.height-window.frame.height)<1
+            }
+            return MacChromeCaptureCandidate(id: window.windowID, frame: window.frame,
+                applicationWindow: actual, focused: owningAXWindow(pid, window.frame) != nil)
+        })
+        if let window = ordered.first(where: { $0.windowID == selection }),
+           let pid = window.owningApplication?.processID, owns(pid) { return window }
         throw Failure(7, "no_visible_window")
     }
 }

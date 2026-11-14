@@ -75,6 +75,12 @@ jobs:
           uv run internal/cage/editor-migrate.test.py
           uv run --no-project scripts/guest-os/tests/native-maintenance.py
           uv run --no-project scripts/guest-os/tests/macos-release-downloads.py
+      - name: Native Chrome capture window selection
+        run: |
+          check=$(mktemp -d "$RUNNER_TEMP/cage-window-selection.XXXXXX")
+          trap 'rm -rf "$check"' EXIT
+          xcrun swiftc -parse-as-library -O scripts/guest-os/macos-chrome-window-selection.swift scripts/guest-os/tests/macos-chrome-window-selection-test.swift -o "$check/test"
+          "$check/test"
       - name: Go tests and vet
         run: |
           make test-go

@@ -2,7 +2,7 @@
 # Run once as the intended guest GUI user after installing the signed helper.
 set -euo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-[[ $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ && $(cat /var/db/cage-guest-os) == macos ]] || exit 2
+[[ ( $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ || $(/usr/local/libexec/cage-guest-check --check >/dev/null 2>&1; echo $?) == 0 ) && $(cat /var/db/cage-guest-os) == macos ]] || exit 2
 [[ $# == 0 || ( $# == 1 && $1 == --prepare ) ]] || exit 2
 uid=$(id -u)
 [[ $uid -ge 500 && ( ${1:-} == --prepare || $(stat -f %u /dev/console) == "$uid" ) ]] || { echo 'Log into the guest as the intended desktop user.' >&2; exit 4; }

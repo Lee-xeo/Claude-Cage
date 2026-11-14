@@ -150,8 +150,12 @@ func run() int {
 		if err != nil {
 			return fail(err)
 		}
-		if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-			if _, err := share.GuestAgent("Darwin", "aarch64"); err != nil {
+		if runtime.GOOS == "darwin" {
+			arch := "aarch64"
+			if runtime.GOARCH == "amd64" {
+				arch = "x86_64"
+			}
+			if _, err := share.GuestAgent("Darwin", arch); err != nil {
 				return fail(err)
 			}
 		}

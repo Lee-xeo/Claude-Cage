@@ -13,12 +13,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kballard/go-shellquote"
@@ -312,6 +314,77 @@ func TestMacOSProjectOpenWithRequiresSSHFSCapability(t *testing.T) {
 			}
 			if found != capability.want {
 				t.Fatalf("OpenWith option present = %v, want %v", found, capability.want)
+			}
+		})
+	}
+}
+
+func TestMacOSLegacyFSKitCleanupPinsRegistryIdentity(t *testing.T) {
+	const id = "0x100000504"
+	var guest *macWorkspaceGuest
+	cleanup := make(chan string, 1)
+	guest = newMacWorkspaceGuest(t, func(channel ssh.Channel, command string) (uint32, bool) {
+		if strings.HasPrefix(command, "exec /bin/bash --noprofile --norc -c ") {
+			args, err := shellquote.Split(command)
+			if err != nil {
+				return 1, true
+			}
+			command = args[len(args)-1]
+		}
+		switch {
+		case strings.HasPrefix(command, "/sbin/mount |"):
+			fmt.Fprintf(channel, "/dev/disk8s1 on %s (macfuse, local, nodev, nosuid, noowners, fskit, mounted by cage)\n", guest.guestPath)
+			return 0, true
+		case strings.HasPrefix(command, "/usr/sbin/ioreg -r -c IOMedia "):
+			fmt.Fprintln(channel, id)
+			return 0, true
+		case strings.HasPrefix(command, "if test "):
+			cleanup <- command
+			return 0, true
+		}
+		return 0, false
+	})
+	guest.approved.Store(true)
+	if err := guest.s.ensureMacOSProjectShare(guest.hostPath); err != nil {
+		t.Fatal(err)
+	}
+	guest.s.closeProjectShares()
+	var command string
+	select {
+	case command = <-cleanup:
+	case <-time.After(time.Second):
+		t.Fatal("project cleanup did not run")
+	}
+	if !strings.Contains(command, "ioreg -r -c IOMedia") || !strings.Contains(command, id) || !strings.Contains(command, "disk8s1") {
+		t.Fatal("legacy FSKit cleanup could detach a replacement using the same BSD device")
+	}
+}
+
+func TestMacOSLegacyFSKitRejectsInvalidRegistryIdentity(t *testing.T) {
+	for _, value := range []string{"", "0x0", "12", "0x1; touch /tmp/invalid", "0x123\n0x124", strings.Repeat("a", 33)} {
+		if _, err := macOSLegacyMountID([]byte(value)); err == nil {
+			t.Fatalf("accepted invalid media identity: %q", value)
+		}
+	}
+}
+
+func TestMacOSMediaRegistryParserHandlesSubclassesAndLabels(t *testing.T) {
+	perl, err := exec.LookPath("perl")
+	if err != nil {
+		t.Skip("requires the system Perl used by macOS")
+	}
+	for _, test := range []struct{ name, input, want string }{
+		{"regular", "+-o Media <class IOMedia, id 0x101, registered>\n    \"BSD Name\" = \"disk4s1\"\n", "0x101\n"},
+		{"reused-name-subclass", "+-o Old <class IOMedia, id 0x101, registered>\n    \"BSD Name\" = \"disk3s1\"\n+-o New <class AppleAPFSMedia, id 0x202, registered>\n    \"BSD Name\" = \"disk4s1\"\n", "0x202\n"},
+		{"untrusted-label", "+-o Media <class IOMedia, id 0x303, registered>\n    \"Label\" = \"<class IOMedia, id 0x999, fake>\"\n    \"BSD Name\" = \"disk4s1\"\n", "0x303\n"},
+		{"missing", "+-o Media <class IOMedia, id 0x101, registered>\n    \"BSD Name\" = \"disk3s1\"\n", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			command := exec.Command(perl, "-e", macOSMediaIdentityMatch, "disk4s1")
+			command.Stdin = strings.NewReader(test.input)
+			out, err := command.Output()
+			if string(out) != test.want || (err != nil) != (test.want == "") {
+				t.Fatalf("registry identity %q, %v; want %q", out, err, test.want)
 			}
 		})
 	}

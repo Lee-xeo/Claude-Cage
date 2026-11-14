@@ -8,12 +8,16 @@ let cageUpdateBundleID = "io.github.lee-xeo.claude-cage"
 enum CageProfile {
     static var clientOnly: Bool { Bundle.main.object(forInfoDictionaryKey: "CageClientOnly") as? Bool == true }
     static var macGuestTrial: Bool { Bundle.main.bundleIdentifier == cageUpdateBundleID + ".macos-trial" }
+    static var intelMacTest: Bool { Bundle.main.bundleIdentifier == cageUpdateBundleID + ".intel-macos-test" }
     static func configURL() -> URL {
         if macGuestTrial {
             return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude-cage/macos-trial/config.json")
         }
         if let path = ProcessInfo.processInfo.environment["CLAUDE_CAGE_CONFIG"], !path.isEmpty {
             return URL(fileURLWithPath: path).standardizedFileURL
+        }
+        if intelMacTest {
+            return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude-cage-intel-test/config.json")
         }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(clientOnly ? ".claude-cage/client/config.json" : ".claude-cage/config.json")
     }
@@ -174,7 +178,12 @@ enum CageUpdateFiles {
         return actual
     }
     static func verifyArchitecture(_ executable: URL, validation: CageUpdateValidation? = nil) throws {
-        _ = try run("/usr/bin/lipo", [executable.path, "-verify_arch", "arm64"], validation: validation)
+        #if arch(x86_64)
+        let architecture = "x86_64"
+        #else
+        let architecture = "arm64"
+        #endif
+        _ = try run("/usr/bin/lipo", [executable.path, "-verify_arch", architecture], validation: validation)
     }
     static func verifyApp(_ url: URL, version: String, team: String, gatekeeper: Bool = true, validation: CageUpdateValidation? = nil) throws {
         try validation?.checkCancellation()
@@ -273,6 +282,12 @@ final class CageAppUpdater {
         }
     }
     func handle(_ operation: String) -> [String: Any] {
+        if Bundle(url: bundleURL)?.bundleIdentifier == cageUpdateBundleID + ".intel-macos-test" {
+            if state["phase"] as? String != "manual" {
+                change(["phase": "manual", "message": "Intel 测试版通过独立测试包更新。"])
+            }
+            return state
+        }
         if Bundle(url: bundleURL)?.bundleIdentifier == cageUpdateBundleID + ".macos-trial" {
             if state["phase"] as? String != "manual" {
                 change(["phase": "manual", "message": "macOS 客机试用版通过本机安装更新。"])
@@ -285,6 +300,15 @@ final class CageAppUpdater {
             }
             return state
         }
+        #if arch(x86_64)
+        // The current public desktop update channel supplies ARM64 packages.
+        if Bundle(url: bundleURL)?.bundleIdentifier == cageUpdateBundleID {
+            if state["phase"] as? String != "manual" {
+                change(["phase": "manual", "message": "Intel 开发构建通过独立安装包更新。"])
+            }
+            return state
+        }
+        #endif
         let busy = ["checking", "downloading", "downloaded", "verifying", "installing"].contains(state["phase"] as? String ?? "")
         if ["check", "install"].contains(operation), let value = state["retryAt"] as? String,
            let date = ISO8601DateFormatter().date(from: value), date > Date() { return state }

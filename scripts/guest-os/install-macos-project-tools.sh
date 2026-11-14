@@ -10,8 +10,8 @@ gui_authorize=no
 [[ ${2:-} == "" || ${2:-} == --gui-authorize ]] || fail 'Unknown installer mode.'
 [[ ${2:-} == --gui-authorize ]] && gui_authorize=yes
 [[ $kit_arg == /* ]] || fail 'Usage: install-macos-project-tools.sh /path/to/root-owned-guest-project-kit'
-[[ $(uname -sm) == 'Darwin arm64' && $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ && $(id -u) == 0 ]] ||
-    fail 'Run this installer in the target arm64 Cage guest as administrator.'
+[[ $(uname -s) == Darwin && ( $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ || $(/usr/local/libexec/cage-guest-check --check >/dev/null 2>&1; echo $?) == 0 ) && $(id -u) == 0 ]] ||
+    fail 'Run this installer in the target Cage guest as administrator.'
 marker=/var/db/cage-guest-os
 [[ -f $marker && ! -L $marker && $(stat -f %u "$marker") == 0 && $(cat "$marker") == macos ]] ||
     fail 'Missing the root-owned Cage guest marker.'
@@ -43,8 +43,10 @@ pkg="$work/macfuse.pkg"
     fail 'The macFUSE installer SHA-256 does not match the pinned release.'
 pkgutil --check-signature "$pkg" | grep -F 'Developer ID Installer: Benjamin Fleischer (3T5GSNBU6W)' >/dev/null ||
     fail 'Unexpected macFUSE installer signer.'
+CAGE_MACOS_GUEST_ARCH=$(uname -m)
+. "$(dirname "$0")/macos-guest-arch.sh"
 for file in cage-sshfs cage-macos-terminal; do
-    codesign --verify --strict --architecture arm64 "$work/$file"
+    codesign --verify --strict --architecture "$CAGE_MACOS_NATIVE_ARCH" "$work/$file"
 done
 access_id=dev.cage.guest.project-access
 codesign --verify --strict -R "=identifier \"$access_id\"" "$work/CageProjectAccess.app"
@@ -130,8 +132,25 @@ decision_error=''
 decide_macfuse_action "$installed" "$receipt" ||
     fail "${decision_error:-Cannot decide what to do with the installed macFUSE.}"
 action=$macfuse_action
+deferred=no
 if [[ $action != none ]]; then
-    if [[ $gui_authorize != yes ]]; then
+    if [[ $action == install && $CAGE_MACOS_NATIVE_ARCH == x86_64 && $gui_authorize != yes ]]; then
+    destination=/usr/local/share/cage/setup
+    for folder in /usr/local/share /usr/local/share/cage "$destination"; do
+        [[ ! -L $folder ]] || fail 'Linked macFUSE setup directory.'
+        if [[ -e $folder ]]; then
+            mode=$(stat -f %OLp "$folder")
+            [[ -d $folder && $(stat -f %u "$folder") == 0 ]] && (( (8#$mode & 022) == 0 )) || fail 'Untrusted macFUSE setup directory.'
+        else
+            install -d -o root -g wheel -m 755 "$folder"
+        fi
+    done
+    [[ ! -L $destination/macfuse.pkg ]] || fail 'Linked macFUSE setup package.'
+    staged=$(mktemp "$destination/.macfuse.XXXXXXXX")
+    install -o root -g wheel -m 644 "$pkg" "$staged"
+    mv -f "$staged" "$destination/macfuse.pkg"
+    deferred=yes
+    elif [[ $gui_authorize != yes ]]; then
         require_gui_install_mode "$action" || fail "$decision_error"
         installer -pkg "$pkg" -target /
     else
@@ -146,6 +165,7 @@ if [[ $action != none ]]; then
             fail 'Apple Installer was cancelled or failed. Installation can be retried.'
     fi
 fi
+if [[ $deferred == no ]]; then
 if ! codesign --verify --strict -R "=$macfuse_requirement" "$vendor_app"; then
     fail 'Apple Installer did not complete the verified macFUSE installation. Installation can be retried.'
 fi
@@ -163,6 +183,8 @@ normalized_receipt=$(normalize_version "$receipt") ||
     fail "Unrecognized macFUSE installation receipt version '$receipt'. Rerun the installation; if it persists, keep the installation and report diagnostics from: pkgutil --pkg-info-plist io.macfuse.installer.components.core"
 [[ $normalized_receipt == "$normalized_installed" ]] ||
     fail "The macFUSE installation receipt reports $normalized_receipt but macFUSE $normalized_installed is installed. Rerun the installation; if the mismatch persists, keep the installation and report diagnostics from: pkgutil --pkg-info-plist io.macfuse.installer.components.core and plutil -p $driver/Contents/Info.plist"
+
+fi
 
 # Move a verified staged bundle into place. The installed copy is moved aside
 # first and rolls back if the new bundle cannot land, so a failed replacement
@@ -210,7 +232,7 @@ install_app() {
         fail "Could not install $target"
     fi
 }
-install_app "$vendor_app" /Applications/macFUSE.app "$macfuse_requirement"
+if [[ $deferred == no ]]; then install_app "$vendor_app" /Applications/macFUSE.app "$macfuse_requirement"; fi
 install_app "$work/CageProjectAccess.app" /Applications/CageProjectAccess.app "identifier \"$access_id\""
 # Staging and move-aside directories left by an interrupted earlier run are
 # removed only now that both applications are verified in place.
@@ -226,4 +248,4 @@ for file in cage-sshfs cage-macos-terminal; do
         fail "Could not install $file"
     fi
 done
-printf '%s\n' 'Project tools are ready. In the guest user session, open macFUSE.app once, then enable both macFUSE and macFUSE (local) under By Category > File System Extensions.'
+printf '%s\n' 'Project tools are staged. Complete macFUSE installation and enable macFUSE and macFUSE (local) through Cage first setup.'

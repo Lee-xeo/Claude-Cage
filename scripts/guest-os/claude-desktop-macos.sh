@@ -16,7 +16,7 @@ esac
 if [[ $1 != verify-media ]]; then
   [[ $(uname -s) == Darwin ]] || fail "This helper requires a Cage macOS guest."
   model=$(sysctl -n hw.model)
-  [[ $model =~ ^VirtualMac[0-9]+,[0-9]+$ ]] || fail "This Mac is not a virtual Mac. Run this helper inside the Cage guest."
+  { [[ $model =~ ^VirtualMac[0-9]+,[0-9]+$ ]] || /usr/local/libexec/cage-guest-check --check; } || fail "This Mac is not a virtual Mac. Run this helper inside the Cage guest."
   marker=/var/db/cage-guest-os
   [[ -f $marker && ! -L $marker && $(stat -f '%u' "$marker") == 0 ]] ||
     fail "Missing root-owned Cage guest marker."
@@ -100,13 +100,13 @@ parent=$(dirname "$destination")
 replace=yes
 rename_flag=4 # RENAME_EXCL
 if [[ -e $destination || -L $destination ]]; then
-  [[ -d $destination && ! -L $destination ]]
+  [[ -d $destination && ! -L $destination ]] || exit 1
   codesign --verify --deep --strict -R "=$requirement" "$destination"
   source_version=$(plutil -extract CFBundleVersion raw -o - "$source_app/Contents/Info.plist")
   current_version=$(plutil -extract CFBundleVersion raw -o - "$destination/Contents/Info.plist")
   # Official bundle builds are dotted decimal versions. Never downgrade a
   # user's self-updated copy when provisioning media contains an older build.
-  [[ $source_version =~ ^[0-9]+(\.[0-9]+)*$ && $current_version =~ ^[0-9]+(\.[0-9]+)*$ ]]
+  [[ $source_version =~ ^[0-9]+(\.[0-9]+)*$ && $current_version =~ ^[0-9]+(\.[0-9]+)*$ ]] || exit 1
   if ! awk -v incoming="$source_version" -v current="$current_version" 'BEGIN {
       n=split(incoming,a,"."); m=split(current,b,".");
       for(i=1;i<=n || i<=m;i++) { if(a[i]+0>b[i]+0) exit 0; if(a[i]+0<b[i]+0) exit 1; }
@@ -134,7 +134,7 @@ function run(args) {
 JXA_MIGRATE
 fi
 codesign --verify --deep --strict -R "=$requirement" "$destination"
-[[ -w $parent && -w $destination ]]
+[[ -w $parent && -w $destination ]] || exit 1
 USER_INSTALL
     verify_app "$destination"
     # A verified user copy is published before the old application is removed.

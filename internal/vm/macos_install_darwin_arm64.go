@@ -14,29 +14,8 @@ import (
 
 	"github.com/Code-Hex/vz/v3"
 	"github.com/lima-vm/lima/v2/pkg/fileutils"
-	"github.com/lima-vm/lima/v2/pkg/limatype"
 	"github.com/lima-vm/lima/v2/pkg/limatype/dirnames"
 )
-
-// CheckMacOSGuest verifies a prepared instance before binding or starting a
-// native workbench. Project access goes through a separate confined service.
-func (l *Lima) CheckMacOSGuest(ctx context.Context, name string) error {
-	inst, err := l.inspect(ctx, name)
-	if err != nil {
-		return err
-	}
-	c := inst.Config
-	if c == nil || c.OS == nil || *c.OS != limatype.DARWIN || c.VMType == nil || *c.VMType != limatype.VZ ||
-		len(c.Mounts) != 0 || len(c.AdditionalDisks) != 0 || c.Video.Display == nil || *c.Video.Display != "offscreen" {
-		return errors.New("expected a headless macOS VZ guest with its own system disk and no host shares")
-	}
-	for _, p := range c.PortForwards {
-		if !p.Ignore {
-			return errors.New("macOS guest has an unmanaged forwarded port")
-		}
-	}
-	return NetworkConfined(c)
-}
 
 // MatchMacOSInstallSource permits retrying an interrupted restore only with
 // the same pinned IPSW. An existing disk is left to Lima's restore transaction.

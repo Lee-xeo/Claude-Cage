@@ -1,3 +1,6 @@
+@_silgen_name("cageGuestIsVirtualMac")
+private func cageGuestIsVirtualMac() -> Bool
+
 // Per-user GUI clipboard agent and its private SSH client for a Cage macOS guest.
 import AppKit
 import ApplicationServices
@@ -16,9 +19,7 @@ private struct ClipboardFailure: Error {
 }
 
 private func requireGuest() throws {
-    var model = [CChar](repeating: 0, count: 256), size = 256
-    guard sysctlbyname("hw.model", &model, &size, nil, 0) == 0,
-          String(cString: model).range(of: #"^VirtualMac[0-9]+,[0-9]+$"#, options: .regularExpression) != nil,
+    guard cageGuestIsVirtualMac(),
           getuid() >= 500 else { throw ClipboardFailure("not_guest") }
     let fd = open("/var/db/cage-guest-os", O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
     guard fd >= 0 else { throw ClipboardFailure("not_guest") }

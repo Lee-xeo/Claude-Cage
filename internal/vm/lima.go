@@ -245,6 +245,9 @@ func fromLima(inst *limatype.Instance) *Instance {
 // exprs are the yq expressions of s, as limactl's edit flags make them.
 func exprs(s Settings) ([]string, error) {
 	var e []string
+	if s.macOSInstaller != nil {
+		e = append(e, fmt.Sprintf(".vmOpts.qemu.macOS.installer = %t", *s.macOSInstaller))
+	}
 	if s.macOSTimezone != "" {
 		e = append(e, ".timezone = "+strconv.Quote(s.macOSTimezone))
 	}
@@ -345,7 +348,11 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 			tz, _ := json.Marshal(cfg.Timezone)
 			e = append(e, ".propagateProxyEnv = false", `.env = {"http_proxy":"","https_proxy":"","ftp_proxy":"","no_proxy":"","HTTP_PROXY":"","HTTPS_PROXY":"","FTP_PROXY":"","NO_PROXY":"","ALL_PROXY":"","all_proxy":""}`, ".timezone = "+string(tz))
 			if tmpl.Config.OS != nil && *tmpl.Config.OS == limatype.DARWIN {
-				e = append(e, `.user.name = "cageprovision"`, `.user.home = "/Users/cageprovision"`, `.user.comment = "Cage Provisioning"`, ".user.uid = 501", `.video.display = "offscreen"`)
+				uid := 501
+				if tmpl.Config.User.UID != nil && *tmpl.Config.User.UID >= 501 && *tmpl.Config.User.UID <= 599 {
+					uid = int(*tmpl.Config.User.UID)
+				}
+				e = append(e, `.user.name = "cageprovision"`, `.user.home = "/Users/cageprovision"`, `.user.comment = "Cage Provisioning"`, fmt.Sprintf(".user.uid = %d", uid), `.video.display = "offscreen"`)
 			} else {
 				e = append(e, `.user.name = "cage"`, `.user.home = "/home/cage"`, ".user.uid = 1000")
 			}

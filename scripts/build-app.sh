@@ -2,12 +2,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ "$(uname -s)" != Darwin ]]; then echo 'Cage.app must be built on macOS.' >&2; exit 1; fi
-case "${1:-}" in ''|--install|--macos-trial|--install-macos-trial) ;; *) echo 'Usage: scripts/build-app.sh [--install|--macos-trial|--install-macos-trial]' >&2; exit 2 ;; esac
+case "${1:-}" in ''|--install|--macos-trial|--install-macos-trial|--intel-macos-test) ;; *) echo 'Usage: scripts/build-app.sh [--install|--macos-trial|--install-macos-trial|--intel-macos-test]' >&2; exit 2 ;; esac
 bundle_id=io.github.lee-xeo.claude-cage
 app_name=Cage
 if [[ "${1:-}" == *macos-trial ]]; then
   bundle_id+=.macos-trial
   app_name='Cage macOS'
+fi
+if [[ "${1:-}" == --intel-macos-test ]]; then
+  [[ $(uname -m) == x86_64 ]] || { echo 'Intel test packages require an Intel Mac.' >&2; exit 2; }
+  bundle_id+=.intel-macos-test
+  app_name='Cage Intel'
 fi
 installed_app="$HOME/Applications/$app_name.app"
 app_destination="${CAGE_BUILD_OUTPUT:-$PWD/_output/$app_name.app}"
@@ -57,11 +62,16 @@ mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework WebKit -framework Security -framework LocalAuthentication desktop/Cage.swift desktop/MacKeyboard.swift desktop/NativeInput.swift desktop/Updates.swift desktop/AccountDevice.swift desktop/MacGuestLogin.swift -o "$bundle/Contents/MacOS/Cage"
 swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework Security desktop/Updates.swift desktop/UpdateInstaller.swift -o "$bundle/Contents/Resources/CageUpdateInstaller"
 cp _output/bin/cage "$bundle/Contents/Resources/cage"
-if [[ "$(uname -m)" == arm64 ]]; then "$bundle/Contents/Resources/cage" verify-macos-guest; fi
-if [[ "$(uname -m)" == arm64 ]]; then
+"$bundle/Contents/Resources/cage" verify-macos-guest
+if [[ "$(uname -m)" == x86_64 ]]; then
+  bash scripts/build-intel-macos-runtime.sh "$bundle/Contents/Resources/intel-macos"
+fi
+if [[ "$(uname -m)" == arm64 || "$(uname -m)" == x86_64 ]]; then
   bash scripts/guest-os/package-macos-guest.sh "$bundle/Contents/Resources/guest-os"
+  if [[ -d "$bundle/Contents/Resources/guest-os/licenses/sshfs" ]]; then
   mkdir -p "$bundle/Contents/Resources/licenses/sshfs"
   cp -R "$bundle/Contents/Resources/guest-os/licenses/sshfs/." "$bundle/Contents/Resources/licenses/sshfs/"
+  fi
   # The kit signs all nested native code before this outer App is sealed.
   # Do not generate or reuse an unsigned component manifest here: installation
   # hashes the final signed kit, including each nested bundle's CodeResources.
@@ -148,7 +158,7 @@ if [[ "${1:-}" == --install* ]]; then
     --root "$bundle" --root "$PWD/_output" --root "$HOME/Applications" \
     --root /Applications --root "$HOME/.claude-cage-validation"
 else
-  if [[ -z "${CAGE_BUILD_OUTPUT:-}" && "${1:-}" != --macos-trial ]]; then
+  if [[ -z "${CAGE_BUILD_OUTPUT:-}" && "${1:-}" != --macos-trial && "${1:-}" != --intel-macos-test ]]; then
     node scripts/cleanup-apps.mjs --keep "$bundle" --root "$PWD/_output"
   fi
 fi

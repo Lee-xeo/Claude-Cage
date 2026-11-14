@@ -1,3 +1,6 @@
+@_silgen_name("cageGuestIsVirtualMac")
+private func cageGuestIsVirtualMac() -> Bool
+
 // Capture one visible Claude Desktop window to stdout inside a Cage macOS VM.
 // Build with swiftc -parse-as-library -target arm64-apple-macos14.0.
 import AppKit
@@ -18,10 +21,7 @@ struct Failure: Error {
 }
 
 func requireGuest() throws {
-    var model = [CChar](repeating: 0, count: 256)
-    var count = model.count
-    guard sysctlbyname("hw.model", &model, &count, nil, 0) == 0,
-          String(cString: model).range(of: #"^VirtualMac[0-9]+,[0-9]+$"#, options: .regularExpression) != nil else {
+    guard cageGuestIsVirtualMac() else {
         throw Failure(2, "not_cage_guest: Run inside a Cage virtual Mac.")
     }
     let fd = open("/var/db/cage-guest-os", O_RDONLY | O_NOFOLLOW | O_NONBLOCK)

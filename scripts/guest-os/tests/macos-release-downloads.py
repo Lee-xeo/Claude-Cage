@@ -25,7 +25,7 @@ class ReleaseDownloads(unittest.TestCase):
         self.media.mkdir()
         self.state = {'code': '2.1.322', 'desktop': '5.1231.2'}
         self.digest = hashlib.sha256(b'fixture').hexdigest()
-        for name in ('prepare-macos-cli-kit.sh', 'prepare-macos-media.sh', 'claude-desktop-macos.sh'):
+        for name in ('prepare-macos-cli-kit.sh', 'prepare-macos-media.sh', 'claude-desktop-macos.sh', 'macos-guest-arch.sh'):
             text = (SOURCE / name).read_text()
             text = re.sub(r'(?<![\w])[a-f0-9]{64}(?![\w])', self.digest, text)
             (self.source / name).write_text(text)
@@ -44,7 +44,7 @@ with open(os.environ['FIXTURE_REQUESTS'],'a') as log: log.write(json.dumps(a)+'\
 code=('official code '+state['code']).encode()
 if name=='macos-cli-latest': body=state['code'].encode()
 elif name=='macos-cli-manifest.json':
- body=json.dumps({'version':state.get('manifest_version',state['code']),'platforms':{'darwin-arm64':{'binary':'claude','checksum':state.get('checksum',hashlib.sha256(code).hexdigest())}}}).encode()
+ body=json.dumps({'version':state.get('manifest_version',state['code']),'platforms':{key:{'binary':'claude','checksum':state.get('checksum',hashlib.sha256(code).hexdigest())} for key in ('darwin-arm64','darwin-x64')}}).encode()
 elif name=='macos-cli-claude': body=code
 elif name=='claude-release.json':
  body=json.dumps({'version':state['desktop'],'url':state.get('url','https://downloads.claude.ai/releases/darwin/universal/'+state['desktop']+'/Claude-'+'a'*40+'.dmg')}).encode()
@@ -73,7 +73,7 @@ hdiutil() {
     fi
 }
 ''')
-        self.env = {**os.environ, 'BASH_ENV': str(self.environment), 'CAGE_HOST_DOWNLOADER': str(self.helper),
+        self.env = {**os.environ, 'CAGE_MACOS_GUEST_ARCH': 'arm64', 'BASH_ENV': str(self.environment), 'CAGE_HOST_DOWNLOADER': str(self.helper),
                     'FIXTURE_STATE': str(self.root / 'state.json'), 'FIXTURE_REQUESTS': str(self.root / 'requests.jsonl'),
                     'FIXTURE_SIGNATURES': str(self.root / 'signatures.log'), 'FIXTURE_DESKTOP_APP': str(self.root / 'signed.app')}
 
@@ -90,6 +90,18 @@ hdiutil() {
 
     def assert_success(self, result):
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_intel_media_selects_native_packages_and_verifies_intel_signature(self):
+        self.env['CAGE_MACOS_GUEST_ARCH'] = 'x86_64'
+        self.assert_success(self.run_media())
+        requests = [json.loads(line) for line in (self.root / 'requests.jsonl').read_text().splitlines()]
+        urls = '\n'.join(row[1] for row in requests)
+        for package in ('macos-amd64.tar.gz', 'darwin-x64.tar.gz', '/darwin-x64/claude',
+                        'uv-x86_64-apple-darwin', '20261026-x86_64-apple-darwin',
+                        'macOS-x64.tar.gz', 'macOS_amd64.zip'):
+            self.assertIn(package, urls)
+        self.assertNotIn('arm64', urls)
+        self.assertIn('--architecture x86_64', (self.root / 'signatures.log').read_text())
 
     def test_code_refresh_resolves_latest_and_preserves_verified_kit_on_failure(self):
         self.assert_success(self.run_media())

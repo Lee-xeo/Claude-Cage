@@ -1,3 +1,4 @@
+#import "macos-guest-identity.h"
 // The only administrator created by the native installer. The durable receipt
 // is root-only and binds both the directory service GUID and the numeric uid.
 #import <Foundation/Foundation.h>
@@ -157,11 +158,8 @@ int main(int argc, const char **argv) {
         BOOL prepare = (argc == 3 || argc == 4) && strcmp(argv[1], "prepare") == 0;
         BOOL password = argc == 4 && strcmp(argv[1], "password") == 0;
         require(prepare || password || argc == 1, "Invalid first setup operation.");
-        char model[128] = {0};
-        size_t size = sizeof(model);
         struct stat st;
-        require(getuid() == 0 && sysctlbyname("hw.model", model, &size, NULL, 0) == 0 &&
-            strncmp(model, "VirtualMac", 10) == 0 && lstat("/var/db/cage-guest-os", &st) == 0 &&
+        require(getuid() == 0 && cageIsVirtualMac() && lstat("/var/db/cage-guest-os", &st) == 0 &&
             S_ISREG(st.st_mode) && st.st_uid == 0 && !(st.st_mode & 022) &&
             [[NSString stringWithContentsOfFile:@"/var/db/cage-guest-os" encoding:NSUTF8StringEncoding error:NULL] isEqual:@"macos\n"],
             "Run as root in the selected Cage virtual Mac.");

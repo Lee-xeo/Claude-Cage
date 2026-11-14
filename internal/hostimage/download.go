@@ -65,7 +65,7 @@ func (r *progressReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func verify(ctx context.Context, path string, plan Plan, output io.Writer) (string, error) {
+func verify(ctx context.Context, path string, plan Plan, output io.Writer, transport http.RoundTripper) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -105,6 +105,11 @@ func verify(ctx context.Context, path string, plan Plan, output io.Writer) (stri
 			return "", errors.New("恢复镜像内容与已选择的 macOS 版本不一致")
 		}
 	}
+	if plan.Format == "pkgdmg" {
+		if err := verifyIntelPackage(ctx, path, plan, transport); err != nil {
+			return "", err
+		}
+	}
 	return actual, nil
 }
 
@@ -119,7 +124,7 @@ func Prepare(ctx context.Context, cache string, plan Plan, output io.Writer, tra
 	}
 	if plan.Path != "" {
 		fmt.Fprintln(output, "正在校验系统镜像…")
-		digest, err := verify(ctx, plan.Path, plan, output)
+		digest, err := verify(ctx, plan.Path, plan, output, transport)
 		if err != nil {
 			return Plan{}, err
 		}
@@ -201,7 +206,8 @@ func Prepare(ctx context.Context, cache string, plan Plan, output io.Writer, tra
 	if err = file.Close(); err != nil {
 		return Plan{}, err
 	}
-	if _, err = verify(ctx, filepath.Join(cache, partial), plan, output); err != nil {
+	digest, err := verify(ctx, filepath.Join(cache, partial), plan, output, transport)
+	if err != nil {
 		// Preserve the failed download for diagnosis. A new attempt can resume
 		// into a new partial file, without reusing corrupt bytes.
 		if ctx.Err() == nil {
@@ -209,6 +215,7 @@ func Prepare(ctx context.Context, cache string, plan Plan, output io.Writer, tra
 		}
 		return Plan{}, err
 	}
+	plan.Digest = digest
 	if err = root.Rename(partial, final); err != nil {
 		return Plan{}, err
 	}

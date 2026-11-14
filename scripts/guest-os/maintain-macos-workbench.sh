@@ -3,11 +3,11 @@
 # The ordinary account and its home directory are never initialized here.
 set -euo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-[[ $# == 3 && $1 == /* && $2 =~ ^[a-z][a-z0-9_]{0,30}$ && ( $3 == components || $3 == tools ) ]]
-[[ $EUID == 0 && $(uname -sm) == 'Darwin arm64' && $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ ]]
-[[ -f /var/db/cage-guest-os && ! -L /var/db/cage-guest-os && $(stat -f %u /var/db/cage-guest-os) == 0 && $(cat /var/db/cage-guest-os) == macos ]]
+[[ $# == 3 && $1 == /* && $2 =~ ^[a-z][a-z0-9_]{0,30}$ && ( $3 == components || $3 == tools ) ]] || exit 1
+[[ $EUID == 0 && $(uname -s) == Darwin && ( $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ || $(/usr/local/libexec/cage-guest-check --check >/dev/null 2>&1; echo $?) == 0 ) ]] || exit 1
+[[ -f /var/db/cage-guest-os && ! -L /var/db/cage-guest-os && $(stat -f %u /var/db/cage-guest-os) == 0 && $(cat /var/db/cage-guest-os) == macos ]] || exit 1
 lock=/var/run/cage-component-update.lock
-[[ ! -L $lock && ( ! -e $lock || ( -f $lock && $(stat -f %u "$lock") == 0 ) ) ]]
+[[ ! -L $lock && ( ! -e $lock || ( -f $lock && $(stat -f %u "$lock") == 0 ) ) ]] || exit 1
 exec 9>"$lock"
 /usr/bin/lockf -s -t 0 9 || { echo '另一项组件更新仍在运行，请稍后重试。' >&2; exit 1; }
 umask 022
@@ -17,8 +17,8 @@ cd /
 user=$2
 mode=$3
 uid=$(id -u "$user")
-[[ $uid -ge 500 && " $(id -Gn "$user") " != *' admin '* ]]
-[[ $(stat -f %u "$kit") == 0 && -z $(find "$kit" \( -type l -o ! -user root -o -perm -0020 -o -perm -0002 \) -print -quit) ]]
+[[ $uid -ge 500 && " $(id -Gn "$user") " != *' admin '* ]] || exit 1
+[[ $(stat -f %u "$kit") == 0 && -z $(find "$kit" \( -type l -o ! -user root -o -perm -0020 -o -perm -0002 \) -print -quit) ]] || exit 1
 manifest="$kit/native-components.json"
 /usr/bin/perl "$kit/native-component-manifest.pl" source "$manifest" "$kit"
 backup=$(mktemp -d /private/var/tmp/cage-components-backup.XXXXXXXX)
@@ -77,16 +77,16 @@ trap 'exit 1' HUP INT TERM
 for app in "$kit"/*.app "$kit"/project/*.app; do
     [[ -d $app ]] || continue
     identifier=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")
-    [[ $identifier == dev.cage.* ]]
+    [[ $identifier == dev.cage.* ]] || exit 1
     codesign --verify --deep --strict -R "=identifier \"$identifier\"" "$app"
     target="/Applications/$(basename "$app")"
     if [[ -e $target ]]; then
-        [[ -d $target && ! -L $target ]]
+        [[ -d $target && ! -L $target ]] || exit 1
         # Missing or damaged installed files are repairable. The incoming app
         # is fully verified, and an existing signing team remains a constraint.
         previous_team=$(codesign -dv "$target" 2>&1 | sed -n 's/^TeamIdentifier=//p' || true)
         next_team=$(codesign -dv "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')
-        [[ -z $previous_team || $previous_team == not\ set || $previous_team == "$next_team" ]]
+        [[ -z $previous_team || $previous_team == not\ set || $previous_team == "$next_team" ]] || exit 1
     fi
     index=${#apps[@]}
     ditto "$app" "$backup/new-app-$index"
@@ -121,11 +121,11 @@ while IFS= read -r -d '' source && IFS= read -r -d '' target; do
     parent=$(dirname "$target")
     check=$parent
     while [[ $check != / ]]; do
-        [[ ! -L $check ]]
+        [[ ! -L $check ]] || exit 1
         check=$(dirname "$check")
     done
     mkdir -p "$parent"
-    [[ ! -L $target && ( ! -e $target || -f $target ) ]]
+    [[ ! -L $target && ( ! -e $target || -f $target ) ]] || exit 1
     if [[ -f $target ]] && cmp -s "$kit/$source" "$target"; then continue; fi
     index=${#changed[@]}
     if [[ -f $target ]]; then
@@ -138,7 +138,7 @@ while IFS= read -r -d '' source && IFS= read -r -d '' target; do
     stage=$(mktemp "$parent/.cage-component.XXXXXXXX")
     cp -p "$kit/$source" "$stage"
     case "$target" in
-        */controller/cage-tailnet|/usr/local/libexec/cage-register-*|/usr/local/libexec/cage-macos-editor|/usr/local/libexec/cage-sshfs|/usr/local/libexec/cage-macos-terminal|/usr/local/libexec/cage-finish-initial-setup|/usr/local/libexec/cage-macos-ipv6-check) chmod 755 "$stage" ;;
+        */controller/cage-tailnet|/usr/local/libexec/cage-register-*|/usr/local/libexec/cage-macos-editor|/usr/local/libexec/cage-sshfs|/usr/local/libexec/cage-guest-check|/usr/local/libexec/cage-macos-terminal|/usr/local/libexec/cage-finish-initial-setup|/usr/local/libexec/cage-macos-ipv6-check) chmod 755 "$stage" ;;
         *) chmod a+r,go-w "$stage" ;;
     esac
     mv -f "$stage" "$target"
@@ -159,7 +159,7 @@ done
 # those files with the matching binaries if activation or publication fails.
 for label in dev.cage.GuestClaudeWindow dev.cage.GuestClipboard dev.cage.GuestBrowser; do
     target="/Users/$user/Library/LaunchAgents/$label.plist"
-    [[ ! -L $target && ( ! -e $target || ( -f $target && $(stat -f %u "$target") == "$uid" ) ) ]]
+    [[ ! -L $target && ( ! -e $target || ( -f $target && $(stat -f %u "$target") == "$uid" ) ) ]] || exit 1
     index=${#changed[@]}
     if [[ -f $target ]]; then
         cp -p "$target" "$backup/$index"

@@ -570,7 +570,7 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 	if s.windowsGuest != nil {
 		wasReady = s.windowsState.Running
 	} else if s.macosGuest != nil {
-		wasReady = macOSInstanceRunning(s.instanceDir())
+		wasReady = macOSInstanceRunning(s.instanceDir(), s.macosGuest.Backend)
 	}
 	s.mu.Unlock()
 	changed := old != v.Config || oldPrefs.AutoTimezone != v.Preferences.AutoTimezone || oldPrefs.AutoLanguage != v.Preferences.AutoLanguage
@@ -745,7 +745,7 @@ func (s *Server) vmRunning() bool {
 		return s.windowsState.Running
 	}
 	if s.macosGuest != nil {
-		return macOSInstanceRunning(s.instanceDir())
+		return macOSInstanceRunning(s.instanceDir(), s.macosGuest.Backend)
 	}
 	return vmAlive(s.profile, s.environmentDir())
 }

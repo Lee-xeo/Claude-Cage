@@ -2,11 +2,12 @@
 # Relink SSHFS from the frozen source distribution. An optional fourth argument
 # selects an already extracted/patched source tree for local modifications.
 set -euo pipefail
+. "$(dirname "$0")/macos-guest-arch.sh"
 [[ $# == 3 || $# == 4 ]] || { echo 'Usage: rebuild-macos-sshfs.sh /source-bundle /macfuse-sdk/usr/local /output [patched-source-tree]' >&2; exit 2; }
 materials=$1
 sdk=$2
 output=$3
-[[ $materials == /* && $sdk == /* && $output == /* && ! -e $output && -f $sdk/include/fuse3/fuse.h ]]
+[[ $materials == /* && $sdk == /* && $output == /* && ! -e $output && -f $sdk/include/fuse3/fuse.h ]] || exit 1
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 if [[ $# == 4 ]]; then
@@ -24,7 +25,7 @@ export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-14.0}
 glib=$materials/dependencies/glib
 intl=$materials/dependencies/gettext
 pcre=$materials/dependencies/pcre2
-clang -arch arm64 -O2 -D_REENTRANT -DHAVE_CONFIG_H -DFUSE_DARWIN_ENABLE_EXTENSIONS=0 -DFUSE_USE_VERSION=31 \
+clang -arch "$CAGE_MACOS_NATIVE_ARCH" -O2 -D_REENTRANT -DHAVE_CONFIG_H -DFUSE_DARWIN_ENABLE_EXTENSIONS=0 -DFUSE_USE_VERSION=31 \
   -I. -Icompat -I"$sdk/include/fuse3" -I"$glib/include/glib-2.0" -I"$glib/lib/glib-2.0/include" -I"$intl/include" \
   sshfs.c cache.c compat/darwin_compat.c "$glib/lib/libgthread-2.0.a" "$glib/lib/libglib-2.0.a" "$intl/lib/libintl.a" "$pcre/lib/libpcre2-8.a" \
   -L"$sdk/lib" -lfuse3 -liconv -framework Foundation -framework CoreFoundation -framework AppKit -framework Carbon -o "$output"

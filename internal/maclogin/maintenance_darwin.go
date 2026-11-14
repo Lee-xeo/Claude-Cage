@@ -1,11 +1,6 @@
-//go:build darwin && arm64 && cgo && !no_vz
+//go:build darwin && (amd64 || (arm64 && cgo && !no_vz))
 
 package maclogin
-
-/*
-#include "bridge.h"
-*/
-import "C"
 
 import (
 	"bufio"
@@ -130,7 +125,7 @@ func (s *loginSession) handleMaintenance(in request) (result reply) {
 		}
 		s.token, s.screenID = rand.Text(), "maintenance-"+surface.Session
 		s.expires = time.Now().Add(5 * time.Minute)
-		C.cageLoginEnable(true)
+		s.surface.Enable(true)
 		return reply{Session: s.token, Administrator: s.maintenanceAdministrator}
 	}
 	if s.token == "" || s.maintenance != in.Maintenance || subtle.ConstantTimeCompare([]byte(in.Session), []byte(s.token)) != 1 {
@@ -150,12 +145,10 @@ func (s *loginSession) handleMaintenance(in request) (result reply) {
 	}
 	if in.Action == "frame" {
 		region := surface.region()
-		var size C.int
-		data := C.cageLoginImageRegion(C.int(region[0]), C.int(region[1]), C.int(region[2]), C.int(region[3]), &size)
-		if data == nil {
+		frame, err := s.surface.Image(region[:])
+		if err != nil {
 			return reply{Error: "正在等待系统设置窗口画面"}
 		}
-		defer C.free(data)
 		after, err := s.maintenanceProbe(false)
 		if err != nil {
 			s.close()
@@ -165,7 +158,7 @@ func (s *loginSession) handleMaintenance(in request) (result reply) {
 			return reply{Error: "授权窗口已变化，正在刷新画面"}
 		}
 		s.maintenanceFrame = surface.geometry()
-		return reply{Image: C.GoBytes(data, size), MIME: "image/jpeg", Geometry: s.maintenanceFrame, Region: region[:]}
+		return reply{Image: frame, MIME: "image/jpeg", Geometry: s.maintenanceFrame, Region: region[:]}
 	}
 	if in.Geometry == "" || in.Geometry != s.maintenanceFrame || in.Geometry != surface.geometry() {
 		return reply{Error: "授权窗口已变化，请等待新画面后重试"}
@@ -177,12 +170,12 @@ func (s *loginSession) handleMaintenance(in request) (result reply) {
 		}
 	case "select-all":
 		s.passwordSelection = passwordSelection{}
-		if !bool(C.cageLoginSelectAll()) {
+		if !s.surface.SelectAll() {
 			return reply{Error: "授权窗口尚未准备好"}
 		}
 	case "click":
 		s.passwordSelection = passwordSelection{}
-		if !surface.contains(in.X, in.Y) || !bool(C.cageLoginClick(C.int(in.X), C.int(in.Y))) {
+		if !surface.contains(in.X, in.Y) || !s.surface.Click(in.X, in.Y) {
 			return reply{Error: "点击位置超出当前授权窗口"}
 		}
 		if probe, err := s.openMaintenancePasswordProbe(); err == nil {
@@ -195,13 +188,13 @@ func (s *loginSession) handleMaintenance(in request) (result reply) {
 	case "key":
 		s.passwordSelection = passwordSelection{}
 		navigation := in.Code >= 123 && in.Code <= 126 || in.Code == 116 || in.Code == 121
-		if in.Code < 0 || (in.Code > 53 && !navigation) || !bool(C.cageLoginKey(C.int(in.Code), C.bool(in.Shift))) {
+		if in.Code < 0 || (in.Code > 53 && !navigation) || !s.surface.Key(in.Code, in.Shift) {
 			return reply{Error: "此按键不能用于授权窗口"}
 		}
 	case "scroll":
 		s.passwordSelection = passwordSelection{}
 		if !surface.contains(in.X, in.Y) || in.DeltaX < -512 || in.DeltaX > 512 || in.DeltaY < -512 || in.DeltaY > 512 ||
-			!bool(C.cageLoginScroll(C.int(in.X), C.int(in.Y), C.int(in.DeltaX), C.int(in.DeltaY))) {
+			!s.surface.Scroll(in.X, in.Y, in.DeltaX, in.DeltaY) {
 			return reply{Error: "滚动位置超出当前授权窗口"}
 		}
 	default:
@@ -281,20 +274,20 @@ func (s *loginSession) fillMaintenancePassword(window maintenanceWindow) error {
 	if err = check(); err != nil {
 		return err
 	}
-	if !target.Accessibility && !bool(C.cageLoginClick(C.int(selection.X), C.int(selection.Y))) {
+	if !target.Accessibility && !s.surface.Click(selection.X, selection.Y) {
 		return errors.New("所选密码框已变化，请重新点选")
 	}
 	if err = check(); err != nil {
 		return err
 	}
-	if !bool(C.cageLoginSelectAll()) {
+	if !s.surface.SelectAll() {
 		return errors.New("系统密码框尚未准备好，请重试")
 	}
 	for _, key := range sequence {
 		if err = check(); err != nil {
 			return err
 		}
-		if !bool(C.cageLoginKey(C.int(key.code), C.bool(key.shift))) {
+		if !s.surface.Key(key.code, key.shift) {
 			return errors.New("管理员密码未能填写，请重新选中密码框后重试")
 		}
 	}

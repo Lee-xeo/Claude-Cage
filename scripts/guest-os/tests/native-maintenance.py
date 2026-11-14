@@ -27,7 +27,7 @@ class NativeMaintenance(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix='cage-native-maintenance-')
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        self.root = Path(self.directory.name).resolve()
         self.kit = self.root / 'kit'
         self.kit.mkdir()
         for name in ('Applications', 'usr/local/libexec', 'private/var/tmp', 'var/db', 'var/run', 'Users/cage'):
@@ -95,6 +95,7 @@ exit "${CAGE_TEST_FAIL_REGISTER:-0}"
         perl = perl.replace('$> == 0', '$> == ' + str(os.getuid()))
         self.write('kit/native-component-manifest.pl', perl)
         self.write('kit/install-macos-cli.sh', self.translate((SOURCE / 'install-macos-cli.sh').read_text()))
+        self.write('kit/macos-guest-arch.sh', (SOURCE / 'macos-guest-arch.sh').read_text())
         script = self.translate((SOURCE / 'maintain-macos-workbench.sh').read_text())
         script = script.replace('/usr/libexec/PlistBuddy', str(self.root / 'plist-buddy'))
         script = script.replace('/bin/launchctl', str(self.root / 'launchctl'))
@@ -110,7 +111,7 @@ fi
 exit 0
 ''', 0o755)
         self.write('environment.sh', '''
-uname() { if [[ $1 == -s ]]; then printf 'Darwin\\n'; else printf 'Darwin arm64\\n'; fi; }
+uname() { case "$1" in -s) printf 'Darwin\\n';; -m) printf 'arm64\\n';; *) printf 'Darwin arm64\\n';; esac; }
 sysctl() { printf 'VirtualMac2,1\\n'; }
 id() { if [[ $1 == -u ]]; then echo 501; else echo staff; fi; }
 dscl() { printf 'NFSHomeDirectory: %s\\n' "$3"; }
@@ -151,7 +152,7 @@ ps() { :; }
             contents = '#!/bin/sh\nprintf "2.1.322 (Claude Code)\\n"\n' if name == 'claude' else 'runtime-package-fixture'
             package = self.write('kit/' + name, contents)
             checksum = hashlib.sha256(package.read_bytes()).hexdigest()
-            script = re.sub(r'check [a-f0-9]{64} ' + re.escape(name) + r'\n', f'check {checksum} {name}\n', script)
+            script = re.sub(r'check "\$CAGE_MACOS_[A-Z]+_SHA256" ' + re.escape(name) + r'\n', f'check {checksum} {name}\n', script)
             if name == 'claude':
                 self.write('kit/claude-manifest.json', json.dumps({'version': '2.1.322', 'platforms': {'darwin-arm64': {'binary': 'claude', 'checksum': checksum}}}))
         archive = self.kit / 'gh.zip'
@@ -161,7 +162,7 @@ ps() { :; }
             output.writestr(info, '#!/bin/sh\nprintf "gh version 2.103.3 (fixture)\\n"\n')
             output.writestr('gh_2.103.3_macOS_arm64/LICENSE', 'license-fixture')
         checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-        script = re.sub(r'check [a-f0-9]{64} gh.zip\n', f'check {checksum} gh.zip\n', script)
+        script = re.sub(r'check "\$CAGE_MACOS_GH_SHA256" gh.zip\n', f'check {checksum} gh.zip\n', script)
         self.write('kit/install-macos-cli.sh', script)
         auth = self.write('Users/cage/.config/gh/hosts.yml', 'login-marker', 0o600)
         env = {**os.environ, 'BASH_ENV': str(self.root / 'environment.sh')}

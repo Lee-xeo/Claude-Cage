@@ -2,8 +2,9 @@
 # Bundle the first-party helpers. User-selected OS and application media are
 # downloaded during installation and are never taken from a developer's VM.
 set -euo pipefail
-[[ $# == 1 && $1 == /* && ! -e $1 ]]
+[[ $# == 1 && $1 == /* && ! -e $1 ]] || exit 2
 src=$(cd "$(dirname "$0")" && pwd)
+. "$src/macos-guest-arch.sh"
 dest=$1
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -11,7 +12,7 @@ mkdir -p "$dest/project"
 bash "$src/build-macos-project-access.sh" "$dest/project/CageProjectAccess.app"
 bash "$src/build-macos-claude-window.sh" "$dest/Cage Guest Window.app"
 bash "$src/build-macos-clipboard.sh" "$dest/Cage Guest Clipboard.app"
-xcrun clang -arch arm64 -O2 -fobjc-arc -framework Foundation "$src/macos-project-terminal.m" -o "$dest/project/cage-macos-terminal"
+xcrun clang -arch "$CAGE_MACOS_NATIVE_ARCH" -O2 -fobjc-arc -framework Foundation "$src/macos-project-terminal.m" -o "$dest/project/cage-macos-terminal"
 codesign -f -s "${CAGE_SIGNING_IDENTITY:--}" "$dest/project/cage-macos-terminal"
 fuse="$work/macfuse.dmg"
 if [[ -n ${CAGE_BUILD_MACFUSE_DMG:-} ]]; then
@@ -22,11 +23,12 @@ fi
 bash "$src/macos-fuse-media.sh" "$fuse" "$work/fuse.pkg"
 pkgutil --expand-full "$work/fuse.pkg" "$work/sdk"
 bash "$src/build-macos-sshfs.sh" "$work/sdk/Core.pkg/Payload/usr/local" "$dest/project/cage-sshfs" "$work/sshfs-source"
-xcrun clang -arch arm64 -mmacosx-version-min=14.0 -O2 -fobjc-arc -framework Foundation -framework OpenDirectory \
+xcrun clang -arch "$CAGE_MACOS_NATIVE_ARCH" -mmacosx-version-min=14.0 -O2 -fobjc-arc -framework Foundation -framework OpenDirectory -framework IOKit \
     "$src/macos-setup-account.m" -o "$dest/cage-finish-initial-setup"
-xcrun clang -arch arm64 -O2 "$src/macos-ipv6-check.c" -o "$dest/cage-macos-ipv6-check"
+xcrun clang -arch "$CAGE_MACOS_NATIVE_ARCH" -mmacosx-version-min=14.0 -O2 -fobjc-arc -framework Foundation -framework IOKit "$src/macos-guest-identity.m" -o "$dest/cage-guest-check"
+xcrun clang -arch "$CAGE_MACOS_NATIVE_ARCH" -O2 "$src/macos-ipv6-check.c" -o "$dest/cage-macos-ipv6-check"
 bash "$src/package-macos-browser.sh" "$dest/native-browser"
-for f in prepare-macos-media.sh macos-cli.py prepare-macos-cli-kit.sh install-macos-cli.sh claude-desktop-macos.sh install-macos-browser.sh install-macos-node.sh install-macos-project-tools.sh register-macos-claude-window.sh register-macos-clipboard.sh register-macos-browser.sh macos-browser.mjs cage-macos-editor macos-fuse-media.sh provision-macos-workbench.sh; do
+for f in macos-guest-arch.sh prepare-macos-media.sh macos-cli.py prepare-macos-cli-kit.sh install-macos-cli.sh claude-desktop-macos.sh install-macos-browser.sh install-macos-node.sh install-macos-project-tools.sh register-macos-claude-window.sh register-macos-clipboard.sh register-macos-browser.sh macos-browser.mjs cage-macos-editor macos-fuse-media.sh provision-macos-workbench.sh; do
     cp "$src/$f" "$dest/"
 done
 cp "$src/../../internal/cage/"{claude-account.py,client_runtime.py} "$src/../../internal/workbench/"{cli_channel.py,cli_channel.resume.md,claude_account_resume.md} "$dest/"

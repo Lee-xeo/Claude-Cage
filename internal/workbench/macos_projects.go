@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -141,16 +143,52 @@ func (s *Server) macOSMountCleanup(ctx context.Context, guestDir string) (func()
 	line := strings.TrimSpace(string(out))
 	device, options, ok := strings.Cut(line, " on "+guestDir+" (")
 	id := strings.TrimPrefix(device, "macfuse://")
-	if _, parseErr := uuid.Parse(id); err != nil || !ok || id == device || parseErr != nil || strings.Contains(line, "\n") ||
+	_, parseErr := uuid.Parse(id)
+	legacy := macOSLegacyMountDevice.MatchString(device)
+	if err != nil || !ok || (!legacy && (id == device || parseErr != nil)) || strings.Contains(line, "\n") ||
 		!strings.Contains(options, "fskit") || !strings.Contains(options, "mounted by "+s.macosGuest.User+")") {
 		return nil, errors.New("无法核对本次挂载的 macOS 卷标识")
 	}
 	detach := "if test \"$(" + query + ")\" = " + shellescape.Quote(line) + "; then /sbin/umount -f " + shellescape.Quote(guestDir) + "; fi"
+	if legacy {
+		// A BSD name can be reused. Pin the kernel media object, which remains
+		// queryable after SFTP exits. diskutil may block on a disconnected FSKit
+		// volume and cannot safely identify it during cleanup.
+		info := macOSLegacyMountIdentityQuery(device)
+		data, infoErr := s.guest(ctx, info)
+		id, err := macOSLegacyMountID(data)
+		if infoErr != nil || err != nil {
+			return nil, errors.New("无法核对本次挂载的 macOS 卷标识")
+		}
+		detach = "if test \"$(" + query + ")\" = " + shellescape.Quote(line) +
+			" && test \"$(" + info + ")\" = " + shellescape.Quote(id) +
+			"; then /sbin/umount -f " + shellescape.Quote(guestDir) + "; fi"
+	}
 	return func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_, _ = s.guest(cleanup, detach)
 	}, nil
+}
+
+var macOSLegacyMountDevice = regexp.MustCompile(`^/dev/disk[0-9]+s[0-9]+$`)
+
+const macOSMediaIdentityMatch = `my $id; while (<STDIN>) { $id=$1 if /^[\s|]*\+-o .*<class [^,]+, id (0x[0-9a-f]+),/; if (/^[\s|]*"BSD Name" = "\Q$ARGV[0]\E"/) { print "$id\n" if defined $id; exit(defined($id) ? 0 : 1); } } exit 1;`
+
+func macOSLegacyMountIdentityQuery(device string) string {
+	return "/usr/sbin/ioreg -r -c IOMedia -d 1 -l -w 0 | /usr/bin/perl -e " + shellescape.Quote(macOSMediaIdentityMatch) + " " + shellescape.Quote(strings.TrimPrefix(device, "/dev/"))
+}
+
+func macOSLegacyMountID(data []byte) (string, error) {
+	id := strings.TrimSpace(string(data))
+	if len(data) > 24 || !strings.HasPrefix(id, "0x") {
+		return "", errors.New("invalid FSKit media identity")
+	}
+	value, err := strconv.ParseUint(id[2:], 16, 64)
+	if err != nil || value == 0 || id != "0x"+strconv.FormatUint(value, 16) {
+		return "", errors.New("invalid FSKit media identity")
+	}
+	return id, nil
 }
 
 func (s *Server) probeMacOSProject(ctx context.Context, hostDir, guestDir string, share *projectShare) error {

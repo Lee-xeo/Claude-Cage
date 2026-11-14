@@ -1,64 +1,27 @@
-//go:build darwin && arm64 && cgo && !no_vz
+//go:build darwin && (amd64 || (arm64 && cgo && !no_vz))
 
-// Package maclogin presents only the Apple login screen of the bound trial VM.
-// The owner of the VZ instance creates its view on the AppKit main thread.
+// Package maclogin serves the authenticated login and maintenance surfaces of a bound local Mac.
 package maclogin
-
-/*
-#cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework AppKit -framework Virtualization
-#include "bridge.h"
-*/
-import "C"
 
 import (
 	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
-	"encoding/json"
-	"errors"
 	"io"
-	"net"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 
 	"al.essio.dev/pkg/shellescape"
 	"time"
-	"unsafe"
 
-	apple "github.com/Code-Hex/vz/v3"
-	driver "github.com/lima-vm/lima/v2/pkg/driver/vz"
 	"github.com/sylvinus/agent-vm/internal/guestos"
 )
-
-type objectReference interface{ CageViewObject() unsafe.Pointer }
-
-func init() {
-	if _, built := any((*apple.VirtualMachine)(nil)).(objectReference); !built {
-		return
-	}
-	if len(os.Args) > 1 && (os.Args[1] == "hostagent" || os.Args[1] == "--debug") {
-		runtime.LockOSThread()
-	}
-	driver.OwnsOffscreenView = func(dir string) bool {
-		config := os.Getenv("CLAUDE_CAGE_CONFIG")
-		if !filepath.IsAbs(config) || !sameGuestDirectory(dir, filepath.Join(filepath.Dir(config), "state", "lima", "mac")) {
-			return false
-		}
-		profile := filepath.Dir(config)
-		identity, err := guestos.LoadMacOSProfileOrRecovery(profile)
-		return err == nil && identity != nil
-	}
-	driver.OffscreenView = run
-}
 
 type request = guestos.MacLoginRequest
 type reply = guestos.MacLoginReply
 
 type loginSession struct {
+	surface                  loginSurface
 	profile                  string
 	token                    string
 	expires                  time.Time
@@ -126,7 +89,7 @@ uid=$(/usr/bin/id -u ` + shellescape.Quote(bound.User) + `)
 
 func (s *loginSession) close() {
 	if s.token != "" {
-		C.cageLoginEnable(false)
+		s.surface.Enable(false)
 	}
 	s.token = ""
 	s.screenID = ""
@@ -165,7 +128,7 @@ func (s *loginSession) handle(in request) reply {
 		if s.setup {
 			s.expires = time.Now().Add(15 * time.Minute)
 		}
-		C.cageLoginEnable(true)
+		s.surface.Enable(true)
 		return reply{Session: s.token}
 	}
 	if s.token == "" || s.setup != in.Setup || subtle.ConstantTimeCompare([]byte(in.Session), []byte(s.token)) != 1 {
@@ -181,20 +144,18 @@ func (s *loginSession) handle(in request) reply {
 			return reply{Error: err.Error()}
 		}
 	case "frame":
-		var n C.int
-		p := C.cageLoginImage(&n)
-		if p == nil {
+		frame, err := s.surface.Image(nil)
+		if err != nil {
 			return reply{Error: "尚未收到 Apple 登录画面"}
 		}
-		defer C.free(p)
 		if s.currentScreen() != s.screenID {
 			s.close()
 			return reply{Closed: true}
 		}
-		return reply{Image: C.GoBytes(p, n), MIME: "image/jpeg"}
+		return reply{Image: frame, MIME: "image/jpeg"}
 	case "click":
 		s.passwordSelection = passwordSelection{}
-		if in.X < 0 || in.Y < 0 || in.X >= 1024 || in.Y >= 640 || !bool(C.cageLoginClick(C.int(in.X), C.int(in.Y))) {
+		if in.X < 0 || in.Y < 0 || in.X >= 1024 || in.Y >= 640 || !s.surface.Click(in.X, in.Y) {
 			return reply{Error: "无效的登录位置"}
 		}
 		if s.setup {
@@ -204,104 +165,18 @@ func (s *loginSession) handle(in request) reply {
 		s.passwordSelection = passwordSelection{}
 		// ANSI printable keys, Return, Tab, Escape and Backspace. No global shortcuts.
 		setupNavigation := s.setup && (in.Code >= 123 && in.Code <= 126 || in.Code == 116 || in.Code == 121)
-		if in.Code < 0 || (in.Code > 53 && !setupNavigation) || !bool(C.cageLoginKey(C.int(in.Code), C.bool(in.Shift))) {
+		if in.Code < 0 || (in.Code > 53 && !setupNavigation) || !s.surface.Key(in.Code, in.Shift) {
 			return reply{Error: "不支持此登录按键"}
 		}
 	case "scroll":
 		s.passwordSelection = passwordSelection{}
 		if !s.setup || in.X < 0 || in.Y < 0 || in.X >= 1024 || in.Y >= 640 ||
 			in.DeltaX < -512 || in.DeltaX > 512 || in.DeltaY < -512 || in.DeltaY > 512 ||
-			!bool(C.cageLoginScroll(C.int(in.X), C.int(in.Y), C.int(in.DeltaX), C.int(in.DeltaY))) {
+			!s.surface.Scroll(in.X, in.Y, in.DeltaX, in.DeltaY) {
 			return reply{Error: "无效的首次设置滚动操作"}
 		}
 	default:
 		return reply{Error: "未知的登录操作"}
 	}
 	return reply{}
-}
-
-func run(ctx context.Context, machine *apple.VirtualMachine, dir string) error {
-	if !driver.OwnsOffscreenView(dir) {
-		return errors.New("invalid local macOS login view")
-	}
-	socket := filepath.Join(dir, "cage-login.sock")
-	if fi, err := os.Lstat(socket); err == nil {
-		if fi.Mode()&os.ModeSocket == 0 {
-			return errors.New("unexpected login socket path")
-		}
-		existing, err := net.DialTimeout("unix", socket, 300*time.Millisecond)
-		if err == nil {
-			existing.Close()
-			return errors.New("this instance already has a login view")
-		}
-		if err = os.Remove(socket); err != nil {
-			return err
-		}
-	}
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
-	if err != nil {
-		return err
-	}
-	defer ln.Close()
-	if err = os.Chmod(socket, 0600); err != nil {
-		return err
-	}
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	s := loginSession{profile: filepath.Dir(os.Getenv("CLAUDE_CAGE_CONFIG"))}
-	go func() {
-		for {
-			_ = ln.SetDeadline(time.Now().Add(time.Second))
-			conn, err := ln.Accept()
-			if err != nil {
-				if n, ok := err.(net.Error); ok && n.Timeout() && runCtx.Err() == nil {
-					if s.token != "" && (time.Now().After(s.expires) || s.currentScreen() != s.screenID) {
-						s.close()
-					}
-					continue
-				}
-				return
-			}
-			_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-			var input request
-			if json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&input) == nil {
-				if input.Maintenance != "" {
-					_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
-				}
-				result := s.handle(input)
-				if err := json.NewEncoder(conn).Encode(result); err != nil && result.Session != "" {
-					s.close()
-				}
-			}
-			_ = conn.Close()
-		}
-	}()
-	go func() {
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
-		running := false
-		for {
-			select {
-			case <-runCtx.Done():
-				C.cageLoginStop()
-				return
-			case <-ticker.C:
-				state := machine.State()
-				if state == apple.VirtualMachineStateRunning {
-					running = true
-				}
-				if running && (state == apple.VirtualMachineStateStopped || state == apple.VirtualMachineStateError) {
-					C.cageLoginStop()
-					return
-				}
-			}
-		}
-	}()
-	ref, ok := any(machine).(objectReference)
-	if !ok {
-		return errors.New("this build has no macOS login view")
-	}
-	C.cageLoginLoop(ref.CageViewObject())
-	runtime.KeepAlive(machine)
-	return nil
 }

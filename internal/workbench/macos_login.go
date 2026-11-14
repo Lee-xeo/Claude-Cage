@@ -42,12 +42,13 @@ func macOSSetupRoute(path string) bool {
 }
 
 type macSetupPermissions struct {
-	Screen            bool   `json:"screen"`
-	Input             bool   `json:"input"`
-	Projects          bool   `json:"projects"`
-	ProjectsError     string `json:"projects_error,omitempty"`
-	Error             string `json:"error,omitempty"`
-	ManagedCredential bool   `json:"managed_credential,omitempty"`
+	Screen                 bool   `json:"screen"`
+	Input                  bool   `json:"input"`
+	Projects               bool   `json:"projects"`
+	ProjectInstallRequired bool   `json:"project_install_required,omitempty"`
+	ProjectsError          string `json:"projects_error,omitempty"`
+	Error                  string `json:"error,omitempty"`
+	ManagedCredential      bool   `json:"managed_credential,omitempty"`
 }
 
 type macLoginLease struct {
@@ -123,7 +124,11 @@ func (s *Server) macSetupPermissions(ctx context.Context) (macSetupPermissions, 
 	status.Projects = !s.macSetupProjectsChecked.IsZero() && time.Since(s.macSetupProjectsChecked) < 2*time.Minute
 	probeDue := time.Since(s.macSetupProjectsAttempt) > 15*time.Second
 	s.mu.Unlock()
-	if status.Screen && status.Input && !status.Projects && probeDue && s.op.TryLock() {
+	if status.ProjectInstallRequired {
+		status.Projects = false
+		status.ProjectsError = "请先在 Cage 客机画面中完成 macFUSE 官方安装器，再启用两个文件系统扩展开关。"
+	}
+	if status.Screen && status.Input && !status.ProjectInstallRequired && !status.Projects && probeDue && s.op.TryLock() {
 		s.mu.Lock()
 		s.macSetupProjectsAttempt = time.Now()
 		s.mu.Unlock()

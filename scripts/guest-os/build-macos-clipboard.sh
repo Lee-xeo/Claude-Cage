@@ -2,6 +2,7 @@
 # Build the per-user clipboard agent and its bounded file-transfer helper.
 set -euo pipefail
 src=$(cd "$(dirname "$0")" && pwd)
+. "$src/macos-guest-arch.sh"
 app=${1:?Specify a new output .app path}
 [[ $app == /*.app && ! -e $app ]] || { echo 'Choose a new absolute .app path.' >&2; exit 2; }
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
@@ -17,8 +18,11 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>LSUIElement</key><true/>
 </dict></plist>
 PLIST
-xcrun swiftc -parse-as-library -O -target arm64-apple-macos14.0 "$src/guest-clipboard-macos.swift" "$src/macos-diagnostics.swift" -o "$app/Contents/MacOS/CageGuestClipboard"
-(cd "$src/../.." && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags '-s -w' -o "$app/Contents/Resources/cage-guest-files" ./cmd/cage-guest-files)
+objects=$(mktemp -d)
+trap 'rm -rf "$objects"' EXIT
+xcrun clang -target "$CAGE_MACOS_NATIVE_ARCH-apple-macos14.0" -O2 -fobjc-arc -DCAGE_GUEST_IDENTITY_LIBRARY -c "$src/macos-guest-identity.m" -o "$objects/guest-identity.o"
+xcrun swiftc -parse-as-library -O -target "$CAGE_MACOS_NATIVE_ARCH-apple-macos14.0" "$src/guest-clipboard-macos.swift" "$src/macos-diagnostics.swift" "$objects/guest-identity.o" -framework IOKit -o "$app/Contents/MacOS/CageGuestClipboard"
+(cd "$src/../.." && CGO_ENABLED=0 GOOS=darwin GOARCH="$CAGE_MACOS_GO_ARCH" go build -trimpath -ldflags '-s -w' -o "$app/Contents/Resources/cage-guest-files" ./cmd/cage-guest-files)
 identity=${CAGE_GUEST_SIGN_IDENTITY:-${CAGE_SIGNING_IDENTITY:--}}
 codesign --force --sign "$identity" "$app/Contents/Resources/cage-guest-files"
 codesign --force --sign "$identity" --identifier dev.cage.GuestClipboard "$app"
