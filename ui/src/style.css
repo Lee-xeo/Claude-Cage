@@ -2047,6 +2047,7 @@ svg {
   padding: 0;
   margin: 0;
   border: 0;
+  min-width: 0;
   max-height: 300px;
   overflow-y: auto;
 }
@@ -2055,18 +2056,28 @@ svg {
   color: var(--muted);
   margin-bottom: 8px;
 }
+.project-picker-row {
+  display: flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding-right: 8px;
+}
+.project-picker-row:hover {
+  background: var(--chrome);
+}
+.project-picker-row.selected {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--paper));
+  background: color-mix(in srgb, var(--accent) 6%, var(--paper));
+}
 .project-picker-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  flex: 1;
+  min-width: 0;
   cursor: pointer;
-}
-.project-picker-item.selected {
-  border-color: var(--accent);
-  background: var(--paper);
 }
 .project-picker-item input {
   flex: none;
@@ -2085,14 +2096,41 @@ svg {
 .project-picker-item strong {
   font-size: 0.9286rem;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 .project-picker-item small {
   color: var(--muted);
   font-size: 0.7857rem;
   overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.project-picker-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  color: var(--muted);
+}
+.project-picker-row.selected > .project-picker-item > svg {
+  color: var(--accent);
+}
+.project-picker-actions .project-picker-remove:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--paper));
 }
 .project-picker-add {
   align-self: flex-start;
+}
+.project-picker-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.6;
+}
+@media (pointer: coarse) {
+  .project-picker-actions .icon-button {
+    width: 40px;
+    height: 44px;
+  }
 }
 .project-permissions {
   align-items: flex-start;

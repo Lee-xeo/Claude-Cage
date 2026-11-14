@@ -1,6 +1,6 @@
 import { isWindows, isMac } from "./platform.mjs";
 import React, { useEffect, useState } from "react";
-import { FolderOpen, LoaderCircle, Plus } from "lucide-react";
+import { FolderMinus, FolderOpen, LoaderCircle, PencilLine, Plus } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
 import { SafetyMessage } from "./safety-message";
 import { Modal } from "./views";
@@ -202,7 +202,7 @@ export function ProjectDialog({
         className="modal-body project-form"
         onSubmit={open}
       >
-        <p>{adding ? "为项目命名，并添加需要一起使用的文件夹。" : activate ? remote ? "选择已有项目，或创建包含多个云端文件夹的项目。" : "选择已有项目，或创建包含多个本机文件夹的项目。" : "从 Cage 项目列表选择工作目录。新项目由 Cage 授权并共享。"}</p>
+        <p>{adding ? "为项目命名，并添加需要一起使用的文件夹。" : activate ? "选择要打开的项目，或添加新项目。" : "从 Cage 项目列表选择工作目录。新项目由 Cage 授权并共享。"}</p>
         {canShare && <>
           <button type="button" className="quiet-button project-picker-add" onClick={() => { setSharing(!sharing); setWriteAccess(false); }} disabled={busy} aria-expanded={sharing}>
             <FolderOpen size={16} />共享本机项目…
@@ -216,20 +216,24 @@ export function ProjectDialog({
         </>}
         {!sharing && !adding && <>
           <fieldset className="project-picker-list" disabled={busy || Boolean(removeTarget)}>
-            <legend>Cage 项目</legend>
-            {projectList.map((project) => <label className={`project-picker-item ${path === project ? "selected" : ""}`} key={project}>
-              <input type="radio" name="project" value={project} checked={path === project} onChange={() => { setPath(project); setError(""); }} />
-              <FolderOpen size={18} aria-hidden="true" />
-              <span>
-                <strong>{displayName(project)}</strong>
-                <small>{shares.find((s) => s.guest_path === project)?.path || groups.find(g => g.workspace === project)?.folders.join(" · ") || project}</small>
-                {status.project_errors?.some((item) => (groups.find(group => group.workspace === project)?.folders || [project]).includes(item.path)) && <small>需要重新连接，选择后重试</small>}
-              </span>
-            </label>)}
+            <legend>项目</legend>
+            {projectList.map((project) => <div className={`project-picker-row ${path === project ? "selected" : ""}`} key={project}>
+              <label className="project-picker-item">
+                <input type="radio" name="project" value={project} checked={path === project} onChange={() => { setPath(project); setError(""); }} />
+                <FolderOpen size={18} aria-hidden="true" />
+                <span>
+                  <strong>{displayName(project)}</strong>
+                  <small>{shares.find((s) => s.guest_path === project)?.path || groups.find(g => g.workspace === project)?.folders.join(" · ") || project}</small>
+                  {status.project_errors?.some((item) => (groups.find(group => group.workspace === project)?.folders || [project]).includes(item.path)) && <small>需要重新连接，选择后重试</small>}
+                </span>
+              </label>
+              {path === project && !selectedShare && !removeTarget && <div className="project-picker-actions">
+                {selectedGroup && <button type="button" className="icon-button" aria-label="编辑名称与文件夹…" disabled={busy || !status.ready} onClick={edit}><PencilLine size={16} aria-hidden="true" /></button>}
+                {activate && <button type="button" className="icon-button project-picker-remove" aria-label="从 Cage 移除此项目" disabled={busy} onClick={() => { setRemoveTarget(path); setError(""); setRecovery(""); }}><FolderMinus size={16} aria-hidden="true" /></button>}
+              </div>}
+            </div>)}
           </fieldset>
           {selectedShare && <button type="button" disabled={submitting} onClick={() => revoke(selectedShare)}>停止共享本机项目（{selectedShare.readonly ? "只读" : "读写"}）</button>}
-          {!selectedShare && selectedGroup && !removeTarget && <button type="button" className="quiet-button" disabled={busy || !status.ready} onClick={edit}>编辑名称与文件夹…</button>}
-          {activate && !selectedShare && path && !removeTarget && <button type="button" className="quiet-button" disabled={busy} onClick={() => { setRemoveTarget(path); setError(""); setRecovery(""); }}>从 Cage 移除此项目</button>}
           {removeTarget && <section className="project-picker-list" aria-label="确认移除项目">
             <p>移除“{displayName(removeTarget)}”将解除所有绑定文件夹的共享。原文件和会话历史保留，重新添加相同目录后可继续使用历史。</p>
             <p className="field-help">请先保存文件，并关闭此项目的终端、运行中会话和编辑器。移除当前项目后选中剩余项目；移除最后一个项目后，可重新添加文件夹。</p>
@@ -282,8 +286,9 @@ export function ProjectDialog({
           </section>}
         </>}
         {adding && <p className="field-help">Claude 从默认文件夹启动，并可读写其余绑定文件夹。修改绑定后，新建或重新打开会话生效。{editing && "默认文件夹用于关联会话历史，需保留。解绑前请关闭项目的终端、运行中会话和编辑器。"}</p>}
-        <p className="field-help">
-          {remote ? "云端项目保存在服务器上。" : "绑定文件夹中的改动会直接写入本机。"}所有项目共用 Cage 环境，已有终端和网页会保持运行。
+        <p className="field-help project-picker-note">
+          <span>{remote ? "云端项目保存在服务器上。" : "绑定文件夹中的改动会直接写入本机。"}</span>
+          <span>所有项目共用 Cage 环境，已有终端和网页会保持运行。</span>
         </p>
         {!status.ready && <p className="field-help">环境就绪后可添加或打开项目。已有项目仍可从列表移除。</p>}
         {error && (
