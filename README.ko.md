@@ -141,6 +141,7 @@ Cage는 독립적인 커뮤니티 프로젝트이며 Anthropic과 관련이 없�
 - [code-server](https://github.com/coder/code-server): 브라우저 기반 코드 편집기입니다.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): 작업 환경 및 인터랙션 디자인에 대한 참고 자료입니다.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) 그리고 [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): 네트워크 점검 및 보안 진단을 위한 참고 자료입니다.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): 정확한 목록 확인, 사용자 데이터 보호 및 복구 가능한 캐시 정리 절차 참고. Cage에서 독립적으로 구현했습니다.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

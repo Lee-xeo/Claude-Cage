@@ -72,7 +72,7 @@ export async function createPrivacyController({ preferences, headless = true } =
   try {
     const sourceDirectory = new URL('../internal/cage/', import.meta.url);
     for (const name of await readdir(sourceDirectory))
-      if ((name.startsWith('browser-') && name.endsWith('.mjs')) || name === 'native-input.mjs' || name === 'tailnet-client.mjs' || name === 'browser-extension-archive.py')
+      if ((name.startsWith('browser-') && name.endsWith('.mjs')) || name === 'display-density.mjs' || name === 'native-input.mjs' || name === 'tailnet-client.mjs' || name === 'browser-extension-archive.py')
         await cp(new URL(name, sourceDirectory), join(directory, name));
     await cp(new URL('split-extension', sourceDirectory), join(directory, 'extension'), { recursive: true });
     const source = await readFile(new URL('browser-agent.mjs', sourceDirectory), 'utf8');

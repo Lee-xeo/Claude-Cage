@@ -3,6 +3,7 @@ package appupdate
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,9 @@ import (
 )
 
 func TestUpdateCheckWaitsForProxyButDownloadReportsFailure(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
 	for _, operation := range []string{"check", "download"} {
 		t.Run(operation, func(t *testing.T) {
 			profile := t.TempDir()
@@ -23,8 +27,17 @@ func TestUpdateCheckWaitsForProxyButDownloadReportsFailure(t *testing.T) {
 			var output bytes.Buffer
 			code := Run(config, []string{operation}, &output)
 			var state State
-			if err := json.Unmarshal(output.Bytes(), &state); err != nil {
-				t.Fatal(err)
+			decoder := json.NewDecoder(&output)
+			for {
+				var next State
+				err := decoder.Decode(&next)
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				state = next
 			}
 			if operation == "check" {
 				if code != 0 || state.Phase != "waiting" || !state.Retryable {

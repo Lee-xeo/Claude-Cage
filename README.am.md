@@ -141,6 +141,7 @@ Cage ራሱን የቻለ የማህበረሰብ ፕሮጀክት ነው እና ከ
 - [code-server](https://github.com/coder/code-server): በአሳሽ ላይ የተመሰረተ ኮድ አርታዒ.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox) የሥራ አካባቢ እና መስተጋብር ንድፍ ማጣቀሻዎች.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) እና [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian) ለአውታረ መረብ ፍተሻዎች እና የደህንነት ምርመራዎች ማጣቀሻዎች።
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): ለትክክለኛ ቆጠራ፣ ለውሂብ ጥበቃ እና ሊመለስ ለሚችል የመሸጎጫ ማጽዳት ሂደት ማጣቀሻ፤ በCage በተናጠል ተተግብሯል።
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

@@ -177,7 +177,7 @@ function App() {
     ? nativeSplit?.left === leftId && nativeSplit?.right === rightId
     : !nativeSplit;
   const liveBrowser = webPanes.find(tab => tab.id === browser.active) || webPanes[0];
-  const liveBrowserVisible = !desktopOpen && !showHome && status?.ready &&
+  const liveBrowserVisible = !claudeAccountsOpen && !desktopOpen && !showHome && status?.ready &&
     liveBrowser && splitReady && (!split || browser.active === liveBrowser.id);
   const viewBeforeBrowser = useRef(null);
   const browserDismissed = useRef(false);
@@ -332,6 +332,7 @@ function App() {
     setSettingsOpen(true);
   };
   const select = async (id, focusContent = true) => {
+    setClaudeAccountsOpen(false);
     const tab = tabs.find((t) => t.id === id);
     if (tab && tab.kind !== "terminal") browserDismissed.current = false;
     setDesktopOpen(false);
@@ -404,6 +405,7 @@ function App() {
     browserDismissed.current = false;
     const result = await action("/browser/new", { url, incognito });
     if (result) {
+      setClaudeAccountsOpen(false);
       setDesktopOpen(false);
       setHome(false);
       setTabs((list) =>
@@ -428,7 +430,7 @@ function App() {
   const showBrowserResult = result => {
     if (!result?.id) return;
     browserDismissed.current = false;
-    setDesktopOpen(false); setHome(false);
+    setClaudeAccountsOpen(false); setDesktopOpen(false); setHome(false);
     setTabs(previous => previous.some(tab => tab.id === result.id)
       ? previous.map(tab => tab.id === result.id ? { ...tab, ...result } : tab)
       : [...previous, result]);
@@ -472,6 +474,7 @@ function App() {
     }
   };
   const showTerminal = result => {
+    setClaudeAccountsOpen(false);
     const tab = {
       ...result, id: "terminal:" + result.id, sessionId: result.id,
       terminalKind: result.kind, kind: "terminal",
@@ -542,6 +545,7 @@ function App() {
     browserDismissed.current = false;
     const result = await action("/browser/editor", { workspace: path });
     if (result) {
+      setClaudeAccountsOpen(false);
       setDesktopOpen(false);
       setHome(false);
       setTabs((list) =>
@@ -885,6 +889,15 @@ function App() {
     return () => clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
+    if (!claudeAccountsOpen) return;
+    document.getElementById("claude-accounts-title")?.focus();
+    const close = () => {
+      if (!document.querySelector('[role="dialog"], .settings-page')) setClaudeAccountsOpen(false);
+    };
+    document.addEventListener("cage-close-modal", close);
+    return () => document.removeEventListener("cage-close-modal", close);
+  }, [claudeAccountsOpen]);
+  useEffect(() => {
     const key = (event) => {
       if (document.querySelector("[data-environment-dialog]") || !primaryModifier(event)) return;
       const k = event.key.toLowerCase();
@@ -904,7 +917,7 @@ function App() {
         }
         return;
       }
-      if (k === "," && !projectDialog && !rename && !claudeAccountsOpen) {
+      if (k === "," && !projectDialog && !rename) {
         event.preventDefault();
         event.stopImmediatePropagation();
         openSettings();
@@ -1006,7 +1019,7 @@ function App() {
         return;
       }
       if (command === "settings") {
-        if (!projectDialog && !rename && !dialog && !claudeAccountsOpen) openSettings();
+        if (!projectDialog && !rename && !dialog) openSettings();
         return;
       }
       if (storageRecovery && ["openProject", "newTab", "newTerminal"].includes(command)) {
@@ -1377,11 +1390,12 @@ function App() {
     <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <div
         className="workbench-shell"
-        inert={settingsOpen || claudeAccountsOpen || undefined}
+        inert={settingsOpen || undefined}
       >
         {!sidebarCollapsed && (
           <WorkspaceSidebar
             onClaudeAccounts={() => setClaudeAccountsOpen(true)}
+            claudeAccountsOpen={claudeAccountsOpen}
             updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
             guestSystem={account?.guest_system || status.guest_system || guestSystem?.guest_system || "debian-13"}
@@ -1402,14 +1416,14 @@ function App() {
             onSessionPin={pinSession}
             onSessionRename={session => setRename({id:session.id, title:session.title, session:true})}
             saved={metadata}
-            active={active}
-            home={showHome}
+            active={claudeAccountsOpen ? "" : active}
+            home={!claudeAccountsOpen && showHome}
             busy={busy || storageRecovery}
             ready={status.ready}
             running={running}
             runtimeLabel={runtimeLabel}
             network={network}
-            onHome={() => { setDesktopOpen(false); setHome(true); }}
+            onHome={() => { setClaudeAccountsOpen(false); setDesktopOpen(false); setHome(true); }}
             onOpenProject={(path = "") => setProjectDialog({ path })}
             onSelect={select}
             onClose={closeTab}
@@ -1424,9 +1438,9 @@ function App() {
             terminalMenuAt={terminalMenuAt}
             onBrowser={openBrowser}
             onTailscale={() => setTailscaleOpen(true)}
-            desktopOpen={desktopOpen}
+            desktopOpen={!claudeAccountsOpen && desktopOpen}
             onClaudeWeb={() => openBrowserPage("https://claude.ai/")}
-            onClaudeDesktop={() => { setHome(false); setDesktopOpen(true); }}
+            onClaudeDesktop={() => { setClaudeAccountsOpen(false); setHome(false); setDesktopOpen(true); }}
             onEditor={openEditor}
             onSettings={openSettings}
             onAccountConfirm={confirm}
@@ -1438,7 +1452,7 @@ function App() {
           />
         )}
         <div className="workbench-main">
-          {showHome && terminalHeader(null)}
+          {!claudeAccountsOpen && showHome && terminalHeader(null)}
           {browserError && running && !connectionError && <div className="connection-banner" role="status">
             <span>客机浏览器暂时无法连接。{browserError}</span>
             <button onClick={() => refreshStatus.current?.()}>重试</button>
@@ -1455,564 +1469,19 @@ function App() {
               </button>
             </div>
           )}
-          <main className={`workspace ${split ? "workspace-split" : ""}`} ref={workspaceBox}
+          {claudeAccountsOpen && (
+            <main className="claude-accounts-page" aria-labelledby="claude-accounts-title">
+              <header className="chrome claude-accounts-header">
+                {sidebarButton()}
+                <h1 id="claude-accounts-title" tabIndex={-1}>Claude 账号管理</h1>
+              </header>
+              <div className="claude-accounts-content">
+                <ClaudeAccountsPanel store={claudeProfiles} tabs={tabs} onConfirm={confirm}
+                  running={status.vm_running} environmentBusy={busy || storageRecovery}
+                  login={(id) => createTerminal(workspace, "claude-login", id)} />
+              </div>
+            </main>
+          )}
+          <main className={`workspace ${split ? "workspace-split" : ""}`} ref={workspaceBox} hidden={claudeAccountsOpen}
             style={{ "--split-left": `${100 * (dualBrowser && nativeSplit?.fraction || 0.5)}%` }}>
             {dropSide && <div aria-hidden="true" className={`split-drop split-${dropSide}`}>{dropSide === "left" ? "放到左侧" : "放到右侧"}</div>}
-            {!storageRecovery && desktopOpen && macGuest && <MacOSAppWindow key="claude-desktop" uploads={desktopFiles.uploads} keyboard={status.keyboard} remoteRef={remote}
-              onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })} visible={!settingsOpen} onConfirm={confirm}
-              sidebarCollapsed={sidebarCollapsed} onExpand={() => persist("cage-sidebar-collapsed", false, setSidebarCollapsed)} />}
-            {!storageRecovery && desktopOpen && !macGuest && <ClaudeDesktop
-              uploads={desktopFiles.uploads}
-              onProjectOpened={() => refreshStatus.current?.()}
-              status={status} visible={!settingsOpen} remoteRef={remote}
-              onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })}
-              onConfirm={confirm} onDetails={() => setDetails(true)}
-              sidebarCollapsed={sidebarCollapsed}
-              onExpand={() => persist("cage-sidebar-collapsed", false, setSidebarCollapsed)}
-            />}
-            {status.environment_update_required && !busy && (
-              <div className="environment-update-banner" role="status">
-                <span>{status.environment_update_error || "环境组件需要更新。请先保存编辑器中的文件。"}</span>
-                <button onClick={() => openSettings("project")}>查看并更新</button>
-              </div>
-            )}
-            {!storageRecovery && (status.vm_running || terminal) && (
-              <>
-                {macGuest && !desktopOpen && !showHome && webPanes.length > 0 && (
-                  <section className={`pane-lane browser-lane split-${paneSide(webPanes[0].id)}`}>
-                    {status.ready && <MacOSAppWindow key="chrome" browser onOpenPage={openBrowserPage} visible={!settingsOpen} uploads={desktopFiles.uploads}
-                      keyboard={status.keyboard} remoteRef={remote} onStatus={notify}
-                      sidebarCollapsed={sidebarCollapsed} onExpand={() => persist("cage-sidebar-collapsed", false, setSidebarCollapsed)}
-                      onFallback={(text, message) => setTransfer({ text, message })} />}
-                  </section>
-                )}
-                {!macGuest && !desktopOpen && !showHome && webPanes.length > 0 && (
-                  <section className={`pane-lane browser-lane ${browserTabLayout === "vertical" ? "vertical-browser" : ""} ${dualBrowser ? "" : "split-" + paneSide(webPanes[0].id)}`}>
-                    {browserTabLayout === "vertical" && <BrowserTabRail tabs={browserTabs} metadata={metadata}
-                      active={liveBrowser?.id} ready={status.ready} busy={busy} splitDrag={splitDrag}
-                      sidebarButton={sidebarButton(paneSide(webPanes[0].id))}
-                      onSelect={select} onClose={closeTab} onRename={renameTab} onPin={pinTab} onReorder={reorder}
-                      onNew={newPage} />}
-                    <div className="browser-headers">{webPanes.map(tab =>
-                      <div key={paneSide(tab.id) || "single"} className="browser-header-cell" data-focused={active === tab.id}
-                        onPointerDownCapture={() => focusHeader(tab)} onFocusCapture={() => focusHeader(tab)}>
-                        {browserHeader(tab)}
-                      </div>)}</div>
-                    <div className="pane-body" onPointerDownCapture={() => {
-                      if (!dualBrowser && liveBrowser?.id !== active) focusHeader(liveBrowser);
-                    }}>
-                      {status.ready && liveBrowser?.kind === "browser-settings" && <BrowserSettingsPage
-                        key={`${liveBrowser.id}:${browserSettingsRevision}`} tab={liveBrowser} tabs={tabs}
-                        currentHome={settings.browser_home_url} layout={browserTabLayout}
-                        onLayoutChange={value => persist("cage-browser-tab-layout", value, setBrowserTabLayout)}
-                        onSectionChange={openBrowserSettings}
-                        onSaved={next => setSettings(previous => ({ ...previous, ...next }))}
-                        onInternal={openInternalPage} onOpenPage={openSettingsPageResult} onConfirm={confirm} />}
-                      {status.ready && <RemoteView ref={remote} visible={Boolean(liveBrowserVisible && !settingsOpen && liveBrowser?.kind !== "browser-settings")}
-                        copyScope={webPanes.map(tab => `${tab.id}:${tab.document || ""}`).join("|")}
-                        focused={dualBrowser || liveBrowser?.id === active} keyboard={status.keyboard}
-                        guestPlatform={status.guest_system} systemClipboard={browser.capabilities?.systemClipboard !== false}
-                        tabId={liveBrowser?.id} onStatus={notify}
-                        onFallback={(text, message) => setTransfer({ text, message })} />}
-                      {!status.ready && <div className="view-overlay">
-                        <RefreshCw /><h3>浏览器连接暂时不可用</h3>
-                        <p>环境和终端仍可运行；恢复浏览器不会停止现有终端。</p>
-                        <button className="primary" disabled={busy} onClick={() => startEnvironment({})}>恢复浏览器</button>
-                      </div>}
-                      {status.ready && !splitReady && <div className="view-overlay">正在调整浏览器布局…</div>}
-                    </div>
-                  </section>
-                )}
-                {tabs.filter(t => t.kind === "terminal").map(tab => {
-                  const visible = !desktopOpen && !showHome && panes.some(pane => pane.id === tab.id);
-                  return <section key={tab.id} className={`pane-lane terminal-lane split-${paneSide(tab.id)}`}
-                    data-focused={active === tab.id} hidden={!visible}
-                    onPointerDownCapture={() => focusHeader(tab)} onFocusCapture={() => focusHeader(tab)}>
-                    {visible && terminalHeader(tab)}
-                    <div className="pane-body">
-                      <TerminalView
-                        session={{ ...tab, id: tab.sessionId }}
-                        onLoginTab={({ id }) => showBrowserResult({ id, kind: "web", login: true, incognito: true, title: "账号授权" })}
-                        onControls={(control) =>
-                          control
-                            ? terminalControls.current.set(tab.id, control)
-                            : terminalControls.current.delete(tab.id)
-                        }
-                        visible={visible && !settingsOpen}
-                        focused={active === tab.id}
-                        onStatus={notify}
-                        onAccountChanged={view => { if (view?.desktop_terminal_id && view.desktop_terminal_id !== tab.sessionId) void openSessionTerminal({id:tab.cli_session_id}); }}
-                      />
-                    </div>
-                  </section>;
-                })}
-              </>
-            )}
-            {showHome && (
-              <div className="welcome">
-                <div className="welcome-content">
-                  <img className="welcome-logo" src={logo} alt="Cage" />
-                  {storageRecovery ? <>
-                    <h1>环境存储需要恢复</h1>
-                    <p className="welcome-subtitle"><SafetyMessage message={status.storage_recovery.error} /></p>
-                    <p className="field-help">在设置中恢复环境存储后，再启动浏览器和终端。诊断包可以从同一页面导出。</p>
-                    <button className="primary" onClick={() => openSettings("project")}>恢复环境存储</button>
-                  </> : setupProgress ? <>
-                    <h1>{status.job.error ? "环境安装未完成" : "正在安装 Cage 环境"}</h1>
-                    <SetupProgress job={status.job} onDetails={() => setDetails(true)}
-                      onStop={stop} onRetry={() => startEnvironment(status.job.kind === "guest-install" ? { guest_system: status.job.setup_progress.system } : {})} disconnected={Boolean(connectionError)} />
-                  </> : <>
-                  <h1>
-                    {busy
-                      ? status.job.kind === "stop"
-                        ? "正在停止 Cage 环境"
-                        : status.job.kind === "storage"
-                          ? "正在调整环境存储"
-                        : status.job.kind === "project"
-                          ? "正在打开项目"
-                          : "正在准备 Cage 环境"
-                      : running
-                        ? !status.ready
-                          ? "Cage 环境正在连接"
-                          : "Cage 环境已就绪"
-                        : setupProxy
-                          ? "为 Claude 准备独立工作区"
-                          : "先启动 Cage 环境"}
-                  </h1>
-                  <p className="welcome-subtitle">
-                    <SafetyMessage message={busy
-                      ? status.job.message
-                      : running
-                        ? !status.ready
-                          ? status.environment_update_error || "浏览器连接尚未就绪，可以恢复连接或继续使用终端。"
-                          : network.mode === "open"
-                            ? "环境已连接，网络检查通过。可以浏览网页或打开本地项目。"
-                            : `${network.label}。终端与本地文件仍可使用。`
-                        : setupProxy
-                          ? "先连接你的代理，再启动浏览器、终端和编辑器。无需安装额外的代理软件。"
-                          : "准备独立的浏览器和终端，完成网络检查后开始工作。"} />
-                  </p>
-                  {!running && !nativeGuestLabel && (
-                    <ol className="onboarding-steps" aria-label="开始使用 Cage">
-                      {["配置代理", "启动环境", "开始工作"].map(
-                        (label, index) => (
-                          <li
-                            key={label}
-                            aria-current={
-                              index === (setupProxy ? 0 : 1)
-                                ? "step"
-                                : undefined
-                            }
-                          >
-                            <span>{index + 1}</span>
-                            {label}
-                          </li>
-                        ),
-                      )}
-                    </ol>
-                  )}
-                  <div className="start-project-box">
-                    <div className="environment-summary">
-                      <EnvironmentShield
-                        healthy={status.ready && network.mode === "open"}
-                        size={24}
-                      />
-                      <span>
-                        <strong>Cage 隔离环境</strong>
-                        <small>
-                          {running
-                            ? runtimeLabel
-                            : setupProxy
-                              ? "自备代理订阅、YAML 配置或节点"
-                              : nativeGuestLabel ? `${nativeGuestLabel} 客机已安装` : "代理已配置，首次启动会下载开发环境"}
-                        </small>
-                      </span>
-                    </div>
-                    {!busy && !running && !account?.guest_system && status.local_vm_storage && !isRemoteClient() && <GuestSystemPicker system={guestSystem} onChange={setGuestSystem} />}
-                    {!running && !nativeGuestLabel && status.local_vm_storage && !isRemoteClient() && <button className="storage-entry text-button" disabled={busy} onClick={() => openSettings("project")}>选择环境存储位置</button>}
-                    <div className="start-project-footer">
-                      <span>
-                        <i className={`status-dot ${network.mode}`} />
-                        {busy
-                          ? runtimeLabel
-                          : running
-                            ? network.label
-                            : setupProxy
-                              ? "等待配置代理"
-                              : "环境已停止"}
-                      </span>
-                      <button
-                        className="primary"
-                        data-terminal-location="start"
-                        disabled={busy || Boolean(connectionError) || (!running && !setupProxy &&
-                          ((!account?.guest_system && status.local_vm_storage && !isRemoteClient() && guestSystem === undefined) || !validGuestChoice(guestSystem)))}
-                        onClick={(event) => {
-                          if (!running && guestSystem?.activate) {
-                            api("/environment/guest-systems/activate", {}).then(() => native("reconnect")).catch((e) => setToast(e.message));
-                          } else if (!running && setupProxy) openSettings("network");
-                          else if (!running || !status.ready)
-                            startEnvironment(!running && guestSystem?.guest_system === "debian-13" && !guestSystem.clone ? { guest_system: "debian-13" } : !running && guestSystem ? {
-                              guest_system: guestSystem.guest_system, media: guestSystem.media, sha256: guestSystem.sha256,
-                              clone_key: guestSystem.clone_key,
-                              editor_terms: guestSystem.editor_terms,
-                            } : {});
-                          else if (!workspace)
-                            setProjectDialog({ path: "" });
-                          else newTerminal(workspace, event.currentTarget);
-                        }}
-                      >
-                        {busy ? (
-                          <LoaderCircle size={16} className="spin" />
-                        ) : !running && setupProxy ? (
-                          <Globe2 size={16} />
-                        ) : !running ? (
-                          <Power size={16} />
-                        ) : !status.ready ? (
-                          <RefreshCw size={16} />
-                        ) : !workspace ? (
-                          <FolderOpen size={16} />
-                        ) : (
-                          <TerminalSquare size={16} />
-                        )}
-                        {busy
-                          ? "正在处理…"
-                          : !running
-                            ? setupProxy
-                              ? "配置网络与代理"
-                              : guestSystem?.activate ? "打开工作台" : guestSystem?.pending ? "继续安装" :
-                                guestSystem && guestSystem.guest_system !== "debian-13" ? "安装客户机" : "启动 Cage 环境"
-                            : !status.ready
-                              ? "恢复浏览器"
-                              : !workspace
-                                ? "打开项目"
-                                : "新建终端"}
-                      </button>
-                    </div>
-                    {terminalMenuAt("start")}
-                  </div>
-                  {running && (
-                    <div className="welcome-shortcuts">
-                      {macGuest && <MacOSLogin disabled={!status.ready || busy} />}
-                      <button onClick={newTerminalHere} data-terminal-location="shortcuts" aria-haspopup="menu" disabled={busy}>
-                        <TerminalSquare size={16} />
-                        新建终端
-                      </button>
-                      <button
-                        onClick={() => openEditor(contentWorkspace)}
-                        disabled={!status.ready || busy}
-                      >
-                        <FileCode2 size={16} />
-                        浏览文件
-                      </button>
-                    </div>
-                  )}
-                  {terminalMenuAt("shortcuts")}
-                  {!running && !nativeGuestLabel && (
-                    <p className="welcome-hint">
-                      {setupProxy
-                        ? "Cage 不提供代理或 Claude 账户。连接后，在 Cage 内完成 Claude 登录。"
-                        : "首次安装时可在操作详情中查看下载和配置进度；中断后可以继续安装。"}
-                    </p>
-                  )}
-                  {running && status.ready && (
-                    <p className="welcome-hint">
-                      打开项目后，在终端输入 <code>claude</code>
-                      ，按提示登录你的账户。
-                      <br />
-                      {isRemoteClient() ? "打开的项目位于云端，编辑和删除会直接影响云端文件。" : "打开的项目与本机共享，编辑和删除文件会同步。"}
-                    </p>
-                  )}
-                  </>}
-                  {status.project_error && (
-                    <div className="start-error" role="alert">
-                      <strong>部分项目文件夹尚未连接</strong>
-                      <p>环境和浏览器可继续使用。</p>
-                      {status.project_errors?.length ? (
-                        <ul className="project-connection-errors">
-                          {status.project_errors.map(({ path, message, recovery }) => (
-                            <li key={path}>
-                              <strong>{projectName(path, groups)}</strong>
-                              <span className="project-error-path">{path}</span>
-                              <p>{message}</p>
-                              <ProjectRecovery recovery={recovery} disabled={!status.ready || busy}
-                                onRetry={() => setProjectDialog({ path })} onSettings={() => openSettings("project")} />
-                            </li>
-                          ))}
-                        </ul>
-                      ) : <p>{status.project_error}</p>}
-                    </div>
-                  )}
-                  {!storageRecovery && !setupProgress && status.job?.error && (
-                    <div className="start-error" role="alert">
-                      <strong>{status.job.message || "本次操作未完成"}</strong>
-                      <p><SafetyMessage message={status.job.error} /></p>
-                      {status.can_restore && (
-                        <button
-                          className="text-button"
-                          onClick={() => openSettings("project")}
-                        >
-                          查看恢复选项
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {!setupProgress && status.job?.log && (
-                    <button
-                      className="text-button details-link"
-                      onClick={() => setDetails(true)}
-                    >
-                      查看操作详情
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </main>
-          <footer className="status-bar">
-            {sidebarCollapsed && <AppUpdateButton updates={appUpdates} />}
-            <button onClick={() => setSafetyOpen(true)} title="网络与隔离检查">
-              <EnvironmentShield
-                size={14}
-                healthy={status.ready && network.mode === "open"}
-              />
-              <span>{running ? network.label : "网络检查"}</span>
-            </button>
-            <span className="status-divider" />
-            <button onClick={() => openSettings("network")}>
-              <MapPin size={12} />
-              <span>
-                {status.network_error
-                  ? "出口待确认"
-                  : status.location || status.safety?.exit_ip
-                    ? [
-                        status.safety?.exit_ip || status.location?.ip,
-                        status.location?.country,
-                        status.location?.city,
-                      ].filter(Boolean).join(" · ")
-                    : "指定代理出口"}
-              </span>
-            </button>
-            <span className="status-divider" />
-            <button onClick={() => openSettings("region")}>
-              <Clock3 size={12} />
-              {settings.timezone}
-              {settings.auto_timezone ? " · 自动" : ""}
-            </button>
-            <span className="status-divider" />
-            <NetworkLatency
-              key={`${proxy?.selected}:${proxy?.revision}:${running}:${busy}:${Boolean(connectionError)}`}
-              enabled={running && !busy && !connectionError}
-              revision={proxy?.revision}
-              selected={proxy?.selected}
-            />
-            <span className="status-spacer" />
-            <AudioControls audio={audio} />
-            <EnvironmentClock timezone={settings.timezone} />
-            <span className="status-feedback" role="status">
-              <SafetyMessage message={toast ||
-                (busy
-                  ? status.job.message
-                  : running
-                    ? status.ready
-                      ? isRemoteClient() ? "文件保存在云端" : "文件与本机同步"
-                      : "环境运行中 · 浏览器待恢复"
-                    : "")} />
-            </span>
-            {status.job?.log && (
-              <button title="操作详情" onClick={() => setDetails(true)}>
-                <MoreHorizontal size={15} />
-              </button>
-            )}
-            <button
-              onClick={stop}
-              disabled={
-                Boolean(startRequest) || (!running && !busy) || (status?.job?.kind === "stop" && busy)
-              }
-              title="停止当前环境"
-            >
-              <Power size={12} />
-              <span>停止环境</span>
-            </button>
-          </footer>
-        </div>
-      </div>
-      <BrowserUploads requests={status.ready ? browser.uploads : []} onStatus={notify} />
-      {settingsOpen && (
-        <SettingsPanel
-          current={settings}
-          status={status}
-          initialSection={settingsSection}
-          onClose={() => setSettingsOpen(false)}
-          onSaved={refreshSettings}
-          onConfirm={confirm}
-        />
-      )}
-      {claudeAccountsOpen && (
-        <Modal title="Claude 账号管理" wide onClose={() => setClaudeAccountsOpen(false)}>
-          <div className="claude-accounts-content">
-            <ClaudeAccountsPanel store={claudeProfiles} tabs={tabs} onConfirm={confirm}
-              running={status.vm_running} environmentBusy={busy || storageRecovery}
-              login={async (id) => {
-                await createTerminal(workspace, "claude-login", id);
-                setClaudeAccountsOpen(false);
-              }} />
-          </div>
-        </Modal>
-      )}
-      {tailscaleOpen && <TailscalePanel status={status} onClose={() => setTailscaleOpen(false)}
-        onConfirm={confirm} onInstall={async () => {
-          const nativeGuest = ["macos", "windows-11"].includes(status.guest_system);
-          if (nativeGuest && !await confirm({ title: "更新环境组件？", body: "更新会重新连接浏览器和显示组件，请先保存工作。设备身份、公钥和个人数据保留。", confirm: "更新组件" })) return;
-          await action(nativeGuest ? "/environment/update" : "/tailscale/install", {});
-        }}
-        onOpenBrowser={async url => { const result = await openBrowserPage(url, false); if (result) setTailscaleOpen(false); return Boolean(result); }} />}
-      {projectDialog && (
-        <ProjectDialog
-          current={settings}
-          status={status}
-          initialPath={projectDialog.path}
-          onClose={() => setProjectDialog(null)}
-          onSettings={() => { setProjectDialog(null); openSettings("project"); }}
-          onOpened={openedProject}
-          onRemoved={async (removed, workspace) => {
-            await refreshSettings();
-            await refreshStatus.current?.();
-            if ((groups.find(group => group.workspace === removed)?.folders || [removed]).includes(selectedProject)) setSelectedProject(workspace);
-          }}
-        />
-      )}
-      {rename && (
-        <Modal
-          title="重命名标签"
-          onClose={() => setRename(null)}
-          footer={
-            <>
-              <span className="save-note">仅修改工作台中显示的名称</span>
-              <button onClick={() => setRename(null)}>取消</button>
-              <button
-                className="primary"
-                form="rename-tab"
-                type="submit"
-                disabled={!rename.title.trim()}
-              >
-                保存名称
-              </button>
-            </>
-          }
-        >
-          <form
-            className="modal-body project-form"
-            id="rename-tab"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (!rename.title.trim()) return;
-              if (rename.session) {
-                try {
-                  await api("/cli/sessions/" + rename.id + "/metadata", {title:rename.title.trim()});
-                  sessionsChanged(); setRename(null);
-                } catch (error) { notify(error.message); }
-                return;
-              }
-              const tab = tabs.find(tab => tab.id === rename.id);
-              if (tab?.cli_session_id) {
-                try {
-                  await updateSharedMetadata(tab, {title:rename.title.trim()});
-                  setRename(null);
-                } catch (error) { notify(error.message); }
-                return;
-              }
-              changeTabMetadata({
-                ...metadata,
-                [rename.id]: {
-                  ...metadata[rename.id],
-                  title: rename.title.trim(),
-                },
-              });
-              setRename(null);
-            }}
-          >
-            <label htmlFor="tab-title">标签名称</label>
-            <input
-              id="tab-title"
-              autoFocus
-              maxLength={100}
-              value={rename.title}
-              onChange={(event) =>
-                setRename({ ...rename, title: event.target.value })
-              }
-            />
-          </form>
-        </Modal>
-      )}
-      {transfer && (
-        <Modal
-          title="文本传递"
-          onClose={() => setTransfer(null)}
-          footer={
-            <>
-              <span className="save-note">仅在你的操作下传递文本</span>
-              <button onClick={() => setTransfer(null)}>关闭</button>
-              <button
-                className="primary"
-                onClick={() => {
-                  remote.current?.pasteText(transfer.text);
-                  setTransfer(null);
-                }}
-              >
-                粘贴到 Cage
-              </button>
-            </>
-          }
-        >
-          <div className="modal-body">
-            <p>{transfer.message}</p>
-            <textarea
-              aria-label="待传递文本"
-              className="transfer-text"
-              value={transfer.text}
-              onChange={(e) =>
-                setTransfer({ ...transfer, text: e.target.value })
-              }
-            />
-          </div>
-        </Modal>
-      )}
-      {details && (
-        <Modal title="操作详情" wide onClose={() => setDetails(false)}>
-          <div className="modal-body">
-            <p><SafetyMessage message={status.job.message} /></p>
-            {status.job.error && (
-              <div className="error-message"><SafetyMessage message={status.job.error} /></div>
-            )}
-            <pre className="job-log">{status.job.log || "暂无日志"}</pre>
-          </div>
-        </Modal>
-      )}
-      {safetyOpen && (
-        <SafetyPanel
-          status={
-            connectionError
-              ? {
-                  ...status,
-                  safety: {
-                    ...status.safety,
-                    gate: null,
-                    error: "控制服务连接中断，无法确认当前外网状态",
-                  },
-                }
-              : status
-          }
-          onClose={() => setSafetyOpen(false)}
-          onSettings={openSettings}
-          onOpenPage={openBrowserPage}
-          onConfirm={confirm}
-        />
-      )}
-      {dialogs}
-    </div>
-    </SafetyChecklistContext.Provider>
-  );
-}
-export default function Workbench() {
-  return <AccountProvider><AppearanceProvider><AccountGate><InitializationGate><App /></InitializationGate></AccountGate></AppearanceProvider></AccountProvider>;
-}

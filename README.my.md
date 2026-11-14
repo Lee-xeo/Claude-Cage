@@ -141,6 +141,7 @@ Cage သည် လွတ်လပ်သောအသိုင်းအဝို�
 - [code-server](https://github.com/coder/code-server) - ဘရောက်ဆာအခြေခံကုဒ်တည်းဖြတ်သူ။
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): လုပ်ငန်းခွင်ပတ်ဝန်းကျင်နှင့် အပြန်အလှန်အကျိုးပြုမှုဒီဇိုင်းအတွက် ကိုးကားချက်များ။
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) နှင့် [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): ကွန်ရက်စစ်ဆေးမှုများနှင့် လုံခြုံရေးဆိုင်ရာ စစ်ဆေးမှုများအတွက် ကိုးကားချက်များ။
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): တိကျသောစာရင်းစစ်ဆေးမှု၊ အသုံးပြုသူဒေတာကာကွယ်မှုနှင့် ပြန်လည်ရယူနိုင်သော cache ရှင်းလင်းမှုလုပ်ငန်းစဉ်ကို ကိုးကားထားပြီး Cage တွင် သီးခြားအကောင်အထည်ဖော်ထားသည်။
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

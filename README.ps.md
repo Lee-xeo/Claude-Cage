@@ -141,6 +141,7 @@ Cage یوه خپلواکه ټولنه پروژه ده او د انتروپیک �
 - [code-server](https://github.com/coder/code-server): د براوزر پر بنسټ کوډ مدیر.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): د کاري چاپیریال او تعامل ډیزاین لپاره حوالې.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) او [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): د شبکې چکونو او امنیت تشخیص لپاره حوالې.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): د دقیقې پلټنې، د معلوماتو د ساتنې او بېرته راګرځېدونکي کش پاکولو د بهیر مرجع؛ په Cage کې خپلواک تطبیق.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

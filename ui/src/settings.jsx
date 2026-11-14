@@ -30,6 +30,7 @@ import { ExitPolicyFields } from "./exit-policy";
 import { canonicalExitPolicy } from "./safety-state.mjs";
 import { EnvironmentVersions } from "./environment-versions";
 import { EnvironmentStorage } from "./environment-storage";
+import { EnvironmentCache } from "./environment-cache";
 import { ResourceSettings } from "./resources";
 import { DiagnosticSettings } from "./diagnostics.jsx";
 import { MacOSLogin } from "./macos-login";
@@ -608,6 +609,7 @@ export function SettingsPanel({
                   切换项目只改变新终端和文件编辑器的起始位置；已有终端、网页和登录态会保留。
                 </p>
                 {!status.storage_recovery?.required && <EnvironmentVersions status={status} onConfirm={onConfirm} />}
+                {!status.storage_recovery?.required && <EnvironmentCache status={status} onConfirm={onConfirm} />}
                 {status.guest_system === "macos" && <section aria-label="客机系统权限">
                   <h4>客机系统权限</h4>
                   <p className="field-help">在受限的客机系统设置窗口中完成授权，Cage 会自动检查并重新连接项目。</p>
