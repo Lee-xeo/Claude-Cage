@@ -459,6 +459,14 @@ internal sealed class MainWindow : Form
                     using (var picker = new OpenFileDialog { Title = "选择 Windows 11 x64 安装镜像", Filter = "Windows ISO (*.iso)|*.iso", Multiselect = false })
                         result = picker.ShowDialog(this) == DialogResult.OK ? picker.FileName : "";
                     break;
+                case "appReference":
+                    var appReference = request.Text("kind") switch {
+                        "source" => "https://github.com/Lee-xeo/Claude-Cage/commits/main",
+                        "releases" => "https://github.com/Lee-xeo/Claude-Cage/releases",
+                        _ => throw new InvalidDataException("未知的项目页面")
+                    };
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(appReference) { UseShellExecute = true });
+                    result = true; break;
                 case "guestInstallReference":
                     var reference = request.Text("kind") switch {
                         "windows-media" => "https://www.microsoft.com/software-download/windows11",
