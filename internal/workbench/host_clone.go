@@ -35,6 +35,18 @@ func (s *Server) hostClonePlan(ctx context.Context) (hostimage.Plan, error) {
 	return hostimage.Resolve(ctx, identity, cache, filepath.Join(home, "Downloads"), template, transport)
 }
 
+func hostCloneSystemReserve(plan hostimage.Plan) int {
+	if hostimage.IsLinux(plan.Host.System) {
+		return 16
+	}
+	// Intel stages the full installer inside the new disk in addition to the
+	// installed system and development tools.
+	if plan.Host.System == "macos" && plan.Host.Arch == "amd64" {
+		return 64
+	}
+	return 32
+}
+
 func (s *Server) hostClone(w http.ResponseWriter, r *http.Request) {
 	if !s.hasTrustedView(r) || !s.localVMStorage() {
 		http.Error(w, "请在本机 Cage 窗口选择系统创建方式", http.StatusForbidden)
@@ -63,10 +75,7 @@ func (s *Server) hostClone(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	minimumGiB := 32
-	if hostimage.IsLinux(plan.Host.System) {
-		minimumGiB = 16
-	}
+	minimumGiB := hostCloneSystemReserve(plan)
 	started := view.Pending != nil && !view.Reselect
 	if started {
 		minimumGiB = 0

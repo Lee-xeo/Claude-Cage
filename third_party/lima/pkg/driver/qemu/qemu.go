@@ -490,6 +490,16 @@ func Cmdline(ctx context.Context, cfg Config) (exe string, args []string, err er
 
 func cmdline(ctx context.Context, cfg Config, workingDir *string) (exe string, args []string, err error) {
 	y := cfg.LimaYAML
+	var macOpts limatype.QEMUOpts
+	if err := limayaml.Convert(y.VMOpts[limatype.QEMU], &macOpts, "vmOpts.qemu"); err != nil {
+		return "", nil, err
+	}
+	if macOpts.MacOS != nil {
+		return macOSCmdline(ctx, cfg, macOpts.MacOS)
+	}
+	if y.OS != nil && *y.OS == limatype.DARWIN {
+		return "", nil, errors.New("QEMU macOS guests require the explicit native macOS device model")
+	}
 	exe, args, err = Exe(*y.Arch)
 	if err != nil {
 		return "", nil, err

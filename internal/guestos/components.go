@@ -167,6 +167,7 @@ func nativeComponentTarget(source, system string) string {
 		return MacOSBrowserTools + "/controller/" + strings.TrimPrefix(source, "native-browser/")
 	}
 	targets := map[string]string{
+		"cage-guest-check":                "/usr/local/libexec/cage-guest-check",
 		"project/cage-sshfs":              "/usr/local/libexec/cage-sshfs",
 		"project/cage-macos-terminal":     "/usr/local/libexec/cage-macos-terminal",
 		"cage-finish-initial-setup":       "/usr/local/libexec/cage-finish-initial-setup",

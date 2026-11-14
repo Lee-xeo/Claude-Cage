@@ -205,10 +205,31 @@ func (s *Server) macOSVMLayout() (bool, bool) {
 	var spec struct {
 		OS               string `yaml:"os"`
 		Driver           string `yaml:"vmType"`
+		Arch             string `yaml:"arch"`
 		Mounts, Networks []any
 		Extra            []any `yaml:"additionalDisks"`
+		Video            struct {
+			Display string `yaml:"display"`
+		} `yaml:"video"`
+		Options struct {
+			QEMU struct {
+				MacOS *struct {
+					UUID      string `yaml:"uuid"`
+					Installer bool   `yaml:"installer"`
+				} `yaml:"macOS"`
+			} `yaml:"qemu"`
+		} `yaml:"vmOpts"`
 	}
-	if yaml.Unmarshal(data, &spec) != nil || spec.OS != "Darwin" || spec.Driver != "vz" {
+	if yaml.Unmarshal(data, &spec) != nil || spec.OS != "Darwin" {
+		return false, false
+	}
+	if s.macosGuest.Backend == guestos.MacOSQEMU {
+		mac := spec.Options.QEMU.MacOS
+		if spec.Driver != "qemu" || spec.Arch != "x86_64" || spec.Video.Display != "offscreen" || mac == nil ||
+			mac.UUID == "" || mac.UUID != s.macosGuest.UUID || mac.Installer {
+			return false, false
+		}
+	} else if s.macosGuest.Backend != "" || spec.Driver != "vz" {
 		return false, false
 	}
 	return spec.Mounts != nil && len(spec.Mounts) == 0 && len(spec.Extra) == 0, spec.Networks != nil && len(spec.Networks) == 0

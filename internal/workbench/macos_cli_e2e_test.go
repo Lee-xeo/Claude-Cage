@@ -1,4 +1,4 @@
-//go:build e2e && darwin && arm64
+//go:build e2e && darwin && (amd64 || arm64)
 
 package workbench
 

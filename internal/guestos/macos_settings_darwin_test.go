@@ -36,7 +36,8 @@ enum MacSetupPassword {
 	}
 	program := filepath.Join(dir, "settings-check")
 	source := filepath.Join("..", "..", "scripts", "guest-os", "macos-maintenance.swift")
-	compile := exec.CommandContext(t.Context(), "xcrun", "swiftc", "-parse-as-library", source, input, "-o", program)
+	compositor := filepath.Join("..", "..", "scripts", "guest-os", "macos-maintenance-compositor.swift")
+	compile := exec.CommandContext(t.Context(), "xcrun", "swiftc", "-parse-as-library", source, compositor, input, "-o", program)
 	if output, err := compile.CombinedOutput(); err != nil {
 		t.Fatalf("compile settings router: %v\n%s", err, output)
 	}

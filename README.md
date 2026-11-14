@@ -67,6 +67,8 @@ Claude Cage 让你在熟悉的系统里与 Claude 一起工作：Mac 上用 macO
 
 Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Windows 10 22H2 / 11 x64，以及 Debian 12 / Ubuntu 22.04 / 24.04 x86_64。Windows 11 客机需要支持 Hyper-V 的 Windows 11 专业版、企业版或教育版主机；其他受支持的 Windows 主机可使用 Debian 或 Ubuntu 22.04。Intel Mac、Windows ARM64 和 Linux ARM64 暂不支持。 [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md)。
 
+开发构建另提供 Intel Mac 本机 Linux 客机，以及 macOS 15.4+ 主机上的本机 macOS 客机实验路线，使用独立测试包；公开发行版尚未包含此能力。条件、构建方式和验收范围见 [Intel macOS 开发说明](docs/intel-macos-development.md)。
+
 1. 打开[项目主页](https://claude-cage.com/#download)，点击“下载应用”并选择平台。
 2. macOS：打开安装包，将 **Cage** 拖入 **Applications（应用程序）**，再从“应用程序”启动。Windows：[安装说明](docs/windows.md#安装并开始工作) · Linux：[安装说明](docs/linux.md#安装并开始工作)。
 3. 按应用内引导配置自己的代理，启动环境后打开项目。

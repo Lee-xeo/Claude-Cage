@@ -29,14 +29,15 @@ type guestInstallRequest struct {
 }
 
 type guestInstallView struct {
-	LinuxSystems []string              `json:"linux_systems,omitempty"`
-	Reselect     bool                  `json:"reselect,omitempty"`
-	System       string                `json:"system,omitempty"`
-	Available    bool                  `json:"available"`
-	Reason       string                `json:"reason,omitempty"`
-	Fresh        bool                  `json:"fresh"`
-	Pending      *guestos.Installation `json:"pending,omitempty"`
-	Activate     bool                  `json:"activate,omitempty"`
+	LinuxSystems  []string              `json:"linux_systems,omitempty"`
+	HostMatchOnly bool                  `json:"host_match_only,omitempty"`
+	Reselect      bool                  `json:"reselect,omitempty"`
+	System        string                `json:"system,omitempty"`
+	Available     bool                  `json:"available"`
+	Reason        string                `json:"reason,omitempty"`
+	Fresh         bool                  `json:"fresh"`
+	Pending       *guestos.Installation `json:"pending,omitempty"`
+	Activate      bool                  `json:"activate,omitempty"`
 }
 
 func (s *Server) guestInstallView() (guestInstallView, error) {
@@ -59,8 +60,9 @@ func (s *Server) guestInstallView() (guestInstallView, error) {
 	}
 	v.LinuxSystems = linuxGuestSystems(runtime.GOOS, runtime.GOARCH)
 	switch {
-	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
+	case runtime.GOOS == "darwin" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"):
 		v.System = guestos.MacOS
+		v.HostMatchOnly = runtime.GOARCH == "amd64"
 	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
 		v.System = guestos.Windows11
 	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":
@@ -240,6 +242,10 @@ func (s *Server) beginGuestInstallMode(w http.ResponseWriter, r *http.Request, i
 		http.Error(w, "当前环境无法安装所选客户机系统", http.StatusConflict)
 		return
 	}
+	if v.HostMatchOnly && in.System == v.System && v.Pending == nil && in.CloneKey == "" {
+		requestError(w, errors.New("Intel Mac 请通过「自动匹配本机系统版本」选择 Apple 完整安装包"))
+		return
+	}
 	install := guestos.Installation{Version: 1, System: in.System, Media: in.Media, SHA256: strings.ToLower(in.SHA256), ID: uuid.New(), EditorTerms: in.EditorTerms}
 	if v.Pending != nil {
 		if v.Pending.System != in.System || (in.Media != "" && in.Media != v.Pending.Media) || (in.SHA256 != "" && !strings.EqualFold(in.SHA256, v.Pending.SHA256)) {
@@ -316,10 +322,7 @@ func (s *Server) beginGuestInstallMode(w http.ResponseWriter, r *http.Request, i
 			if err != nil {
 				return err
 			}
-			minimumGiB := 32
-			if hostimage.IsLinux(install.System) {
-				minimumGiB = 16
-			}
+			minimumGiB := hostCloneSystemReserve(install.Source)
 			if !unstarted {
 				minimumGiB = 0
 			}

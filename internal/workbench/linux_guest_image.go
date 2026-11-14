@@ -13,7 +13,7 @@ import (
 )
 
 func linuxGuestSystems(platform, arch string) []string {
-	if platform == "darwin" && arch == "arm64" || (platform == "windows" || platform == "linux") && arch == "amd64" {
+	if platform == "darwin" && (arch == "arm64" || arch == "amd64") || (platform == "windows" || platform == "linux") && arch == "amd64" {
 		return []string{guestos.Ubuntu2204}
 	}
 	return nil

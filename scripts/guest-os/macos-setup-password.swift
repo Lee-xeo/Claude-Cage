@@ -4,6 +4,7 @@ import Security
 
 @MainActor
 enum MacSetupPassword {
+    private static let applications = ["com.apple.systempreferences", "com.apple.authorizationhost", "com.apple.installer"]
     private static func validateRequest(_ data: Data) throws {
         guard data.count <= 4096, let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               value.isEmpty || (value.count == 1 && value["action"] as? String == "probe") else {
@@ -85,11 +86,12 @@ enum MacSetupPassword {
     }
 
     static func select(windows: [Window], pid: pid_t, bundle: String, display: CGRect, accessibility: Bool) throws -> Window {
-        guard ["com.apple.systempreferences", "com.apple.authorizationhost"].contains(bundle),
+        guard applications.contains(bundle),
               let index = windows.firstIndex(where: { $0.pid == pid && $0.layer == 0 && $0.bounds.width >= 80 && $0.bounds.height >= 40 }) else {
             throw Failure(7, "setup_password_window_unavailable")
         }
         let target = windows[index]
+        guard bundle != "com.apple.installer" || accessibility else { throw Failure(7, "setup_password_window_unavailable") }
         guard display.contains(target.bounds), target.id != 0 else { throw Failure(7, "setup_password_window_unavailable") }
         if !accessibility && bundle == "com.apple.systempreferences" {
             let parent = windows.dropFirst(index + 1).contains { window in
@@ -108,7 +110,7 @@ enum MacSetupPassword {
     static func allowsPasswordProcess(hostBundle: String, hostPID: pid_t, fieldPID: pid_t,
                                       fieldBundle: String, appleSigned: Bool) -> Bool {
         guard hostPID > 0, fieldPID > 0,
-              ["com.apple.systempreferences", "com.apple.authorizationhost"].contains(hostBundle) else { return false }
+              applications.contains(hostBundle) else { return false }
         if fieldPID == hostPID { return true }
         return hostBundle == "com.apple.systempreferences" && appleSigned &&
             ["com.apple.settings.PrivacySecurity.extension", "com.apple.extensionkit.AppExtensionManagement"].contains(fieldBundle)
@@ -116,7 +118,7 @@ enum MacSetupPassword {
 
     static func passwordFocused(_ app: NSRunningApplication, window: CGRect) -> Bool {
         guard let bundle = app.bundleIdentifier, AXIsProcessTrusted(),
-              ["com.apple.systempreferences", "com.apple.authorizationhost"].contains(bundle), signed(app, bundle: bundle) else { return false }
+              applications.contains(bundle), signed(app, bundle: bundle) else { return false }
         let application = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(application, 0.25)
         func attribute(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
@@ -168,7 +170,7 @@ enum MacSetupPassword {
         try requireGuest()
         let session = try consoleSession()
         guard let front = NSWorkspace.shared.frontmostApplication, let bundle = front.bundleIdentifier,
-              ["com.apple.systempreferences", "com.apple.authorizationhost"].contains(bundle), signed(front, bundle: bundle) else {
+              applications.contains(bundle), signed(front, bundle: bundle) else {
             throw Failure(7, "setup_password_foreground_changed")
         }
         guard let raw = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {

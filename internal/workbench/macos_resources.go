@@ -14,6 +14,7 @@ import (
 	"al.essio.dev/pkg/shellescape"
 	"github.com/docker/go-units"
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/vm"
 	"go.yaml.in/yaml/v3"
 )
@@ -155,7 +156,11 @@ func (s *Server) macOSResourceStatus(w http.ResponseWriter, r *http.Request) {
 		resourceError = allocationErr.Error()
 	}
 	maxMemory, maxCPUs := cage.ResourceLimits()
-	jsonReply(w, map[string]any{"runtime": "vz-macos", "memory_policy": "fixed", "automatic_reclaim": false,
+	runtimeName := "vz-macos"
+	if s.macosGuest.Backend == guestos.MacOSQEMU {
+		runtimeName = "qemu-macos"
+	}
+	jsonReply(w, map[string]any{"runtime": runtimeName, "memory_policy": "fixed", "automatic_reclaim": false,
 		"running": running, "automatic": allocation.Automatic, "memory_gib": memory, "cpus": cpus,
 		"min_memory_gib": requirements.MemoryGiB, "min_cpus": requirements.CPUs, "minimum_requirements": requirements,
 		"max_memory_gib": maxMemory, "max_cpus": maxCPUs, "recommended_memory_bytes": uint64(maxMemory) << 30, "recommended_cpus": maxCPUs,

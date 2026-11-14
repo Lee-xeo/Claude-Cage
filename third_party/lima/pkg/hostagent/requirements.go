@@ -18,14 +18,21 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/lima-vm/lima/v2/pkg/limatype"
+	"github.com/lima-vm/lima/v2/pkg/limayaml"
 	"github.com/lima-vm/lima/v2/pkg/sshutil"
 )
 
 func (a *HostAgent) waitForRequirements(label string, requirements []requirement) error {
-	const (
-		retries       = 200
-		sleepDuration = 3 * time.Second
-	)
+	const sleepDuration = 3 * time.Second
+	retries := 200
+	if *a.instConfig.OS == limatype.DARWIN && *a.instConfig.VMType == limatype.QEMU {
+		var opts limatype.QEMUOpts
+		if limayaml.Convert(a.instConfig.VMOpts[limatype.QEMU], &opts, "vmOpts.qemu") == nil && opts.MacOS != nil && opts.MacOS.Installer {
+			// Recovery exposes no SSH server. The complete offline installation
+			// and its reboots must finish before the first normal boot can reply.
+			retries = 1200
+		}
+	}
 	var errs []error
 
 	fn := a.waitForRequirement

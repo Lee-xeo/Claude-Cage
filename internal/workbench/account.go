@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Server) macAccountHost() bool {
-	return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" && s.localVMStorage()
+	return runtime.GOOS == "darwin" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64") && s.localVMStorage()
 }
 
 func (s *Server) accountStatus(w http.ResponseWriter, r *http.Request) {

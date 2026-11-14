@@ -2,7 +2,7 @@
 # Offline installation. Only Cage-owned guest tools are published.
 set -euo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-[[ ( $# == 1 || ( $# == 2 && $2 == --components ) ) && $1 == /* && $EUID == 0 && $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ ]] || exit 1
+[[ ( $# == 1 || ( $# == 2 && $2 == --components ) ) && $1 == /* && $EUID == 0 && ( $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ || $(/usr/local/libexec/cage-guest-check --check >/dev/null 2>&1; echo $?) == 0 ) ]] || exit 1
 components=${2:-}
 marker=/var/db/cage-guest-os
 [[ ! -L $marker && -f $marker && $(stat -f %u "$marker") == 0 && $(cat "$marker") == macos ]] || exit 1
@@ -18,6 +18,9 @@ while [[ $parent != / ]]; do
     (( (8#$mode & 022) == 0 || (8#$mode & 01000) != 0 )) || exit 1
     parent=$(dirname "$parent")
 done
+# Installation follows the running guest, never a caller-supplied cross target.
+CAGE_MACOS_GUEST_ARCH=$(uname -m)
+. "$kit/macos-guest-arch.sh"
 umask 022
 base=/usr/local/libexec
 mkdir -p "$base" /usr/local/bin
@@ -29,7 +32,7 @@ runtime="$base/cage-cli-runtime-2.1.311-py3.13.18-git2.56.0"
 github="$base/cage-gh-2.103.3"
 current="$base/cage-cli"
 verify_claude() {
-    codesign --verify --strict --architecture arm64 -R '=anchor apple generic and identifier "com.anthropic.claude-code" and certificate leaf[subject.OU] = "Q6L2SF6YDW"' "$1"
+    codesign --verify --strict --architecture "$CAGE_MACOS_NATIVE_ARCH" -R '=anchor apple generic and identifier "com.anthropic.claude-code" and certificate leaf[subject.OU] = "Q6L2SF6YDW"' "$1"
 }
 version_ge() {
     local i left right
@@ -60,14 +63,14 @@ else
 cp "$kit"/{claude,uv.tar.gz,python.tar.gz,git.tar.gz,gh.zip} .
 check() { [[ $(shasum -a 256 "$2" | cut -d' ' -f1) == "$1" ]]; }
 version=$(plutil -extract version raw -o - "$kit/claude-manifest.json")
-digest=$(plutil -extract platforms.darwin-arm64.checksum raw -o - "$kit/claude-manifest.json")
+digest=$(plutil -extract "platforms.darwin-$CAGE_MACOS_NODE_ARCH.checksum" raw -o - "$kit/claude-manifest.json")
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $digest =~ ^[a-f0-9]{64}$ ]] || exit 1
-[[ $(plutil -extract platforms.darwin-arm64.binary raw -o - "$kit/claude-manifest.json") == claude ]] || exit 1
+[[ $(plutil -extract "platforms.darwin-$CAGE_MACOS_NODE_ARCH.binary" raw -o - "$kit/claude-manifest.json") == claude ]] || exit 1
 check "$digest" claude
-check 81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731 uv.tar.gz
-check 8392b6ea51d94391befb2c31ebe75463f045d0b69dfcf5e1bb3234e1f5fa3405 python.tar.gz
-check 1110de343de11cc6f469b782b60f36217b9199b5e06875dd65baa26dd60563c7 git.tar.gz
-check d700207eae9ae98fe2b89535c2c087c07823d4628c56364695a5a07ef311c062 gh.zip
+check "$CAGE_MACOS_UV_SHA256" uv.tar.gz
+check "$CAGE_MACOS_PYTHON_SHA256" python.tar.gz
+check "$CAGE_MACOS_GIT_SHA256" git.tar.gz
+check "$CAGE_MACOS_GH_SHA256" gh.zip
 chmod 755 claude
 verify_claude claude
 [[ $(DISABLE_AUTOUPDATER=1 ./claude --version | awk 'NR == 1 {print $1}') == "$version" ]] || exit 1
@@ -93,7 +96,7 @@ if [[ $components != --components ]]; then
         fi
     fi
     /usr/bin/ditto -x -k gh.zip github-archive
-    mv github-archive/gh_2.103.3_macOS_arm64 github
+    mv "github-archive/gh_2.103.3_macOS_$CAGE_MACOS_RELEASE_ARCH" github
     [[ $(github/bin/gh --version | head -n 1) == 'gh version 2.103.3 '* ]] || exit 1
     if [[ -d $github ]]; then
         cmp github/bin/gh "$github/bin/gh"
@@ -106,12 +109,12 @@ if [[ ! -d $runtime ]]; then
     tar -xzf uv.tar.gz --no-same-owner
     mkdir -p tools/bin
     # uv recognizes the distribution format from the archive filename.
-    mv python.tar.gz cpython-3.13.18-aarch64-apple-darwin.tar.gz
+    mv python.tar.gz "cpython-3.13.18-$CAGE_MACOS_RUST_ARCH-apple-darwin.tar.gz"
     cat > python.json <<JSON
-{"cpython-3.13.18-darwin-aarch64-none":{"name":"cpython","arch":{"family":"aarch64","variant":null},"os":"darwin","libc":"none","major":3,"minor":13,"patch":18,"prerelease":"","url":"file://$work/cpython-3.13.18-aarch64-apple-darwin.tar.gz","sha256":"8392b6ea51d94391befb2c31ebe75463f045d0b69dfcf5e1bb3234e1f5fa3405","variant":null,"build":"20261026"}}
+{"cpython-3.13.18-darwin-$CAGE_MACOS_RUST_ARCH-none":{"name":"cpython","arch":{"family":"$CAGE_MACOS_RUST_ARCH","variant":null},"os":"darwin","libc":"none","major":3,"minor":13,"patch":18,"prerelease":"","url":"file://$work/cpython-3.13.18-$CAGE_MACOS_RUST_ARCH-apple-darwin.tar.gz","sha256":"$CAGE_MACOS_PYTHON_SHA256","variant":null,"build":"20261026"}}
 JSON
-    UV_CACHE_DIR="$work/cache" ./uv-aarch64-apple-darwin/uv python install 3.13.18 --install-dir "$work/tools/python" --no-bin --no-config --offline --python-downloads-json-url "$work/python.json"
-    ln -s ../python/cpython-3.13.18-macos-aarch64-none/bin/python3.13 tools/bin/python3
+    UV_CACHE_DIR="$work/cache" "./uv-$CAGE_MACOS_RUST_ARCH-apple-darwin/uv" python install 3.13.18 --install-dir "$work/tools/python" --no-bin --no-config --offline --python-downloads-json-url "$work/python.json"
+    ln -s "../python/cpython-3.13.18-macos-$CAGE_MACOS_RUST_ARCH-none/bin/python3.13" tools/bin/python3
     tools/bin/python3 -I -c 'import sys, ssl; assert sys.version_info[:3] == (3,13,18)'
     mkdir tools/git
     tar -xzf git.tar.gz -C tools/git --no-same-owner

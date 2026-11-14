@@ -2,20 +2,20 @@
 # Root configures only the installer-bound ordinary account inside a Cage VM.
 set -euo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-[[ $# == 2 && $EUID == 0 && $(uname -sm) == 'Darwin arm64' && $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ ]]
+[[ $# == 2 && $EUID == 0 && $(uname -s) == Darwin && ( $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ || $(/usr/local/libexec/cage-guest-check --check >/dev/null 2>&1; echo $?) == 0 ) ]] || exit 1
 user=$1
 installation=$2
-[[ $user =~ ^[a-z][a-z0-9_]{0,30}$ && $user != root && $user != cageprovision && $user != cagesetup ]]
-[[ -f /var/db/cage-guest-os && ! -L /var/db/cage-guest-os && $(stat -f %u /var/db/cage-guest-os) == 0 && $(cat /var/db/cage-guest-os) == macos ]]
+[[ $user =~ ^[a-z][a-z0-9_]{0,30}$ && $user != root && $user != cageprovision && $user != cagesetup ]] || exit 1
+[[ -f /var/db/cage-guest-os && ! -L /var/db/cage-guest-os && $(stat -f %u /var/db/cage-guest-os) == 0 && $(cat /var/db/cage-guest-os) == macos ]] || exit 1
 receipt=/var/db/cage-initial-setup/account.json
-[[ -f $receipt && ! -L $receipt && $(stat -f %u "$receipt") == 0 && $(plutil -extract installation raw "$receipt") == "$installation" ]]
+[[ -f $receipt && ! -L $receipt && $(stat -f %u "$receipt") == 0 && $(plutil -extract installation raw "$receipt") == "$installation" ]] || exit 1
 bound_user=$(plutil -extract user raw "$receipt" 2>/dev/null || echo cage)
-[[ $bound_user == "$user" ]]
+[[ $bound_user == "$user" ]] || exit 1
 phase=$(plutil -extract state raw "$receipt")
-[[ $phase == ready ]]
-[[ $(dscl . -read /Users/$user NFSHomeDirectory) == "NFSHomeDirectory: /Users/$user" && " $(id -Gn "$user") " != *' admin '* ]]
+[[ $phase == ready ]] || exit 1
+[[ $(dscl . -read /Users/$user NFSHomeDirectory) == "NFSHomeDirectory: /Users/$user" && " $(id -Gn "$user") " != *' admin '* ]] || exit 1
 IFS= read -r password
-[[ -n $password ]]
+[[ -n $password ]] || exit 1
 printf '%s\n' "$password" | dscl /Local/Default -authonly "$user" >/dev/null
 # FileVault prevents system automatic login; retain its protection and report it.
 if fdesetup status | grep -q 'FileVault is On'; then
@@ -23,7 +23,7 @@ if fdesetup status | grep -q 'FileVault is On'; then
     exit 1
 fi
 existing=$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2>/dev/null || true)
-[[ -z $existing || $existing == "$user" ]]
+[[ -z $existing || $existing == "$user" ]] || exit 1
 umask 077
 tmp=$(mktemp /etc/cage-autologin.XXXXXXXX)
 trap 'rm -f "$tmp"' EXIT
@@ -38,7 +38,7 @@ printf '%s\n' "$password" | /usr/bin/perl -e '
     print pack("C*", map { ord(substr($plain,$_,1)) ^ $key[$_ % @key] } 0..length($plain)-1);
 ' > "$tmp"
 unset password
-[[ ! -L /etc/kcpassword ]]
+[[ ! -L /etc/kcpassword ]] || exit 1
 chmod 600 "$tmp"
 mv -f "$tmp" /etc/kcpassword
 defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser -string "$user"
@@ -52,7 +52,7 @@ if [[ -f $source && ! -L $source ]]; then
         umask 077
         mkdir -p "$HOME/Library/Preferences"
         target="$HOME/Library/Preferences/com.apple.SetupAssistant.plist"
-        [[ ! -L $target ]]
+        [[ ! -L $target ]] || exit 1
         cat > "$target"
         plutil -lint "$target" >/dev/null
     '

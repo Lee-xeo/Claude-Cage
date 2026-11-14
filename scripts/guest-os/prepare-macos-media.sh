@@ -2,9 +2,10 @@
 # Download application media on the host. The guest's external network stays closed.
 set -euo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-[[ $# == 1 && $1 == /* ]]
+[[ $# == 1 && $1 == /* ]] || exit 1
 media=$1
 src=$(cd "$(dirname "$0")" && pwd)
+. "$src/macos-guest-arch.sh"
 mkdir -p "$media"
 export CAGE_HOST_DOWNLOAD_CACHE="$media/.downloads"
 fetch() {
@@ -48,7 +49,7 @@ desktop_media() (
 download() {
     local name=$1 url=$2 expected=$3 api=${4:-}
     local target="$media/$name" temporary
-    [[ ! -L $target && ( ! -e $target || -f $target ) ]]
+    [[ ! -L $target && ( ! -e $target || -f $target ) ]] || exit 1
     if [[ -f $target && ! -L $target ]]; then
         if [[ -z $expected && ${CAGE_REFRESH_TOOLS:-} != 1 ]] || [[ -n $expected && $(shasum -a 256 "$target" | cut -d' ' -f1) == "$expected" ]]; then return; fi
     fi
@@ -66,8 +67,8 @@ download() {
     fi
     mv "$temporary" "$target"
 }
-download editor.tgz https://github.com/coder/code-server/releases/download/v4.145.0/code-server-4.145.0-macos-arm64.tar.gz a79774d8d34eed785c1f831bc0125f7534bc21a0039bef8e8a2aa32463f9421a https://api.github.com/repos/coder/code-server/releases/assets/711206948
-download node.tgz https://nodejs.org/dist/v24.22.2/node-v24.22.2-darwin-arm64.tar.gz aa9549349e47dffaa42dcf95d6e06ade8c4bdafc980979883b88767670df385a
+download editor.tgz "https://github.com/coder/code-server/releases/download/v4.145.0/code-server-4.145.0-macos-$CAGE_MACOS_RELEASE_ARCH.tar.gz" "$CAGE_MACOS_EDITOR_SHA256" "https://api.github.com/repos/coder/code-server/releases/assets/$CAGE_MACOS_EDITOR_ASSET"
+download node.tgz "https://nodejs.org/dist/v24.22.2/node-v24.22.2-darwin-$CAGE_MACOS_NODE_ARCH.tar.gz" "$CAGE_MACOS_NODE_SHA256"
 if [[ ${CAGE_REFRESH_TOOLS:-} != 1 ]]; then
     download macfuse.dmg https://github.com/macfuse/macfuse/releases/download/macfuse-5.5.0/macfuse-5.5.0.dmg 92c21ef2db4199bcf5bddc8e6efb57b23ecb9715f74ab38cba2c77ab226d3830
     if [[ ! -f $media/macfuse.pkg ]]; then bash "$src/macos-fuse-media.sh" "$media/macfuse.dmg" "$media/macfuse.pkg"; fi
@@ -91,7 +92,7 @@ download chrome.dmg https://dl.google.com/chrome/mac/universal/stable/GGRO/googl
 # CLI source from this bundle without changing downloaded package bytes.
 for name in install-macos-cli.sh macos-cli.py cli_channel.py cli_channel.resume.md claude_account_resume.md claude-account.py client_runtime.py; do
     if [[ -f $src/$name ]]; then
-        [[ ! -L $media/cli/$name ]]
+        [[ ! -L $media/cli/$name ]] || exit 1
         cp "$src/$name" "$media/cli/$name"
     fi
 done

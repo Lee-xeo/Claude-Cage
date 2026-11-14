@@ -2,21 +2,21 @@
 # Executed as root over the authenticated provisioning channel of a fresh VM.
 set -euo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-[[ $EUID == 0 && $(uname -sm) == 'Darwin arm64' && $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ ]]
+[[ $EUID == 0 && $(uname -s) == Darwin && ( $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ || $(/usr/local/libexec/cage-guest-check --check >/dev/null 2>&1; echo $?) == 0 ) ]] || exit 1
 kit=$(cd "$1" && pwd -P)
-[[ $(stat -f %u "$kit") == 0 ]]
+[[ $(stat -f %u "$kit") == 0 ]] || exit 1
 umask 022
 marker=/var/db/cage-guest-os
 if [[ ! -e $marker ]]; then echo macos > "$marker"; fi
-[[ -f $marker && ! -L $marker && $(stat -f %u "$marker") == 0 && $(cat "$marker") == macos ]]
+[[ -f $marker && ! -L $marker && $(stat -f %u "$marker") == 0 && $(cat "$marker") == macos ]] || exit 1
 # The password is supplied on stdin and is never a command line argument.
 IFS= read -r login_password
-[[ -n $login_password ]]
+[[ -n $login_password ]] || exit 1
 cd /
 provision=$3
-[[ $provision == cageprovision ]]
+[[ $provision == cageprovision ]] || exit 1
 ordinary=${4:-cage}
-[[ $ordinary =~ ^[a-z][a-z0-9_]{0,30}$ && $ordinary != root && $ordinary != cageprovision && $ordinary != cagesetup ]]
+[[ $ordinary =~ ^[a-z][a-z0-9_]{0,30}$ && $ordinary != root && $ordinary != cageprovision && $ordinary != cagesetup ]] || exit 1
 full_name=$ordinary
 /usr/bin/dscl . -create "/Users/$provision" IsHidden 1
 claim=/var/db/cage-install-$ordinary
@@ -24,14 +24,14 @@ if [[ ! -e $claim ]]; then
     if id $ordinary >/dev/null 2>&1 || [[ -e /Users/$ordinary ]]; then echo 'An existing account uses the Cage guest account name.' >&2; exit 1; fi
     install -m 600 /dev/null "$claim"
 fi
-[[ -f $claim && ! -L $claim && $(stat -f %u "$claim") == 0 ]]
+[[ -f $claim && ! -L $claim && $(stat -f %u "$claim") == 0 ]] || exit 1
 if ! id $ordinary >/dev/null 2>&1; then
-    [[ ! -e /Users/$ordinary ]]
+    [[ ! -e /Users/$ordinary ]] || exit 1
     printf '%s\n' "$login_password" | /usr/sbin/sysadminctl -addUser $ordinary -fullName "$full_name" -password - -home /Users/$ordinary
     id $ordinary >/dev/null
     if [[ ! -e /Users/$ordinary ]]; then /usr/sbin/createhomedir -c -u $ordinary; fi
 fi
-[[ $(dscl . -read /Users/$ordinary NFSHomeDirectory) == "NFSHomeDirectory: /Users/$ordinary" && " $(id -Gn $ordinary) " != *' admin '* ]]
+[[ $(dscl . -read /Users/$ordinary NFSHomeDirectory) == "NFSHomeDirectory: /Users/$ordinary" && " $(id -Gn $ordinary) " != *' admin '* ]] || exit 1
 if ! printf '%s\n' "$login_password" | dscl /Local/Default -authonly $ordinary >/dev/null; then
     echo '保存的客机凭据与安装账户不匹配，请核对加密保险箱。' >&2
     exit 1
@@ -42,7 +42,7 @@ printf '%s\n' "$login_password" | /usr/local/libexec/cage-finish-initial-setup p
 install -m 755 "$kit/configure-macos-session.sh" /usr/local/libexec/cage-configure-session
 printf '%s\n' "$login_password" | /usr/local/libexec/cage-configure-session "$ordinary" "$2"
 unset login_password
-[[ ! -L /Users/$ordinary && $(stat -f %u /Users/$ordinary) == "$(id -u $ordinary)" ]]
+[[ ! -L /Users/$ordinary && $(stat -f %u /Users/$ordinary) == "$(id -u $ordinary)" ]] || exit 1
 # Account-controlled paths are opened with that account's privileges.
 cat "/Users/$provision/.ssh/authorized_keys" | sudo -Hu $ordinary /bin/sh -ec '
     umask 077

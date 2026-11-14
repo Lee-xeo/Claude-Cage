@@ -67,8 +67,15 @@ func Validate(y *limatype.LimaYAML, warn bool) error {
 		errs = errors.Join(errs, fmt.Errorf("field `arch` must be one of %v; got %#q", limatype.ArchTypes, *y.Arch))
 	}
 
-	if y.Video.Display != nil && *y.Video.Display == "offscreen" && (*y.OS != limatype.DARWIN || y.VMType == nil || *y.VMType != limatype.VZ) {
-		errs = errors.Join(errs, errors.New("video.display offscreen requires a macOS guest with the VZ driver"))
+	if y.Video.Display != nil && *y.Video.Display == "offscreen" {
+		allowed := *y.OS == limatype.DARWIN && y.VMType != nil && *y.VMType == limatype.VZ
+		if *y.OS == limatype.DARWIN && y.VMType != nil && *y.VMType == limatype.QEMU && *y.Arch == limatype.X8664 {
+			var opts limatype.QEMUOpts
+			allowed = Convert(y.VMOpts[limatype.QEMU], &opts, "vmOpts.qemu") == nil && opts.MacOS != nil
+		}
+		if !allowed {
+			errs = errors.Join(errs, errors.New("video.display offscreen requires a macOS guest using VZ or the explicit Intel macOS QEMU driver"))
+		}
 	}
 
 	if y.User.Shell != nil {

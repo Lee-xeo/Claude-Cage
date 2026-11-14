@@ -1,4 +1,4 @@
-//go:build darwin && arm64 && cgo && !no_vz
+//go:build darwin && (amd64 || (arm64 && cgo && !no_vz))
 
 package main
 
@@ -11,12 +11,9 @@ import (
 	"os"
 	"path/filepath"
 
-	vzdriver "github.com/lima-vm/lima/v2/pkg/driver/vz"
 	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/vm"
 )
-
-func macGuestLoginAvailable() bool { return vzdriver.OffscreenView != nil }
 
 func runMacGuest(ctx context.Context, profile, state string, args []string) error {
 	if len(args) == 0 {
@@ -56,19 +53,19 @@ func runMacGuest(ctx context.Context, profile, state string, args []string) erro
 		}
 		switch {
 		case len(instances) == 0:
-			err = lima.CreateMacOSFromIPSW(ctx, name, args[1], vm.Settings{DiskGiB: 64}, os.Stderr)
+			err = createMacOSGuest(ctx, profile, state, lima, name, args[1])
 		case len(instances) == 1 && instances[0].Name == name:
 			if bound, loadErr := guestos.LoadMacOSProfile(profile); loadErr != nil || bound != nil {
 				return errors.New("this macOS guest already has a binding; use start")
 			}
-			err = lima.MatchMacOSInstallSource(ctx, name, args[1])
+			err = matchMacOSGuestSource(ctx, profile, lima, name, args[1])
 		default:
 			return errors.New("create requires a dedicated macOS guest profile")
 		}
 		if err != nil {
 			return err
 		}
-		return lima.Start(ctx, name, os.Stderr)
+		return startInstallingMacOSGuest(ctx, profile, lima, name)
 	case "bind":
 		if len(args) != 2 {
 			return errors.New("supply the ordinary guest account and its independently verified guest SSH host public key on stdin")
@@ -93,7 +90,7 @@ func runMacGuest(ctx context.Context, profile, state string, args []string) erro
 			return errors.New("this profile is not bound to a prepared macOS guest")
 		}
 		if args[0] == "stop" {
-			return lima.Stop(ctx, m.Instance)
+			return stopPreparedMacOSGuest(ctx, profile, lima, m.Instance)
 		}
 		recovery, err := guestos.LoadMacOSInstallRecovery(profile)
 		if err != nil {
@@ -105,10 +102,10 @@ func runMacGuest(ctx context.Context, profile, state string, args []string) erro
 				return errors.New("macOS 恢复缺少原安装记录")
 			}
 			media := install.Media
-			if media == "" {
+			if media == "" && m.Backend != guestos.MacOSQEMU {
 				media = filepath.Join(state, "guest-media", install.System, "MacOS.ipsw")
 			}
-			if err := lima.MatchMacOSInstallSource(ctx, m.Instance, media); err != nil {
+			if err := matchMacOSGuestSource(ctx, profile, lima, m.Instance, media); err != nil {
 				return err
 			}
 		} else if err := lima.CheckMacOSGuest(ctx, m.Instance); err != nil {

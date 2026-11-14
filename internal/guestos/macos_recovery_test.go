@@ -6,11 +6,45 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 )
+
+func TestIntelMacOSRecoveryKeepsQEMUBackendBeforeBinding(t *testing.T) {
+	profile := t.TempDir()
+	machine := filepath.Join(profile, "state", "lima", "mac")
+	if err := os.MkdirAll(machine, 0700); err != nil {
+		t.Fatal(err)
+	}
+	id := uuid.New()
+	identity := IntelMacOSIdentity{Version: 1, Backend: MacOSQEMU, UUID: uuid.NewString(), Installation: id, BootSHA256: strings.Repeat("a", 64)}
+	if err := WriteIntelMacOSIdentity(machine, identity); err != nil {
+		t.Fatal(err)
+	}
+	config := "os: Darwin\narch: x86_64\nvmType: qemu\nvmOpts:\n  qemu:\n    macOS:\n      uuid: " + identity.UUID + "\n"
+	if err := os.WriteFile(filepath.Join(machine, "lima.yaml"), []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(machine, "disk"), []byte("partial-system"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveInstallation(profile, Installation{Version: 1, System: MacOS, ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	if err := CreateMacOSInstallRecovery(profile, "cageuser", id); err != nil {
+		t.Fatal(err)
+	}
+	recovery, err := LoadMacOSProfileOrRecovery(profile)
+	if err != nil || recovery == nil || recovery.Backend != MacOSQEMU || recovery.UUID != identity.UUID || recovery.SetupID != id.String() {
+		t.Fatalf("pending Intel recovery lost the display backend: %+v %v", recovery, err)
+	}
+	if bound, err := LoadMacOSProfile(profile); err != nil || bound != nil {
+		t.Fatalf("recovery view prematurely bound the guest: %+v %v", bound, err)
+	}
+}
 
 func TestMacOSPendingInstallCanEnterRecoveryAfterFailure(t *testing.T) {
 	profile := t.TempDir()

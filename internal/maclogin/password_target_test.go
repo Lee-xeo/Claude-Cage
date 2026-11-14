@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+func TestSystemConsentDialogCanBeShownWithoutReceivingPasswords(t *testing.T) {
+	window := maintenanceFixture()
+	window.Bundle = "com.apple.UserNotificationCenter"
+	if !window.valid("trial") {
+		t.Fatal("Apple consent dialog was rejected as a display target")
+	}
+	target := passwordTarget{maintenanceWindow: window, Accessibility: true}
+	target.PasswordFocused = true
+	if target.valid("trial") || (passwordSelection{}).permits(target, "trial", time.Now()) {
+		t.Fatal("notification consent UI was granted password entry")
+	}
+}
+
 func TestFirstAuthorizationUsesFreshSelectedSystemPanelBeforeAccessibility(t *testing.T) {
 	now := time.Now()
 	target := passwordTarget{maintenanceWindow: maintenanceFixture(), SelectionRequired: true}
@@ -49,5 +62,24 @@ func TestAuthorizedAccessibilityRequiresSecureFocusForBothAppleHosts(t *testing.
 		if (passwordSelection{}).permits(target, "trial", time.Now()) {
 			t.Fatal("non-password field accepted")
 		}
+	}
+}
+
+func TestFirstSetupInstallerRequiresVerifiedSecureFieldWithoutWideningMaintenance(t *testing.T) {
+	target := passwordTarget{maintenanceWindow: maintenanceFixture(), Accessibility: true}
+	target.Bundle, target.PasswordFocused = "com.apple.installer", true
+	if !target.valid("trial") || target.maintenanceWindow.valid("trial") {
+		t.Fatal("installer credential scope differs from first setup")
+	}
+	if target.valid("another-user") {
+		t.Fatal("installer accepted another GUI user")
+	}
+	target.Accessibility = false
+	if target.valid("trial") {
+		t.Fatal("installer accepted an unverified secure field")
+	}
+	target.Accessibility, target.PasswordFocused = true, false
+	if target.valid("trial") {
+		t.Fatal("installer accepted non-password focus")
 	}
 }

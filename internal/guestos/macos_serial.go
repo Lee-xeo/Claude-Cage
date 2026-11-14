@@ -16,6 +16,11 @@ import (
 // first-boot script to its VZ serial attachment, independent of loopback SSH.
 func MacOSInstallHostKey(profile string) ([]byte, error) {
 	path := filepath.Join(profile, "state", "lima", "mac", "serialv.log")
+	if identity, err := ReadIntelMacOSIdentity(filepath.Dir(path)); err != nil {
+		return nil, err
+	} else if identity != nil {
+		path = filepath.Join(filepath.Dir(path), "serial.log")
+	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err

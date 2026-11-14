@@ -55,7 +55,7 @@ export function ResourceSettings({ status, onConfirm, onDirtyChange }) {
   };
   const observation = data?.observation;
   const guest = observation?.guest;
-  const macOS = data?.runtime === "vz-macos";
+  const macOS = data?.runtime === "vz-macos" || data?.runtime === "qemu-macos";
   const fresh = observation && Date.now() - Date.parse(observation.observed_at) < 10000;
   const resourceError = error || readError || data?.resource_error;
   const resourcesVerified = data?.resources_verified === true && !resourceError;

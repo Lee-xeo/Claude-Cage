@@ -1,6 +1,7 @@
 #!/bin/sh
-# Build the scoped project-access application for the native arm64 guest.
+# Build the scoped project-access application for the selected native guest.
 set -eu
+. "$(dirname "$0")/macos-guest-arch.sh"
 [ "$#" = 1 ] || { echo "usage: $0 /path/to/CageProjectAccess.app" >&2; exit 2; }
 bundle=$1
 [ ! -e "$bundle" ] || { echo "Choose a new output path." >&2; exit 1; }
@@ -20,6 +21,6 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>NSNetworkVolumesUsageDescription</key><string>Open the mounted project you selected in Cage.</string>
 </dict></plist>
 PLIST
-xcrun clang -arch arm64 -mmacosx-version-min=14.0 -fobjc-arc -O2 -framework AppKit \
+xcrun clang -arch "$CAGE_MACOS_NATIVE_ARCH" -mmacosx-version-min=14.0 -fobjc-arc -O2 -framework AppKit \
   "$(dirname "$0")/macos-project-access.m" -o "$bundle/Contents/MacOS/CageProjectAccess"
 codesign --force --sign "${CAGE_SIGNING_IDENTITY:--}" "$bundle"

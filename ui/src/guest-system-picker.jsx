@@ -29,10 +29,11 @@ export function HostCloneSummary({ pending, onChange }) {
   const source = host.system === "macos" ? "Apple" : host.system === "windows-11" ? "微软" : "发行版官方源";
   const cached = Boolean(plan.path || result.download_bytes === 0 && plan.bytes > 0);
   return <div className="guest-install-fields host-clone-summary" aria-live="polite">
-    <strong>将安装：{names[host.system]} {host.system === "windows-11" ? `${host.version} · ${editions[host.edition] || host.edition} · ${languages[host.language] || host.language}` : host.system === "macos" ? host.version : ""}</strong>
+    <strong>将安装：{names[host.system]} {host.system === "windows-11" ? `${host.version} · ${editions[host.edition] || host.edition} · ${languages[host.language] || host.language}` : host.system === "macos" ? plan.version : ""}</strong>
     <small>{pending ? "沿用首次选择的系统镜像，继续安装独立客机。" : "根据本机系统版本匹配官方镜像，安装到独立客机中。"}</small>
     {host.build && <small>{pending ? "首次检测的本机构建号" : "本机构建号"} {host.build} · 镜像构建号 {plan.build}</small>}
     {host.system === "windows-11" && host.build !== plan.build && <small>Windows 的发行版本、版本类型和语言与本机一致，补丁版本有所不同。</small>}
+    {host.system === "macos" && host.version !== plan.version && <small>本机为 macOS {host.version}。当前 Apple 目录没有完全相同的安装包，将安装同一 macOS 主版本的官方更新。</small>}
     <small>本机的应用、个人文件和登录状态不会复制；客机中的工具、账户和文件会持续保存。</small>
     <small>{cached ? "已找到匹配的本地镜像，校验后直接使用，无需重新下载系统镜像。" : `从 ${source} 下载官方系统镜像，${download ? `预计还需下载 ${download}` : "下载大小将在连接后显示"}。`}</small>
     <small>{result.installation_started ? "继续使用原虚拟磁盘，保留已有安装进度。" : `至少需要 ${result.minimum_free_gib} GiB 可用空间，虚拟磁盘按实际使用增长。`}浏览器、编辑器等工作台组件按需下载。</small>
@@ -62,9 +63,9 @@ export function GuestSystemPicker({ system, onChange, preserveOnUnmount = false,
       if (!active) return;
       setView(next);
       if (next.fresh || next.pending) {
-        onChange(current => !next.pending && current && !current.pending ? current : ({ guest_system: next.pending?.system || "debian-13", media: next.pending?.media || "",
+        onChange(current => !next.pending && current && !current.pending && (current.guest_system !== next.system || !next.host_match_only || current.clone) ? current : ({ guest_system: next.pending?.system || (next.host_match_only ? next.system : "debian-13"), media: next.pending?.media || "",
           sha256: next.pending?.sha256 || "", editor_terms: Boolean(next.pending?.editor_terms),
-          clone: Boolean(next.pending?.source && !next.pending?.source_kind), clone_key: "", clone_ready: false,
+          clone: Boolean(next.host_match_only && (!next.pending || next.pending.system === next.system) || next.pending?.source && !next.pending?.source_kind), clone_key: "", clone_ready: false,
           activate: next.activate, pending: Boolean(next.pending) }));
       } else onChange(null);
     }).catch((e) => {
@@ -96,7 +97,7 @@ export function GuestSystemPicker({ system, onChange, preserveOnUnmount = false,
         {Boolean(view.system) && <option value="host" disabled={!view.available}>自动匹配本机系统版本{view.available ? "" : "（暂不可用）"}</option>}
         <option value="debian-13">Debian 13</option>
         <option value="ubuntu-22.04" disabled={!view.linux_systems?.includes("ubuntu-22.04")}>Ubuntu 22.04{view.linux_systems?.includes("ubuntu-22.04") ? "" : "（此构建暂不可用）"}</option>
-        <option value="macos" disabled={view.system !== "macos" || !view.available}>macOS{view.system === "macos" ? view.available ? "" : "（暂不可用）" : "（需要 Apple Silicon Mac）"}</option>
+        {!view.host_match_only && <option value="macos" disabled={view.system !== "macos" || !view.available}>macOS{view.system === "macos" ? view.available ? "" : "（暂不可用）" : "（需要兼容的 Mac）"}</option>}
         <option value="windows-11" disabled={view.system !== "windows-11" || !view.available}>Windows 11{view.system === "windows-11" ? view.available ? "" : "（暂不可用）" : "（需要 Windows 11 与 Hyper-V）"}</option>
       </InlineSelect>
       {system.clone && !system.activate && (deferMatch ? <small className="guest-install-fields">Cage 会检测本机系统版本，在下一步显示匹配的官方镜像、下载量与空间要求。</small> : <HostCloneSummary pending={system.pending} onChange={onChange} />)}
@@ -138,7 +139,7 @@ export function GuestSystemPicker({ system, onChange, preserveOnUnmount = false,
         try {
           await api("/environment/guest-systems", { id: view.pending.id }, "DELETE");
           setView(await api("/environment/guest-systems"));
-          onChange({ guest_system: "debian-13", media: "", sha256: "", editor_terms: false });
+          onChange({ guest_system: view.host_match_only ? view.system : "debian-13", clone: Boolean(view.host_match_only), clone_key: "", clone_ready: false, media: "", sha256: "", editor_terms: false });
         } catch (e) { setError(e.message); }
       }}>重新选择系统或镜像</button>}
       {system.activate && <small className="guest-install-fields">客机已安装，可以打开工作台。</small>}

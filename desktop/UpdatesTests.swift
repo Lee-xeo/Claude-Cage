@@ -177,6 +177,24 @@ enum UpdatesTests {
         let probe = resources.appendingPathComponent("cage")
         try Data(script.utf8).write(to: probe)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: probe.path)
+        #if arch(x86_64)
+        // Real Intel bundles must never invoke the ARM64-only update channel.
+        // The standalone process fixture below still verifies its retry protocol.
+        for suffix in ["", ".intel-macos-test"] {
+            let manualBundle = root.appendingPathComponent("manual\(suffix).app")
+            let manualResources = manualBundle.appendingPathComponent("Contents/Resources")
+            try CageUpdateFiles.privateDirectory(manualResources)
+            try FileManager.default.copyItem(at: probe, to: manualResources.appendingPathComponent("cage"))
+            let info: [String: Any] = ["CFBundleIdentifier": cageUpdateBundleID + suffix, "CFBundlePackageType": "APPL", "CageVersion": "0.0.0"]
+            let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            try plist.write(to: manualBundle.appendingPathComponent("Contents/Info.plist"))
+            let manual = CageAppUpdater(bundleURL: manualBundle, onChange: { _ in }, quit: {}, reconnect: {})
+            for action in ["check", "install", "status"] {
+                try expect(manual.handle(action)["phase"] as? String == "manual", "Intel bundle uses independent package updates")
+            }
+            try expect(!FileManager.default.fileExists(atPath: countFile.path), "Intel bundle launched the incompatible update channel")
+        }
+        #endif
         var received: [String: Any] = [:]
         let limited = CageAppUpdater(bundleURL: probeBundle, onChange: { received = $0 }, quit: {}, reconnect: {})
         _ = limited.handle("check")

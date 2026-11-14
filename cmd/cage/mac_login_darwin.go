@@ -1,4 +1,4 @@
-//go:build darwin && arm64 && cgo && !no_vz
+//go:build darwin && (amd64 || (arm64 && cgo && !no_vz))
 
 package main
 

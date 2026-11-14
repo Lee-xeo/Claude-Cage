@@ -5,9 +5,50 @@ import (
 	"errors"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/guestos"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestIntelMacOSLayoutRequiresBoundOffscreenHardwareAndConfinedDevices(t *testing.T) {
+	const machine = "4cf5e572-6e50-43f1-887f-116a16278861"
+	base := "os: Darwin\nvmType: qemu\narch: x86_64\nvideo: {display: offscreen}\nmounts: []\nnetworks: []\nadditionalDisks: []\nvmOpts:\n  qemu:\n    macOS:\n      uuid: " + machine + "\n      installer: false\n"
+	for _, test := range []struct {
+		name, old, replacement string
+		want                   bool
+	}{
+		{"bound", "", "", true},
+		{"other-identity", machine, "another-machine", false},
+		{"installing", "installer: false", "installer: true", false},
+		{"wrong-driver", "vmType: qemu", "vmType: vz", false},
+		{"wrong-architecture", "arch: x86_64", "arch: aarch64", false},
+		{"unmanaged-display", "display: offscreen", "display: cocoa", false},
+		{"host-share", "mounts: []", "mounts: [{location: /Users}]", false},
+		{"extra-network", "networks: []", "networks: [{socket: /tmp/network}]", false},
+		{"extra-disk", "additionalDisks: []", "additionalDisks: [personal-data]", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := testServer(t)
+			s.macosGuest = &guestos.MacOSProfile{Instance: "mac", Backend: guestos.MacOSQEMU, UUID: machine}
+			if err := os.MkdirAll(s.instanceDir(), 0700); err != nil {
+				t.Fatal(err)
+			}
+			data := base
+			if test.old != "" {
+				data = strings.ReplaceAll(data, test.old, test.replacement)
+			}
+			if err := os.WriteFile(filepath.Join(s.instanceDir(), "lima.yaml"), []byte(data), 0600); err != nil {
+				t.Fatal(err)
+			}
+			files, network := s.macOSVMLayout()
+			if (files && network) != test.want {
+				t.Fatalf("layout: files=%v network=%v", files, network)
+			}
+		})
+	}
+}
 
 func TestMacIPv6ScopedRoutesRequireCompleteLiveEvidence(t *testing.T) {
 	base := guestObservation{IPv6DefaultRoutes: 1, IPv6UnscopedAbsent: true, IPv6LinkSent: true, IPv6LinkInterface: "en0",

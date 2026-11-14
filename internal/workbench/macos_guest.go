@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,7 +36,7 @@ func macOSWorkbenchRoute(path string) bool {
 	return strings.HasPrefix(path, "/api/macos/claude/") || strings.HasPrefix(path, "/api/macos-browser/")
 }
 
-func macOSInstanceRunning(instanceDir string) bool {
+func macOSInstanceRunning(instanceDir, backend string) bool {
 	data, err := os.ReadFile(filepath.Join(instanceDir, "cage-running.json"))
 	var record struct {
 		PID     int    `json:"pid"`
@@ -44,7 +45,20 @@ func macOSInstanceRunning(instanceDir string) bool {
 	if err != nil || json.Unmarshal(data, &record) != nil || record.PID < 1 {
 		return false
 	}
-	return processExists(record.PID) && cage.ProcessStartMatches(record.PID, record.Started)
+	if !processExists(record.PID) || !cage.ProcessStartMatches(record.PID, record.Started) {
+		return false
+	}
+	if backend == guestos.MacOSQEMU {
+		path := filepath.Join(instanceDir, "qemu.pid")
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Size() > 32 {
+			return false
+		}
+		data, err := os.ReadFile(path)
+		pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
+		return err == nil && parseErr == nil && pid > 1 && processExists(pid)
+	}
+	return true
 }
 
 func (s *Server) macOSSSHCommand(ctx context.Context, args ...string) *exec.Cmd {
@@ -98,6 +112,9 @@ func (s *Server) checkMacOSGuest(ctx context.Context) error {
 	s.publishGate(state)
 	probe := `test "$(uname -s)" = Darwin && [[ $(sysctl -n hw.model) == VirtualMac* ]] && test "$(id -un)" = ` +
 		shellescape.Quote(s.macosGuest.User) + ` && [[ " $(id -Gn) " != *" admin "* ]]`
+	if s.macosGuest.Backend == guestos.MacOSQEMU {
+		probe = `/usr/local/libexec/cage-guest-check --expect ` + shellescape.Quote(s.macosGuest.UUID) + ` && test "$(id -un)" = ` + shellescape.Quote(s.macosGuest.User) + ` && [[ " $(id -Gn) " != *" admin "* ]]`
+	}
 	if _, err := s.guest(ctx, probe); err != nil {
 		return errors.New("无法以已绑定的普通用户连接到这台虚拟 Mac，请检查客机身份和 SSH 登录")
 	}

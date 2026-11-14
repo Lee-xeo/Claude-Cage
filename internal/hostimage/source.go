@@ -39,18 +39,25 @@ func IsLinux(system string) bool {
 // Plan is immutable after the user chooses it. Path refers only to source
 // media. Download destinations are derived independently from its digest.
 type Plan struct {
-	Host     Identity `json:"host"`
-	Version  string   `json:"version"`
-	Build    string   `json:"build,omitempty"`
-	Format   string   `json:"format"`
-	URL      string   `json:"url,omitempty"`
-	Digest   string   `json:"digest,omitempty"`
-	Bytes    int64    `json:"bytes"`
-	Path     string   `json:"path,omitempty"`
-	Modified int64    `json:"modified,omitempty"`
+	Host            Identity `json:"host"`
+	Version         string   `json:"version"`
+	Build           string   `json:"build,omitempty"`
+	Format          string   `json:"format"`
+	URL             string   `json:"url,omitempty"`
+	Digest          string   `json:"digest,omitempty"`
+	Bytes           int64    `json:"bytes"`
+	Path            string   `json:"path,omitempty"`
+	Modified        int64    `json:"modified,omitempty"`
+	IntegrityURL    string   `json:"integrity_url,omitempty"`
+	IntegritySHA256 string   `json:"integrity_sha256,omitempty"`
 }
 
 func (p Plan) Key() string {
+	if p.Format == "pkgdmg" {
+		p.Digest = ""
+		p.Path = ""
+		p.Modified = 0
+	}
 	if p.URL != "" && p.Digest != "" {
 		p.Path, p.Modified = "", 0
 	}
@@ -63,11 +70,24 @@ func (p Plan) Validate() error {
 	if p.Host.Arch != "arm64" && p.Host.Arch != "amd64" {
 		return errors.New("本机系统架构暂不支持创建客机")
 	}
-	if p.Version == "" || p.Version != p.Host.Version || p.Bytes < 0 || p.Bytes > 64<<30 {
+	intelMac := p.Host.System == "macos" && p.Host.Arch == "amd64" && p.Format == "pkgdmg"
+	if p.Version == "" || (p.Version != p.Host.Version && !(intelMac && intelMacVersionCompatible(p.Host.Version, p.Version))) || p.Bytes < 0 || p.Bytes > 64<<30 {
 		return errors.New("系统镜像与本机版本不匹配")
 	}
 	switch p.Host.System {
 	case "macos":
+		if p.Host.Arch == "amd64" {
+			if p.Format != "pkgdmg" || (p.Version == p.Host.Version && p.Build != p.Host.Build) || p.Build == "" || !intelMacVersionCompatible(p.Host.Version, p.Version) {
+				return errors.New("Intel macOS 安装材料与本机版本不匹配")
+			}
+			if p.IntegrityURL == "" || len(p.IntegritySHA256) != 64 || trustedURL(p.IntegrityURL, "macos") != nil {
+				return errors.New("缺少 Apple 安装包完整性清单")
+			}
+			if _, err := hex.DecodeString(p.IntegritySHA256); err != nil {
+				return errors.New("Apple 安装包完整性清单摘要无效")
+			}
+			break
+		}
 		if p.Format != "ipsw" || p.Build != p.Host.Build || p.Host.Arch != "arm64" {
 			return errors.New("macOS 恢复镜像与本机版本不匹配")
 		}
@@ -92,7 +112,7 @@ func (p Plan) Validate() error {
 		if err := trustedURL(p.URL, p.Host.System); err != nil {
 			return err
 		}
-		if _, err := digestHash(p.Digest); err != nil {
+		if _, err := digestHash(p.Digest); err != nil && !(p.Format == "pkgdmg" && p.Digest == "") {
 			return err
 		}
 	}
@@ -114,7 +134,7 @@ func trustedURL(raw, system string) error {
 		return errors.New("系统材料下载协议无效")
 	}
 	allowed := map[string][]string{
-		"macos":      {"updates.cdn-apple.com", "appldnld.apple.com"},
+		"macos":      {"updates.cdn-apple.com", "appldnld.apple.com", "swcdn.apple.com"},
 		"windows-11": {"dl.delivery.mp.microsoft.com", "download.microsoft.com", "software.download.prss.microsoft.com"},
 		"debian-12":  {"cloud.debian.org"}, "debian-13": {"cloud.debian.org"},
 		"ubuntu-22.04": {"cloud-images.ubuntu.com"},
@@ -177,6 +197,10 @@ func Resolve(ctx context.Context, identity Identity, cache, downloads string, te
 	var err error
 	switch identity.System {
 	case "macos":
+		if identity.Arch == "amd64" {
+			plan, err = intelMacCatalog(ctx, client, identity)
+			break
+		}
 		if plan, ok := localMacImage(identity, cache, downloads); ok {
 			return plan, plan.Validate()
 		}
@@ -306,7 +330,11 @@ func (p Plan) CachedPath(cache string) string {
 	if key == "" {
 		key = p.Key()
 	}
-	return filepath.Join(cache, key+"."+p.Format)
+	extension := p.Format
+	if extension == "pkgdmg" {
+		extension = "pkg"
+	}
+	return filepath.Join(cache, key+"."+extension)
 }
 
 func (p Plan) RemainingBytes(cache string) int64 {

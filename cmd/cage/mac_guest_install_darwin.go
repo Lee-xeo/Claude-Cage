@@ -1,4 +1,4 @@
-//go:build darwin && arm64 && cgo && !no_vz
+//go:build darwin && (amd64 || (arm64 && cgo && !no_vz))
 
 package main
 
@@ -20,10 +20,6 @@ import (
 	"github.com/sylvinus/agent-vm/internal/hostproxy"
 	"github.com/sylvinus/agent-vm/internal/vm"
 )
-
-const appleImageURL = "https://updates.cdn-apple.com/2026SpringFCS/fullrestores/140-24263/B95838F0-6815-4F0B-A039-156526C081AD/UniversalMac_26.5.2_25F84_Restore.ipsw"
-const appleImageDigest = "065abd295a1a456a46c1155217eab92ee95816520ec9aeed83f249f074f68a04"
-const appleImageBytes int64 = 19769902281
 
 func installMacWorkbench(ctx context.Context, profile, state string, l *vm.Lima) error {
 	i, err := guestos.LoadInstallation(profile)
@@ -77,14 +73,9 @@ func installMacWorkbench(ctx context.Context, profile, state string, l *vm.Lima)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		return cmd.Run()
 	}
-	media := i.Media
-	if media == "" {
-		media = filepath.Join(cache, "MacOS.ipsw")
-		fmt.Fprintln(os.Stdout, "正在从 Apple 下载并校验 macOS 26.5.2（19.77 GB）…")
-		err = prepareMacRestoreMedia(ctx, media, appleImageURL, appleImageDigest, appleImageBytes, os.Stdout)
-		if err != nil {
-			return fmt.Errorf("Apple 恢复镜像下载失败：%w", err)
-		}
+	media, err := prepareMacSystemMedia(ctx, profile, i, cache, kit)
+	if err != nil {
+		return err
 	}
 	fmt.Fprintln(os.Stdout, "正在准备客机应用和开发工具…")
 	fmt.Fprintln(os.Stdout, "CAGE_GUEST_STAGE macos media")
@@ -173,7 +164,7 @@ func installMacWorkbench(ctx context.Context, profile, state string, l *vm.Lima)
 	if err != nil {
 		return err
 	}
-	receiver := guestCommand(ctx, `umask 077; cd `+remote+`; /usr/bin/tar -xf -; mv macfuse.pkg project/macfuse.pkg`)
+	receiver := guestCommand(ctx, `umask 077; cd `+remote+`; /usr/bin/tar -xf -; if test -f macfuse.pkg; then mv macfuse.pkg project/macfuse.pkg; fi`)
 	receiver.Stdin = pipe
 	if err = tar.Start(); err != nil {
 		return err
@@ -194,7 +185,7 @@ func installMacWorkbench(ctx context.Context, profile, state string, l *vm.Lima)
 	if guiAuthorize {
 		guiMode = "CAGE_MACOS_GUI_AUTHORIZE=1 CAGE_MACOS_GUI_USER=" + ordinaryUser + " "
 	}
-	cmd := guestCommand(ctx, `sudo -S -p '' /bin/sh -ec `+shellescape.Quote(`cd `+remote+`; exec 4<login-input; rm login-input; /usr/bin/perl ./native-component-manifest.pl source ./native-components.json .; `+guiMode+`/bin/bash ./provision-macos-workbench.sh `+remote+` `+i.ID.String()+` `+provision+` `+ordinaryUser+` <&4; /usr/bin/perl ./native-component-manifest.pl publish ./native-components.json .`)+adminPassword)
+	cmd := guestCommand(ctx, `sudo -S -p '' /bin/sh -ec `+shellescape.Quote(`cd `+remote+`; /usr/bin/install -d -m 755 /usr/local/libexec; /usr/bin/install -m 755 cage-guest-check /usr/local/libexec/cage-guest-check; exec 4<login-input; rm login-input; /usr/bin/perl ./native-component-manifest.pl source ./native-components.json .; `+guiMode+`/bin/bash ./provision-macos-workbench.sh `+remote+` `+i.ID.String()+` `+provision+` `+ordinaryUser+` <&4; /usr/bin/perl ./native-component-manifest.pl publish ./native-components.json .`)+adminPassword)
 	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
 		failure := fmt.Errorf("安装虚拟 Mac 应用未完成，请在恢复界面继续安装：%w", err)
@@ -233,7 +224,7 @@ func installMacWorkbench(ctx context.Context, profile, state string, l *vm.Lima)
 		return err
 	}
 	fmt.Fprintln(os.Stdout, "CAGE_GUEST_STAGE macos services")
-	if err := l.Stop(ctx, "mac"); err != nil {
+	if err := stopPreparedMacOSGuest(ctx, profile, l, "mac"); err != nil {
 		return err
 	}
 	if err := guestos.SetMacOSInstallRecoveryPhase(profile, i.ID, guestos.MacOSInstallServicesPrepared, nil); err != nil {

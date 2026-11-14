@@ -8,7 +8,7 @@ versions and the build toolchain. manifest.json binds all these files to the
 final signed project/cage-sshfs executable. Receipts retain build identity
 without the developer's personal filesystem paths.
 
-Rebuild or modify SSHFS on an Apple Silicon Mac with Xcode command-line tools:
+Rebuild or modify SSHFS on a Mac with the same processor architecture with Xcode command-line tools:
 
 1. Obtain the external macFUSE 5.5.0 SDK from its official installer. It is not
    installed by these commands. The pinned image and package hashes are checked
@@ -59,3 +59,8 @@ bottle build environment.
 
 Copyright and license texts are under licenses/ and within each complete
 upstream archive. See NOTICE for the shipped components and Cage modification.
+
+Intel builds use the unpatched GLib and PCRE2 releases recorded in build.json.
+Their complete archives are in upstream/ and their build flags are in
+cage/build-intel-macos-runtime.sh. GNU gettext retains its Homebrew recipe.
+The supplied static libraries and headers support immediate offline relinking.

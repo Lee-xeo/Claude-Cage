@@ -52,6 +52,12 @@ func owningAXWindow(_ pid: pid_t, _ frame: CGRect) -> AXUIElement? {
     return window
 }
 
+func macApplicationWindowBounds(_ pid: pid_t) -> [CGRect] {
+    guard AXIsProcessTrusted(),
+          let windows = axAttribute(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement] else { return [] }
+    return windows.compactMap(axRect)
+}
+
 private func canSet(_ window: AXUIElement, _ name: String) -> Bool {
     var result = DarwinBoolean(false)
     return AXUIElementIsAttributeSettable(window, name as CFString, &result) == .success && result.boolValue

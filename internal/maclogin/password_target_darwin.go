@@ -1,11 +1,6 @@
-//go:build darwin && arm64 && cgo && !no_vz
+//go:build darwin && (amd64 || (arm64 && cgo && !no_vz))
 
 package maclogin
-
-/*
-#include "bridge.h"
-*/
-import "C"
 
 import (
 	"bufio"
@@ -118,7 +113,7 @@ func (s *loginSession) fillSetupPassword(password string) error {
 	if !selection.permits(target, probe.user, time.Now()) {
 		return errors.New("请先点选系统授权窗口的密码框，再点击填写授权密码")
 	}
-	if !target.Accessibility && !bool(C.cageLoginClick(C.int(selection.X), C.int(selection.Y))) {
+	if !target.Accessibility && !s.surface.Click(selection.X, selection.Y) {
 		return errors.New("所选密码框已变化，请重新点选")
 	}
 	geometry := target.geometry()
@@ -135,14 +130,14 @@ func (s *loginSession) fillSetupPassword(password string) error {
 	if err = check(); err != nil {
 		return err
 	}
-	if !bool(C.cageLoginSelectAll()) {
+	if !s.surface.SelectAll() {
 		return errors.New("系统密码框尚未准备好，请重试")
 	}
 	for _, key := range sequence {
 		if err = check(); err != nil {
 			return err
 		}
-		if !bool(C.cageLoginKey(C.int(key.code), C.bool(key.shift))) {
+		if !s.surface.Key(key.code, key.shift) {
 			return errors.New("授权密码未能填写，请重新选择密码框后重试")
 		}
 	}

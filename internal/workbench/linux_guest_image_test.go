@@ -21,7 +21,7 @@ func TestUbuntuGuestChoicesMatchSupportedHostArchitectures(t *testing.T) {
 		available      bool
 	}{
 		{"darwin", "arm64", true}, {"windows", "amd64", true}, {"linux", "amd64", true},
-		{"darwin", "amd64", false}, {"windows", "arm64", false}, {"linux", "arm64", false},
+		{"darwin", "amd64", true}, {"windows", "arm64", false}, {"linux", "arm64", false},
 	} {
 		if got := linuxGuestSystems(host.platform, host.arch); (len(got) == 1 && got[0] == guestos.Ubuntu2204) != host.available {
 			t.Fatalf("%s/%s: %v", host.platform, host.arch, got)
@@ -35,6 +35,9 @@ func TestUbuntuCatalogPlanPreservesArchitectureAndResumeChoice(t *testing.T) {
 		if err != nil || plan.Host.Arch != arch || !strings.Contains(plan.URL, "-"+arch+".img") || plan.Bytes <= 0 {
 			t.Fatalf("%s: %+v %v", arch, plan, err)
 		}
+	}
+	if len(linuxGuestSystems(runtime.GOOS, runtime.GOARCH)) == 0 {
+		t.Skip("catalog construction verified; Linux guest resume is unsupported on this host")
 	}
 	s := testServer(t)
 	plan, err := linuxGuestImagePlan(t.Context(), s.profile, guestos.Ubuntu2204, runtime.GOARCH)
@@ -59,6 +62,9 @@ func TestUbuntuCatalogPlanPreservesArchitectureAndResumeChoice(t *testing.T) {
 }
 
 func TestUbuntuSelectionUsesInstallerAndRequiresTrustedDesktop(t *testing.T) {
+	if len(linuxGuestSystems(runtime.GOOS, runtime.GOARCH)) == 0 {
+		t.Skip("Linux guest installation is unsupported on this host")
+	}
 	for _, trusted := range []bool{false, true} {
 		s := testServer(t)
 		// Keep accepted work from touching a real VM or network in this admission test.

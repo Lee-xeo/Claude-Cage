@@ -56,6 +56,7 @@ type LimaQemuDriver struct {
 
 	qCmd    *exec.Cmd
 	qWaitCh chan error
+	qDone   chan struct{}
 
 	vhostCmds []*exec.Cmd
 
@@ -218,6 +219,11 @@ func validateConfig(cfg *limatype.LimaYAML) error {
 	if err := limayaml.Convert(cfg.VMOpts[limatype.QEMU], &qemuOpts, "vmOpts.qemu"); err != nil {
 		return err
 	}
+	if qemuOpts.MacOS != nil {
+		if err := validateMacOSConfig(cfg, qemuOpts.MacOS); err != nil {
+			return err
+		}
+	}
 	if qemuOpts.MinimumVersion != nil {
 		if _, err := semver.NewVersion(*qemuOpts.MinimumVersion); err != nil {
 			return fmt.Errorf("field `vmOpts.qemu.minimumVersion` must be a semvar value, got %#q: %w", *qemuOpts.MinimumVersion, err)
@@ -377,6 +383,26 @@ func fillConfig(cfg *limatype.LimaYAML, instDir string) error {
 }
 
 func (l *LimaQemuDriver) BootScripts(_ context.Context) (map[string][]byte, error) {
+	var opts limatype.QEMUOpts
+	if err := limayaml.Convert(l.Instance.Config.VMOpts[limatype.QEMU], &opts, "vmOpts.qemu"); err != nil {
+		return nil, err
+	}
+	if opts.MacOS != nil && opts.MacOS.Installer {
+		files := map[string][]byte{}
+		for _, name := range []string{"cage-intel-install.sh", "cage-intel-install.json", "cage-bootstrap.pkg", "cage-installer-app.tar.gz", "cage-guest-check"} {
+			path := filepath.Join(l.Instance.Dir, name)
+			info, err := os.Lstat(path)
+			if err != nil || !info.Mode().IsRegular() || info.Size() > 256<<20 {
+				return nil, fmt.Errorf("invalid Intel macOS boot resource: %s", name)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+			files["boot.Cage/"+name] = data
+		}
+		return files, nil
+	}
 	return nil, nil
 }
 
@@ -556,6 +582,7 @@ func (l *LimaQemuDriver) Start(ctx context.Context) (chan error, error) {
 		return nil, err
 	}
 	l.qCmd = qCmd
+	l.qDone = make(chan struct{})
 	l.vhostCmds = vhostCmds
 	l.qWaitCh = watchQEMU(qCmd.Wait, func() error {
 		client := l.usernetClient
@@ -567,6 +594,7 @@ func (l *LimaQemuDriver) Start(ctx context.Context) (chan error, error) {
 		}
 		return nil
 	}, func() {
+		close(l.qDone)
 		cancel()
 		if l.usernetStop != nil {
 			l.usernetStop()
@@ -1028,7 +1056,7 @@ func (l *LimaQemuDriver) Info(_ context.Context) driver.Info {
 	info.Features = driver.DriverFeatures{
 		DynamicSSHAddress:     false,
 		SkipSocketForwarding:  false,
-		CanRunGUI:             false,
+		CanRunGUI:             l.canRunMacOSView(),
 		SupportedImageFormats: []string{string(qcow2.Type), string(rawImage.Type), string(vmdk.Type), string(vhdx.Type)}, // Not a comprehensive list of supported formats
 	}
 	return info
@@ -1050,8 +1078,31 @@ func (l *LimaQemuDriver) Delete(_ context.Context) error {
 	return nil
 }
 
-func (l *LimaQemuDriver) RunGUI(_ context.Context) error {
+// MacOSOffscreenView is provided by the embedding application's authenticated
+// login bridge. It never exposes a general-purpose QMP endpoint to the UI.
+var MacOSOffscreenView func(context.Context, string) error
+var OwnsMacOSOffscreenView func(string) bool
+
+func (l *LimaQemuDriver) RunGUI(ctx context.Context) error {
+	if l.canRunMacOSView() {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		go func() {
+			select {
+			case <-l.qDone:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+		return MacOSOffscreenView(ctx, l.Instance.Dir)
+	}
 	return nil
+}
+
+func (l *LimaQemuDriver) canRunMacOSView() bool {
+	return l.Instance != nil && l.Instance.Config != nil && l.Instance.Config.OS != nil &&
+		*l.Instance.Config.OS == limatype.DARWIN && MacOSOffscreenView != nil &&
+		OwnsMacOSOffscreenView != nil && OwnsMacOSOffscreenView(l.Instance.Dir)
 }
 
 func (l *LimaQemuDriver) Register(_ context.Context) error {

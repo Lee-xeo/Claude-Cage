@@ -64,8 +64,16 @@ func LoadMacOSProfileOrRecovery(profile string) (*MacOSProfile, error) {
 	if err != nil || recovery == nil {
 		return nil, err
 	}
-	return &MacOSProfile{Version: 1, Instance: recovery.Instance, User: recovery.User,
-		MachineID: recovery.MachineID, SetupID: recovery.InstallationID.String()}, nil
+	result := &MacOSProfile{Version: 1, Instance: recovery.Instance, User: recovery.User,
+		MachineID: recovery.MachineID, SetupID: recovery.InstallationID.String()}
+	identity, err := ReadIntelMacOSIdentity(filepath.Join(profile, "state", "lima", "mac"))
+	if err != nil {
+		return nil, err
+	}
+	if identity != nil {
+		result.Version, result.Backend, result.UUID = 2, MacOSQEMU, identity.UUID
+	}
+	return result, nil
 }
 func CanRecoverMacOSInstall(profile string, id uuid.UUID) (bool, error) {
 

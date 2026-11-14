@@ -5,6 +5,7 @@ set -euo pipefail
 cache=${2:-}
 umask 077
 src=$(cd "$(dirname "$0")" && pwd)
+. "$src/macos-guest-arch.sh"
 stage=$(mktemp -d "$(dirname "$1")/.cage-cli-kit.XXXXXXXX")
 trap 'rm -rf "$stage"' EXIT
 downloads=${CAGE_HOST_DOWNLOAD_CACHE:-$(dirname "$stage")/.downloads}
@@ -49,27 +50,27 @@ version=$(cat "$stage/latest")
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid official Claude Code version.' >&2; exit 1; }
 fetch "$releases/$version/manifest.json" "$stage/claude-manifest.json" manifest.json
 [[ $(plutil -extract version raw -o - "$stage/claude-manifest.json") == "$version" ]] || { echo 'Claude Code manifest version mismatch.' >&2; exit 1; }
-digest=$(plutil -extract platforms.darwin-arm64.checksum raw -o - "$stage/claude-manifest.json")
+digest=$(plutil -extract "platforms.darwin-$CAGE_MACOS_NODE_ARCH.checksum" raw -o - "$stage/claude-manifest.json")
 [[ $digest =~ ^[a-f0-9]{64}$ ]] || exit 1
-[[ $(plutil -extract platforms.darwin-arm64.binary raw -o - "$stage/claude-manifest.json") == claude ]] || exit 1
-download claude "$releases/$version/darwin-arm64/claude" "$digest" '' &
+[[ $(plutil -extract "platforms.darwin-$CAGE_MACOS_NODE_ARCH.binary" raw -o - "$stage/claude-manifest.json") == claude ]] || exit 1
+download claude "$releases/$version/darwin-$CAGE_MACOS_NODE_ARCH/claude" "$digest" '' &
 claude_pid=$!
-download uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.13.7/uv-aarch64-apple-darwin.tar.gz 81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731 https://api.github.com/repos/astral-sh/uv/releases/assets/704009442 &
+download uv.tar.gz "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-$CAGE_MACOS_RUST_ARCH-apple-darwin.tar.gz" "$CAGE_MACOS_UV_SHA256" "https://api.github.com/repos/astral-sh/uv/releases/assets/$CAGE_MACOS_UV_ASSET" &
 uv_pid=$!
-download python.tar.gz https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.13.18%2B20261026-aarch64-apple-darwin-install_only_stripped.tar.gz 8392b6ea51d94391befb2c31ebe75463f045d0b69dfcf5e1bb3234e1f5fa3405 https://api.github.com/repos/astral-sh/python-build-standalone/releases/assets/678576053 &
+download python.tar.gz "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.13.18%2B20261026-$CAGE_MACOS_RUST_ARCH-apple-darwin-install_only_stripped.tar.gz" "$CAGE_MACOS_PYTHON_SHA256" "https://api.github.com/repos/astral-sh/python-build-standalone/releases/assets/$CAGE_MACOS_PYTHON_ASSET" &
 python_pid=$!
-download git.tar.gz https://github.com/desktop/dugite-native/releases/download/v2.56.0-2/dugite-native-v2.56.0-a44aeca-macOS-arm64.tar.gz 1110de343de11cc6f469b782b60f36217b9199b5e06875dd65baa26dd60563c7 https://api.github.com/repos/desktop/dugite-native/releases/assets/677615273 &
+download git.tar.gz "https://github.com/desktop/dugite-native/releases/download/v2.56.0-2/dugite-native-v2.56.0-a44aeca-macOS-$CAGE_MACOS_NODE_ARCH.tar.gz" "$CAGE_MACOS_GIT_SHA256" "https://api.github.com/repos/desktop/dugite-native/releases/assets/$CAGE_MACOS_GIT_ASSET" &
 git_pid=$!
-download gh.zip https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_macOS_arm64.zip d700207eae9ae98fe2b89535c2c087c07823d4628c56364695a5a07ef311c062 https://api.github.com/repos/cli/cli/releases/assets/679195704 &
+download gh.zip "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_macOS_$CAGE_MACOS_RELEASE_ARCH.zip" "$CAGE_MACOS_GH_SHA256" "https://api.github.com/repos/cli/cli/releases/assets/$CAGE_MACOS_GH_ASSET" &
 gh_pid=$!
 failed=0
 for pid in "$claude_pid" "$uv_pid" "$python_pid" "$git_pid" "$gh_pid"; do wait "$pid" || failed=1; done
 [[ $failed == 0 ]] || { echo 'Could not download and verify all macOS CLI packages.' >&2; exit 1; }
-codesign --verify --strict --architecture arm64 -R '=anchor apple generic and identifier "com.anthropic.claude-code" and certificate leaf[subject.OU] = "Q6L2SF6YDW"' "$stage/claude"
+codesign --verify --strict --architecture "$CAGE_MACOS_NATIVE_ARCH" -R '=anchor apple generic and identifier "com.anthropic.claude-code" and certificate leaf[subject.OU] = "Q6L2SF6YDW"' "$stage/claude"
 rm "$stage/latest"
 for file in internal/cage/{claude-account.py,client_runtime.py} internal/workbench/{cli_channel.py,cli_channel.resume.md,claude_account_resume.md}; do
     name=${file##*/}
     if [[ -f "$src/$name" ]]; then cp "$src/$name" "$stage/$name"; else cp "$src/../../$file" "$stage/$name"; fi
 done
-cp "$src"/{macos-cli.py,install-macos-cli.sh} "$stage/"
+cp "$src"/{macos-cli.py,install-macos-cli.sh,macos-guest-arch.sh} "$stage/"
 mv "$stage" "$1"

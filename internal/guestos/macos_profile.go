@@ -15,13 +15,15 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// MacOSProfile binds one prepared local VZ guest to its ordinary development account.
+// MacOSProfile binds one prepared local guest to its ordinary development account.
 type MacOSProfile struct {
 	Version   int    `json:"version"`
 	Instance  string `json:"instance"`
 	User      string `json:"user"`
 	MachineID string `json:"machineID"`
 	SetupID   string `json:"initial_setup,omitempty"`
+	Backend   string `json:"backend,omitempty"`
+	UUID      string `json:"uuid,omitempty"`
 }
 
 var macUser = regexp.MustCompile(`^[a-z][a-z0-9_]{0,30}$`)
@@ -39,6 +41,11 @@ func ValidMacOSAccountName(name string) bool {
 }
 
 func macMachineID(profile string) (string, error) {
+	if identity, err := ReadIntelMacOSIdentity(filepath.Join(profile, "state", "lima", "mac")); err != nil {
+		return "", err
+	} else if identity != nil {
+		return intelMacMachineID(profile, *identity)
+	}
 	path := filepath.Join(profile, "state", "lima", "mac", "vz-identifier")
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -75,8 +82,16 @@ func LoadMacOSProfile(profile string) (*MacOSProfile, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err
 	}
-	if m.Version != 1 || m.Instance != "mac" || !macUser.MatchString(m.User) || m.User == "root" {
+	if (m.Version != 1 && m.Version != 2) || m.Instance != "mac" || !macUser.MatchString(m.User) || m.User == "root" {
 		return nil, errors.New("invalid macOS guest profile or login")
+	}
+	identity, identityErr := ReadIntelMacOSIdentity(filepath.Join(profile, "state", "lima", "mac"))
+	if identityErr != nil {
+		return nil, identityErr
+	}
+	if m.Version == 1 && (m.Backend != "" || m.UUID != "" || identity != nil) ||
+		m.Version == 2 && (identity == nil || m.Backend != MacOSQEMU || m.UUID != identity.UUID) {
+		return nil, errors.New("macOS guest backend differs from its bound identity")
 	}
 	if m.SetupID != "" && !validSetupID(m.SetupID) {
 		return nil, errors.New("invalid first setup identity")
@@ -138,6 +153,16 @@ func bindMacOSProfile(profile, user string, hostKey []byte, setupID string) erro
 		return err
 	}
 	m := MacOSProfile{Version: 1, Instance: "mac", User: user, MachineID: id, SetupID: setupID}
+	identity, identityErr := ReadIntelMacOSIdentity(filepath.Join(profile, "state", "lima", "mac"))
+	if identityErr != nil {
+		return identityErr
+	}
+	if identity != nil {
+		if setupID != "" && setupID != identity.Installation.String() {
+			return errors.New("Intel macOS 安装身份不一致")
+		}
+		m.Version, m.Backend, m.UUID = 2, MacOSQEMU, identity.UUID
+	}
 	data, err := json.Marshal(m)
 	if err != nil {
 		return err

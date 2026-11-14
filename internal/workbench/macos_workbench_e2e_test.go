@@ -1,4 +1,4 @@
-//go:build e2e && darwin && arm64
+//go:build e2e && darwin && (amd64 || arm64)
 
 package workbench
 
@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,8 +31,9 @@ var macOSEditorFileLocator []byte
 // as the installed Mac workbench. Requires an already started, bound guest.
 func TestMacOSWorkbenchTerminal(t *testing.T) {
 	profile := os.Getenv("CAGE_TEST_MACOS_WORKBENCH_PROFILE")
-	if profile == "" {
-		t.Skip("select a prepared test profile with CAGE_TEST_MACOS_WORKBENCH_PROFILE")
+	project := os.Getenv("CAGE_TEST_MACOS_WORKBENCH_PROJECT")
+	if profile == "" || project == "" {
+		t.Skip("select an isolated guest and a dedicated test project; never share the account profile")
 	}
 	binding, err := guestos.LoadMacOSProfile(profile)
 	if err != nil || binding == nil {
@@ -79,7 +79,6 @@ func TestMacOSWorkbenchTerminal(t *testing.T) {
 		return resp.StatusCode, string(out)
 	}
 	defer s.closeProjectShares()
-	project := os.Getenv("CAGE_TEST_MACOS_WORKBENCH_PROJECT")
 	var fixture string
 	if project != "" {
 		fixture, err = os.MkdirTemp(project, ".cage-live-workbench-")
@@ -91,6 +90,9 @@ func TestMacOSWorkbenchTerminal(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err = os.WriteFile(filepath.Join(fixture, "from-host"), []byte("host-data"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(filepath.Join(fixture, "run.sh"), []byte("#!/bin/sh\nprintf 132\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
 		deadline := time.Now().Add(4 * time.Minute)
@@ -135,7 +137,7 @@ func TestMacOSWorkbenchTerminal(t *testing.T) {
 	expected := "_42_END"
 	if project != "" {
 		base := filepath.Base(fixture)
-		cmd = fmt.Sprintf(`d=%s; test "$(cat "$d/from-host")" = host-data && ! touch "$d/.git/forbidden" && printf guest-data > "$d/from-guest.tmp" && mv "$d/from-guest.tmp" "$d/from-guest" && printf 'CAGE_PROJECT_%%s_%%s_%%s_END\n' "$(uname -s)" "$(./run.sh)" "$(stty size)"`, base)
+		cmd = fmt.Sprintf(`d=%s; test "$(cat "$d/from-host")" = host-data && printf git-data > "$d/.git/cage-live-write" && printf guest-data > "$d/from-guest.tmp" && mv "$d/from-guest.tmp" "$d/from-guest" && printf 'CAGE_PROJECT_%%s_%%s_%%s_END\n' "$(uname -s)" "$("$d/run.sh")" "$(stty size)"`, base)
 		expected = "CAGE_PROJECT_Darwin_132_31 92_END"
 	}
 	if err := ws.WriteJSON(map[string]string{"type": "input", "data": cmd + "\r"}); err != nil {
@@ -155,8 +157,8 @@ func TestMacOSWorkbenchTerminal(t *testing.T) {
 		if err != nil || string(data) != "guest-data" {
 			t.Fatal("lost atomic guest save")
 		}
-		if _, err = os.Stat(filepath.Join(fixture, ".git", "forbidden")); !os.IsNotExist(err) {
-			t.Fatal("guest modified protected Git metadata")
+		if data, err = os.ReadFile(filepath.Join(fixture, ".git", "cage-live-write")); err != nil || string(data) != "git-data" {
+			t.Fatal("guest cannot save Git metadata in its authorized writable project")
 		}
 		if os.Getenv("CAGE_TEST_MACOS_WORKBENCH_BOUNDARY") == "1" {
 			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
@@ -218,102 +220,93 @@ func TestMacOSWorkbenchTerminal(t *testing.T) {
 			if code != 200 || json.Unmarshal([]byte(raw), &opened) != nil || !opened.OK {
 				t.Fatalf("guest editor could not open the authorized folder: status=%d error=%q", code, opened.Error)
 			}
-			code, raw = post("macos-browser/action", map[string]any{"action": "frame"})
-			var frame struct {
-				URL, Image    string
-				Width, Height int
+			// Current Cage displays the ordinary Chrome window through the same
+			// persistent native input/capture connection used by the workbench.
+			native, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/api/macos-browser/connection", h)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if err := json.Unmarshal([]byte(raw), &frame); code != 200 || err != nil {
-				t.Fatalf("editor frame: status=%d err=%v", code, err)
-			}
-			guestURL, err := url.Parse(frame.URL)
-			img, imgErr := base64.StdEncoding.DecodeString(frame.Image)
-			if err != nil || guestURL.Hostname() != filepath.Base(macOSProjectPath(binding.User, project))+".cage-editor.localhost" || guestURL.Query().Get("folder") != macOSProjectPath(binding.User, project) || imgErr != nil || len(img) < 1024 || frame.Width < 1 || frame.Height < 1 {
-				t.Fatal("browser did not show the expected guest-local project")
-			}
-
+			defer native.Close()
+			var sequence uint64
 			action := func(body map[string]any) map[string]any {
 				t.Helper()
-				status, raw := post("macos-browser/action", body)
-				var result map[string]any
-				if status != 200 || json.Unmarshal([]byte(raw), &result) != nil || result["error"] != nil {
-					t.Fatalf("browser %s: %d %v", body["action"], status, result["error"])
+				sequence++
+				_ = native.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := native.WriteJSON(map[string]any{"id": sequence, "request": body}); err != nil {
+					t.Fatal(err)
 				}
-				return result
+				_ = native.SetReadDeadline(time.Now().Add(20 * time.Second))
+				var reply struct {
+					ID     uint64
+					Result map[string]any
+				}
+				if err := native.ReadJSON(&reply); err != nil {
+					t.Fatal(err)
+				}
+				if reply.ID != sequence || reply.Result["error"] != nil {
+					t.Fatalf("native browser %s: %v", body["action"], reply.Result["error"])
+				}
+				return reply.Result
 			}
+			var frame map[string]any
 			snapshot := func(name string) map[string]any {
-				result := action(map[string]any{"action": "frame"})
+				t.Helper()
+				frame = action(map[string]any{"action": "frame", "width": 1100, "height": 700, "scale": 1})
+				image, _ := frame["image"].(string)
+				data, err := base64.StdEncoding.DecodeString(image)
+				if err != nil || len(data) < 1024 {
+					t.Fatal("native Chrome did not return a complete image")
+				}
 				if dir := os.Getenv("CAGE_TEST_MACOS_EDITOR_FRAMES"); dir != "" {
-					jpg, _ := result["image"].(string)
-					data, err := base64.StdEncoding.DecodeString(jpg)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if err = os.WriteFile(filepath.Join(dir, name+".jpg"), data, 0600); err != nil {
+					if err := os.WriteFile(filepath.Join(dir, name+".png"), data, 0600); err != nil {
 						t.Fatal(err)
 					}
 				}
-				return result
-			}
-			deadline := time.Now().Add(18 * time.Second)
-			for {
-				state := snapshot("ready")
-				title, _ := state["title"].(string)
-				if strings.Contains(title, "code-server") {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("workspace window did not initialize")
-				}
-				time.Sleep(450 * time.Millisecond)
+				return frame
 			}
 			scratch := t.TempDir()
-			source := filepath.Join(scratch, "find.swift")
-			finder := filepath.Join(scratch, "find")
+			source, finder := filepath.Join(scratch, "find.swift"), filepath.Join(scratch, "find")
 			if err := os.WriteFile(source, macOSEditorFileLocator, 0600); err != nil {
 				t.Fatal(err)
 			}
 			if out, err := exec.Command("/usr/bin/xcrun", "swiftc", source, "-o", finder).CombinedOutput(); err != nil {
 				t.Fatalf("Vision file locator: %v %s", err, out)
 			}
-			jpeg := filepath.Join(scratch, "editor.jpg")
-			deadline = time.Now().Add(22 * time.Second)
+			imageFile := filepath.Join(scratch, "editor.png")
+			deadline := time.Now().Add(35 * time.Second)
 			for {
 				state := snapshot("explorer")
-				data, err := base64.StdEncoding.DecodeString(state["image"].(string))
-				if err != nil {
+				data, _ := base64.StdEncoding.DecodeString(state["image"].(string))
+				if err := os.WriteFile(imageFile, data, 0600); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(jpeg, data, 0600); err != nil {
-					t.Fatal(err)
-				}
-				result, err := exec.Command(finder, jpeg, base).Output()
+				result, err := exec.Command(finder, imageFile, base).Output()
 				var x, y int
 				if _, scan := fmt.Sscanf(string(result), "%d %d", &x, &y); err == nil && scan == nil {
-					action(map[string]any{"action": "click", "double": true, "x": x, "y": y})
+					for click := 1; click <= 2; click++ {
+						for _, phase := range []string{"down", "up"} {
+							action(map[string]any{"action": "pointer", "pid": frame["pid"], "window": frame["window"], "geometry": frame["geometry"], "x": float64(x) / frame["pixelWidth"].(float64), "y": float64(y) / frame["pixelHeight"].(float64), "phase": phase, "button": 0, "buttons": map[string]int{"down": 1, "up": 0}[phase], "clicks": click})
+						}
+					}
 					break
 				}
 				if time.Now().After(deadline) {
-					t.Fatal("temporary file not visible in the guest editor Explorer")
+					t.Fatal("temporary file not visible in the actual Chrome editor Explorer")
 				}
 				time.Sleep(400 * time.Millisecond)
 			}
-
-			deadline = time.Now().Add(15 * time.Second)
-			for {
-				frame := snapshot("file-editor")
-				title, _ := frame["title"].(string)
-				if strings.Contains(title, base) {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatalf("unique test file did not acquire editor focus (title=%q)", title)
-				}
-				time.Sleep(450 * time.Millisecond)
-			}
+			snapshot("file-editor")
 			marker := "guest-editor-write-" + randomToken()[:12]
-			action(map[string]any{"action": "text", "text": marker})
-			action(map[string]any{"action": "key", "meta": true, "key": "s"})
+			fields := func(body map[string]any) map[string]any {
+				for _, key := range []string{"pid", "window", "geometry"} {
+					body[key] = frame[key]
+				}
+				return body
+			}
+			action(fields(map[string]any{"action": "text", "text": marker}))
+			for _, down := range []bool{true, false} {
+				action(fields(map[string]any{"action": "key", "code": "KeyS", "key": "s", "down": down, "command": true}))
+			}
 			deadline = time.Now().Add(10 * time.Second)
 			for {
 				content, err := os.ReadFile(doc.Name())
@@ -321,13 +314,11 @@ func TestMacOSWorkbenchTerminal(t *testing.T) {
 					break
 				}
 				if time.Now().After(deadline) {
-					t.Fatal("browser editor save was not observed on host")
+					t.Fatal("native Chrome editor save was not observed on host")
 				}
 				time.Sleep(150 * time.Millisecond)
 			}
-			t.Log("Selected a unique project file in the guest editor, confirmed its title and read its saved contents back on the host")
-
-			t.Logf("guest-local code-server opened the selected project; JPEG %dx%d, %d bytes", frame.Width, frame.Height, len(img))
+			t.Log("Opened the unique project file in ordinary Chrome, saved through the production persistent input channel, and read its contents back on the host")
 		}
 		t.Log(expected)
 		return
