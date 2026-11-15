@@ -21,7 +21,7 @@ func TestHostClonePreviewReusesPendingChoiceAndExistingDisk(t *testing.T) {
 	}
 	s := testServer(t)
 	s.exe = filepath.Join(s.profile, "bin", "cage")
-	for _, name := range []string{"prepare-macos-media.sh", "provision-macos-workbench.sh", "project/cage-sshfs", "native-browser/macos-native-browser.mjs", "cage-finish-initial-setup"} {
+	for _, name := range []string{"prepare-macos-media.sh", "provision-macos-workbench.sh", "project/cage-sshfs", "native-browser/macos-native-browser.mjs", "cage-finish-initial-setup", "cage-guest-check"} {
 		path := filepath.Join(filepath.Dir(s.exe), "guest-os", name)
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			t.Fatal(err)

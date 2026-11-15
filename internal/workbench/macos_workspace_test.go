@@ -383,7 +383,7 @@ func TestMacOSMediaRegistryParserHandlesSubclassesAndLabels(t *testing.T) {
 			command := exec.Command(perl, "-e", macOSMediaIdentityMatch, "disk4s1")
 			command.Stdin = strings.NewReader(test.input)
 			out, err := command.Output()
-			if string(out) != test.want || (err != nil) != (test.want == "") {
+			if strings.ReplaceAll(string(out), "\r\n", "\n") != test.want || (err != nil) != (test.want == "") {
 				t.Fatalf("registry identity %q, %v; want %q", out, err, test.want)
 			}
 		})
