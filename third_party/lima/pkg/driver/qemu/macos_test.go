@@ -136,5 +136,14 @@ func TestMacOSArgumentsKeepOneNetworkForInstallerAndRuntime(t *testing.T) {
 		if install && (!strings.Contains(joined, "-vga std") || !strings.Contains(joined, "snapshot=on,file="+filepath.Join(cfg.InstanceDir, MacOSInstaller))) {
 			t.Fatal("installer is not protected by a disposable overlay with its recovery framebuffer")
 		}
+		if !strings.Contains(joined, "virtio-blk-pci,drive=System") || strings.Contains(joined, "ide-hd,bus=sata.2,drive=System") {
+			t.Fatal("system disk must use the paravirtualized block device")
+		}
+		if unsafe := strings.Contains(joined, "cache=unsafe,file="+filepath.Join(cfg.InstanceDir, filenames.Disk)); unsafe != install {
+			t.Fatalf("installer=%t: system disk flush policy must only be relaxed while installing", install)
+		}
+		if install && !strings.Contains(joined, "virtio-blk-pci,drive=InstallPackage,serial=CAGEINSTALLPKG") {
+			t.Fatal("installation package must use the paravirtualized block device")
+		}
 	}
 }

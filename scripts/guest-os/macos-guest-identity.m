@@ -66,9 +66,76 @@ static int cageWriteSerial(NSData *output) {
     return drained ? 0 : 73;
 }
 
+static int cageInstallProgress(const char *phase, int percent) {
+    if (strcmp(phase, "copy") != 0 && strcmp(phase, "prepare") != 0) return 72;
+    if (percent < 0 || percent > 100) return 72;
+    return cageWriteSerial([[NSString stringWithFormat:@"\nCAGE_INTEL_INSTALL_PROGRESS %s %d\n", phase, percent] dataUsingEncoding:NSUTF8StringEncoding]);
+}
+
+// Copies the signed image from the raw package disk and hashes the same bytes
+// in one pass. The disk is read only once; a mismatch removes the copy.
+static int cageCopyInstallImage(const char *source, const char *target, const char *sizeText, const char *digest) {
+    if (geteuid() != 0 || !cageIntelVirtualHardware() || strlen(digest) != 64) return 72;
+    char *end = NULL;
+    unsigned long long expected = strtoull(sizeText, &end, 10);
+    if (!expected || !end || *end) return 72;
+    for (size_t i = 0; i < 64; ++i) if (!((digest[i] >= '0' && digest[i] <= '9') || (digest[i] >= 'a' && digest[i] <= 'f'))) return 72;
+    struct stat info;
+    int in = open(source, O_RDONLY);
+    if (in < 0) return 72;
+    if (fstat(in, &info) != 0 || !S_ISCHR(info.st_mode)) { close(in); return 72; }
+    fcntl(in, F_NOCACHE, 1);
+    int out = open(target, O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW, 0644);
+    if (out < 0) { close(in); return 72; }
+    // Raw disk reads must be whole sectors; the package disk is padded to
+    // 2048-byte sectors past the image, so the last read stays on the disk.
+    const size_t chunk = 8*1024*1024;
+    unsigned char *buffer = valloc(chunk);
+    if (!buffer) { close(in); close(out); unlink(target); return 72; }
+    CC_SHA256_CTX hash;
+    CC_SHA256_Init(&hash);
+    unsigned long long done = 0;
+    int reported = -1;
+    BOOL failed = NO;
+    while (done < expected) {
+        unsigned long long left = expected - done;
+        size_t want = left < chunk ? (size_t)((left + 2047) / 2048 * 2048) : chunk;
+        ssize_t count = read(in, buffer, want);
+        if (count <= 0) { failed = YES; break; }
+        size_t used = (unsigned long long)count < left ? (size_t)count : (size_t)left;
+        CC_SHA256_Update(&hash, buffer, (CC_LONG)used);
+        for (size_t written = 0; written < used;) {
+            ssize_t step = write(out, buffer + written, used - written);
+            if (step <= 0) { failed = YES; break; }
+            written += (size_t)step;
+        }
+        if (failed) break;
+        done += used;
+        int percent = (int)(done * 100 / expected);
+        if (percent / 5 != reported / 5) { reported = percent; cageInstallProgress("copy", percent); }
+    }
+    free(buffer);
+    close(in);
+    if (failed || fsync(out) != 0) failed = YES;
+    close(out);
+    unsigned char result[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256_Final(result, &hash);
+    char actual[65];
+    for (size_t i = 0; i < sizeof(result); ++i) snprintf(actual+i*2, 3, "%02x", result[i]);
+    if (failed || strcmp(actual, digest) != 0) { unlink(target); return 72; }
+    return 0;
+}
+
 int main(int argc, const char **argv) {
     @autoreleasepool {
         if (argc == 5 && strcmp(argv[1], "--verify-install-image") == 0) return cageVerifyInstallImage(argv[2], argv[3], argv[4]);
+        if (argc == 6 && strcmp(argv[1], "--copy-install-image") == 0) return cageCopyInstallImage(argv[2], argv[3], argv[4], argv[5]);
+        if (argc == 4 && strcmp(argv[1], "--install-progress") == 0 && geteuid() == 0 && cageIntelVirtualHardware()) {
+            char *end = NULL;
+            long percent = strtol(argv[3], &end, 10);
+            if (!end || *end || end == argv[3]) return 72;
+            return cageInstallProgress(argv[2], (int)percent);
+        }
         if (argc == 3 && strcmp(argv[1], "--install-stage") == 0 && geteuid() == 0 && cageIntelVirtualHardware()) {
             NSDictionary *stages = @{@"wait":@"WAIT_DISKS", @"prepare":@"PREPARE", @"start":@"START", @"error":@"ERROR"};
             NSString *stage = stages[[NSString stringWithUTF8String:argv[2]]];

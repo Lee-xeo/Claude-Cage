@@ -113,6 +113,14 @@ func macOSArguments(cfg Config, options *limatype.QEMUMacOSOpts) ([]string, erro
 		}
 	}
 	file := func(name string) string { return strings.ReplaceAll(filepath.Join(cfg.InstanceDir, name), ",", ",,") }
+	// macOS 15 ships AppleVirtIO (including its block driver) in the boot
+	// kernel collection, so the system disk uses virtio-blk instead of the
+	// much slower emulated AHCI path. During installation the disk is either
+	// completed or recreated, so guest flushes are not forwarded to the host.
+	system := "id=System,if=none,format=qcow2,discard=unmap,detect-zeroes=unmap,file=" + file(filenames.Disk)
+	if options.Installer {
+		system = "id=System,if=none,format=qcow2,discard=unmap,detect-zeroes=unmap,cache=unsafe,file=" + file(filenames.Disk)
+	}
 	args := []string{
 		"-no-user-config", "-nodefaults", "-name", "lima-" + cfg.Name,
 		"-pidfile", file(filenames.PIDFile(limatype.QEMU)),
@@ -130,8 +138,8 @@ func macOSArguments(cfg Config, options *limatype.QEMUMacOSOpts) ([]string, erro
 		// the verified boot image immutable while satisfying the IDE device.
 		"-drive", "id=OpenCore,if=none,format=raw,snapshot=on,file=" + file(MacOSBootDisk),
 		"-device", "ide-hd,bus=sata.0,drive=OpenCore,bootindex=0",
-		"-drive", "id=System,if=none,format=qcow2,discard=unmap,file=" + file(filenames.Disk),
-		"-device", "ide-hd,bus=sata.2,drive=System,rotation_rate=1",
+		"-drive", system,
+		"-device", "virtio-blk-pci,drive=System",
 		"-drive", "id=cidata,if=none,format=raw,readonly=on,file=" + file(filenames.CIDataISO),
 		"-device", "ide-cd,bus=sata.3,drive=cidata",
 		"-netdev", "dgram,id=net0,local.type=fd,local.str={{ fd_dgram }}",
@@ -143,7 +151,7 @@ func macOSArguments(cfg Config, options *limatype.QEMUMacOSOpts) ([]string, erro
 	if options.Installer {
 		args = append(args, "-vga", "std", "-drive", "id=Installer,if=none,format=raw,snapshot=on,file="+file(MacOSInstaller),
 			"-device", "ide-hd,bus=sata.1,drive=Installer", "-drive", "id=InstallPackage,if=none,format=raw,snapshot=on,file="+file(MacOSInstallPackage),
-			"-device", "ide-hd,bus=sata.4,drive=InstallPackage,serial=CAGEINSTALLPKG")
+			"-device", "virtio-blk-pci,drive=InstallPackage,serial=CAGEINSTALLPKG")
 	} else {
 		args = append(args, "-vga", "none", "-device", `{"driver":"apple-gfx-pci","display-modes":["1600x1000@60"]}`)
 	}

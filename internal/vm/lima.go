@@ -514,6 +514,33 @@ func sharesKept(want []Mount, got []limatype.Mount) error {
 var logMu sync.Mutex
 
 // withLog runs fn with Lima's logrus output going to log.
+// The installer runs with a bounded guest memory so the host keeps its page
+// cache for the disk images; 8 GiB is twice Apple's minimum.
+const macOSInstallerMemoryGiB = 8
+
+func macOSInstallerActive(config *limatype.LimaYAML) bool {
+	if config == nil || config.OS == nil || *config.OS != limatype.DARWIN {
+		return false
+	}
+	var options struct {
+		MacOS struct {
+			Installer bool `yaml:"installer"`
+		} `yaml:"macOS"`
+	}
+	return limayaml.Convert(config.VMOpts["qemu"], &options, "vmOpts.qemu") == nil && options.MacOS.Installer
+}
+
+// Until the guest's SSH server is up, the hostagent reports every refused
+// forwarding attempt. They remain in ha.stderr.log but are not progress.
+type quietBootLog struct{ io.Writer }
+
+func (q quietBootLog) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("tcpproxy: for incoming conn")) {
+		return len(p), nil
+	}
+	return q.Writer.Write(p)
+}
+
 func withLog(log io.Writer, fn func() error) error {
 	logMu.Lock()
 	defer logMu.Unlock()
@@ -561,6 +588,11 @@ func (l *Lima) Start(ctx context.Context, name string, log io.Writer) error {
 			if err == nil {
 				err = saveMacOSResourceRequirements(inst.Dir, requirements)
 			}
+			// Apple's installer is I/O bound. A large guest only competes with
+			// the host page cache; the user's allocation applies after install.
+			if err == nil && macOSInstallerActive(inst.Config) && settings.MemoryGiB > macOSInstallerMemoryGiB {
+				settings.MemoryGiB = macOSInstallerMemoryGiB
+			}
 		}
 		if err != nil {
 			return err
@@ -587,7 +619,7 @@ func (l *Lima) Start(ctx context.Context, name string, log io.Writer) error {
 			return err
 		}
 	}
-	return withLog(log, func() error {
+	return withLog(quietBootLog{log}, func() error {
 		if err := reconcile.Reconcile(ctx, name); err != nil {
 			return err
 		}

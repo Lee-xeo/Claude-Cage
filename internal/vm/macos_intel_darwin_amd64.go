@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,8 +41,18 @@ type IntelMacOSMedia struct {
 	Installer    string
 }
 
-// InstallIntelMacOS waits through Apple's installer reboots, then switches the
-// stopped instance to its accelerated display without changing its identity.
+// Apple's installer reboots several times without any channel to the host
+// other than the serial port and the disk image. Progress is therefore judged
+// by activity, not by a fixed deadline: a slow Mac may take far longer than a
+// fast one, while a hung installer stops writing to both.
+const (
+	intelInstallStallLimit = 25 * time.Minute
+	intelInstallHardLimit  = 3 * time.Hour
+	intelInstallHeartbeat  = 2 * time.Minute
+)
+
+// InstallIntelMacOS waits through Apple's installer reboots, then leaves the
+// stopped instance switched to its accelerated display. The caller starts it.
 func (l *Lima) InstallIntelMacOS(ctx context.Context, profile, name string, log io.Writer) error {
 	if err := l.CheckMacOSGuest(ctx, name); err != nil {
 		return err
@@ -60,9 +71,9 @@ func (l *Lima) InstallIntelMacOS(ctx context.Context, profile, name string, log 
 		return err
 	}
 	if !options.MacOS.Installer {
-		return l.Start(ctx, name, log)
+		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, intelInstallHardLimit)
 	defer cancel()
 	serial := filepath.Join(inst.Dir, "serial.log")
 	if data, err := os.ReadFile(serial); err == nil && inst.Status == limatype.StatusRunning && intelMacOSInstallStage(data) == "ERROR" {
@@ -75,12 +86,17 @@ func (l *Lima) InstallIntelMacOS(ctx context.Context, profile, name string, log 
 	if info, err := os.Stat(serial); err == nil && inst.Status != limatype.StatusRunning {
 		offset = info.Size()
 	}
+	disk := filepath.Join(inst.Dir, filenames.Disk)
+	fmt.Fprintln(log, "正在启动虚拟 Mac 的安装环境…整个系统安装通常需要 20–40 分钟，期间虚拟 Mac 会自动重启数次。")
 	started := make(chan error, 1)
-	go func() { started <- l.Start(instance.WithWatchHostAgentTimeout(ctx, 60*time.Minute), name, log) }()
+	go func() { started <- l.Start(instance.WithWatchHostAgentTimeout(ctx, intelInstallHardLimit), name, log) }()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	begun := time.Now()
+	activity := intelInstallActivity{}
+	lastActive, lastBeat := begun, begun
 	startFinished := false
-	stage := ""
+	stage, progress, boots := "", "", 0
 	for {
 		select {
 		case err := <-started:
@@ -90,23 +106,47 @@ func (l *Lima) InstallIntelMacOS(ctx context.Context, profile, name string, log 
 			startFinished = true
 			started = nil
 		case <-ctx.Done():
-			return fmt.Errorf("Intel macOS 安装未完成，现有磁盘已保留：%w", ctx.Err())
+			return fmt.Errorf("Intel macOS 安装超过 %d 小时仍未完成，现有磁盘已保留：%w", int(intelInstallHardLimit.Hours()), ctx.Err())
 		case <-ticker.C:
 		}
+		now := time.Now()
+		if activity.update(serial, disk) {
+			lastActive = now
+		}
+		if now.Sub(lastActive) > intelInstallStallLimit {
+			return fmt.Errorf("Intel macOS 安装已 %d 分钟没有磁盘或串口活动，判定为停滞；现有磁盘已保留，可继续原任务", int(intelInstallStallLimit.Minutes()))
+		}
 		if data, err := os.ReadFile(serial); err == nil && int64(len(data)) >= offset {
-			if next := intelMacOSInstallStage(data[offset:]); next != "" {
-				if next != stage {
-					stage = next
-					switch stage {
-					case "PREPARE":
-						fmt.Fprintln(log, "正在准备并校验虚拟 Mac 的安装文件…")
-					case "START":
-						fmt.Fprintln(log, "Apple 安装程序已启动，正在等待系统安装与重启…")
-					case "ERROR":
-						return errors.New("虚拟 Mac 安装准备失败，现有磁盘已保留；请查看客机安装日志")
-					}
+			data = data[offset:]
+			if next := intelMacOSInstallStage(data); next != "" && next != stage {
+				stage = next
+				switch stage {
+				case "PREPARE":
+					fmt.Fprintln(log, "正在将安装映像写入虚拟 Mac 并校验…")
+				case "START":
+					fmt.Fprintln(log, "Apple 安装程序已启动，正在准备安装…")
+				case "ERROR":
+					return errors.New("虚拟 Mac 安装准备失败，现有磁盘已保留；请查看客机安装日志")
 				}
 			}
+			if phase, percent, ok := intelMacOSInstallProgress(data); ok {
+				label := map[string]string{"copy": "写入并校验安装映像", "prepare": "Apple 安装程序正在准备"}[phase]
+				// Five-percent steps keep the operation log readable.
+				if next := fmt.Sprintf("%s %d", phase, percent/5*5); label != "" && next != progress {
+					progress = next
+					fmt.Fprintf(log, "%s：%d%%\n", label, percent/5*5)
+				}
+			}
+			if count := intelMacOSBootCount(data); count > boots {
+				boots = count
+				if boots > 1 {
+					fmt.Fprintf(log, "虚拟 Mac 已第 %d 次启动（安装过程中会自动重启数次）…\n", boots)
+				}
+			}
+		}
+		if now.Sub(lastBeat) >= intelInstallHeartbeat {
+			lastBeat = now
+			fmt.Fprintf(log, "系统安装进行中：已用时 %d 分钟，系统盘已写入 %.1f GB。\n", int(now.Sub(begun).Minutes()), float64(activity.diskBytes)/1e9)
 		}
 		if !startFinished {
 			continue
@@ -129,14 +169,31 @@ func (l *Lima) InstallIntelMacOS(ctx context.Context, profile, name string, log 
 			break
 		}
 	}
+	fmt.Fprintf(log, "macOS 系统安装完成，用时 %d 分钟。正在切换到正式运行配置…\n", int(time.Since(begun).Minutes()))
 	if err := l.StopIntelMacOS(ctx, profile, name); err != nil {
 		return err
 	}
 	finished := false
-	if err := l.Edit(ctx, name, Settings{macOSInstaller: &finished}); err != nil {
-		return err
+	// The caller boots the finished guest once, with the user's allocation.
+	return l.Edit(ctx, name, Settings{macOSInstaller: &finished})
+}
+
+// intelInstallActivity notices any growth or rewrite of the serial log and
+// the system disk image. Either is evidence that the installer still runs.
+type intelInstallActivity struct {
+	serialSize, diskBytes int64
+	diskModified          time.Time
+}
+
+func (a *intelInstallActivity) update(serial, disk string) bool {
+	changed := false
+	if info, err := os.Stat(serial); err == nil && info.Size() != a.serialSize {
+		a.serialSize, changed = info.Size(), true
 	}
-	return l.Start(ctx, name, log)
+	if info, err := os.Stat(disk); err == nil && (info.Size() != a.diskBytes || !info.ModTime().Equal(a.diskModified)) {
+		a.diskBytes, a.diskModified, changed = info.Size(), info.ModTime(), true
+	}
+	return changed
 }
 
 // StopIntelMacOS asks the verified provisioning channel to save and shut down
@@ -184,8 +241,9 @@ func intelMacOSInstallStage(data []byte) string {
 	if index := bytes.LastIndex(data, []byte(boot)); index >= 0 {
 		data = data[index+len(boot):]
 	}
+	// Progress lines share the prefix; the stage is the latest known marker.
 	const prefix = "\nCAGE_INTEL_INSTALL_"
-	if index := bytes.LastIndex(data, []byte(prefix)); index >= 0 {
+	for index := bytes.LastIndex(data, []byte(prefix)); index >= 0; index = bytes.LastIndex(data[:index], []byte(prefix)) {
 		stage, _, _ := strings.Cut(string(data[index+len(prefix):]), "\n")
 		switch strings.TrimSpace(stage) {
 		case "WAIT_DISKS", "PREPARE", "START", "ERROR":
@@ -193,6 +251,37 @@ func intelMacOSInstallStage(data []byte) string {
 		}
 	}
 	return ""
+}
+
+// intelMacOSInstallProgress returns the latest percentage reported by the
+// guest for the current boot: "copy" while it writes the installation image,
+// "prepare" while Apple's startosinstall prepares the target volume.
+func intelMacOSInstallProgress(data []byte) (string, int, bool) {
+	const boot = "======== End of efiboot serial output. ========"
+	if index := bytes.LastIndex(data, []byte(boot)); index >= 0 {
+		data = data[index+len(boot):]
+	}
+	const prefix = "\nCAGE_INTEL_INSTALL_PROGRESS "
+	index := bytes.LastIndex(data, []byte(prefix))
+	if index < 0 {
+		return "", 0, false
+	}
+	line, _, complete := strings.Cut(string(data[index+len(prefix):]), "\n")
+	fields := strings.Fields(line)
+	if !complete || len(fields) != 2 || (fields[0] != "copy" && fields[0] != "prepare") {
+		return "", 0, false
+	}
+	percent, err := strconv.Atoi(fields[1])
+	if err != nil || percent < 0 || percent > 100 {
+		return "", 0, false
+	}
+	return fields[0], percent, true
+}
+
+// intelMacOSBootCount counts kernel handoffs; Apple's installer reboots the
+// guest between its phases.
+func intelMacOSBootCount(data []byte) int {
+	return bytes.Count(data, []byte("HANDOFF TO XNU"))
 }
 
 // CreateIntelMacOS creates only a stopped, private instance. The official

@@ -86,13 +86,28 @@ func createMacOSGuest(ctx context.Context, profile, state string, l *vm.Lima, na
 	if err != nil {
 		return err
 	}
-	if err := prepareIntelBootResources(ctx, dir, image, archive, assets, media); err != nil {
+	if err := prepareIntelBootResources(ctx, dir, image, archive, assets, verifiedIntelImageDigest(install, image), media); err != nil {
 		// This newly created instance has never started or accepted user data.
 		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return errors.Join(err, l.Delete(cleanup, name))
 	}
 	return nil
+}
+
+// verifiedIntelImageDigest reuses the digest from this installation's host
+// verification when the file is unchanged since then. Empty means hash again.
+func verifiedIntelImageDigest(install *guestos.Installation, image string) string {
+	source := install.Source
+	digest, ok := strings.CutPrefix(source.Digest, "sha256:")
+	if !ok || len(digest) != 64 || source.Path != image || source.Bytes <= 0 || source.Modified == 0 {
+		return ""
+	}
+	info, err := os.Stat(image)
+	if err != nil || !info.Mode().IsRegular() || info.Size() != source.Bytes || info.ModTime().UnixNano() != source.Modified {
+		return ""
+	}
+	return digest
 }
 
 func matchMacOSGuestSource(ctx context.Context, profile string, l *vm.Lima, name, image string) error {

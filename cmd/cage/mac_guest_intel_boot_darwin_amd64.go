@@ -24,7 +24,10 @@ type intelInstallReceipt struct {
 	SHA256       string `json:"sha256"`
 }
 
-func prepareIntelBootResources(ctx context.Context, dir, image, archive, assets string, media vm.IntelMacOSMedia) error {
+// verified is the hex SHA-256 recorded when the host checked this exact file
+// (same size and modification time); otherwise the image is hashed here. The
+// guest copies the image against this digest, so a replaced file still fails.
+func prepareIntelBootResources(ctx context.Context, dir, image, archive, assets, verified string, media vm.IntelMacOSMedia) error {
 	file, err := os.Open(image)
 	if err != nil {
 		return err
@@ -34,11 +37,15 @@ func prepareIntelBootResources(ctx context.Context, dir, image, archive, assets 
 	if err != nil {
 		return err
 	}
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return err
+	digest := verified
+	if len(digest) != 64 {
+		hash := sha256.New()
+		if _, err := io.Copy(hash, file); err != nil {
+			return err
+		}
+		digest = hex.EncodeToString(hash.Sum(nil))
 	}
-	receipt := intelInstallReceipt{media.UUID, media.Installation.String(), info.Size(), hex.EncodeToString(hash.Sum(nil))}
+	receipt := intelInstallReceipt{media.UUID, media.Installation.String(), info.Size(), digest}
 	data, err := json.Marshal(receipt)
 	if err != nil {
 		return err
@@ -306,10 +313,26 @@ apps=("$root"/Applications/Install\ macOS*.app)
 [[ ${#apps[@]} == 1 && -d ${apps[0]} ]] || exit 1
 app=${apps[0]}
 mkdir -p "$app/Contents/SharedSupport"
+# A resumed preparation keeps a verified copy. Otherwise copy and hash the
+# image in one pass; the helper removes a copy whose digest does not match.
 if ! ./cage-guest-check --verify-install-image "$app/Contents/SharedSupport/SharedSupport.dmg" "$size" "$digest"; then
-    head -c "$size" "/dev/r${package#/dev/}" > "$app/Contents/SharedSupport/SharedSupport.dmg"
-    ./cage-guest-check --verify-install-image "$app/Contents/SharedSupport/SharedSupport.dmg" "$size" "$digest"
+    ./cage-guest-check --copy-install-image "/dev/r${package#/dev/}" "$app/Contents/SharedSupport/SharedSupport.dmg" "$size" "$digest"
 fi
 ./cage-guest-check --install-stage start || true
-"$app/Contents/Resources/startosinstall" --agreetolicense --volume "$root" --installpackage /Volumes/cidata/boot.Cage/cage-bootstrap.pkg --nointeraction --rebootdelay 0
+# startosinstall reports "Preparing: NN.NN" until it reboots into the installer.
+# Its output is block-buffered on a pipe, so run it on a pseudo-terminal when
+# script(1) is available. Forward whole-percent changes; the log keeps the rest.
+install=("$app/Contents/Resources/startosinstall" --agreetolicense --volume "$root" --installpackage /Volumes/cidata/boot.Cage/cage-bootstrap.pkg --nointeraction --rebootdelay 0)
+if [[ -x /usr/bin/script ]]; then install=(/usr/bin/script -q /dev/null "${install[@]}"); fi
+"${install[@]}" </dev/null 2>&1 |
+    tr '\r' '\n' | while IFS= read -r line; do
+        printf '%s\n' "$line"
+        if [[ $line =~ Preparing:?[[:space:]]*([0-9]+) ]]; then
+            percent=$((10#${BASH_REMATCH[1]}))
+            if (( percent <= 100 && percent / 5 != ${reported:--1} / 5 )); then
+                reported=$percent
+                ./cage-guest-check --install-progress prepare "$percent" || true
+            fi
+        fi
+    done
 `

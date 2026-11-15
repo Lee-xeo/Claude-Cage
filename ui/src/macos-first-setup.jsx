@@ -20,13 +20,14 @@ export function MacOSFirstSetup() {
   const [permissions, setPermissions] = useState({});
   const [error, setError] = useState("");
   const [readError, setReadError] = useState("");
+  const [desktopWaiting, setDesktopWaiting] = useState(false);
   const [completionFailed, setCompletionFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
   const [details, setDetails] = useState(false);
   const current = useRef({ account, refresh });
   current.current = { account, refresh };
-  const control = useRef({ active: false, inFlight: false, started: false, finished: false, requested: "", pending: "" });
+  const control = useRef({ active: false, inFlight: false, started: false, finished: false, measured: false, waitingSince: 0, requested: "", pending: "" });
 
   async function request(action) {
     const lifecycle = action === "start" || action === "stop";
@@ -63,9 +64,20 @@ export function MacOSFirstSetup() {
         catch (e) { if (c.active) setError(e.message); }
         return;
       }
-      if (!next.ready || next.job?.running || credentialsPending) { setReadError(""); return; }
-      const measured = await request("permissions");
+      if (!next.ready || next.job?.running || credentialsPending) { setReadError(""); setDesktopWaiting(false); return; }
+      let measured;
+      try { measured = await request("permissions"); }
+      catch (e) {
+        // Right after boot the guest is still signing in its ordinary user;
+        // its window helper starts with the desktop. That is progress, not a failure.
+        c.waitingSince ||= Date.now();
+        if (!c.measured && Date.now() - c.waitingSince < 5 * 60 * 1000) { if (c.active) { setReadError(""); setDesktopWaiting(true); } return; }
+        if (c.active) setDesktopWaiting(false);
+        throw e;
+      }
       if (!c.active) return;
+      c.measured = true;
+      setDesktopWaiting(false);
       setReadError("");
       setPermissions(measured);
       const pending = steps.find(({ id }) => !measured[id]);
@@ -135,6 +147,7 @@ export function MacOSFirstSetup() {
   const progress = !state ? "正在读取安装进度…" : running ? state.job.message || "正在启动和配置虚拟 Mac…" :
     account.macos_password_pending ? "客机密码尚未同步，请重试同步后继续授权。" : !state.vm_running ? "虚拟 Mac 尚未启动，可从已有磁盘继续。" :
     !state.ready ? "虚拟 Mac 已启动，正在等待客机连接。若停在登录画面，请打开客机画面完成登录。" :
+    desktopWaiting ? "虚拟 Mac 正在完成首次登录并启动桌面，通常需要 1–3 分钟。桌面就绪后会自动打开第一项授权。" :
     readError ? "暂时无法确认权限状态，已显示的结果供参考。恢复连接后会继续检查。" :
     pending ? `当前需要确认「${pending.label}」。完成后 Cage 会自动检查并继续。` :
     completionFailed ? "三项权限已验证，最后的设置收尾未完成。请重试完成设置。" : "三项权限已验证，正在保存设置；随后继续工作区授权和联网检查。";
