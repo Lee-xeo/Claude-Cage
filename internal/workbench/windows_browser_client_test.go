@@ -161,6 +161,10 @@ func TestWindowsBrowserRouteRejectsPathAndCredentialInjection(t *testing.T) {
 	if validWindowsBrowserRoute("GET", "/file-open") {
 		t.Fatal("accepted file mutation using GET")
 	}
+	// Guest attach synchronizes the browser profile; reading it back stays closed.
+	if !validWindowsBrowserRoute("POST", "/profile") || validWindowsBrowserRoute("GET", "/profile") {
+		t.Fatal("browser profile synchronization must be POST only")
+	}
 	client := fixtureWindowsBrowserClient(t)
 	if _, err := client.request(context.Background(), "POST", "/tabs?secret", nil); err == nil {
 		t.Fatal("invalid route reached transport")
