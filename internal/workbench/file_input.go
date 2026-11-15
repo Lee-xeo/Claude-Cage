@@ -118,9 +118,13 @@ func (s *Server) guestFiles(ctx context.Context, target, method, path string, bo
 		err = s.windowsDesktopRequest(ctx, action, input, &result)
 		return result, windowsDesktopFileFailure(err)
 	}
-	script := "sudo -H -u cage curl --silent --show-error --max-time 1800 --write-out '\\nCAGE_FILE_HTTP:%{http_code}' --unix-socket /run/cage-desktop/files.sock -X " + method
+	asWorkUser, err := s.linuxTemplate("sudo -H -u cage ")
+	if err != nil {
+		return nil, err
+	}
+	script := asWorkUser + "curl --silent --show-error --max-time 1800 --write-out '\\nCAGE_FILE_HTTP:%{http_code}' --unix-socket /run/cage-desktop/files.sock -X " + method
 	if target == "terminal" {
-		script = "sudo -H -u cage /usr/local/bin/cage-desktop-files --save-file " + shellescape.Quote(name)
+		script = asWorkUser + "/usr/local/bin/cage-desktop-files --save-file " + shellescape.Quote(name)
 		if s.macosGuest != nil {
 			script = "exec " + shellescape.QuoteCommand([]string{macCLIInstall + "/bin/python3", "-I", "-c", cage.DesktopFileReceiver(), "--save-file", name})
 		}
@@ -131,13 +135,8 @@ func (s *Server) guestFiles(ctx context.Context, target, method, path string, bo
 		script += " " + shellescape.Quote("http://localhost"+path)
 	}
 	var stderr fileControlStderr
-	var renderErr error
-	script, renderErr = s.linuxTemplate(script)
-	if renderErr != nil {
-		return nil, renderErr
-	}
 	var data []byte
-	var err, readErr error
+	var readErr error
 	shared := false
 	if target != "terminal" && method == "GET" && path == "/requests" {
 		script = desktopFilesPoll + script

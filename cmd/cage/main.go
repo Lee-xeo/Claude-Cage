@@ -634,7 +634,7 @@ func run() int {
 		if result != 0 {
 			return result
 		}
-		if err := workbench.StartGuestServices(context.Background(), path, cfg, os.Stdout, os.Stderr); err != nil {
+		if err := workbench.StartGuestServices(context.Background(), path, os.Stdout, os.Stderr); err != nil {
 			return fail(err)
 		}
 		fmt.Println("Cage local services are ready. Open Cage or run cage desktop to complete the required network checks. External networking stays closed until the workbench approves this VM; no local access password is required.")

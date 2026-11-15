@@ -148,13 +148,9 @@ func sshConfigValue(value string) (string, error) {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value) + `"`, nil
 }
 
-func (r *Runtime) writeSSHConfig(port int) error {
+func (r *Runtime) writeSSHConfig(port int, user string) error {
 	if port < 1024 || port > 65535 {
 		return errors.New("容器 SSH 入口端口无效")
-	}
-	profile, err := guestprofile.Load(r.profile)
-	if err != nil {
-		return err
 	}
 	identity, err := sshConfigValue(filepath.Join(r.InstanceDir(), "id_ed25519"))
 	if err != nil {
@@ -164,8 +160,7 @@ func (r *Runtime) writeSSHConfig(port int) error {
 	if err != nil {
 		return err
 	}
-	data := fmt.Sprintf("Host cage-container\n HostName 127.0.0.1\n Port %d\n User cage\n IdentityFile %s\n IdentitiesOnly yes\n HostKeyAlias cage-container-%s\n HostKeyAlgorithms ssh-ed25519\n UserKnownHostsFile %s\n StrictHostKeyChecking yes\n PasswordAuthentication no\n KbdInteractiveAuthentication no\n ForwardAgent no\n ForwardX11 no\n PermitLocalCommand no\n", port, identity, r.identity, known)
-	data = strings.Replace(data, "\n User cage\n", "\n User "+profile.WorkUser()+"\n", 1)
+	data := fmt.Sprintf("Host cage-container\n HostName 127.0.0.1\n Port %d\n User %s\n IdentityFile %s\n IdentitiesOnly yes\n HostKeyAlias cage-container-%s\n HostKeyAlgorithms ssh-ed25519\n UserKnownHostsFile %s\n StrictHostKeyChecking yes\n PasswordAuthentication no\n KbdInteractiveAuthentication no\n ForwardAgent no\n ForwardX11 no\n PermitLocalCommand no\n", port, user, identity, r.identity, known)
 	return os.WriteFile(r.SSHConfig(), []byte(data), 0600)
 }
 

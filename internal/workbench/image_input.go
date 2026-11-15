@@ -274,6 +274,10 @@ func (s *Server) guestImage(ctx context.Context, target string, data []byte, win
 	if target == "desktop" {
 		script = "systemctl is-active --quiet cage-claude-desktop.service && sudo -H -u cage env DISPLAY=:78 XAUTHORITY=/run/cage-desktop/Xauthority /usr/local/bin/cage-image-input paste"
 	}
+	script, err := s.linuxTemplate(script)
+	if err != nil {
+		return nil, err
+	}
 	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", script)
 	cmd.Stdin = bytes.NewReader(data)
 	pipe, err := cmd.StdoutPipe()

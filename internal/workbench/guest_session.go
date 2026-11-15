@@ -254,10 +254,6 @@ func (s *Server) guestShared(ctx context.Context, script string) (reply guestSes
 	if s.windowsGuest != nil || s.macosGuest != nil {
 		return reply, false, nil
 	}
-	script, err = s.linuxTemplate(script)
-	if err != nil {
-		return reply, true, err
-	}
 	reply, sent, err := s.controlSession.run(ctx, s.lifetimeContext(), s.guestSessionCommand, script)
 	return reply, sent, err
 }

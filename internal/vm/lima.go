@@ -323,35 +323,24 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 		if err != nil {
 			return err
 		}
-		data, err := json.Marshal(identity)
-		if err != nil {
-			return err
-		}
-		e = append(e, ".guestIdentity = "+string(data))
 		if path := os.Getenv(cage.ConfigEnv); path != "" {
 			cfg, err := cage.Load(path)
 			if err != nil {
 				return err
 			}
-			profile, err := guestprofile.Create(filepath.Dir(path), guestprofile.Options{})
-			if err != nil {
-				return err
-			}
-			if profile.GPUBackend == "virgl" {
+			profile := cfg.GuestProfile
+			if profile != nil && profile.GPUBackend == "virgl" {
 				if runtime.GOOS != "linux" || tmpl.Config.OS != nil && *tmpl.Config.OS != limatype.LINUX {
 					return errors.New("VirGL requires a Linux host and Linux QEMU guest")
 				}
-				if err := virGLHostReady(); err != nil {
+				if err := CheckVirGLHost(); err != nil {
 					return err
 				}
 				e = append(e, `.vmType = "qemu"`, `.video.display = "egl-headless"`)
 			}
-			identity.Hostname = profile.Hostname
-			data, err = json.Marshal(identity)
-			if err != nil {
-				return err
+			if profile != nil {
+				identity.Hostname = profile.Hostname
 			}
-			e = append(e, ".guestIdentity = "+string(data))
 			if template == "template:debian-13" {
 				images, err := cageDebianImages(tmpl.Config.Images)
 				if err != nil {
@@ -367,13 +356,16 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 			if tmpl.Config.OS != nil && *tmpl.Config.OS == limatype.DARWIN {
 				e = append(e, `.user.name = "cageprovision"`, `.user.home = "/Users/cageprovision"`, `.user.comment = "Cage Provisioning"`, ".user.uid = 501", `.video.display = "offscreen"`)
 			} else {
-				e = append(e, `.user.name = `+strconv.Quote(profile.Username), `.user.home = `+strconv.Quote(profile.WorkHomePath()), `.user.comment = ""`, ".user.uid = 1000")
+				e = append(e, `.user.name = `+strconv.Quote(profile.WorkUser()), `.user.home = `+strconv.Quote(profile.WorkHomePath()), `.user.comment = ""`, ".user.uid = 1000")
 			}
 		}
-		if len(e) > 0 {
-			if tmpl.Bytes, err = yqutil.EvaluateExpression(ctx, yqutil.Join(e), tmpl.Bytes); err != nil {
-				return err
-			}
+		data, err := json.Marshal(identity)
+		if err != nil {
+			return err
+		}
+		e = append(e, ".guestIdentity = "+string(data))
+		if tmpl.Bytes, err = yqutil.EvaluateExpression(ctx, yqutil.Join(e), tmpl.Bytes); err != nil {
+			return err
 		}
 		_, err = instance.Create(ctx, name, tmpl.Bytes, false)
 		return err

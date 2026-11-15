@@ -8,7 +8,7 @@ import (
 
 // An explicit VirGL request must not silently become a CPU renderer. The
 // driver also checks host/guest support; browser diagnostics measure fallback.
-func virGLHostReady() error {
+func CheckVirGLHost() error {
 	paths, _ := filepath.Glob("/dev/dri/renderD*")
 	for _, path := range paths {
 		info, err := os.Stat(path)

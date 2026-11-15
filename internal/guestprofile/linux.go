@@ -102,7 +102,7 @@ type accountRule struct {
 var linuxAccountRules = func() []accountRule {
 	var rules []accountRule
 	for _, old := range []string{"cage-browser", "cage"} {
-		for _, prefix := range []string{"User=", "Group=", "-u ", "-o ", "-g ", "id ", "id -u ", "enable-linger ", "--shell /bin/bash ", "-G cage-audio ", "ALL=(", "getpwnam('", "getgrnam('", `getpwnam("`, `getgrnam("`, "= "} {
+		for _, prefix := range []string{"User=", "Group=", "-u ", `"-u", "`, "-o ", "-g ", "id ", "id -u ", "enable-linger ", "--shell /bin/bash ", "-G cage-audio ", "ALL=(", "getpwnam('", "getgrnam('", `getpwnam("`, `getgrnam("`, "= "} {
 			rules = append(rules, accountRule{regexp.MustCompile(regexp.QuoteMeta(prefix+old) + `([^A-Za-z0-9_-]|$)`), prefix, old == "cage-browser"})
 		}
 	}
