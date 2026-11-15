@@ -1,0 +1,17 @@
+.icon-hint {
+  position: fixed;
+  z-index: 2147483647;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 6px 9px;
+  border: 1px solid var(--line, #777);
+  border-radius: 6px;
+  background: var(--paper, #fff);
+  color: var(--ink, #222);
+  box-shadow: 0 3px 12px #0003;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.icon-hint[hidden] { display: none; }

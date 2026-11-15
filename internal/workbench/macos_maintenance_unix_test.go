@@ -122,7 +122,7 @@ func TestMacOSMaintenanceHTTPBoundaryAndRunnerUpgrade(t *testing.T) {
 
 	// An open request can finish after the user locks and unlocks the workbench.
 	// Its lease must belong to the account epoch that admitted that request.
-	previousEpoch, _ := s.account.accessFor(true)
+	previousEpoch, _ := s.account.access()
 	s.account.mu.Lock()
 	s.account.setKey(make([]byte, 32))
 	s.account.mu.Unlock()

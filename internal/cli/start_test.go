@@ -698,68 +698,23 @@ func TestStartHooksQuestions(t *testing.T) {
 	}
 }
 
-func TestStartBareRepo(t *testing.T) {
-	se := newStartEnv(t)
-	se.base()
-	os.WriteFile(filepath.Join(se.home, ".gitconfig"), nil, 0o644)
-	if se.run("run", "true") != 1 || !strings.Contains(se.out(), "Git: repositories not named .git") || !strings.Contains(se.out(), "Aborted. Run the command above") {
-		t.Errorf("bare repo, no terminal: %s", se.out())
-	}
-	se2 := &startEnv{testEnv: newTestEnv(t, se.fake, "y\n"), g: se.g, home: se.home, proj: se.proj}
-	se2.state = se.state
-	if se2.run("run", "true") != 0 || !strings.Contains(se2.out(), "now ignores repositories not named .git") {
-		t.Errorf("bare repo, yes: %s", se2.out())
-	}
-	if b, _ := os.ReadFile(filepath.Join(se.home, ".gitconfig")); !strings.Contains(string(b), "bareRepository = explicit") {
-		t.Errorf("global config: %q", b)
-	}
-	name := vmname.Name(se.proj)
-	unset := func() {
-		os.WriteFile(filepath.Join(se.home, ".gitconfig"), nil, 0o644)
-		se.fake.VMs[name].Status = vm.Stopped
-	}
-	asked := func(answers ...string) *startEnv {
-		s := &startEnv{testEnv: newTestEnv(t, se.fake, answers...), g: se.g, home: se.home, proj: se.proj}
-		s.state = se.state
-		return s
-	}
-	// No, then no: aborted, nothing set.
-	unset()
-	if s := asked("n\n", "n\n"); s.run("run", "true") != 1 || !strings.Contains(s.out(), "Warning: not set.") || !strings.Contains(s.out(), "Aborted. Run the command above") {
-		t.Errorf("no, no: %s", s.out())
-	}
-	// No, then go on anyway.
-	if s := asked("n\n", "y\n"); s.run("run", "true") != 0 || !strings.Contains(s.out(), "Warning: not set.") {
-		t.Errorf("no, yes: %s", s.out())
-	}
-	if b, _ := os.ReadFile(filepath.Join(se.home, ".gitconfig")); len(b) != 0 {
-		t.Errorf("set although declined: %q", b)
-	}
-	// Questions off: nothing set, said so.
-	unset()
-	if se.run("--unsafe-disable-security-prompts", "run", "true") != 0 || !strings.Contains(se.out(), "Continuing") {
-		t.Errorf("prompts off: %s", se.out())
-	}
-	if b, _ := os.ReadFile(filepath.Join(se.home, ".gitconfig")); len(b) != 0 {
-		t.Errorf("set with prompts off: %q", b)
-	}
-	// Running: a warning, no question.
-	se.fake.VMs[name].Status = vm.Running
-	if se.run("run", "true") != 0 || !strings.Contains(se.out(), "Warning: git on this machine uses repositories a VM creates") {
-		t.Errorf("running: %s", se.out())
-	}
-	// --readonly: the VM writes nothing, nothing asked.
-	unset()
-	if se.run("--readonly", "run", "true") != 0 || strings.Contains(se.out(), "repositories not named .git") {
-		t.Errorf("--readonly: %s", se.out())
-	}
-	// A yes that git cannot apply: said so, then asked to go on.
-	unset()
-	os.Remove(filepath.Join(se.home, ".gitconfig"))
-	os.MkdirAll(filepath.Join(se.home, ".gitconfig"), 0o755)
-	// A .gitconfig git cannot read is a risk of its own, asked first.
-	if s := asked("y\n", "y\n", "n\n"); s.run("run", "true") != 1 || !strings.Contains(s.out(), "Warning: the setting did not take.") {
-		t.Errorf("did not take: %s", s.out())
+func TestStartPreservesHostGitConfig(t *testing.T) {
+	for _, config := range []string{"", "[safe]\n bareRepository = all\n", "[safe]\n bareRepository = explicit\n"} {
+		t.Run(config, func(t *testing.T) {
+			se := newStartEnv(t)
+			se.base()
+			path := filepath.Join(se.home, ".gitconfig")
+			if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if code := se.run("run", "true"); code != 0 {
+				t.Fatalf("start: %d %s", code, se.out())
+			}
+			saved, err := os.ReadFile(path)
+			if err != nil || string(saved) != config {
+				t.Fatalf("host Git config changed: %q, %v", saved, err)
+			}
+		})
 	}
 }
 

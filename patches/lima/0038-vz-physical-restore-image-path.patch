@@ -1,0 +1,91 @@
+diff --git a/pkg/driver/vz/vm_darwin.go b/pkg/driver/vz/vm_darwin.go
+index be69c39..6313cb9 100644
+--- a/pkg/driver/vz/vm_darwin.go
++++ b/pkg/driver/vz/vm_darwin.go
+@@ -1004,3 +1004,10 @@ func ensureIPSW(instDir string) error {
+ 	}
+ 	return nil
+ }
++
++// restoreImagePath returns the physical pathname of an instance's restore image.
++// Cage may keep LIMA_HOME behind a symlink to custom storage, and
++// Virtualization.framework reports such a restore image as missing.
++func restoreImagePath(instDir string) (string, error) {
++	return filepath.EvalSymlinks(filepath.Join(instDir, filenames.ImageIPSW))
++}
+diff --git a/pkg/driver/vz/vm_darwin_arm64.go b/pkg/driver/vz/vm_darwin_arm64.go
+index 0882cd4..14367c0 100644
+--- a/pkg/driver/vz/vm_darwin_arm64.go
++++ b/pkg/driver/vz/vm_darwin_arm64.go
+@@ -60,7 +60,10 @@ func newMacPlatformConfiguration(inst *limatype.Instance) (vz.PlatformConfigurat
+ 		if err = ensureIPSW(inst.Dir); err != nil {
+ 			return nil, err
+ 		}
+-		ipsw := filepath.Join(inst.Dir, filenames.ImageIPSW)
++		ipsw, err := restoreImagePath(inst.Dir)
++		if err != nil {
++			return nil, err
++		}
+ 		ipswImage, err := vz.LoadMacOSRestoreImageFromPath(ipsw)
+ 		if err != nil {
+ 			return nil, err
+diff --git a/pkg/driver/vz/vz_driver_darwin.go b/pkg/driver/vz/vz_driver_darwin.go
+index 52a9591..c5ea0cb 100644
+--- a/pkg/driver/vz/vz_driver_darwin.go
++++ b/pkg/driver/vz/vz_driver_darwin.go
+@@ -431,12 +431,16 @@ func restoreMacOSDisk(disk string, install func(string) error) error {
+ }
+ 
+ // verifiedMacOSIPSW runs under the instance's restore lock. It checks the
+-// actual private installer input, including media left after an interruption.
++// actual private installer input, including media left after an interruption,
++// and returns its physical pathname for Virtualization.framework.
+ func verifiedMacOSIPSW(ctx context.Context, inst *limatype.Instance) (string, error) {
+ 	if err := ensureIPSW(inst.Dir); err != nil {
+ 		return "", err
+ 	}
+-	ipsw := filepath.Join(inst.Dir, filenames.ImageIPSW)
++	ipsw, err := restoreImagePath(inst.Dir)
++	if err != nil {
++		return "", err
++	}
+ 	images := inst.Config.Images
+ 	if len(images) != 1 || !filepath.IsAbs(images[0].Location) || images[0].Digest == "" {
+ 		return ipsw, nil
+diff --git a/pkg/driver/vz/vz_driver_darwin_test.go b/pkg/driver/vz/vz_driver_darwin_test.go
+index 55b3350..cf0bb68 100644
+--- a/pkg/driver/vz/vz_driver_darwin_test.go
++++ b/pkg/driver/vz/vz_driver_darwin_test.go
+@@ -123,7 +123,9 @@ func TestPinnedMacOSRestoreChecksPrivateInstallerInput(t *testing.T) {
+ 	assert.NilError(t, os.WriteFile(source, []byte("selected"), 0o600))
+ 	got, err := verifiedMacOSIPSW(t.Context(), inst)
+ 	assert.NilError(t, err)
+-	assert.Equal(t, got, target)
++	physical, err := filepath.EvalSymlinks(target)
++	assert.NilError(t, err)
++	assert.Equal(t, got, physical)
+ 	assert.NilError(t, os.WriteFile(source, []byte("changed again"), 0o600))
+ 	data, err := os.ReadFile(target)
+ 	assert.NilError(t, err)
+@@ -133,3 +135,21 @@ func TestPinnedMacOSRestoreChecksPrivateInstallerInput(t *testing.T) {
+ 	_, err = verifiedMacOSIPSW(t.Context(), inst)
+ 	assert.NilError(t, err)
+ }
++
++func TestMacOSRestoreImageUsesPhysicalPathBehindStorageSymlink(t *testing.T) {
++	// Custom storage keeps LIMA_HOME behind a symlink. Virtualization.framework
++	// rejects a restore image reached through it with VZErrorDomain 10005.
++	physicalDir := t.TempDir()
++	logical := filepath.Join(t.TempDir(), "state")
++	assert.NilError(t, os.Symlink(physicalDir, logical))
++	assert.NilError(t, os.WriteFile(filepath.Join(physicalDir, filenames.Image), []byte("selected"), 0o600))
++	inst := &limatype.Instance{Dir: logical, Config: &limatype.LimaYAML{}}
++	got, err := verifiedMacOSIPSW(t.Context(), inst)
++	assert.NilError(t, err)
++	want, err := filepath.EvalSymlinks(filepath.Join(physicalDir, filenames.ImageIPSW))
++	assert.NilError(t, err)
++	assert.Equal(t, got, want)
++	got, err = restoreImagePath(logical)
++	assert.NilError(t, err)
++	assert.Equal(t, got, want)
++}

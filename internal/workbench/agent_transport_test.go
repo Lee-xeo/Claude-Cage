@@ -264,26 +264,6 @@ func TestAgentSocketUsesTheSameTerminalAndAccountLock(t *testing.T) {
 	}
 }
 
-func TestAgentHostGitUsesSameExplicitConsentAndPreservesConfig(t *testing.T) {
-	path := isolatedGitConfig(t)
-	s := agentTestController(t)
-	if _, err := AgentCall(context.Background(), s.configPath, "host.git.enable", json.RawMessage(`{}`)); err == nil {
-		t.Fatal("missing explicit consent accepted")
-	}
-	_, err := AgentCall(context.Background(), s.configPath, "host.git.enable", json.RawMessage(`{"confirm":true}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := os.ReadFile(path)
-	if err != nil || !strings.Contains(string(body), "bareRepository = explicit") || !strings.Contains(string(body), "name = Cage Test") {
-		t.Fatal("real Git config not preserved", err, string(body))
-	}
-	ui := request(s, "GET", "/api/host/git", "", "", true)
-	if !strings.Contains(ui.Body.String(), `"ready":true`) {
-		t.Fatal(ui.Body.String())
-	}
-}
-
 func TestAgentDoesNotExportNativeDeviceWrappingCredentials(t *testing.T) {
 	for _, path := range []string{"/api/agent/native/window", "/api/account/device-enroll", "/api/account/device-unlock", "/api/account/device-revoke", "/api/launch", "/api/session", "/api/desktop-local/trusted-login"} {
 		_, err := AgentRequest(context.Background(), filepath.Join(t.TempDir(), "config.json"), AgentTarget{}, "POST", path, strings.NewReader(`{}`), "application/json", "")

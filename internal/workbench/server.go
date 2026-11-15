@@ -63,12 +63,14 @@ type Server struct {
 	instanceID                                       string
 	clientOnly                                       bool
 	desktopEntry                                     bool
+	appUpdateConfigPath                              string
 	windowOwners                                     map[int]bool
 	remote                                           *remoteGateway
 	account                                          *localAccount
 	identity                                         ControllerIdentity
 	guestManifest                                    *cage.GuestManifest
 	guestUpdateRequired                              bool
+	macComponentsChecked                             bool
 	guestUpdateError                                 string
 	storageRecoveryError                             string
 	closing                                          bool
@@ -185,8 +187,12 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 		return err
 	}
 	defer listener.Close()
-	s := &Server{profile: profile, configPath: configPath, exe: exe, clientOnly: clientOnly, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard(), AutoTimezone: true, AutoLanguage: true, BalancedDisplay: true}}
+	s := &Server{profile: profile, configPath: configPath, exe: exe, clientOnly: clientOnly, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard(), AutoTimezone: true, AutoLanguage: true, BalancedDisplay: true, ProjectFileCache: true}}
 	s.desktopEntry = fullConfigPath != ""
+	s.appUpdateConfigPath = configPath
+	if fullConfigPath != "" {
+		s.appUpdateConfigPath = fullConfigPath
+	}
 	workload := !s.desktopEntry && !clientOnly
 	if s.desktopEntry {
 		if err = importDesktopConnections(filepath.Dir(fullConfigPath), profile); err != nil {
@@ -381,14 +387,19 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /api/account", s.accountStatus)
 	mux.HandleFunc("POST /api/account/{action}", s.accountAction)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("GET /api/client/about", s.appAbout)
+	mux.HandleFunc("POST /api/client/about", s.appAbout)
 	mux.HandleFunc("POST /api/projects/open", s.openProject)
+	mux.HandleFunc("POST /api/projects/save", s.saveProject)
 	mux.HandleFunc("POST /api/projects/remove", s.removeProject)
+	mux.HandleFunc("POST /api/projects/refresh", s.refreshProjectFiles)
 	mux.HandleFunc("POST /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
 	mux.HandleFunc("POST /api/environment/device-check", s.deviceCheck)
 	mux.HandleFunc("GET /api/environment/guest-profile", s.guestProfileOptions)
 	mux.HandleFunc("POST /api/environment/guest-profile/preview", s.guestProfileOptions)
+	s.registerCacheMaintenance(mux)
 	mux.HandleFunc("GET /api/environment/guest-systems", s.guestInstallation)
 	mux.HandleFunc("GET /api/environment/guest-systems/clone", s.hostClone)
 	mux.HandleFunc("DELETE /api/environment/guest-systems", s.guestInstallation)
@@ -402,8 +413,6 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/environment/resources", s.applyResources)
 	mux.HandleFunc("POST /api/environment/update", s.updateEnvironment)
 	mux.HandleFunc("POST /api/environment/tools", s.updateEnvironmentTools)
-	mux.HandleFunc("GET /api/host/git", s.hostGit)
-	mux.HandleFunc("POST /api/host/git", s.enableHostGit)
 	mux.HandleFunc("GET /api/appearance", s.getAppearance)
 	mux.HandleFunc("GET /api/favorites", s.serveFavorites)
 	mux.HandleFunc("POST /api/favorites", s.serveFavorites)
@@ -523,6 +532,12 @@ func (s *Server) handler() http.Handler {
 				return
 			}
 		}
+		// App metadata belongs to this executable, even while an SSH workload
+		// is selected. Like client/context, it uses local session authentication.
+		if r.URL.Path == "/api/client/about" {
+			mux.ServeHTTP(w, r)
+			return
+		}
 		if s.macosGuest == nil && !s.desktopEntry && !s.clientOnly && strings.HasPrefix(r.URL.Path, "/api/") {
 			pending, err := guestos.LoadInstallation(s.profile)
 			if err != nil {
@@ -574,16 +589,14 @@ func (s *Server) handler() http.Handler {
 		r = r.WithContext(ctx)
 		accountRoute := r.URL.Path == "/api/account" || strings.HasPrefix(r.URL.Path, "/api/account/")
 		bootstrapRoute := r.URL.Path == "/api/session" || r.URL.Path == "/api/launch" || r.URL.Path == "/api/handoff" || r.URL.Path == "/api/remote/manifest"
-		var phoneRoom context.Context
-		if (s.windowsGuest != nil || s.macosGuest != nil) && strings.HasPrefix(r.URL.Path, "/api/") && !bootstrapRoute && !s.hasTrustedView(r) {
-			phoneRoom = s.nativePhoneRoom(r)
-			if phoneRoom == nil {
-				http.Error(w, "请通过本机 Cage 窗口或当前配对手机打开客机", http.StatusForbidden)
-				return
-			}
+		trustedDesktop := s.hasTrustedView(r)
+		phoneRoom := s.pairedPhoneRoom(r)
+		if (s.windowsGuest != nil || s.macosGuest != nil) && strings.HasPrefix(r.URL.Path, "/api/") && !bootstrapRoute && !trustedDesktop && phoneRoom == nil {
+			http.Error(w, "请通过本机 Cage 窗口或当前配对手机打开客机", http.StatusForbidden)
+			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") && !accountRoute && !bootstrapRoute && !strings.HasPrefix(r.URL.Path, "/api/diagnostics") && !(r.Method == "GET" && r.URL.Path == "/api/appearance") {
-			epoch, unlocked := s.account.accessFor(s.hasTrustedView(r))
+			epoch, unlocked := s.account.accessFor(trustedDesktop, phoneRoom != nil)
 			if !unlocked {
 				http.Error(w, "Cage 已锁定，请先登录", http.StatusLocked)
 				return
@@ -662,6 +675,11 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		requestError(w, errors.New("无法读取项目列表，请检查项目配置"))
 		return
 	}
+	groups, err := s.projectGroups()
+	if err != nil {
+		requestError(w, err)
+		return
+	}
 	running := s.vmRunning()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -674,7 +692,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		projectError = "当前本机项目已断开，请重新共享或选择其他项目。"
 	}
 	view := map[string]any{
-		"projects": projects, "ready": s.ready, "vm_running": running,
+		"projects": projects, "project_groups": groups, "ready": s.ready, "vm_running": running,
 		"workspace": s.workspaceLocked(), "environment_directory": s.environmentDir(),
 		"environment_identity_directory": cage.EnvironmentIdentityDir(s.profile),
 		"local_vm_storage":               s.localVMStorage(), "project_error": projectError, "project_errors": s.projectErrors,
@@ -716,6 +734,7 @@ func (s *Server) proposed(w http.ResponseWriter, r *http.Request) (savedProfile,
 	s.mu.Lock()
 	input.MobileRelay = s.preferences.MobileRelay
 	input.BalancedDisplay = s.preferences.BalancedDisplay
+	input.ProjectFileCache = s.preferences.ProjectFileCache
 	input.BrowserHomeURL = browserHomeURL(s.preferences)
 	s.mu.Unlock()
 	if !readJSON(w, r, &input) {

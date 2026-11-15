@@ -56,7 +56,7 @@ Claude Cage wuxuu terminalka, biraawsarka, tafatiraha iyo Claude Desktop-ka rasm
 U dir codsigan wakiilkaaga AI (codex, dsh, workbuddy - malaha maaha Claude Code 😁):
 
 ```markdown
-Iga caawi in aan rakibo https://github.com/Lee-xeo/Claude-Cage oo habee wakiilka shabakada Cage si aad u isticmaasho xxx dhamaadka rakibida xaafadayda.
+Soo qaado koodhkii ugu dambeeyay ee https://github.com/Lee-xeo/Claude-Cage, dhis, xirmo ka samee oo rakib. U habee proxy-ga Cage inuu isticmaalo node-ka xx ee Clash-kayga maxalliga ah oo uu ka baxo IP-gayga xx. La soco hawsha oo dhan, si toos ah u sax dhibaatooyinka, haddii loo baahdana issue u gudbi mashruuca si loo wanaajiyo iswaafajinta.
 ```
 
 Waxa kaliya ee aad u baahan tahay waa barta ugu dambeysa ee wakiil shabakad la isku halayn karo. Mashruucani ma dalacsiinayo bixiye wakiil; Waxaad heli kartaa bixiye laftaada, tusaale ahaan adoo raadiya shabakada qaladka madow.
@@ -141,6 +141,7 @@ Waad ku mahadsan tahay mashaariicda soo socota ee kartida aasaasiga ah iyo tixra
 - [code-server](https://github.com/coder/code-server): tifaftiraha koodhka ku salaysan browserka.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): tixraacyada jawiga shaqada iyo naqshadeynta isdhexgalka.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) iyo [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): tixraacyada hubinta shabakada iyo ogaanshaha amniga.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): tixraac loogu talagalay tirakoob sax ah, ilaalinta xogta iyo nadiifinta kaydka oo dib loo soo celin karo; Cage ayaa si madax-bannaan u hirgeliyey.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

@@ -16,11 +16,44 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/host"
 )
+
+// Preserve causes for errors.Is/As without exposing private socket paths,
+// request URLs, credentials or response contents in displayed/logged errors.
+type coreError struct {
+	stage string
+	err   error
+}
+
+func (e *coreError) Error() string {
+	message := "Cage 代理核心操作失败（" + e.stage + "）"
+	var nested *coreError
+	var errno syscall.Errno
+	var network net.Error
+	switch {
+	case e.err == nil:
+		return message
+	case errors.As(e.err, &nested):
+		return message + ": " + nested.Error()
+	case errors.Is(e.err, context.Canceled):
+		return message + ": context canceled"
+	case errors.Is(e.err, context.DeadlineExceeded):
+		return message + ": context deadline exceeded"
+	case errors.As(e.err, &errno):
+		return fmt.Sprintf("%s: errno %d", message, errno)
+	case errors.As(e.err, &network) && network.Timeout():
+		return message + ": timeout"
+	default:
+		return fmt.Sprintf("%s: %T", message, e.err)
+	}
+}
+
+func (e *coreError) Unwrap() error { return e.err }
 
 // CorePath deliberately never searches PATH or another application's bundle.
 func CorePath() (string, error) {
@@ -89,30 +122,34 @@ func API(ctx context.Context, profile, method, path string, body any, reply any)
 	if body != nil {
 		data, err = json.Marshal(body)
 		if err != nil {
-			return err
+			return &coreError{stage: "api.encode", err: err}
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://cage-proxy"+path, bytes.NewReader(data))
 	if err != nil {
-		return err
+		return &coreError{stage: "api.request", err: err}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	res, err := client.Do(req)
 	if err != nil {
-		return errors.New("Cage 代理核心尚未就绪")
+		return &coreError{stage: "api.transport", err: err}
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return fmt.Errorf("代理核心操作失败（HTTP %d）", res.StatusCode)
+		return &coreError{stage: fmt.Sprintf("api.http-%d", res.StatusCode)}
 	}
 	if reply != nil {
-		if json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(reply) != nil {
-			return errors.New("代理核心响应无效")
+		if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(reply); err != nil {
+			return &coreError{stage: "api.decode", err: err}
 		}
 	}
 	return nil
 }
 func Running(ctx context.Context, profile string, s Store) bool {
+	return checkRunning(ctx, profile, s) == nil
+}
+
+func checkRunning(ctx context.Context, profile string, s Store) error {
 	var cfg struct {
 		Port         int    `json:"mixed-port"`
 		Interface    string `json:"interface-name"`
@@ -122,7 +159,28 @@ func Running(ctx context.Context, profile string, s Store) bool {
 		Now string `json:"now"`
 	}
 	bound, err := BoundInterface(filepath.Join(Dir(profile), "config.yaml"))
-	return err == nil && bound != "" && API(ctx, profile, "GET", "/configs", nil, &cfg) == nil && cfg.Port == s.Port && cfg.Interface == bound && cfg.UnifiedDelay && API(ctx, profile, "GET", "/proxies/"+Group, nil, &group) == nil && group.Now == s.Selected
+	if err != nil || bound == "" {
+		return &coreError{stage: "readiness.bound-interface", err: err}
+	}
+	if err := API(ctx, profile, "GET", "/configs", nil, &cfg); err != nil {
+		return &coreError{stage: "readiness.configs", err: err}
+	}
+	if cfg.Port != s.Port {
+		return &coreError{stage: "readiness.port"}
+	}
+	if cfg.Interface != bound {
+		return &coreError{stage: "readiness.interface"}
+	}
+	if !cfg.UnifiedDelay {
+		return &coreError{stage: "readiness.unified-delay"}
+	}
+	if err := API(ctx, profile, "GET", "/proxies/"+Group, nil, &group); err != nil {
+		return &coreError{stage: "readiness.group", err: err}
+	}
+	if group.Now != s.Selected {
+		return &coreError{stage: "readiness.selection"}
+	}
+	return nil
 }
 func label(profile string) string {
 	h := sha256.Sum256([]byte(profile))

@@ -57,6 +57,7 @@ try {
         Invoke-BuildTool $windowsPowerShell @('-NoProfile', '-NonInteractive', '-File', "scripts/guest-os/$test")
     }
     Invoke-BuildTool 'node' @('scripts/check-version.mjs')
+    Invoke-BuildTool 'uv' @('run', '--no-project', '--python', '3.13', 'internal/workbench/cache_maintenance_test.py')
     Invoke-BuildTool 'node' @('--test', 'internal/cage/browser-clipboard.test.mjs', 'scripts/windows-native-bridge.test.mjs')
     if ($Release) {
         Enter-CiPhase 'Release signing configuration'

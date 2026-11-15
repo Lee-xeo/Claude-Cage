@@ -120,6 +120,10 @@ func testServeShutdownHandoff(t *testing.T, saved string, timezone, language, ba
 	if preferences.BalancedDisplay != balanced {
 		t.Fatalf("display default/override: balanced=%t", preferences.BalancedDisplay)
 	}
+	// New and earlier profiles alike start with the project file cache on.
+	if !preferences.ProjectFileCache {
+		t.Fatal("project file cache is off by default")
+	}
 
 	lock, err := os.OpenFile(filepath.Join(profile, "control.lock"), os.O_RDWR, 0600)
 	if err != nil {

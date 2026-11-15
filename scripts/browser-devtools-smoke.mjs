@@ -46,13 +46,14 @@ try {
   const listen = 'server.listen(18500, "127.0.0.1");';
   const input = 'const input = JSON.parse(text || "{}");';
   assert.ok(source.includes(listen) && source.includes(input), "Update the isolated controller adapter");
+  assert.ok(source.includes('spawn(browserBinary, flags'), "Update the isolated browser launch adapter");
   // Auto-open exercises Chromium's real DevTools availability check without
   // relying on OS-specific shortcut synthesis. Keep the production mode flag.
   const adapted = source
     .replaceAll("/home/cage-browser", directory)
     .replace("/etc/claude-cage/browser-control.json", join(directory, "control.json"))
     .replace("/usr/local/lib/cage-split", join(directory, "extension"))
-    .replace('spawn("/usr/bin/chromium", flags', `spawn(${JSON.stringify(executable)}, [...flags, "--auto-open-devtools-for-tabs"]`)
+    .replace('spawn(browserBinary, flags', `spawn(${JSON.stringify(executable)}, [...flags, "--use-mock-keychain", "--password-store=basic", "--auto-open-devtools-for-tabs"]`)
     .replace(listen, 'server.listen(0, "127.0.0.1", () => console.log("PORT=" + server.address().port));')
     .replace(input, `${input}
       if (req.url === "/__devtools-test") {

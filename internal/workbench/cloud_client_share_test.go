@@ -27,7 +27,7 @@ func TestNativeCloudShareGrantAndRevocation(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
 	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
-	if err := os.WriteFile(isolatedGitConfig(t), []byte("[safe]\n bareRepository = explicit\n"), 0600); err != nil {
+	if err := os.WriteFile(isolatedGitConfig(t), []byte("[safe]\n bareRepository = all\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	token := randomToken()

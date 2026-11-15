@@ -51,7 +51,7 @@ export class BrowserClipboard {
 
   async attach(sessionId, tabId) {
     if (this.sessions.has(sessionId)) return this.sessions.get(sessionId).ready;
-    const state = { tabId, contexts: new Map(), installing: new Set(), world: randomBytes(16).toString("hex"),
+    const state = { tabId, contexts: new Map(), documents: new Map(), installing: new Set(), world: randomBytes(16).toString("hex"),
       key: randomBytes(16).toString("hex"), binding: randomBytes(16).toString("hex"), token: randomBytes(32).toString("hex") };
     this.sessions.set(sessionId, state);
     state.ready = this.#install(sessionId, state);
@@ -60,9 +60,10 @@ export class BrowserClipboard {
 
   async #install(sessionId, state) {
     try {
+      // Website sessions never enable the Runtime domain: an enabled domain
+      // changes how the page's own console calls behave. Each document's
+      // isolated world is reached through the Page domain instead.
       await this.cdp("Page.enable", {}, sessionId);
-      await this.cdp("Runtime.enable", {}, sessionId);
-      await this.cdp("Runtime.addBinding", { name: state.binding, executionContextName: state.world }, sessionId);
       const source = `(${observeInput})(${JSON.stringify(state.binding)},${JSON.stringify(state.token)},${JSON.stringify(state.key)})`;
       state.source = source;
       await this.cdp("Page.addScriptToEvaluateOnNewDocument", { source, worldName: state.world }, sessionId);
@@ -70,11 +71,8 @@ export class BrowserClipboard {
       const frames = node => [node.frame.id, ...(node.childFrames || []).flatMap(frames)];
       const skipped = [];
       for (const frameId of frameTree ? frames(frameTree) : []) {
-        try {
-          const { executionContextId } = await this.cdp("Page.createIsolatedWorld", { frameId, worldName: state.world }, sessionId);
-          state.contexts.set(executionContextId, frameId);
-          await this.cdp("Runtime.evaluate", { expression: source, contextId: executionContextId }, sessionId);
-        } catch { skipped.push({ frameId, reason: "Document changed during input observer installation" }); }
+        try { await this.#world(sessionId, state, frameId); }
+        catch { skipped.push({ frameId, reason: "Document changed during input observer installation" }); }
       }
       await this.cdp("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true,
         filter: [{ type: "iframe" }, { exclude: true }] }, sessionId);
@@ -84,6 +82,21 @@ export class BrowserClipboard {
       this.sessions.delete(sessionId);
       throw error;
     }
+  }
+
+  // Binds the current document of one frame. The binding exists only in that
+  // document's isolated world, and a newer document supersedes this attempt.
+  async #world(sessionId, state, frameId) {
+    const document = state.documents.get(frameId) || 0;
+    const current = () => this.sessions.get(sessionId) === state && (state.documents.get(frameId) || 0) === document;
+    const { executionContextId } = await this.cdp("Page.createIsolatedWorld", { frameId, worldName: state.world }, sessionId);
+    if (!current()) return;
+    await this.cdp("Runtime.addBinding", { name: state.binding, executionContextId }, sessionId);
+    if (!current()) return;
+    state.contexts.set(executionContextId, frameId);
+    await this.cdp("Runtime.evaluate", { expression: state.source, contextId: executionContextId }, sessionId);
+    if (current() && this.copyContexts.has(state.tabId))
+      await this.#applyContext(sessionId, state, this.copyContexts.get(state.tabId), [executionContextId]);
   }
 
   async #source() {
@@ -168,22 +181,19 @@ export class BrowserClipboard {
     if (event.method === "Target.attachedToTarget" && p.targetInfo?.type === "iframe") {
       void this.attach(p.sessionId, state.tabId).catch(() => {});
     } else if (event.method === "Target.detachedFromTarget") this.detachSession(p.sessionId);
-    else if (event.method === "Runtime.executionContextCreated" && p.context?.name === state.world) {
-      const id = p.context.id;
-      state.contexts.set(id, p.context.auxData?.frameId);
-      // Queue the host context after the document-start script, including
-      // frames created after the host copy handshake.
-      const pending = Promise.resolve().then(async () => {
-        await state.ready;
-        await this.cdp("Runtime.evaluate", { expression: state.source, contextId: id }, event.sessionId);
-        if (this.copyContexts.has(state.tabId)) await this.#applyContext(event.sessionId, state, this.copyContexts.get(state.tabId), [id]);
-      }).catch(() => {}).finally(() => state.installing.delete(pending));
-      state.installing.add(pending);
-    } else if (event.method === "Runtime.executionContextDestroyed") state.contexts.delete(p.executionContextId);
-    else if (event.method === "Runtime.executionContextsCleared") state.contexts.clear();
     else if (event.method === "Page.frameDetached" || event.method === "Page.frameNavigated") {
       const frame = p.frameId || p.frame?.id;
+      state.documents.set(frame, (state.documents.get(frame) || 0) + 1);
       for (const [id, value] of state.contexts) if (value === frame) state.contexts.delete(id);
+      if (event.method === "Page.frameDetached") return;
+      // The document-start script has already run in the new document; give
+      // it the binding and the host context, including frames created after
+      // the host copy handshake.
+      const pending = Promise.resolve().then(async () => {
+        await state.ready;
+        await this.#world(event.sessionId, state, frame);
+      }).catch(() => {}).finally(() => state.installing.delete(pending));
+      state.installing.add(pending);
     } else if (event.method === "Runtime.bindingCalled" && p.name === state.binding && state.contexts.has(p.executionContextId)) {
       if (typeof p.payload !== "string" || p.payload.length > 1024) return;
       try {

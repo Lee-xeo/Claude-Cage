@@ -39,8 +39,20 @@ final class MacNativeOpen: NSObject {
     private(set) var openWithMetadata: Data?
 
     func install() {
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(returnToTailnet(_:reply:)),
+            forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(openDocuments(_:reply:)),
             forEventClass: AEEventClass(kCoreEventClass), andEventID: AEEventID(kAEOpenDocuments))
+    }
+
+    @objc private func returnToTailnet(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+        guard let address = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let scheme = URLComponents(string: address)?.scheme?.lowercased(),
+              ["tailscale", "io.tailscale.ipn.macsys"].contains(scheme) else { return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/local/libexec/cage-workbench-browser-4.145.0-pw1.65.0/controller/cage-tailnet")
+        task.arguments = ["--browser-return"]
+        try? task.run()
     }
 
     static func fileURLs(_ event: NSAppleEventDescriptor) throws -> [URL] {

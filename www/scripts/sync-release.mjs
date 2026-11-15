@@ -144,6 +144,79 @@ export function releaseMetadata(release, text) {
   return metadata;
 }
 
+const platformSuffixes = {
+  macos: 'macos-arm64.dmg', windows: 'windows-amd64-setup.exe',
+  linux: 'linux-amd64.deb', android: 'android-arm64.apk',
+};
+
+// Each platform keeps its own version and release notes, including when a
+// newer release contains packages for only some platforms.
+export function platformMetadata(release, text) {
+  if (release.draft || !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(release.tag_name)) return {};
+  const version = release.tag_name.slice(1);
+  const releaseURL = `${repoURL}/releases/tag/${release.tag_name}`;
+  const platforms = {};
+  for (const [platform, suffix] of Object.entries(platformSuffixes)) {
+    let asset = optionalAsset(release, `Cage-${version}-${suffix}`);
+    let unsigned = false;
+    if (!asset && platform === 'windows' && release.prerelease) {
+      asset = optionalAsset(release, `Cage-${version}-windows-amd64-setup-unsigned.exe`);
+      unsigned = !!asset;
+    }
+    if (!asset) continue;
+    try {
+      checksumFor(text, asset);
+      if (platform === 'macos') {
+        const source = release.assets.find(item => /^mihomo-v[\d.]+-source\.tar\.gz$/.test(item.name));
+        if (!source || !optionalAsset(release, source.name)) continue;
+        checksumFor(text, source);
+      }
+      if (unsigned) {
+        const source = release.assets.find(item => /^qemu-[0-9a-f]{40}-source\.tar\.gz$/.test(item.name));
+        if (!source || !optionalAsset(release, source.name)) continue;
+        checksumFor(text, source);
+      }
+      platforms[platform] = { version, releaseURL, downloadURL: asset.browser_download_url, ...(unsigned ? { unsigned: true } : {}) };
+    } catch {
+      // Incomplete uploads do not displace a previous verified package.
+    }
+  }
+  return platforms;
+}
+
+export async function resolvePlatforms(releases, readChecksums = checksumText) {
+  const platforms = {};
+  for (const release of releases) {
+    if (release.draft || !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(release.tag_name)) continue;
+    const version = release.tag_name.slice(1);
+    const needed = Object.entries(platformSuffixes).some(([platform, suffix]) => !platforms[platform] && (
+      optionalAsset(release, `Cage-${version}-${suffix}`) ||
+      (platform === 'windows' && release.prerelease && optionalAsset(release, `Cage-${version}-windows-amd64-setup-unsigned.exe`))
+    ));
+    if (!needed) continue;
+    let available;
+    try { available = platformMetadata(release, await readChecksums(release)); }
+    catch (error) {
+      console.warn(`Skipping unavailable platform packages in ${release.tag_name}: ${error.message}`);
+      continue;
+    }
+    for (const [platform, entry] of Object.entries(available)) platforms[platform] ||= entry;
+    if (Object.keys(platforms).length === Object.keys(platformSuffixes).length) break;
+  }
+  return platforms;
+}
+
+async function publishedReleases() {
+  const releases = [];
+  let url = `${apiURL}?per_page=100`;
+  while (url) {
+    const response = await request(url);
+    releases.push(...await response.json());
+    url = response.headers.get('link')?.match(/<([^>]+)>; rel="next"/)?.[1];
+  }
+  return releases.sort((a, b) => Date.parse(b.published_at || b.created_at) - Date.parse(a.published_at || a.created_at));
+}
+
 async function checksumText(release) {
   const asset = optionalAsset(release, 'SHA256SUMS');
   if (!asset || asset.size > 64 * 1024) throw new Error('Missing complete checksum file');
@@ -185,9 +258,13 @@ async function main() {
   let releases;
   if (values.tag) {
     release = await (await request(`${apiURL}/tags/${encodeURIComponent(values.tag)}`)).json();
+    // Keep explicit-tag artifact verification independent of release discovery.
+    // Website builds still retain older packages for missing platforms.
+    releases = values['archive-directory'] ? [release] : await publishedReleases();
+    const index = releases.findIndex(item => item.tag_name === release.tag_name);
+    releases = index < 0 ? [release] : [release, ...releases.slice(index + 1)];
   } else {
-    releases = await (await request(`${apiURL}?per_page=100`)).json();
-    // GitHub orders by creation time. Show the first complete public Cage release.
+    releases = await publishedReleases();
     release = releases.find(item => {
       try { releaseAssets(item); return true; } catch { return false; }
     });
@@ -198,6 +275,7 @@ async function main() {
   const digest = checksumFor(text, archive);
   const sourceDigest = checksumFor(text, source);
   const metadata = releaseMetadata(release, text);
+  metadata.platforms = await resolvePlatforms(releases, item => item.tag_name === release.tag_name ? text : checksumText(item));
   if (values['archive-directory']) {
     await download(archive, digest, values['archive-directory']);
     await download(source, sourceDigest, values['archive-directory']);

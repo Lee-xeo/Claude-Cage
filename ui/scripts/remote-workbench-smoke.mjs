@@ -50,7 +50,7 @@ try {
   const macKeyboard = page.getByRole("radio", { name: /Mac 快捷键/ });
   assert.equal(await macKeyboard.isChecked(), true, "Mac client defaults must not follow Linux server keyboard mode");
   const savesBefore = state.requests.filter((item) => item.path === "/settings" && item.method === "POST").length;
-  await page.getByRole("radio", { name: /原生 Linux 快捷键/ }).check();
+  await page.getByRole("radio", { name: /客机原生快捷键/ }).check();
   assert.equal(await page.evaluate((instance) => localStorage.getItem(`cage-keyboard:remote:${instance}`), instance), "native");
   assert.equal(state.requests.filter((item) => item.path === "/settings" && item.method === "POST").length, savesBefore, "client keyboard changes must not write cloud settings");
   await macKeyboard.check();
@@ -81,7 +81,8 @@ try {
   await page.route("**/api/input/files/desktop/requests", (route) => route.fulfill({ json: { uploads: [], downloads: [{ id: downloadID, name: "report.pdf", path: "/srv/cage/Downloads/report.pdf", state: "saved", target: "desktop" }] } }));
   await page.route("**/api/browser/files/saved", (route) => route.fulfill({ json: saved }));
   await page.reload();
-  await page.getByRole("button", { name: "下载文件", exact: true }).click();
+  await page.getByRole("button", { name: "打开浏览器", exact: true }).click();
+  await page.getByRole("button", { name: "浏览器下载", exact: true }).click();
   const downloads = page.getByRole("dialog", { name: "下载文件" });
   await downloads.getByText("已保存到云端", { exact: true }).waitFor();
   assert.equal(await downloads.getByRole("button", { name: "打开文件", exact: true }).count(), 0, "cloud path must not offer a local open action");

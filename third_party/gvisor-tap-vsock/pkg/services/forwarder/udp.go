@@ -3,7 +3,6 @@ package forwarder
 import (
 	"net"
 	"net/netip"
-	"strconv"
 	"sync"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
@@ -29,7 +28,9 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 			localAddress = replaced
 		}
 		natLock.Unlock()
-		if dst, ok := netip.AddrFromSlice(localAddress.AsSlice()); !ok || !outbound.Allows("udp", netip.AddrPortFrom(dst, r.ID().LocalPort)) {
+		dst, ok := netip.AddrFromSlice(localAddress.AsSlice())
+		target := netip.AddrPortFrom(dst, r.ID().LocalPort)
+		if !ok || !outbound.Allows("udp", target) {
 			return
 		}
 
@@ -46,7 +47,7 @@ func UDP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 		}
 
 		p, _ := NewUDPProxy(&autoStoppingListener{underlying: gonet.NewUDPConn(&wq, ep)}, func() (net.Conn, error) {
-			return net.Dial("udp", net.JoinHostPort(localAddress.String(), strconv.Itoa(int(r.ID().LocalPort))))
+			return dialAllowed(outbound, "udp", target, (&net.Dialer{}).DialContext)
 		})
 		go func() {
 			p.Run()

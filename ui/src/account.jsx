@@ -17,7 +17,7 @@ import {
   LogOut,
   Settings,
 } from "lucide-react";
-import { api, native, nativeAvailable } from "./api";
+import { api, native, nativeAvailable, writeClipboard } from "./api";
 import { getClientContext, isRemoteClient } from "./client-context.mjs";
 import logo from "./logo.png";
 import "./account.css";
@@ -37,6 +37,7 @@ export function AccountProvider({ children }) {
   const deviceKey = JSON.stringify([account?.device_binding, account?.devices?.automatic, account?.devices?.biometric]);
   const deviceSupport = deviceCheck?.key === deviceKey ? deviceCheck.value : null;
   const [deviceNotice, setDeviceNotice] = useState("");
+  const [recovery, setRecovery] = useState(null);
   const sequence = useRef(0);
   const refresh = async () => {
     const current = ++sequence.current;
@@ -55,9 +56,19 @@ export function AccountProvider({ children }) {
   const act = async (action, input = {}) => {
     const current = ++sequence.current;
     const value = await api(`/account/${action}`, input);
-    if (action !== "logout" && sequence.current === current) setAccount(value);
+    const { recovery_key: recoveryKey, ...view } = value;
+    if (recoveryKey) {
+      // A status read started during this write must not replace its result or
+      // discard the only response containing the newly generated secret.
+      ++sequence.current;
+      setRecovery({ key: recoveryKey, binding: view.device_binding, username: view.username, reset: action === "recovery-reset" });
+      setAccount(view);
+    } else if (action !== "logout" && sequence.current === current) setAccount(view);
     return value;
   };
+  useEffect(() => {
+    if (recovery && account && (recovery.binding !== account.device_binding || (!recovery.reset && !account.unlocked))) setRecovery(null);
+  }, [account?.device_binding, account?.unlocked, recovery]);
   useEffect(() => {
     if (!account || deviceSupport !== null) return;
     if (!nativeAvailable()) { setDeviceCheck({ key: deviceKey, value: { supported: false } }); return; }
@@ -120,7 +131,7 @@ export function AccountProvider({ children }) {
     };
   }, []);
   return (
-    <AccountContext.Provider value={{ account, error, refresh, act, deviceSupport, deviceAction, deviceNotice, setDeviceNotice, recheckDevices: () => setDeviceCheck(null) }}>
+    <AccountContext.Provider value={{ account, error, refresh, act, deviceSupport, deviceAction, deviceNotice, setDeviceNotice, recovery: recovery?.binding === account?.device_binding ? recovery : null, dismissRecovery: () => setRecovery(null), recheckDevices: () => setDeviceCheck(null) }}>
       {children}
     </AccountContext.Provider>
   );
@@ -206,13 +217,14 @@ function PasswordField({
 }
 
 export function AccountGate({ children }) {
-  const { account, error: connectionError, refresh, act, deviceSupport, deviceAction, setDeviceNotice } = useAccount();
+  const { account, error: connectionError, refresh, act, deviceSupport, deviceAction, setDeviceNotice, recovery } = useAccount();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [rememberLogin, setRememberLogin] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [recovering, setRecovering] = useState(false);
   const automaticAttempt = useRef("");
   const gateAcknowledged = useRef(false);
   const trustedAttempt = useRef(false);
@@ -244,7 +256,9 @@ export function AccountGate({ children }) {
     setBusy(true);
     deviceAction("unlock", "automatic").catch((e) => setError(e.message)).finally(() => setBusy(false));
   }, [account?.unlocked, account?.devices?.automatic, account?.require_authentication, deviceSupport]);
+  if (recovery) return <RecoveryKeyScreen />;
   if (account?.unlocked) return children;
+  if (recovering) return <AccountRecovery onBack={() => setRecovering(false)} onReset={() => { setRecovering(false); setPassword(""); setConfirmation(""); setRememberLogin(false); setError(""); }} />;
   const creating = account && !account.exists;
   const rememberThisDevice = rememberLogin ?? Boolean(creating || account?.trusted_login || account?.devices?.automatic);
   const submit = async (event) => {
@@ -393,6 +407,7 @@ export function AccountGate({ children }) {
               >
                 {busy ? "正在解锁…" : creating ? isRemoteClient() ? "创建云端账户" : "创建本地账户" : "解锁 Cage"}
               </button>
+              {!creating && <button type="button" className="text-button" onClick={() => { setPassword(""); setError(""); setRecovering(true); }}>忘记密码？</button>}
             </fieldset>
           </form>
         )}
@@ -410,8 +425,8 @@ export function AccountGate({ children }) {
         </p>
         {!account?.trusted_local && <p className="account-recovery-note">
           {creating
-            ? "密码至少 8 个字符，用于保护应用登录凭据。请妥善保存，当前不支持在线找回。"
-            : isRemoteClient() ? "请输入云端 Cage 账户密码；当前不支持在线找回。" : "请输入本地账户密码；当前不支持在线找回。"}
+            ? "注册后会生成恢复密钥。请保存到密码管理器，忘记密码时可用它恢复。"
+            : account?.recovery_ready ? "忘记密码时，可使用已保存的恢复密钥重置。" : "此账户尚未设置恢复密钥。能登录时，请到「设置 → 账户」补设。"}
         </p>}
       </section>
       {nativeAvailable() && (
@@ -424,6 +439,98 @@ export function AccountGate({ children }) {
       )}
     </main>
   );
+}
+
+function RecoveryKeyScreen() {
+  const { recovery, dismissRecovery } = useAccount();
+  const [saved, setSaved] = useState(false);
+  const [notice, setNotice] = useState("");
+  return <main className="account-gate">
+    <section className="account-entry account-recovery" aria-label="保存恢复密钥">
+      <h1>{recovery.reset ? "密码已重置" : "保存你的恢复密钥"}</h1>
+      <p className="account-entry-intro">{recovery.reset && "请保存新的恢复密钥。"}账户：{recovery.username}。这份密钥可以重置密码并访问原有资料，请存入密码管理器或安全的离线位置，不要分享给他人。</p>
+      <label className="account-field">恢复密钥<textarea aria-label="恢复密钥" readOnly value={recovery.key} rows={4} spellCheck={false} autoComplete="off" onFocus={(event) => event.target.select()} /></label>
+      <div className="account-recovery-actions">
+        <button className="quiet-button" onClick={async () => {
+          try { await writeClipboard(recovery.key); setNotice("恢复密钥已复制，请粘贴到密码管理器。"); }
+          catch { setNotice("未能复制，请选中上方完整密钥，手动复制并保存。"); }
+        }}>复制恢复密钥</button>
+        <button className="quiet-button" onClick={async () => {
+          try {
+            if (nativeAvailable()) {
+              if (await native("saveRecoveryKey", { key: recovery.key })) setNotice("恢复密钥文件已保存，请妥善保管。");
+              return;
+            }
+            const url = URL.createObjectURL(new Blob([recovery.key + "\n"], { type: "text/plain;charset=utf-8" }));
+            const link = document.createElement("a"); link.href = url; link.download = "账户恢复密钥.txt"; link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            setNotice("请确认恢复密钥文件已保存到安全位置。");
+          } catch { setNotice("未能保存文件，请重试或复制完整密钥到密码管理器。"); }
+        }}>下载密钥文件</button>
+      </div>
+      {notice && <p className="field-help" role="status">{notice}</p>}
+      <p className="field-help">完整密钥仅在此处显示。关闭或刷新后，可验证账户密码重新生成；重新生成后旧密钥失效。{recovery.reset && "原来的资料和 Claude 登录状态已保留，Cage 的记住我和快捷解锁已关闭，请用新密码登录后重新设置。"}</p>
+      <label className="account-device-option check-line"><input type="checkbox" checked={saved} onChange={(event) => setSaved(event.target.checked)} /><span>我已安全保存完整恢复密钥</span></label>
+      <button className="primary account-submit" disabled={!saved} onClick={dismissRecovery}>{recovery.reset ? "返回登录" : "继续使用 Cage"}</button>
+    </section>
+  </main>;
+}
+
+function AccountRecovery({ onBack, onReset }) {
+  const { account, act } = useAccount();
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return <main className="account-gate">
+    <section className="account-entry account-recovery" aria-label="恢复账户">
+      <h1>使用恢复密钥重置密码</h1>
+      <p className="account-entry-intro">为 {account.username} 设置新密码，原来的资料和 Claude 登录状态会保留。</p>
+      {account.recovery_ready ? <form onSubmit={async (event) => {
+        event.preventDefault();
+        if (busy) return;
+        if (password !== confirmation) { setError("两次密码不一致"); return; }
+        setBusy(true); setError("");
+        try { await act("recovery-reset", { recovery_key: code, password, confirm_password: confirmation }); onReset(); }
+        catch (e) { setError(e.message); }
+        finally { setBusy(false); }
+      }}><fieldset disabled={busy}>
+        <label className="account-field">已保存的恢复密钥<textarea aria-label="已保存的恢复密钥" autoFocus required value={code} onChange={(event) => setCode(event.target.value)} rows={4} maxLength={256} autoComplete="off" spellCheck={false} /></label>
+        <PasswordField label="新密码" value={password} onChange={setPassword} autoComplete="new-password" />
+        <PasswordField label="确认新密码" value={confirmation} onChange={setConfirmation} autoComplete="new-password" />
+        <p className="field-help">重置后会换发恢复密钥，旧密钥失效。Cage 的记住我和快捷解锁会关闭。</p>
+        {error && <p className="account-error" role="alert">{error}</p>}
+        <button className="primary account-submit" disabled={!code.trim() || !password || !confirmation}>{busy ? "正在重置…" : "重置密码"}</button>
+      </fieldset></form> : <p className="field-help" role="status">此账户尚未设置恢复密钥。请使用原密码或已开启的快捷登录进入，再到「设置 → 账户」补设。若所有解锁方式均不可用，当前无法恢复加密资料；现有数据会保留。</p>}
+      <button className="text-button account-submit" disabled={busy} onClick={onBack}>返回密码登录</button>
+    </section>
+  </main>;
+}
+
+function AccountRecoverySettings({ disabled, onDirty }) {
+  const { account, act } = useAccount();
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => { onDirty(Boolean(password)); }, [password]);
+  useEffect(() => () => onDirty(false), []);
+  return <section className="account-device-settings" aria-label="账户恢复">
+    <form onSubmit={async (event) => {
+      event.preventDefault();
+      if (busy) return;
+      setBusy(true); setError("");
+      try { await act("recovery-generate", { password }); setPassword(""); }
+      catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    }}><fieldset disabled={disabled || busy}>
+      <h4>恢复密钥</h4>
+      <p className="field-help">{account.recovery_ready ? "已设置。忘记密码时，可在登录页使用保存的恢复密钥。重新生成后旧密钥立即失效。" : "尚未设置。请补设并安全保存，忘记密码时可用它恢复原来的资料和登录状态。"}</p>
+      <PasswordField label="生成密钥前验证账户密码" value={password} onChange={setPassword} autoComplete="current-password" />
+      {error && <p className="account-error" role="alert">{error}</p>}
+      <button className="quiet-button" disabled={!password}>{busy ? "正在生成…" : account.recovery_ready ? "重新生成恢复密钥" : "生成恢复密钥"}</button>
+    </fieldset></form>
+  </section>;
 }
 
 export function AccountMenu({ onSettings, onConfirm, onStatus, busy }) {
@@ -539,12 +646,13 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
   const [feedbackTarget, setFeedbackTarget] = useState("profile");
+  const [recoveryDirty, setRecoveryDirty] = useState(false);
   const file = useRef();
   const changed =
     name !== account.username || avatar !== (account.avatar || "");
   useEffect(() => {
-    onDirty?.(changed || Boolean(oldPassword || password || confirmation));
-  }, [changed, oldPassword, password, confirmation]);
+    onDirty?.(changed || Boolean(oldPassword || password || confirmation) || recoveryDirty);
+  }, [changed, oldPassword, password, confirmation, recoveryDirty]);
   useEffect(() => () => onDirty?.(false), []);
   const upload = async (event) => {
     setFeedbackTarget("profile");
@@ -695,7 +803,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
         <fieldset disabled={busy || environmentBusy}>
           <h4>账户密码</h4>
           <p className="field-help">
-            修改密码不会清除 Claude 的登录状态。{account.macos_credentials_ready ? "Cage 与 macOS 客机共用密码；客机关闭时会在下次启动后同步。" : isRemoteClient() ? "密码用于解锁当前云端 Cage，没有在线找回。" : "密码用于本机解锁，没有在线找回。"}
+            修改密码不会清除 Claude 的登录状态。{account.macos_credentials_ready ? "Cage 与 macOS 客机共用密码；客机关闭时会在下次启动后同步。" : "忘记密码时，可在登录页使用已保存的恢复密钥重置。"}
           </p>
           {!account.trusted_local && <PasswordField
             label="当前密码"
@@ -724,6 +832,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
       </form>
 
       {feedbackTarget === "password" && feedback}
+      {!account.trusted_local && <AccountRecoverySettings disabled={busy || environmentBusy} onDirty={setRecoveryDirty} />}
       {localDesktop() && !account.trusted_local && <TrustedDeviceSettings />}
       {!account.trusted_local && <AccountDeviceSettings />}
       <p className="account-settings-note">

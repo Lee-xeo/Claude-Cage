@@ -163,6 +163,22 @@ internal static class BrowserWindowCapture
         return false;
     }
     private static bool IsForeground(View view) => BelongsToWindow(GetForegroundWindow(), view.Pin);
+    private static void ValidatePopup(Pin pin, Popup popup)
+    {
+        // Resolve records physical pixels under PMv2. Capture invokes this
+        // callback before and after awaits, on threads whose default DPI mode
+        // can be SystemAware. Scope every synchronous comparison separately;
+        // a thread DPI context must never span an await.
+        var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
+        try
+        {
+            Validate(pin);
+            if (!BelongsToWindow(popup.Window, pin) || !IsWindowVisible(popup.Window) || IsIconic(popup.Window) ||
+                !GetWindowRect(popup.Window, out var bounds) || bounds.Box != popup.Bounds || Client(popup.Window) != popup.Client)
+                throw new InvalidDataException("browser_target_changed");
+        }
+        finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
+    }
     private static View Resolve(Process node,JsonObject proof)
     {
         ValidateNode(node);
@@ -213,11 +229,18 @@ internal static class BrowserWindowCapture
             var inlineUI=BelongsToWindow(GetForegroundWindow(),pin) && GetGUIThreadInfo(thread,ref info) && info.Focus!=IntPtr.Zero && GetAncestor(info.Focus,2)==pin.Window && !focusedPage && Class(info.Focus)!="Chrome_RenderWidgetHostHWND";
             var ui=popups.Count>0 || inlineUI;
             var target=proof["target"]?.GetValue<string>()??"";var document=proof["document"]?.GetValue<string>()??"";
-            var signature=new JsonArray(target,document,id,pin.Window.ToInt64(),outside.Left,outside.Top,outside.Right,outside.Bottom,surface.X,surface.Y,surface.Width,surface.Height,ui,inlineUI,
-                new JsonArray(popups.Select(p=>(JsonNode)new JsonArray(p.Window.ToInt64(),p.Bounds.X,p.Bounds.Y,p.Bounds.Width,p.Bounds.Height)).ToArray())).ToJsonString();
+            var x=proof["x"]?.GetValue<int>()??0;var y=proof["y"]?.GetValue<int>()??0;
+            var width=proof["width"]?.GetValue<int>()??0;var height=proof["height"]?.GetValue<int>()??0;
+            // Bind input to the complete physical-client -> frame transform,
+            // including DPI changes that leave the outer window unchanged.
+            var signature=new JsonArray(target,document,id,pin.Window.ToInt64(),outside.Left,outside.Top,outside.Right,outside.Bottom,
+                client.X,client.Y,client.Width,client.Height,surface.X,surface.Y,surface.Width,surface.Height,
+                x,y,width,height,GetDpiForWindow(pin.Window),ui,inlineUI,
+                new JsonArray(popups.Select(p=>(JsonNode)new JsonArray(p.Window.ToInt64(),p.Bounds.X,p.Bounds.Y,p.Bounds.Width,p.Bounds.Height,
+                    p.Client.X,p.Client.Y,p.Client.Width,p.Client.Height,GetDpiForWindow(p.Window))).ToArray())).ToJsonString();
             var opaque=Convert.ToHexString(SHA256.HashData(Protocol.Utf8.GetBytes(signature))).ToLowerInvariant()[..32];
             return new View(pin,outside.Box,client,surface,popups.ToArray(),ui,inlineUI,target,document,proof["id"]?.GetValue<string>()??"",opaque,
-                proof["x"]?.GetValue<int>()??0,proof["y"]?.GetValue<int>()??0,proof["width"]?.GetValue<int>()??0,proof["height"]?.GetValue<int>()??0);
+                x,y,width,height);
         }
         finally {if(old!=IntPtr.Zero)SetThreadDpiAwarenessContext(old);}
     }
@@ -250,7 +273,7 @@ internal static class BrowserWindowCapture
                 }
                 foreach(var popup in view.Popups.Reverse())
                 {
-                    void Check(){Validate(view.Pin);if(!BelongsToWindow(popup.Window,view.Pin)||!GetWindowRect(popup.Window,out var rect)||rect.Box!=popup.Bounds||Client(popup.Window)!=popup.Client)throw new InvalidDataException("browser_target_changed");}
+                    void Check()=>ValidatePopup(view.Pin,popup);
                     var png=await GuestWindowCapture.Capture(popup.Window,view.Pin.Process.Id,popup.Client.Width,popup.Client.Height,Check,preserveAlpha:true);
                     var sx=(double)view.Width/view.Surface.Width;var sy=(double)view.Height/view.Surface.Height;
                     var destination=new Rectangle(view.X+(int)Math.Round((popup.Client.X-view.Surface.X)*sx),view.Y+(int)Math.Round((popup.Client.Y-view.Surface.Y)*sy),(int)Math.Round(popup.Client.Width*sx),(int)Math.Round(popup.Client.Height*sy));

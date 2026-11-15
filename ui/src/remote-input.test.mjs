@@ -31,6 +31,7 @@ function fixture(native = false, browserComposition = false, options = {}) {
   doc.hasFocus = () => true;
   doc.body = { append() {} };
   const target = Object.assign(new EventTarget(), {
+    isConnected: true,
     value: "",
     style: {},
     classList: { add() {}, remove() {} },
@@ -435,6 +436,59 @@ function fakeClock() {
   };
 }
 
+test("releasing native input cancels the active composition before its late end event", async () => {
+  const clock = fakeClock();
+  const calls = [];
+  let available = true;
+  const f = fixture(true, true, {
+    ...clock,
+    surface: {
+      width: 800,
+      height: 600,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    },
+    caretRect: async () => available
+      ? { available, context: "a".repeat(32), rect: [240, 120, 0, 24] }
+      : { available },
+    native: async (name, value) => {
+      if (name === "remoteInput") calls.push(value);
+      return true;
+    },
+  });
+  const nativeEvent = (kind, owner) => {
+    f.win.dispatchEvent(new CustomEvent("cage-native-input", {
+      detail: { kind, owner, text: "late text" },
+    }));
+  };
+  try {
+    f.win.cageNativeIMEAvailable = true;
+    f.rfb.focus();
+    await clock.advance(0);
+    const { owner } = calls[0];
+    assert.equal(calls[0].operation, "activate");
+    nativeEvent("compositionstart", owner);
+    await new Promise(resolve => setImmediate(resolve));
+
+    available = false;
+    await clock.advance(caretPollFast);
+    assert.equal(calls.at(-1).operation, "deactivate");
+    nativeEvent("compositionend", owner);
+    assert.deepEqual(f.compositions.map(value => value.mode), ["begin", "cancel"]);
+    assert.equal(f.compositions[1].session, f.compositions[0].session);
+    assert.deepEqual(f.texts, []);
+
+    const backspace = f.key("keydown", "Backspace", "Backspace");
+    assert.equal(backspace.cancelBubble, false,
+      "Backspace should reach the transport keyboard listener");
+    available = true;
+    await clock.advance(caretPollFast);
+    assert.equal(calls.at(-1).operation, "activate");
+    assert.notEqual(calls.at(-1).owner, owner);
+  } finally {
+    f.controller.dispose();
+  }
+});
+
 test("caret readings back off while the viewer is quiet and resume with input", async () => {
   const clock = fakeClock();
   let readings = 0;
@@ -464,6 +518,58 @@ test("caret readings back off while the viewer is quiet and resume with input", 
     f.controller.dispose();
   }
 });
+
+for (const interruption of ["none", "pointer", "keyboard", "workbench", "window", "tab", "hidden", "native"]) {
+  test(`Windows caret handoff after a temporary guest blur (${interruption})`, async () => {
+    const clock = fakeClock();
+    let available = true;
+    let finishHandoff;
+    let activationCount = 0;
+    const f = fixture(true, true, {
+      ...clock,
+      surface: { width: 640, height: 480, getBoundingClientRect: () => ({ left: 0, top: 0, width: 640, height: 480 }) },
+      caretRect: async () => available ? { available, rect: [16, 20, 1, 24] } : { available },
+      native: async (_action, request) => {
+        if (request.operation === "activate") activationCount++;
+        if (request.operation === "deactivate") {
+          assert.equal(request.returnFocus, true);
+          return new Promise(resolve => { finishHandoff = resolve; });
+        }
+        return true;
+      },
+    });
+    f.win.chrome = { webview: {} };
+    f.win.cageNativeIMEAvailable = true;
+    f.rfb.focus();
+    try {
+      await clock.advance(0);
+      assert.equal(activationCount, 1);
+      available = false;
+      await clock.advance(250);
+      // WebView2 selected a workbench button while returning from the native edit control.
+      f.doc.activeElement = f.local;
+      if (interruption === "pointer") f.doc.dispatchEvent(new Event("pointerdown"));
+      if (interruption === "keyboard") f.key("keydown", "Tab", "Tab");
+      if (interruption === "workbench") f.win.dispatchEvent(new Event("cage-input-interrupted"));
+      if (interruption === "hidden") {
+        f.doc.visibilityState = "hidden";
+        f.doc.dispatchEvent(new Event("visibilitychange"));
+        f.doc.visibilityState = "visible";
+      }
+      f.win.dispatchEvent(new Event("blur"));
+      if (interruption === "window") f.win.dispatchEvent(new Event("cage-window-deactivated"));
+      if (interruption === "tab") f.setTabId("tab-2");
+      finishHandoff({ returnedFocus: interruption !== "native" });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(f.doc.activeElement, interruption === "none" ? f.target : f.local);
+      available = true;
+      await clock.advance(250);
+      assert.equal(activationCount, interruption === "none" ? 2 : 1);
+    } finally {
+      f.controller.dispose();
+    }
+  });
+}
 
 test("a composition begins from the last reading of a quiet viewer", async () => {
   const clock = fakeClock();

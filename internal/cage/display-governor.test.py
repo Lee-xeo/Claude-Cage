@@ -257,25 +257,15 @@ class DisplayTests(unittest.TestCase):
         self.conn.sync()
         self.wait(60, timeout=1)
 
-    @unittest.skipUnless(shutil.which('X0tigervnc'), 'needs X0tigervnc')
     def test_real_remote_scroll_restores_full_rate(self):
         self.remote_scroll()
 
-    @unittest.skipUnless(shutil.which('X0tigervnc'), 'needs X0tigervnc')
     def test_real_remote_scroll_during_pointer_grab(self):
         self.remote_scroll(grab=True)
 
     def remote_scroll(self, grab=False):
-        path = self.temp.name + '/viewer.sock'
-        server = subprocess.Popen(['X0tigervnc', '-display', self.env['DISPLAY'], '-rfbport', '-1',
-                                   '-rfbunixpath', path, '-rfbunixmode', '0600', '-SecurityTypes', 'None', '-AlwaysShared'],
-                                  env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.addCleanup(stop_process, server)
-        for attempt in range(100):
-            if os.path.exists(path):
-                break
-            self.assertIsNone(server.poll())
-            time.sleep(.02)
+        # The display's own viewer socket, as the workbench connects to it.
+        path = self.temp.name + '/d.sock'
         client = socket.socket(socket.AF_UNIX)
         self.addCleanup(client.close)
         client.settimeout(2)

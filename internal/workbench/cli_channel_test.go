@@ -221,10 +221,10 @@ func TestDiscoveryRunningStateUpdatesCatalogAndClearsMissingHistory(t *testing.T
 		t.Fatal(err)
 	}
 	s.ready = true
-	for _, phase := range []struct{ present, running bool }{{true, true}, {true, false}, {true, true}, {false, false}} {
+	for _, phase := range []struct{ present, running, desktop bool }{{true, true, true}, {true, true, false}, {true, false, true}, {true, true, true}, {false, false, false}} {
 		found := []terminalConversation{}
 		if phase.present {
-			found = append(found, terminalConversation{CLIID: record.CLIID, Workspace: guestPath(project), Config: filepath.Join(home, ".claude"), Running: phase.running})
+			found = append(found, terminalConversation{CLIID: record.CLIID, Workspace: guestPath(project), Config: filepath.Join(home, ".claude"), Running: phase.running, ClaudeDesktop: phase.desktop})
 		}
 		if err := writePrivate(observation, found); err != nil {
 			t.Fatal(err)
@@ -233,7 +233,7 @@ func TestDiscoveryRunningStateUpdatesCatalogAndClearsMissingHistory(t *testing.T
 			t.Fatal(err)
 		}
 		list, err := s.mobileCLI.summaries(s.profile, map[string]bool{project: true}, false)
-		if err != nil || len(list) != 1 || list[0].Running != phase.running {
+		if err != nil || len(list) != 1 || list[0].Running != phase.running || list[0].ClaudeDesktop != (phase.running && phase.desktop) {
 			t.Fatalf("phase %+v: summaries = %+v, error = %v", phase, list, err)
 		}
 	}

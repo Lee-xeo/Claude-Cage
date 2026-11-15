@@ -99,6 +99,33 @@ async function fixture(t, configured = {}, overrides = {}) {
   } };
 }
 
+integration("native new-tab pages use the configured homepage without replacing ordinary pages", async t => {
+  const f = await fixture(t);
+  await f.open("/retained");
+  await f.call("homepage", { url: f.url + "/home" });
+  const cdp = await f.context().browser().newBrowserCDPSession();
+  for (const [index, url] of ["chrome://newtab/", "chrome://new-tab-page/", "chrome://new-tab-page-third-party/"].entries()) {
+    await cdp.send("Target.createTarget", { url });
+    let state;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      state = await f.call("tabs", {}, "GET");
+      if (state.tabs.filter(tab => tab.url === f.url + "/home").length === index + 1) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(state.tabs.filter(tab => tab.url === f.url + "/home").length, index + 1);
+    assert.ok(state.tabs.some(tab => tab.url === f.url + "/retained"));
+  }
+  const blank = await f.context().newPage();
+  await blank.waitForLoadState("domcontentloaded");
+  await f.call("tabs", {}, "GET");
+  assert.equal(blank.url(), "about:blank", "blank popup/login pages must not be redirected");
+  await blank.close();
+  await cdp.detach();
+  const restored = await f.restart();
+  assert.ok(restored.tabs.some(tab => tab.url === f.url + "/retained"));
+  assert.ok(!restored.tabs.some(tab => /^chrome:\/\/new/.test(tab.url)));
+});
+
 integration("interactive browser identity is native in normal and private documents", async t => {
   const f = await fixture(t);
   for (const incognito of [false, true]) {
@@ -562,7 +589,7 @@ integration("pixel wheel preserves distance and still rejects stale targets and 
   assert.equal(await page.evaluate(() => scrollY), 360);
 });
 
-integration("continuous HiDPI frames preserve pixels, click coordinates and resize without screenshot polling", async t => {
+integration("HiDPI screenshot frames preserve pixels, click coordinates and resize with continuous capture requested", async t => {
   const f = await fixture(t, {}, { continuousFrames: true }), { id, page } = await f.open();
   await page.evaluate(() => {
     document.body.innerHTML = '<style>body{margin:0}section{height:240px;border-bottom:1px solid #aaa}button{margin:24px;width:200px;height:40px}</style>' +
@@ -571,8 +598,8 @@ integration("continuous HiDPI frames preserve pixels, click coordinates and resi
   });
   const reference = (await page.screenshot({ type: 'jpeg', quality: 85, caret: 'initial' })).toString('base64');
   let frame = await f.call('frame', {}, 'GET');
-  // The first compositor event may already be in flight during the surface
-  // resize. Compare the settled image, rather than that transition frame.
+  // Initial compositor damage may still be in flight. Compare the settled
+  // screenshot with the full-density reference.
   await new Promise(resolve => setTimeout(resolve, 100));
   frame = await f.call('frame', {}, 'GET');
   if (process.env.CAGE_CAPTURE_DIAG_DIR) {
@@ -598,11 +625,11 @@ integration("continuous HiDPI frames preserve pixels, click coordinates and resi
   await f.call('input', { kind: 'pointer', target: frame.target, x: 300, y: 400, mask: 16, deltaX: 0, deltaY: 120 });
   await page.waitForFunction(() => scrollY === 1220);
   const stats = (await f.call('health', {}, 'GET')).capture;
-  assert.equal(stats.screenshots, 0); assert(stats.streamed_frames > 0);
+  assert(stats.screenshots > 0); assert.equal(stats.streamed_frames, 0);
   await new Promise(resolve => setTimeout(resolve, 1700));
   const resumed = await f.call('frame', {}, 'GET');
   assert.equal(resumed.width, 2000);
-  assert.equal((await f.call('health', {}, 'GET')).capture.screenshots, 0);
+  assert((await f.call('health', {}, 'GET')).capture.screenshots > stats.screenshots);
   t.diagnostic(JSON.stringify({ imageMeanError: comparison.error, screenshots: stats.screenshots, streamedFrames: stats.streamed_frames }));
 });
 
@@ -893,7 +920,7 @@ function interceptCapture(context, mutate) {
 }
 
 integration("slow viewers bound compositor encoding during continuous animation", async t => {
-  const f = await fixture(t, {}, { continuousFrames: true }), { page } = await f.open();
+  const f = await fixture(t, {}, { continuousFrames: true, displayScale: 1 }), { page } = await f.open();
   await f.call("resize", { width: 800, height: 600 });
   await page.evaluate(() => {
     let n = 0;
@@ -913,7 +940,7 @@ integration("slow viewers bound compositor encoding during continuous animation"
 });
 
 integration("mismatched compositor frames fall back and restore input on resize and reconnect", async t => {
-  const f = await fixture(t, {}, { continuousFrames: true }), { id, page } = await f.open();
+  const f = await fixture(t, {}, { continuousFrames: true, displayScale: 1 }), { id, page } = await f.open();
   let corrupt = false;
   interceptCapture(f.context(), frame => corrupt ? { ...frame, data: Buffer.from("bad jpeg").toString("base64") } : frame);
   await f.call("frame", {}, "GET");
@@ -940,7 +967,7 @@ integration("mismatched compositor frames fall back and restore input on resize 
 });
 
 integration("stopping continuous capture restores ordinary input before the next viewer", async t => {
-  const f = await fixture(t, {}, { continuousFrames: true }), { id, page } = await f.open();
+  const f = await fixture(t, {}, { continuousFrames: true, displayScale: 1 }), { id, page } = await f.open();
   await f.call("frame", {}, "GET");
   await new Promise(resolve => setTimeout(resolve, 1800));
   assert.equal((await f.call("health", {}, "GET")).resources.captures, 0);
@@ -953,14 +980,20 @@ integration("stopping continuous capture restores ordinary input before the next
   assert.equal(await page.locator("#first").inputValue(), "after reconnect");
 });
 
-integration("default HiDPI capture retains the unscaled screenshot path", async t => {
-  for (const continuousFrames of [undefined, false]) {
+integration("HiDPI capture retains full-density screenshots regardless of continuous capture preference", async t => {
+  for (const continuousFrames of [undefined, false, true]) {
     const f = await fixture(t, {}, { continuousFrames }), { page } = await f.open();
-    await f.call("frame", {}, "GET");
+    const frame = await f.call("frame", {}, "GET");
     const stats = (await f.call("health", {}, "GET")).capture;
     assert.equal(stats.streamed_frames, 0);
     assert(stats.screenshots > 0);
     assert.equal(await page.evaluate(() => devicePixelRatio), 2);
+    assert.equal(frame.width, 2280); assert.equal(frame.height, 1400);
+    const dimensions = await page.evaluate(async jpeg => {
+      const image = new Image(); image.src = "data:image/jpeg;base64," + jpeg; await image.decode();
+      return [image.naturalWidth, image.naturalHeight];
+    }, frame.jpeg);
+    assert.deepEqual(dimensions, [2280, 1400]);
   }
 });
 
@@ -978,7 +1011,7 @@ integration("default one-to-one frames stream without screenshot polling", async
 
 integration("startup invalid frames have a bounded recovery window", async t => {
   for (const persistent of [false, true]) {
-    const f = await fixture(t, {}, { continuousFrames: true }), { page } = await f.open();
+    const f = await fixture(t, {}, { continuousFrames: true, displayScale: 1 }), { page } = await f.open();
     let count = 0;
     interceptCapture(f.context(), frame => (++count <= 2 || persistent) ?
       { ...frame, data: Buffer.from("bad jpeg").toString("base64") } : frame);
@@ -997,7 +1030,7 @@ integration("startup invalid frames have a bounded recovery window", async t => 
 
 integration("startup stale sizes recover beyond two frames and remain bounded", async t => {
   for (const persistent of [false, true]) {
-    const f = await fixture(t, {}, { continuousFrames: true }), { page } = await f.open();
+    const f = await fixture(t, {}, { continuousFrames: true, displayScale: 1 }), { page } = await f.open();
     const old = (await page.screenshot({ type: "jpeg", quality: 85 })).toString("base64");
     await f.call("resize", { width: 800, height: 600 });
     let count = 0;
@@ -1018,7 +1051,7 @@ integration("startup stale sizes recover beyond two frames and remain bounded", 
 });
 
 integration("a late native resize during startup retains the last valid image", { timeout: 10000 }, async t => {
-  const f = await fixture(t, {}, { continuousFrames: true }), { page } = await f.open();
+  const f = await fixture(t, {}, { continuousFrames: true, displayScale: 1 }), { page } = await f.open();
   const old = (await page.screenshot({ type: "jpeg", quality: 85 })).toString("base64");
   await f.call("resize", { width: 800, height: 600 });
   let valid = false, stale = 0, signal;

@@ -17,6 +17,31 @@ import (
 	"github.com/sylvinus/agent-vm/internal/remotelink"
 )
 
+// Reload the password account from disk so access comes from Remember me alone.
+func resumeRememberedPhoneHost(t *testing.T, s *Server) {
+	t.Helper()
+	devices := t.TempDir()
+	account, err := loadLocalAccount(s.profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := account.create("phone-test", "test-password", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := account.trustedLogin("enable", "test-password", devices); err != nil {
+		t.Fatal(err)
+	}
+	account.lock()
+	s.account, err = loadLocalAccount(s.profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.account.trustedLogin("resume", "", devices); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.account.lock)
+}
+
 // Drive the same management routes as the desktop settings page. Separate
 // workbench instances must recover the same on-disk pairing after a restart.
 func TestDesktopPhonePairingLifecycle(t *testing.T) {
@@ -40,6 +65,7 @@ func TestDesktopPhonePairingLifecycle(t *testing.T) {
 		r.Header.Set("Origin", s.origin)
 		r.Header.Set("Content-Type", "application/json")
 		r.AddCookie(&http.Cookie{Name: s.cookieName(), Value: s.session})
+		r.AddCookie(&http.Cookie{Name: s.cookieName() + "-desktop", Value: trustedViewProof(s.token)})
 		w := httptest.NewRecorder()
 		s.handler().ServeHTTP(w, r)
 		return w
@@ -158,6 +184,7 @@ func TestDesktopPhonePairingLifecycle(t *testing.T) {
 	if err := writePrivate(newHost.phoneFile(), legacy); err != nil {
 		t.Fatal(err)
 	}
+	resumeRememberedPhoneHost(t, newHost)
 	serve(newHost)
 	if err := newHost.restorePhone(); err != nil {
 		t.Fatal(err)
@@ -167,6 +194,19 @@ func TestDesktopPhonePairingLifecycle(t *testing.T) {
 	}
 	client = connect()
 	read(client, 200)
+	newHost.phones.mu.Lock()
+	proof := newHost.phones.roomProof
+	newHost.phones.mu.Unlock()
+	for _, denied := range []struct{ path, proof string }{
+		{"/api/mobile/cli/projects", ""},
+		{"/api/mobile/cli/projects", "old-room"},
+		{"/api/settings", proof},
+		{"/api/mobile-pair", proof},
+	} {
+		if got := windowsPhoneRequest(t, newHost, "GET", denied.path, "", denied.proof); got.Code != http.StatusLocked {
+			t.Fatalf("untrusted access to %s: HTTP %d", denied.path, got.Code)
+		}
+	}
 	newHost.browserControl = browserClientForTest(t, newHost, browserTransport(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path == "/phone-browser/action" {
 			restoredGate.Close("network lost before action frame returned")

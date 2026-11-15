@@ -56,7 +56,7 @@
 أرسل هذا الطلب إلى وكيل الذكاء الاصطناعي لديك (codex، dsh، Workbuddy - ربما ليس Claude Code 😁):
 
 ```markdown
-ساعدني في التثبيت https://github.com/Lee-xeo/Claude-Cage وقم بتكوين وكيل شبكة Cage لاستخدام نقطة النهاية xxx في تثبيت Clash المحلي الخاص بي.
+اسحب أحدث الشفرة المصدرية من https://github.com/Lee-xeo/Claude-Cage وابنِ الحزمة وثبّتها. اضبط وكيل Cage ليستخدم العقدة xx في Clash المحلي ويخرج عبر عنوان IP الخاص بي xx. راقب العملية بالكامل وأصلح المشكلات مباشرةً، وقدّم issue للمشروع عند الحاجة للمساعدة في تحسين التوافق.
 ```
 
 كل ما تحتاجه هو نقطة نهاية وكيل شبكة موثوقة. لا يروج هذا المشروع لأي مزود وكيل؛ يمكنك العثور على مقدم الخدمة بنفسك، على سبيل المثال من خلال البحث عن موقع Black Error على الويب.
@@ -141,6 +141,7 @@ Cage هو مشروع مجتمعي مستقل ولا ينتمي إلى Anthropic.
 - [code-server](https://github.com/coder/code-server): محرر التعليمات البرمجية القائم على المتصفح.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): مراجع لبيئة العمل وتصميم التفاعل.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) و [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): مراجع لفحوصات الشبكة والتشخيص الأمني.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): مرجع لجرد البيانات وحمايتها وتنظيف الذاكرة المؤقتة مع إمكانية الاستعادة؛ تنفيذ مستقل في Cage.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

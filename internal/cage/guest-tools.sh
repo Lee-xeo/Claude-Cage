@@ -20,7 +20,9 @@ cage_download_tool() (
   for ((attempt=1; attempt<=attempts; attempt++)); do
     url="$upstream"
     part="$artifact.part"
-    if [ "$attempt" = 2 ] && [ -n "$mirror" ] && [ ! -s "$part" ]; then
+    # Keep each source's partial separate so a failed mirror can return to the
+    # official source's saved offset, even when it stopped after receiving data.
+    if [ "$attempt" = 2 ] && [ -n "$mirror" ]; then
       url="$mirror"
       part="$artifact.mirror.part"
     fi
@@ -38,7 +40,7 @@ cage_download_tool() (
       if printf '%s  %s\n' "$checksum" "$part" | "$hash" --check --status; then
         mv -f "$part" "$artifact" || return 1
         rm -rf "$artifact.part.ranges" "$artifact.mirror.part.ranges"
-        rm -f "$artifact.mirror.part"
+        rm -f "$artifact.part" "$artifact.mirror.part"
         return 0
       fi
       rm -f "$part"
@@ -58,7 +60,7 @@ cage_download_tool() (
       fi
       continue
     fi
-    if [ "$attempt" = 1 ] && [ -n "$mirror" ] && [ ! -s "$part" ]; then
+    if [ "$attempt" = 1 ] && [ -n "$mirror" ]; then
       echo 'Official download unavailable; trying the fallback mirror.' >&2
       continue
     fi
@@ -132,6 +134,15 @@ cage_install_mise() (
   mv -f "$stage" "$HOME/.local/bin/mise"
 )
 
+cage_configure_claude_npm_prefix() {
+  local prefix="$HOME/.local" current_prefix
+  # Claude's updater starts a new npm process without the install command's --prefix.
+  current_prefix="$(npm prefix --global </dev/null)" || return
+  if [ "$current_prefix" != "$prefix" ]; then
+    npm config set --global --location=user "prefix=$prefix" </dev/null
+  fi
+}
+
 cage_install_tool() (
   set -euo pipefail
   local tool="$1" arch current='' wanted url checksum artifact mirror=''
@@ -174,6 +185,12 @@ cage_install_tool() (
     *) echo 'Unknown Cage tool.' >&2; exit 2 ;;
   esac
   if [ -n "$current" ] && dpkg --compare-versions "${current#v}" ge "$wanted"; then
+    # Repair existing Cage npm installs even when no package upgrade is needed.
+    local claude_package="$HOME/.local/lib/node_modules/@anthropic-ai/claude-code"
+    if [ "$tool" = claude ] && [ -d "$claude_package" ] &&
+      [[ "$(readlink -f -- "$(command -v claude)")" == "$(cd "$claude_package" && pwd -P)/"* ]]; then
+      cage_configure_claude_npm_prefix
+    fi
     printf '%s already meets required version %s.\n' "$tool" "$wanted"
     exit 0
   fi
@@ -182,6 +199,7 @@ cage_install_tool() (
     cage_cache_claude "$arch" "$wanted"
     if [ "${CAGE_SETUP_PROGRESS:-}" = 1 ]; then echo "Installing Claude Code..."; fi
     npm install --registry=https://registry.npmjs.org --prefix "$HOME/.local" --global "@anthropic-ai/claude-code@$wanted" </dev/null
+    cage_configure_claude_npm_prefix
     exit 0
   fi
   local cache="$HOME/.cache/cage/downloads/$checksum"

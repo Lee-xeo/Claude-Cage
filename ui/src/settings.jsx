@@ -18,10 +18,11 @@ import {
   Settings,
   Palette,
   UserRound,
-  UsersRound,
   Archive,
+  Info,
 } from "lucide-react";
 import { api } from "./api";
+import "./settings.css";
 import { SafetyMessage } from "./safety-message";
 import { AppearanceSettings } from "./appearance-settings";
 import { ProxySettings } from "./proxy-settings";
@@ -29,15 +30,15 @@ import { ExitPolicyFields } from "./exit-policy";
 import { canonicalExitPolicy } from "./safety-state.mjs";
 import { EnvironmentVersions } from "./environment-versions";
 import { EnvironmentStorage } from "./environment-storage";
+import { EnvironmentCache } from "./environment-cache";
 import { ResourceSettings } from "./resources";
 import { DiagnosticSettings } from "./diagnostics.jsx";
 import { MacOSLogin } from "./macos-login";
 import { AccountSettings } from "./account";
-import { ClaudeAccountsPanel } from "./claude-accounts";
+import { AboutSettings } from "./about-settings";
 const sections = [
   ["account", "账户", UserRound],
   ["vault", "密码保险箱", KeyRound],
-  ["claude-accounts", "Claude 账号", UsersRound],
   ["archived-sessions", "已归档会话", Archive],
   ["keyboard", "通用", Settings],
   ["appearance", "外观", Palette],
@@ -45,6 +46,7 @@ const sections = [
   ["network", "网络与代理", Globe2],
   ["region", "时区与语言", Clock3],
   ["project", "环境与恢复", RotateCcw],
+  ["about", "关于", Info],
 ];
 export function SettingsPanel({
   current,
@@ -52,9 +54,6 @@ export function SettingsPanel({
   onClose,
   onSaved,
   onConfirm,
-  claudeProfiles,
-  terminalTabs,
-  onClaudeLogin,
   initialSection = "keyboard",
 }) {
   const [localKeyboard, setLocalKeyboard] = useState(() => clientKeyboard(current.keyboard));
@@ -96,6 +95,8 @@ export function SettingsPanel({
   );
   const busy =
     Boolean(status.job?.running) || Boolean(status.storage_recovery?.required) || probing || submitting || Boolean(jobId);
+  // Project folders of the other guest systems are always read directly.
+  const linuxGuest = !/^(windows|macos)/.test(status.guest_system || "");
   const update = (key, value) => {
     setDraft((p) => ({ ...p, [key]: value }));
     if (["dns_url"].includes(key)) setProbe(null);
@@ -242,18 +243,12 @@ export function SettingsPanel({
         </nav>
       </aside>
       <div className="settings-main">
-        <div className={section === "archived-sessions" ? "settings-content settings-content--archives" : section === "claude-accounts" ? "settings-content settings-content--accounts" : section === "mobile" ? "settings-content settings-content--remote" : "settings-content"} ref={contentRef}>
+        <div className={section === "archived-sessions" ? "settings-content settings-content--archives" : section === "mobile" ? "settings-content settings-content--remote" : "settings-content"} ref={contentRef}>
           {section === "appearance" && <AppearanceSettings />}
+          {section === "about" && <AboutSettings />}
           {section === "archived-sessions" && <ArchivedSessions ready={status.ready && !busy} />}
           {section === "vault" && <PasswordVaultSettings onConfirm={onConfirm} onDirty={setAccountDirty} />}
           {section === "account" && <AccountSettings busy={busy} onDirty={setAccountDirty} />}
-          {section === "claude-accounts" && <ClaudeAccountsPanel store={claudeProfiles} tabs={terminalTabs} onConfirm={onConfirm}
-            running={status.vm_running} environmentBusy={busy} login={async (id) => {
-              if (changed && !(await onConfirm({ title: "放弃尚未保存的设置并登录？",
-                body: "打开登录终端会离开设置页。", confirm: "打开登录终端" }))) return;
-              await onClaudeLogin(id);
-              onClose();
-            }} />}
           <fieldset className="settings-fields" disabled={busy && !(section === "project" && status.storage_recovery?.required)}>
             {section === "mobile" && (isRemoteClient()
               ? <section className="section-title"><h3>连接这台电脑</h3><p>请先切换到这台电脑的本机环境，再生成或管理手机配对码。</p></section>
@@ -511,10 +506,18 @@ export function SettingsPanel({
                 {typeof current.balanced_display === "boolean" && <label className="toggle-row">
                   <span>
                     <strong>优先流畅</strong>
-                    <small>降低浏览器和 Claude Desktop 的清晰度。下次启动环境时生效。</small>
+                    <small>降低浏览器和 Claude Desktop 的清晰度，Linux 环境同时减少 Claude Desktop 的动效。下次启动环境时生效。</small>
                   </span>
                   <input type="checkbox" role="switch" checked={draft.balanced_display}
                     onChange={(event) => update("balanced_display", event.target.checked)} />
+                </label>}
+                {typeof current.project_file_cache === "boolean" && linuxGuest && <label className="toggle-row">
+                  <span>
+                    <strong>项目文件缓存</strong>
+                    <small>减少读取项目文件时与本机的往返。在本机上所做的改动最多 20 秒后在环境中可见，也可以在项目栏点“刷新项目文件”立即同步。下次启动环境时生效。</small>
+                  </span>
+                  <input type="checkbox" role="switch" checked={draft.project_file_cache}
+                    onChange={(event) => update("project_file_cache", event.target.checked)} />
                 </label>}
                 <h4>键盘习惯</h4>
                 <div className="choice-list">
@@ -606,6 +609,7 @@ export function SettingsPanel({
                   切换项目只改变新终端和文件编辑器的起始位置；已有终端、网页和登录态会保留。
                 </p>
                 {!status.storage_recovery?.required && <EnvironmentVersions status={status} onConfirm={onConfirm} />}
+                {!status.storage_recovery?.required && <EnvironmentCache status={status} onConfirm={onConfirm} />}
                 {status.guest_system === "macos" && <section aria-label="客机系统权限">
                   <h4>客机系统权限</h4>
                   <p className="field-help">在受限的客机系统设置窗口中完成授权，Cage 会自动检查并重新连接项目。</p>
@@ -669,7 +673,7 @@ export function SettingsPanel({
             </div>
           )}
         </div>
-        {(!["appearance", "browser", "account", "claude-accounts", "vault", "mobile", "archived-sessions", "project"].includes(section) || changed) && (
+        {(!["appearance", "browser", "account", "vault", "mobile", "archived-sessions", "project", "about"].includes(section) || changed) && (
           <footer className="settings-footer">
             {" "}
             <>

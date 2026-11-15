@@ -56,7 +56,7 @@ Claude Cage 讓你在熟悉的系統裡與 Claude 一起工作：Mac 上使用 m
 把這句話發給你的 agent（codex，dsh，workbuddy，反正不會是 claude code😁）
 
 ```markdown
-幫我安裝 https://github.com/Lee-xeo/Claude-Cage ，並把 Cage 的代理配置為我本機 Clash 的 xxx 節點。
+幫我拉取 https://github.com/Lee-xeo/Claude-Cage 的最新原始碼，打包安裝，並設定 Cage 的代理，透過我本機 Clash 的 xx 節點使用我的 xx IP 出口。全程盯著，有問題直接修復，必要時順手向專案提交 issue，幫助改善相容性。
 ```
 
 你唯一需要的，是一個靠譜的代理節點，本專案不做任何代理推廣，可以自行搜尋黑色錯誤網站解決。
@@ -141,6 +141,7 @@ Cage 是獨立社群專案，與 Anthropic 無隸屬關係。
 - [code-server](https://github.com/coder/code-server)：瀏覽器中的程式碼編輯器。
 - [AIO Sandbox](https://github.com/agent-infra/sandbox)：工作環境和互動體驗參考。
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) 和 [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian)：網路檢查和安全診斷方法參考。
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): 精確盤點、保護使用者資料與可復原快取清理的流程參考；Cage 獨立實作。
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

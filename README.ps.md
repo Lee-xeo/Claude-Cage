@@ -56,7 +56,7 @@ Claude Cage ټرمینل، براوزر، سمونګر او رسمي Claude Desk
 دا غوښتنه خپل AI اجنټ ته واستوئ (کوډیکس، dsh، کاري ملګري — شاید د کلاډ کوډ نه وي 😁):
 
 ```markdown
-په نصبولو کې راسره مرسته وکړئ https://github.com/Lee-xeo/Claude-Cage او د Cage شبکې پراکسي ترتیب کړئ ترڅو زما په محلي کلاش نصب کې د xxx پای ټکی وکاروئ.
+د https://github.com/Lee-xeo/Claude-Cage وروستی سرچینه کوډ راواخله، جوړ، بسته بندي او نصب یې کړه. د Cage پراکسي داسې تنظیم کړه چې زما د محلي Clash له xx نوډ څخه زما د xx IP له لارې ووځي. ټوله پروسه وڅاره، ستونزې سمې کړه او که اړتیا وي د مطابقت د ښه کولو لپاره په پروژه کې issue ثبت کړه.
 ```
 
 ټول هغه څه چې تاسو ورته اړتیا لرئ د باور وړ شبکې پراکسي پای ټکی دی. دا پروژه هیڅ پراکسي چمتو کونکي ته وده نه ورکوي؛ تاسو کولی شئ پخپله چمتو کوونکی ومومئ، د بیلګې په توګه د تور غلطی ویب پاڼې لټون کولو سره.
@@ -141,6 +141,7 @@ Cage یوه خپلواکه ټولنه پروژه ده او د انتروپیک �
 - [code-server](https://github.com/coder/code-server): د براوزر پر بنسټ کوډ مدیر.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): د کاري چاپیریال او تعامل ډیزاین لپاره حوالې.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) او [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): د شبکې چکونو او امنیت تشخیص لپاره حوالې.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): د دقیقې پلټنې، د معلوماتو د ساتنې او بېرته راګرځېدونکي کش پاکولو د بهیر مرجع؛ په Cage کې خپلواک تطبیق.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

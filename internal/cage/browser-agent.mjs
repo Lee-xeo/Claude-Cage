@@ -112,6 +112,8 @@ const pending = new Map(),
   targets = new Map(),
   sessions = new Map();
 const closingTargets = new Map();
+const homepageRedirects = new Map();
+const isNativeNewTab = url => /^chrome:\/\/(newtab|new-tab-page|new-tab-page-third-party)\/?(?:[?#].*)?$/.test(url);
 // Developer tools share the window with the page they inspect, or cover it.
 const inspectors = new Set();
 const pointerProbe = createPointerProbe();
@@ -221,6 +223,7 @@ function updateTargetInfo(t) {
   if (!isBrowserTab(t)) return;
   const fresh = !targets.has(t.targetId);
   targets.set(t.targetId, privateBrowser.tab(loginBrowser.tab(t, targets.get(t.targetId))));
+  if (isNativeNewTab(t.url)) void restoreHomepage(t.targetId).catch(error => console.error("Could not open homepage:", error.message));
   if (fresh) void session(t.targetId).catch(() => {});
   if (t.targetId === activeId) rememberSelection();
   broadcastState();
@@ -229,6 +232,16 @@ function updateTargetInfo(t) {
     void activate(t.targetId, true).catch(() => {});
   else if (ready && fresh && !visibility.visible)
     void visibility.set(false).catch(() => {});
+}
+
+function restoreHomepage(id) {
+  if (homepageRedirects.has(id)) return homepageRedirects.get(id);
+  const pending = mutate(async () => {
+    if (!isNativeNewTab(targets.get(id)?.url)) return;
+    await cdp("Page.navigate", { url: homeURL }, await session(id));
+  }).finally(() => homepageRedirects.delete(id));
+  homepageRedirects.set(id, pending);
+  return pending;
 }
 
 async function auditCDP(method, params, ...args) {
@@ -902,7 +915,7 @@ const server = http.createServer(async (req, res) => {
         writeFileSync(homepageFile, JSON.stringify({ url }), { mode: 0o600 });
         homeURL = url;
         for (const tab of targets.values()) {
-          if (tab.url === "about:blank" || /^chrome:\/\/(newtab|new-tab-page|new-tab-page-third-party)\/?$/.test(tab.url)) {
+          if (tab.url === "about:blank" || isNativeNewTab(tab.url)) {
             const sid = await session(tab.targetId);
             await cdp("Page.navigate", { url: homeURL }, sid);
           }
@@ -1060,7 +1073,8 @@ server.listen(18500, "127.0.0.1");
     );
   await setSplit({}).catch(() => {});
   await browserExtensions.restore();
-  if (freshProfile && activeId)
+  for (const tab of targets.values()) if (isNativeNewTab(tab.url)) await restoreHomepage(tab.targetId);
+  if (freshProfile && activeId && targets.get(activeId)?.url === "about:blank")
     await cdp("Page.navigate", { url: homeURL }, await session(activeId));
   ready = true;
 })().catch(error => {

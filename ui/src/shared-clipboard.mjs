@@ -10,10 +10,14 @@ export async function copyGuestText({ request, sendCopy, valid }) {
   return { text: result.text };
 }
 
+// A guest whose clipboard service keeps failing, for example while its
+// components wait for an update, must not be hit every 1.5 seconds.
+export const clipboardReconnectDelay = failures => Math.min(1500 * 2 ** Math.max(0, failures), 30000);
+
 // One connection owns clipboard synchronization for the workbench window,
 // including while its remote canvas is hidden or the window is unfocused.
-export function shareClipboard({ connect, native, onStatus, setActive, interval = 300 }) {
-  let socket, timer, retry, disposed = false, revision, generation = 0, guestReady = false, guestSession;
+export function shareClipboard({ connect, native, onStatus, setActive, interval = 300, schedule = setTimeout }) {
+  let socket, timer, retry, disposed = false, revision, generation = 0, guestReady = false, guestSession, failures = 0;
   let polling, writes = Promise.resolve(), lastPayload = "", serial = 0, errorShown = false, acknowledgedRevision;
   let sessionGeneration = 0;
   let sessionController = new AbortController();
@@ -84,6 +88,7 @@ export function shareClipboard({ connect, native, onStatus, setActive, interval 
       lastPayload = encoded;
       setActive(true);
       errorShown = false;
+      failures = 0;
     } catch {
       if (disposed || socket !== currentSocket || session !== sessionGeneration) return;
       warn();
@@ -158,7 +163,7 @@ export function shareClipboard({ connect, native, onStatus, setActive, interval 
     socket.onclose = () => {
       if (disposed || socket !== connection) return;
       invalidateSession(); clearInterval(timer);
-      retry = setTimeout(open, 1500);
+      retry = schedule(open, clipboardReconnectDelay(failures++));
     };
     socket.onerror = () => { /* onclose owns reconnects. */ };
   };

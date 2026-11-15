@@ -123,7 +123,9 @@ func TestPinnedMacOSRestoreChecksPrivateInstallerInput(t *testing.T) {
 	assert.NilError(t, os.WriteFile(source, []byte("selected"), 0o600))
 	got, err := verifiedMacOSIPSW(t.Context(), inst)
 	assert.NilError(t, err)
-	assert.Equal(t, got, target)
+	physical, err := filepath.EvalSymlinks(target)
+	assert.NilError(t, err)
+	assert.Equal(t, got, physical)
 	assert.NilError(t, os.WriteFile(source, []byte("changed again"), 0o600))
 	data, err := os.ReadFile(target)
 	assert.NilError(t, err)
@@ -132,4 +134,22 @@ func TestPinnedMacOSRestoreChecksPrivateInstallerInput(t *testing.T) {
 	assert.NilError(t, os.Remove(source))
 	_, err = verifiedMacOSIPSW(t.Context(), inst)
 	assert.NilError(t, err)
+}
+
+func TestMacOSRestoreImageUsesPhysicalPathBehindStorageSymlink(t *testing.T) {
+	// Custom storage keeps LIMA_HOME behind a symlink. Virtualization.framework
+	// rejects a restore image reached through it with VZErrorDomain 10005.
+	physicalDir := t.TempDir()
+	logical := filepath.Join(t.TempDir(), "state")
+	assert.NilError(t, os.Symlink(physicalDir, logical))
+	assert.NilError(t, os.WriteFile(filepath.Join(physicalDir, filenames.Image), []byte("selected"), 0o600))
+	inst := &limatype.Instance{Dir: logical, Config: &limatype.LimaYAML{}}
+	got, err := verifiedMacOSIPSW(t.Context(), inst)
+	assert.NilError(t, err)
+	want, err := filepath.EvalSymlinks(filepath.Join(physicalDir, filenames.ImageIPSW))
+	assert.NilError(t, err)
+	assert.Equal(t, got, want)
+	got, err = restoreImagePath(logical)
+	assert.NilError(t, err)
+	assert.Equal(t, got, want)
 }

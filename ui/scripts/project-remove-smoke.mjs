@@ -52,7 +52,7 @@ try {
       await dialog.getByRole("radio").waitFor({ state: "detached" });
       assert.deepEqual(state.status.projects, []);
       assert.equal(state.settings.workspace, "");
-      await dialog.getByRole("button", { name: "取消", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "取消", exact: true }).click();
       await page.reload();
       await page.getByRole("button", { name: "添加项目", exact: true }).click();
       assert.equal(await page.getByRole("radio").count(), 0);

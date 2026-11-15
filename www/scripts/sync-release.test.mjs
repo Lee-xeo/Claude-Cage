@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { releaseAssets, checksumFor, releaseMetadata, request, publicManifestRelease } from './sync-release.mjs';
+import { releaseAssets, checksumFor, releaseMetadata, platformMetadata, resolvePlatforms, request, publicManifestRelease } from './sync-release.mjs';
 
 test('exhausted version API falls back to anonymous public manifest and attachment checks', async () => {
   const calls = [];
@@ -152,6 +152,103 @@ function androidFixture() {
     browser_download_url: `https://github.com/Lee-xeo/Claude-Cage/releases/download/${release.tag_name}/${name}` });
   return release;
 }
+
+function versionedFixture(version, platforms) {
+  const release = { tag_name: `v${version}`, prerelease: version.includes('-'), draft: false, assets: [] };
+  for (const suffix of ['macos-arm64.dmg', 'windows-amd64-setup.exe', 'linux-amd64.deb', 'android-arm64.apk'].filter((_, index) => platforms.includes(index))) {
+    const name = `Cage-${version}-${suffix}`;
+    release.assets.push({ name, state: 'uploaded', size: 100, digest: `sha256:${hash}`,
+      browser_download_url: `https://github.com/Lee-xeo/Claude-Cage/releases/download/${release.tag_name}/${name}` });
+  }
+  if (platforms.includes(0)) release.assets.push({ ...fixture().assets[2], browser_download_url: `https://github.com/Lee-xeo/Claude-Cage/releases/download/${release.tag_name}/mihomo-v1.19.33-source.tar.gz` });
+  return release;
+}
+
+test('each platform retains its latest verified version and release notes independently', async () => {
+  const latest = versionedFixture('0.3.0-rc', [0]);
+  const windowsOnly = versionedFixture('0.2.9', [1]);
+  const older = versionedFixture('0.2.8', [0, 1, 2, 3]);
+  const platforms = await resolvePlatforms([latest, windowsOnly, older], async release => sums(release));
+  for (const [platform, version] of Object.entries({ macos: '0.3.0-rc', windows: '0.2.9', linux: '0.2.8', android: '0.2.8' })) {
+    assert.equal(platforms[platform].version, version);
+    assert.equal(platforms[platform].releaseURL, `https://github.com/Lee-xeo/Claude-Cage/releases/tag/v${version}`);
+    assert.ok(platforms[platform].downloadURL.includes(`/v${version}/Cage-${version}-`));
+  }
+});
+
+test('new Android package replaces the fallback without relabeling other platforms', async () => {
+  const latest = versionedFixture('0.3.0-rc', [0, 1, 2, 3]);
+  const platforms = await resolvePlatforms([latest, versionedFixture('0.2.9', [3])], async release => sums(release));
+  assert.deepEqual(platforms, platformMetadata(latest, sums(latest)));
+  assert.equal(platforms.android.version, '0.3.0-rc');
+});
+
+test('drafts, invalid assets, missing checksums and failed manifests preserve the older package', async () => {
+  const older = versionedFixture('0.2.0', [0, 1, 2, 3]);
+  for (const mutate of [
+    r => { r.draft = true; }, r => { r.assets.at(-1).state = 'new'; },
+    r => { r.assets.at(-1).browser_download_url = older.assets[3].browser_download_url; },
+    r => { r.assets.push({ ...r.assets.at(-1) }); },
+    r => { r.assets.at(-1).digest = `sha256:${'b'.repeat(64)}`; },
+  ]) {
+    const invalid = versionedFixture('0.3.0', [3]); mutate(invalid);
+    const platforms = await resolvePlatforms([invalid, older], async release => sums(release));
+    assert.equal(platforms.android.version, '0.2.0');
+  }
+  for (const fail of [false, true]) {
+    const latest = versionedFixture('0.3.0', [3]);
+    const platforms = await resolvePlatforms([latest, older], async release => {
+      if (release === latest) { if (fail) throw new Error('manifest unavailable'); return ''; }
+      return sums(release);
+    });
+    assert.equal(platforms.android.version, '0.2.0');
+  }
+});
+
+test('unsigned Windows fallback retains its version and unsigned status', async () => {
+  const unsigned = fixture();
+  for (const name of [`Cage-${unsigned.tag_name.slice(1)}-windows-amd64-setup-unsigned.exe`, `qemu-${'a'.repeat(40)}-source.tar.gz`]) {
+    unsigned.assets.push({ ...unsigned.assets[0], name, browser_download_url: `https://github.com/Lee-xeo/Claude-Cage/releases/download/${unsigned.tag_name}/${name}` });
+  }
+  const platforms = await resolvePlatforms([versionedFixture('0.3.0', [0]), unsigned], async release => sums(release));
+  assert.equal(platforms.windows.version, '0.2.0-alpha.10');
+  assert.equal(platforms.windows.unsigned, true);
+});
+
+test('website CLI discovers paginated releases and pins fallbacks to the requested release or older', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cage-platform-fallback-'));
+  const latest = versionedFixture('0.3.0', [0]); latest.published_at = '2026-11-14T00:00:00Z';
+  const older = versionedFixture('0.2.0', [0, 1, 2, 3]); older.published_at = '2026-11-13T00:00:00Z';
+  for (const release of [latest, older]) {
+    const text = sums(release);
+    release.assets.push({ name: 'SHA256SUMS', state: 'uploaded', size: Buffer.byteLength(text), browser_download_url: `https://github.com/Lee-xeo/Claude-Cage/releases/download/${release.tag_name}/SHA256SUMS` });
+  }
+  const mock = join(directory, 'fetch-fixture.mjs');
+  writeFileSync(mock, `
+    const releases = ${JSON.stringify([latest, older])};
+    const sums = ${JSON.stringify(Object.fromEntries([latest, older].map(release => [release.tag_name, sums(release)])))};
+    globalThis.fetch = async (url, options) => {
+      if (options.headers.Authorization) throw new Error('Public download used authentication');
+      if (url.endsWith('releases?per_page=100')) return new Response(JSON.stringify([releases[0]]), { headers: { link: '<https://api.github.com/repos/Lee-xeo/Claude-Cage/releases?page=2>; rel="next"' } });
+      if (url.endsWith('releases?page=2')) return new Response(JSON.stringify([releases[1]]));
+      for (const release of releases) {
+        if (url.endsWith('/tags/' + release.tag_name)) return new Response(JSON.stringify(release));
+        if (url.endsWith('/' + release.tag_name + '/SHA256SUMS')) return new Response(sums[release.tag_name]);
+      }
+      throw new Error('Unexpected request: ' + url);
+    };
+  `);
+  try {
+    for (const tag of [undefined, latest.tag_name, older.tag_name]) {
+      const output = join(directory, 'release.json');
+      const result = spawnSync(process.execPath, ['--import', mock, fileURLToPath(new URL('./sync-release.mjs', import.meta.url)), '--output', output, ...(tag ? ['--tag', tag] : [])], { encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      const metadata = JSON.parse(readFileSync(output, 'utf8'));
+      assert.equal(metadata.platforms.android.version, '0.2.0');
+      assert.equal(metadata.platforms.macos.version, tag === older.tag_name ? '0.2.0' : '0.3.0');
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
 
 test('Android APK is optional and requires a unique same-version asset and verified checksum', () => {
   const release = androidFixture();

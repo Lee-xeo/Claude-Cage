@@ -18,6 +18,7 @@ type Stream struct {
 	store                *Store
 	source, level        string
 	sink                 func(string)
+	consume              func(string) bool
 	line                 []byte
 	dropping, privateKey bool
 	last                 string
@@ -35,6 +36,15 @@ func NewStream(store *Store, source, level string, sink func(string)) *Stream {
 	return &Stream{store: store, source: source, level: level, sink: sink}
 }
 
+// NewStreamWithConsumer lets an internal parser consume complete, bounded lines
+// before redaction. The consumer must not publish raw text. A true return hides
+// the line from sink; diagnostic storage always receives the redacted message.
+func NewStreamWithConsumer(store *Store, source, level string, sink func(string), consume func(string) bool) *Stream {
+	s := NewStream(store, source, level, sink)
+	s.consume = consume
+	return s
+}
+
 // flush writes at most 64 KiB of redacted messages; no background queue can
 // grow while a slow disk is being drained.
 func (s *Stream) flush() {
@@ -45,11 +55,12 @@ func (s *Stream) flush() {
 	s.batchBytes = 0
 }
 func (s *Stream) record(level, message string) {
+	consumed := s.consume != nil && s.consume(message)
 	message = Redact(message)
 	if s.batchBytes+len(message) > 64<<10 {
 		s.flush()
 	}
-	if s.sink != nil {
+	if s.sink != nil && !consumed {
 		s.sink(message + "\n")
 	}
 	s.batch = append(s.batch, Event{Level: level, Source: Redact(s.source), Message: message})

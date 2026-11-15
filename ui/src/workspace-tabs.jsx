@@ -5,6 +5,7 @@ import {
   FileCode2,
   Archive,
   LoaderCircle,
+  Monitor,
   ChevronDown,
   Globe2,
   Settings,
@@ -130,7 +131,7 @@ export function WorkspaceTabs({
   const startDrag = (event, tab) => {
     suppressClick.current = false;
     if (busy || (!ready && tab.kind !== "terminal") || event.button !== 0 ||
-        !event.isPrimary || event.target.closest(".tab-close, .terminal-row-actions")) return;
+        !event.isPrimary || event.target.closest(".tab-close, .terminal-row-actions, .session-owner")) return;
     const items = [...list.current.querySelectorAll(":scope > [data-tab-id]")].map((node) => ({
       id: node.dataset.tabId,
       left: node.offsetLeft,
@@ -297,15 +298,17 @@ export function WorkspaceTabs({
           const title = tabName(tab, saved);
           const opening = Boolean(openingSession) && openingSession === tab.cli_session_id;
           const runningElsewhere = tab.sessionRunningElsewhere;
-          const runningNotice = "其他窗口运行中，退出原会话后可在 Cage 接续";
+          const runningNotice = tab.sessionClaudeDesktop
+            ? "Claude Desktop 占用中，请先在 Claude Desktop 中退出此会话再接续"
+            : "其他窗口占用中，退出原会话后可接续";
+          const OwnerIcon = tab.sessionClaudeDesktop ? Monitor : TerminalSquare;
           const openError = tab.historySession && sessionOpenError?.id === tab.cli_session_id ? sessionOpenError.message : "";
           const errorID = `session-open-error-${tab.cli_session_id}`;
           return (
             <React.Fragment key={tab.id}>
             <div
               data-tab-id={tab.id}
-              title={runningElsewhere ? runningNotice : undefined}
-              className={`${horizontal || vertical ? "browser-tab" : "sidebar-tab"} ${tab.id === active ? "active" : ""} ${tab.closed ? "ended" : ""} ${drag?.id === tab.id ? "dragging" : ""} ${horizontal && tabWidth(tab.id) < 96 ? "compact" : ""} ${horizontal && tabWidth(tab.id) < 40 ? "tiny" : ""} ${horizontal && tabWidth(tab.id) < 24 ? "sliver" : ""}`}
+              className={`${horizontal || vertical ? "browser-tab" : "sidebar-tab"} ${runningElsewhere ? "session-occupied" : ""} ${tab.id === active ? "active" : ""} ${tab.closed ? "ended" : ""} ${drag?.id === tab.id ? "dragging" : ""} ${horizontal && tabWidth(tab.id) < 96 ? "compact" : ""} ${horizontal && tabWidth(tab.id) < 40 ? "tiny" : ""} ${horizontal && tabWidth(tab.id) < 24 ? "sliver" : ""}`}
               style={
                 horizontal
                   ? {
@@ -386,9 +389,13 @@ export function WorkspaceTabs({
                 <span>{title}</span>
                 {tab.claudeLabel && <small className="claude-tab-profile">{tab.claudeLabel}</small>}
                 {saved[tab.id]?.pinned && <Pin size={11} className="tab-pin" />}
-                {!horizontal && !vertical && (runningElsewhere || tab.sessionActive || opening) &&
-                  <LoaderCircle size={13} className="spin session-activity" role="img" aria-label={runningElsewhere ? "其他窗口运行中" : opening ? "正在打开会话" : "会话正在运行"} />}
+                {!horizontal && !vertical && (opening || tab.sessionActive && !runningElsewhere) &&
+                  <LoaderCircle size={13} className="spin session-activity" role="img" aria-label={opening ? "正在打开会话" : "会话正在运行"} />}
               </button>
+              {!horizontal && !vertical && runningElsewhere &&
+                <span className="session-owner" role="img" aria-label={runningNotice} tabIndex={0}>
+                  <OwnerIcon size={15} aria-hidden="true" />
+                </span>}
               {horizontal || vertical ? (
                 <button
                   className="tab-close icon-button"

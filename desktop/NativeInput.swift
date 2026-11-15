@@ -102,10 +102,12 @@ final class CageNativeInput: NSView, NSTextInputClient {
     }
 
     private func sendKey(_ event: NSEvent, down: Bool, text: String? = nil) {
-        let identity = MacKeyboard.identity(event.keyCode, characters: text ?? event.charactersIgnoringModifiers ?? "")
+        let modifierChange = event.type == .flagsChanged
+        let characters = modifierChange ? "" : (text ?? event.charactersIgnoringModifiers ?? "")
+        let identity = MacKeyboard.identity(event.keyCode, characters: characters)
         emit(down ? "keydown" : "keyup", ["key": text ?? identity.key, "code": identity.code,
             "metaKey":event.modifierFlags.contains(.command),"ctrlKey":event.modifierFlags.contains(.control),
-            "altKey":event.modifierFlags.contains(.option),"shiftKey":event.modifierFlags.contains(.shift),"repeat":event.isARepeat,
+            "altKey":event.modifierFlags.contains(.option),"shiftKey":event.modifierFlags.contains(.shift),"repeat":!modifierChange && event.isARepeat,
             "modifierCapsLock":event.modifierFlags.contains(.capsLock),"textKey":text != nil])
     }
 

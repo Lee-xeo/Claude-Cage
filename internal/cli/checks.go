@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/sylvinus/agent-vm/internal/gitguard"
@@ -135,55 +134,7 @@ func (s *start) checks() bool {
 			}
 		}
 	}
-	// A repository not named .git, which no name protects: only a VM that
-	// can write needs the setting.
-	if !s.opts.ReadOnly && !s.opts.Scratch {
-		return s.checkBareRepo()
-	}
 	return true
-}
-
-// checkBareRepo offers to set safe.bareRepository=explicit when it can ask.
-// Not set: a security question, no by default. With the questions off,
-// nothing is offered: the global git config is not changed unasked. For a
-// VM already running, a warning only.
-func (s *start) checkBareRepo() bool {
-	st := gitguard.BareState(s.ctx)
-	if st == gitguard.BareOK || st == gitguard.BareNoGit {
-		return true
-	}
-	if st == gitguard.BareUnavailable {
-		s.warnf("Aborted. Host Git could not be checked. Check the Git installation, then retry.")
-		return false
-	}
-	if s.vmUp {
-		s.warnf("Warning: git on this machine uses repositories a VM creates under another name than .git ('agent-vm doctor' says more).")
-		return true
-	}
-	s.ui.Box("Git: repositories not named .git", gitguard.BareHint)
-	if st == gitguard.BareOld {
-		out, _ := exec.CommandContext(s.ctx, "git", "--version").Output()
-		s.warnf("Warning: %s is older than 2.38 and ignores that setting.", strings.TrimSpace(string(out)))
-		if s.confirmUnsafe() {
-			return true
-		}
-		s.warnf("Aborted. Upgrade git, then run the command above.")
-		return false
-	}
-	if _, off := s.promptsDisabledBy(); !off && s.ui.CanAsk() && s.ui.AskYN("Run it now? It changes your global git config.", true) {
-		err := exec.CommandContext(s.ctx, "git", "config", "--global", "safe.bareRepository", "explicit").Run()
-		if err == nil && gitguard.BareState(s.ctx) == gitguard.BareOK {
-			fmt.Fprintln(s.io.Stdout, "Git on this machine now ignores repositories not named .git unless you name them.")
-			return true
-		}
-		s.warnf("Warning: the setting did not take.")
-	}
-	s.warnf("Warning: not set. Until it is, git on this machine can run what a VM writes.")
-	if s.confirmUnsafe() {
-		return true
-	}
-	s.warnf("Aborted. Run the command above, then run agent-vm again.")
-	return false
 }
 
 // start is one start of a project's VM.

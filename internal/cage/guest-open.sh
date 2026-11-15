@@ -13,6 +13,10 @@ case "${1:-}" in
     [ -n "$login" ] || exit 2
     set -- /login-finish "" "$login"
     ;;
+  tailscale:*)
+    if [ "$(id -un)" = cage ]; then exec /usr/local/bin/cage-tailnet --browser-return; fi
+    exec sudo -n -H -u cage /usr/local/bin/cage-tailnet --browser-return
+    ;;
   claude://*)
     sudo -u cage /usr/local/bin/cage-claude-open "$1"
     # Publish focus only after the running application accepted the handoff.

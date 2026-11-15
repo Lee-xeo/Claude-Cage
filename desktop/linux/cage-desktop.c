@@ -754,6 +754,16 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
     } else if (!strcmp(name, "accountDevice")) {
         if (!strcmp(text_member(request, "operation"), "status")) reply_json(reply, context, "{\"supported\":false}");
         else reply_error(reply, "Linux 版本使用 Cage 账户密码解锁。");
+    } else if (!strcmp(name, "appReference")) {
+        const char *kind = text_member(request, "kind");
+        const char *uri = !strcmp(kind, "source") ? "https://github.com/Lee-xeo/Claude-Cage/commits/main"
+            : !strcmp(kind, "releases") ? "https://github.com/Lee-xeo/Claude-Cage/releases" : NULL;
+        if (!uri) reply_error(reply, "未知的项目页面");
+        else {
+            GError *error = NULL;
+            if (g_app_info_launch_default_for_uri(uri, NULL, &error)) reply_json(reply, context, "true");
+            else { reply_error(reply, "无法打开项目页面，请检查默认浏览器"); g_clear_error(&error); }
+        }
     } else if (!strcmp(name, "appUpdate")) {
         const char *operation = text_member(request, "operation");
         if (strcmp(operation, "status") && strcmp(operation, "check") && strcmp(operation, "install") && strcmp(operation, "cancel"))
@@ -940,6 +950,18 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
                 g_clear_object(&stream); g_clear_object(&info); g_object_unref(file); g_free(contents);
             }
             g_free(path);
+        }
+    } else if (!strcmp(name, "saveRecoveryKey")) {
+        const char *key = text_member(request, "key");
+        if (strlen(key) != 71 || !g_regex_match_simple("^[A-F0-9]{8}(-[A-F0-9]{8}){7}$", key, 0, 0)) reply_error(reply, "恢复密钥格式无效。");
+        else if (app.picker_open) reply_error(reply, "请先完成当前文件选择。");
+        else {
+            char *path = choose_file(GTK_FILE_CHOOSER_ACTION_SAVE, "保存账户恢复密钥", "账户恢复密钥.txt");
+            char *contents = g_strconcat(key, "\n", NULL);
+            if (!path) reply_json(reply, context, "false");
+            else if (g_file_set_contents_full(path, contents, -1, G_FILE_SET_CONTENTS_CONSISTENT | G_FILE_SET_CONTENTS_DURABLE, 0600, NULL)) reply_json(reply, context, "true");
+            else reply_error(reply, "恢复密钥未能保存，请检查保存位置的权限。");
+            g_free(contents); g_free(path);
         }
     } else if (!strcmp(name, "exportTheme")) {
         const char *contents = text_member(request, "text");

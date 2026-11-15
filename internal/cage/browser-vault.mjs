@@ -92,14 +92,22 @@ export class BrowserVault {
   }
   async attach(tab, sid) {
     if (this.tab(tab)?.login || this.tab(tab)?.incognito) return;
-    const entry = { tab, sid, top: "", contexts: new Map() };
+    const entry = { tab, sid, top: "", document: 0, contexts: new Map() };
     this.sessions.set(sid, entry);
-    await this.cdp("Runtime.enable", {}, sid);
+    // No Runtime domain on website sessions; see browser-clipboard.mjs.
     const { frameTree } = await this.cdp("Page.getFrameTree", {}, sid);
     entry.top = frameTree.frame.id;
-    await this.cdp("Runtime.addBinding", { name: binding, executionContextName: world }, sid);
     await this.cdp("Page.addScriptToEvaluateOnNewDocument", { source, worldName: world }, sid);
+    await this.bind(entry);
+  }
+  // Binds the top document's isolated world; a newer document supersedes it.
+  async bind(entry) {
+    const document = entry.document, sid = entry.sid;
+    const current = () => this.sessions.get(sid) === entry && entry.document === document;
     const { executionContextId } = await this.cdp("Page.createIsolatedWorld", { frameId: entry.top, worldName: world }, sid);
+    if (!current()) return;
+    await this.cdp("Runtime.addBinding", { name: binding, executionContextId }, sid);
+    if (!current()) return;
     entry.contexts.set(executionContextId, entry.top);
     await this.cdp("Runtime.evaluate", { expression: source, contextId: executionContextId }, sid);
   }
@@ -112,11 +120,12 @@ export class BrowserVault {
     const entry = this.sessions.get(event.sessionId);
     if (!entry) return;
     const p = event.params || {};
-    if (event.method === "Runtime.executionContextCreated" && p.context.name === world)
-      entry.contexts.set(p.context.id, p.context.auxData?.frameId);
-    if (event.method === "Runtime.executionContextDestroyed") entry.contexts.delete(p.executionContextId);
-    if (event.method === "Runtime.executionContextsCleared") entry.contexts.clear();
-    if (event.method === "Page.frameNavigated" && !p.frame.parentId) entry.top = p.frame.id;
+    if (event.method === "Page.frameNavigated" && !p.frame.parentId) {
+      entry.top = p.frame.id;
+      entry.document++;
+      entry.contexts.clear();
+      void this.bind(entry).catch(() => {});
+    }
     if (event.method !== "Runtime.bindingCalled" || p.name !== binding ||
         entry.contexts.get(p.executionContextId) !== entry.top) return;
     this.prune();

@@ -1,0 +1,12 @@
+.about-build { margin: 24px 0; }
+.about-build > div { display: flex; align-items: baseline; gap: 20px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.about-build dt { min-width: 6em; color: var(--muted); }
+.about-build dd { margin: 0; color: var(--strong); overflow-wrap: anywhere; }
+.about-settings code { user-select: text; }
+.about-check-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 24px; }
+.about-results { margin-top: 28px; }
+.about-result { padding: 20px 0; border-top: 1px solid var(--line); }
+.about-result h4 { margin: 0 0 12px; font-size: 1rem; font-weight: 550; }
+.about-result-status { color: var(--strong); }
+.about-result-detail { color: var(--muted); overflow-wrap: anywhere; }
+.about-result a { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); margin-top: 4px; }

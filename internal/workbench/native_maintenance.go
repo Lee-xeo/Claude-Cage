@@ -152,6 +152,7 @@ func (s *Server) maintainNativeComponents(tools bool) error {
 	s.mu.Lock()
 	s.ready = false
 	s.guestUpdateRequired = true
+	s.macComponentsChecked = false
 	s.guestUpdateError = "原生组件更新尚未完成，可以保留当前环境重试。"
 	s.mu.Unlock()
 	s.closeWindowsBrowser()

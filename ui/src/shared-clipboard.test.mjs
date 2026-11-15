@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { copyGuestText, shareClipboard } from "./shared-clipboard.mjs";
+import { clipboardReconnectDelay, copyGuestText, shareClipboard } from "./shared-clipboard.mjs";
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
@@ -304,4 +304,45 @@ test("disposed connections cannot send snapshots or receive delayed writes", asy
   f.guest({ text: "late guest update" }); await f.controller.poll(); await settle();
   assert.deepEqual(f.writes, []);
   assert.deepEqual(f.active.at(-1), false);
+});
+
+test("a failing guest clipboard reconnects with backoff that resets after a successful sync", async t => {
+  const delays = [], pending = [];
+  let fail = true, revision = 1;
+  const hello = { hello: { version: 1, os: "darwin", session: "gui-a", available: true, formats: ["text", "png", "files"] } };
+  const connect = () => {
+    const socket = { readyState: 1, send: text => {
+      const value = JSON.parse(text);
+      queueMicrotask(() => socket.onmessage({ data: JSON.stringify({ ack: value.serial }) }));
+    }, close() { this.readyState = 3; this.onclose?.(); } };
+    queueMicrotask(() => { socket.onopen?.(); socket.onmessage({ data: JSON.stringify(hello) }); });
+    return socket;
+  };
+  const controller = shareClipboard({
+    connect, interval: 60000, onStatus: () => {}, setActive: () => {},
+    schedule: (callback, delay) => { delays.push(delay); pending.push(callback); return 0; },
+    native: async action => {
+      if (action === "clipboardRevision") return revision;
+      if (action === "clipboardSyncRead") {
+        if (fail) throw new Error("guest clipboard unavailable");
+        return { text: "host", revision };
+      }
+    },
+  });
+  t.after(() => controller.dispose());
+  for (let attempt = 0; attempt < 6; attempt++) {
+    await settle(); await settle();
+    pending.shift()?.();
+  }
+  assert.deepEqual(delays, [1500, 3000, 6000, 12000, 24000, 30000]);
+  fail = false;
+  await settle(); await settle();
+  assert.equal(pending.length, 0);
+  fail = true;
+  revision = 2;
+  controller.poll().catch(() => {});
+  await settle(); await settle();
+  assert.equal(delays.at(-1), 1500);
+  assert.equal(clipboardReconnectDelay(0), 1500);
+  assert.equal(clipboardReconnectDelay(100), 30000);
 });

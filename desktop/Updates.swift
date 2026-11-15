@@ -348,7 +348,7 @@ final class CageAppUpdater {
     private var cage: URL { bundleURL.appendingPathComponent("Contents/Resources/cage") }
     private func startDownload(checkOnly: Bool) {
         generation += 1; let operation = generation
-        change(["phase": "checking", "message": "正在通过所选代理检查更新", "receivedBytes": 0, "totalBytes": 0, "retryable": false, "retryAt": ""])
+        change(["phase": "checking", "message": "正在检查更新，优先使用主机网络", "receivedBytes": 0, "totalBytes": 0, "retryable": false, "retryAt": ""])
         let process = Process(); process.executableURL = cage; process.arguments = ["app-update", checkOnly ? "check" : "download"]
         let pipe = Pipe(); process.standardOutput = pipe; process.standardError = FileHandle.nullDevice
         worker = process

@@ -104,6 +104,58 @@ func (s *Server) checkMacOSGuest(ctx context.Context) error {
 	return nil
 }
 
+// macOSComponentReceiptProbe reads only the identity of the installed
+// component receipt. Its file digests are checked by the explicit version view.
+const macOSComponentReceiptProbe = `receipt=/var/db/cage-components.json
+if ! test -e "$receipt"; then printf 'null'; exit 0; fi
+exec /usr/local/libexec/cage-cli/bin/python3 -I -c '
+import json, sys
+try:
+    with open(sys.argv[1]) as stream:
+        value = json.load(stream)
+    print(json.dumps({key: value.get(key) for key in ("protocol", "revision", "app_version", "system")}))
+except (ValueError, AttributeError):
+    print("null")
+' "$receipt"`
+
+var errMacOSComponentUpdate = errors.New("虚拟 Mac 的客机组件与当前 Cage 版本不一致，浏览器、剪贴板和声音可能无法连接。请保存工作后在环境设置中同步环境组件；系统磁盘、账户和项目数据会保留。")
+
+// macOSComponentsDrifted reports whether a receipt read from the guest belongs
+// to a different component kit. A missing or unreadable receipt also requires
+// an update, matching the explicit version view.
+func macOSComponentsDrifted(receipt []byte, required cage.GuestManifest) bool {
+	var installed *struct {
+		cage.GuestManifest
+		System string `json:"system"`
+	}
+	if json.Unmarshal(receipt, &installed) != nil || installed == nil {
+		return true
+	}
+	return installed.System != guestos.MacOS || installed.Protocol != required.Protocol || installed.Revision != required.Revision
+}
+
+// checkMacOSComponents runs once per connection. Without it a guest left on
+// older components looks ready while its services fail, and every client
+// retries those failures instead of offering the component update.
+func (s *Server) checkMacOSComponents() {
+	kit, system := s.nativeComponentKit()
+	required, err := guestos.RequiredNativeComponents(kit, system)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(s.lifetimeContext(), 10*time.Second)
+	defer cancel()
+	receipt, err := s.guest(ctx, macOSComponentReceiptProbe)
+	if err != nil {
+		return
+	}
+	drifted := macOSComponentsDrifted(receipt, required.GuestManifest)
+	s.mu.Lock()
+	s.macComponentsChecked = true
+	s.guestUpdateRequired = drifted
+	s.mu.Unlock()
+}
+
 func (s *Server) attachMacOSGuest() error {
 	ctx, cancel := s.controlContext()
 	defer cancel()
@@ -112,12 +164,23 @@ func (s *Server) attachMacOSGuest() error {
 		err = s.syncNativeBrowserProfile(ctx)
 	}
 	s.mu.Lock()
+	if err != nil {
+		s.macComponentsChecked = false
+	}
+	checkComponents := err == nil && !s.macComponentsChecked
+	s.mu.Unlock()
+	if checkComponents && !s.macSetupPending() {
+		s.checkMacOSComponents()
+	}
+	s.mu.Lock()
 	newlyReady := !s.ready && err == nil
 	checkAfterReconnect := newlyReady && !s.closing && !s.networkPaused && !s.jobs.snapshot().Running
 	s.ready = err == nil
 	s.guestUpdateError = ""
 	if err != nil {
 		s.guestUpdateError = err.Error()
+	} else if s.guestUpdateRequired {
+		s.guestUpdateError = errMacOSComponentUpdate.Error()
 	}
 	s.mu.Unlock()
 	if newlyReady && !s.macSetupPending() {

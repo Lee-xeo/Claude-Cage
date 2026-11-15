@@ -60,7 +60,10 @@ func newMacPlatformConfiguration(inst *limatype.Instance) (vz.PlatformConfigurat
 		if err = ensureIPSW(inst.Dir); err != nil {
 			return nil, err
 		}
-		ipsw := filepath.Join(inst.Dir, filenames.ImageIPSW)
+		ipsw, err := restoreImagePath(inst.Dir)
+		if err != nil {
+			return nil, err
+		}
 		ipswImage, err := vz.LoadMacOSRestoreImageFromPath(ipsw)
 		if err != nil {
 			return nil, err

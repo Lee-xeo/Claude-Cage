@@ -153,6 +153,8 @@ cage agent call network.check --wait 5m
 
 移除已添加项目使用 `project.remove`，传入 `{"workspace":"项目列表中的路径"}`。关闭该目录的终端、运行中会话和编辑器后可解除共享，原文件与会话历史保留。移除当前项目后切换到剩余项目；移除最后一个项目后没有当前项目。
 
+Linux 环境默认缓存项目文件的名称与属性，主机上的改动最多 20 秒后可见。刚在主机上改过文件、需要环境立即看到时调用 `project.refresh`，无需参数；macOS 和 Windows 环境始终直接读取，调用会返回 409。
+
 ## JSON 结果和异步任务
 
 除流式 `socket` 外，每次命令的 stdout 只有一个 JSON 对象；`socket` 的 NDJSON 格式见下文。格式示例：
@@ -243,7 +245,6 @@ cage agent call settings.get --scope selected --connection 当前连接代次
 | 名称、头像、密码、锁定、退出 | account.profile：username/avatar；account.password：old_password/password/confirm_password；account.lock/logout/suspend。 |
 | 本机信任、记住登录、设置密码保护 | desktop 范围 client.trusted-login：action 为 create/resume/enable/disable/protect，按同一规则提供 password、connection_id。 |
 | Touch ID 与快捷登录 | native.submit 提交 accountDevice，operation 为 status/enable/disable/unlock，kind 为 automatic/biometric；设备密钥由原生安全存储管理。Windows/Linux 不支持的操作与用户界面返回相同限制。 |
-| 首次启动的 Git 保护 | host.git 读取，host.git.enable 输入 confirm:true 启用；会修改主机全局 Git 保护配置，与界面动作相同。 |
 | 外观、字体、配色、自定义主题 | appearance.get/set 读写完整对象，appearance.codex 读取本机 Codex 外观导入；读取后保留未修改字段。 |
 | 出口位置检测、测速、连接和日志 | settings.probe 输入完整设置草稿；proxy.delay 输入 node_id；proxy.connections/logs。dry_run 仅静态校验。 |
 | 尚未开始安装时重选系统 | guest.reselect 输入 guest.options.pending.id，仍由原安装状态约束。 |

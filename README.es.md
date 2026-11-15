@@ -56,7 +56,7 @@ Claude Cage reúne terminal, navegador, editor y Claude Desktop oficial en un mi
 Envíe esta solicitud a su agente de IA (codex, dsh, workbuddy; probablemente no Claude Code 😁):
 
 ```markdown
-Ayúdame a instalar https://github.com/Lee-xeo/Claude-Cage y configurar el proxy de red de Cage para usar el punto final xxx en mi instalación local de Clash.
+Obtén el código fuente más reciente de https://github.com/Lee-xeo/Claude-Cage, compílalo, empaquétalo e instálalo. Configura el proxy de Cage para usar el nodo xx de mi Clash local y salir por mi IP xx. Supervisa todo el proceso, corrige directamente los problemas y, si es necesario, abre una issue en el proyecto para ayudar a mejorar la compatibilidad.
 ```
 
 Todo lo que necesita es un punto final de proxy de red confiable. Este proyecto no promueve ningún proveedor de proxy; Puede encontrar un proveedor usted mismo, por ejemplo buscando en el sitio web de Black Error.
@@ -141,6 +141,7 @@ Gracias a los siguientes proyectos por capacidades fundamentales y referencias d
 - [code-server](https://github.com/coder/code-server): el editor de código basado en navegador.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): referencias para el ambiente de trabajo y el diseño de interacción.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) y [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): referencias para comprobaciones de red y diagnósticos de seguridad.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): referencia para el inventario preciso, la protección de datos y la limpieza recuperable de caché; implementación independiente en Cage.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

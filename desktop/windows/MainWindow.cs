@@ -25,6 +25,7 @@ internal sealed class MainWindow : Form
     public MainWindow()
     {
         nativeInput = new NativeInput(value => Script("window.dispatchEvent(new CustomEvent('cage-native-input',{detail:" + JsonSerializer.Serialize(value) + "}));"));
+        Deactivate += (_, _) => Script("window.dispatchEvent(new Event('cage-window-deactivated'));");
         AutoScaleMode = AutoScaleMode.Dpi; AutoScaleDimensions = new SizeF(96, 96);
         Text = "Cage";
         StartPosition = FormStartPosition.CenterScreen; BackColor = Color.FromArgb(247, 247, 247);
@@ -357,7 +358,11 @@ internal sealed class MainWindow : Form
             object? result;
             switch (request.Text("action"))
             {
-                case "remoteInput": result = nativeInput.ProcessRequest(request, web, web.ZoomFactor); break;
+                case "remoteInput":
+                    var accepted = nativeInput.ProcessRequest(request, web, web.ZoomFactor, out var returnedFocus);
+                    result = request.TryGetProperty("returnFocus", out var restore) && restore.ValueKind == JsonValueKind.True
+                        ? new { returnedFocus = accepted && returnedFocus } : accepted;
+                    break;
                 case "exportDiagnostics":
                     using (var picker = new SaveFileDialog { Title = "导出诊断包", Filter = "诊断包 (*.zip)|*.zip", FileName = "cage-diagnostics.zip", DefaultExt = "zip", AddExtension = true })
                     {
@@ -382,6 +387,16 @@ internal sealed class MainWindow : Form
                         result = reader.ReadToEnd();
                     }
                     break;
+                case "saveRecoveryKey":
+                {
+                    var key = request.Text("key");
+                    if (key.Length != 71 || !System.Text.RegularExpressions.Regex.IsMatch(key, "^[A-F0-9]{8}(-[A-F0-9]{8}){7}$")) throw new InvalidDataException("恢复密钥格式无效");
+                    using var picker = new SaveFileDialog { Filter = "文本文件 (*.txt)|*.txt", Title = "保存账户恢复密钥", FileName = "账户恢复密钥.txt", DefaultExt = "txt", AddExtension = true };
+                    if (picker.ShowDialog(this) != DialogResult.OK) { result = false; break; }
+                    try { File.WriteAllText(picker.FileName, key + "\n", new System.Text.UTF8Encoding(false)); result = true; }
+                    catch { throw new IOException("恢复密钥未能保存，请检查保存位置的权限"); }
+                    break;
+                }
                 case "exportTheme":
                     var themeText = request.Text("text");
                     if (System.Text.Encoding.UTF8.GetByteCount(themeText) > 256 * 1024) throw new InvalidDataException("主题文件不能超过 256 KB");
@@ -464,6 +479,14 @@ internal sealed class MainWindow : Form
                     using (var picker = new OpenFileDialog { Title = "选择 Windows 11 x64 安装镜像", Filter = "Windows ISO (*.iso)|*.iso", Multiselect = false })
                         result = picker.ShowDialog(this) == DialogResult.OK ? picker.FileName : "";
                     break;
+                case "appReference":
+                    var appReference = request.Text("kind") switch {
+                        "source" => "https://github.com/Lee-xeo/Claude-Cage/commits/main",
+                        "releases" => "https://github.com/Lee-xeo/Claude-Cage/releases",
+                        _ => throw new InvalidDataException("未知的项目页面")
+                    };
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(appReference) { UseShellExecute = true });
+                    result = true; break;
                 case "guestInstallReference":
                     var reference = request.Text("kind") switch {
                         "windows-media" => "https://www.microsoft.com/software-download/windows11",
@@ -570,7 +593,7 @@ internal sealed class MainWindow : Form
           const fileActions = new Set([
             'uploadHostFiles', 'chooseUploadFiles', 'clipboardSyncRead', 'clipboardSyncWrite',
             'saveBrowserDownload', 'browserDownloadAction', 'desktopFileAction', 'exportDiagnostics',
-            'importTheme', 'exportTheme', 'shareLocalProject', 'chooseFolder', 'chooseGuestMedia',
+            'importTheme', 'exportTheme', 'saveRecoveryKey', 'shareLocalProject', 'chooseFolder', 'chooseGuestMedia',
           ]);
           chrome.webview.addEventListener('message', ({data}) => {
             const item = pending.get(data.id); if (!item) return;

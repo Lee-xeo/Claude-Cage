@@ -212,11 +212,11 @@ for (const platform of ["darwin", "win32", "linux"]) {
     await page.keyboard.press("Escape");
     await panel.waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "展开侧栏", exact: true }).click();
-    await page.getByRole("button", { name: "下载文件", exact: true }).click();
+    await page.getByRole("button", { name: "浏览器下载", exact: true }).click();
     await panel.waitFor();
     assert.ok(
       (await panel.boundingBox()).x > 800,
-      "sidebar also opens the panel at the upper right",
+      "expanding the sidebar keeps the panel at the upper right",
     );
     await panel.getByRole("button", { name: "关闭面板", exact: true }).click();
     records = [];
@@ -244,7 +244,7 @@ for (const platform of ["darwin", "win32", "linux"]) {
     );
     assert.deepEqual(errors, []);
     console.log(
-      `PASS: ${platform} context, toolbar/menu/sidebar downloads, 1280/375 layout, progress, scroll, empty state, file actions, retry, Escape/outside dismissal and gear icons.`,
+      `PASS: ${platform} context, toolbar/menu downloads, 1280/375 layout, progress, scroll, empty state, file actions, retry, Escape/outside dismissal and gear icons.`,
     );
   } finally {
     await browser.close();

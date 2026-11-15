@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { BrowserUploads } from "./browser-uploads";
 import { ProjectDialog } from "./project-dialog";
-import { api } from "./api";
+import { api, nativeAvailable } from "./api";
 import { SafetyMessage } from "./safety-message";
 import { DeviceCheckButton } from "./device-checks";
 import { RemoteView } from "./views";
@@ -205,7 +205,7 @@ export function ClaudeDesktop({
   }, [status.job]);
   return (
     <section className="claude-desktop-view" aria-label="Claude Desktop">
-      <BrowserUploads requests={uploads} onStatus={onStatus} />
+      {!nativeAvailable() && <BrowserUploads requests={uploads} onStatus={onStatus} />}
       {directoryRequest && <ProjectDialog
         key={directoryRequest.id}
         status={status}

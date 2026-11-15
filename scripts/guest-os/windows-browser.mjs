@@ -136,6 +136,16 @@ export function createNativeBrowserService(options = {}) {
   const destination = options.downloadDirectory ?? path.join(homedir(), "Downloads", "Cage");
   let context, owner, browserCDP, initialized, closing, proxy, networkMode = "proxy", configured = false;
   let active = "", home = options.homepage ?? "https://www.bing.com/", displayScale = options.displayScale ?? 2;
+  const homepageRedirects = new WeakMap();
+  const isNativeNewTab = url => /^chrome:\/\/(newtab|new-tab-page|new-tab-page-third-party)\/?(?:[?#].*)?$/.test(url);
+  function restoreHomepage(page) {
+    if (page.isClosed() || !isNativeNewTab(page.url())) return Promise.resolve();
+    if (homepageRedirects.has(page)) return homepageRedirects.get(page);
+    const pending = page.goto(home, { waitUntil: "commit", timeout: 8000 })
+      .finally(() => homepageRedirects.delete(page));
+    homepageRedirects.set(page, pending);
+    return pending;
+  }
   let timezone, language;
   let creationProfile;
   let viewport = { width: 1140, height: 700 }, persistQueue = Promise.resolve();
@@ -347,10 +357,10 @@ export function createNativeBrowserService(options = {}) {
   async function captureFrame(tab) {
     await stoppingCaptures.get(tab.page);
     const size = tab.page.viewportSize();
-    // HiDPI surface scaling also affects native menus. Keep the established
-    // screenshot path by default until the native popup comparison is verified.
-    const streaming = continuousFrames && !tab.captureFallback &&
-      (displayScale === 1 || options.continuousFrames === true);
+    // Windows native menus do not follow the compositor's emulated scale.
+    // Keep HiDPI on full-density screenshots, even with continuousFrames opted
+    // in, so page pixels and native overlays share one physical-pixel mapping.
+    const streaming = continuousFrames && !tab.captureFallback && displayScale === 1;
     const key = `${tab.document}:${tab.geometry}:${size.width}:${size.height}:${displayScale}`;
     let capture = captures.get(tab.page);
     if (capture && capture.key !== key) { await stopCapture(tab.page); capture = undefined; }
@@ -554,6 +564,7 @@ export function createNativeBrowserService(options = {}) {
     });
     page.on("framenavigated", frame => {
       if (frame === page.mainFrame()) {
+        void restoreHomepage(page).catch(() => {});
         if (active === id) invalidateCopies();
         if (tab.kind !== "editor") {
           try {
@@ -603,6 +614,7 @@ export function createNativeBrowserService(options = {}) {
     }
     })();
     await tab.ready;
+    await restoreHomepage(page);
     if (!active) active = id;
     changed(); return tab;
   }
@@ -1332,7 +1344,11 @@ export function createNativeBrowserService(options = {}) {
       if (url !== "about:blank") await page.goto(url, { waitUntil: "commit", timeout: 8000 });
       remember(); return { id: tab.id };
     }
-    if (action === "homepage") { home = checkedBrowserURL(input.url); return { ok: true }; }
+    if (action === "homepage") {
+      home = checkedBrowserURL(input.url);
+      for (const tab of tabs.values()) await restoreHomepage(tab.page);
+      return { ok: true };
+    }
     if (action === "resize") {
       if (![input.width, input.height].every(Number.isInteger) || input.width < 320 || input.height < 240 || input.width > 8192 || input.height > 8192 || input.width * input.height > 16000000) throw failure("invalid_input", "Invalid display size");
       viewport = { width: Math.ceil(input.width / displayScale), height: Math.ceil(input.height / displayScale) };

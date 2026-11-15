@@ -1004,3 +1004,10 @@ func ensureIPSW(instDir string) error {
 	}
 	return nil
 }
+
+// restoreImagePath returns the physical pathname of an instance's restore image.
+// Cage may keep LIMA_HOME behind a symlink to custom storage, and
+// Virtualization.framework reports such a restore image as missing.
+func restoreImagePath(instDir string) (string, error) {
+	return filepath.EvalSymlinks(filepath.Join(instDir, filenames.ImageIPSW))
+}

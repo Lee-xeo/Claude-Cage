@@ -431,12 +431,16 @@ func restoreMacOSDisk(disk string, install func(string) error) error {
 }
 
 // verifiedMacOSIPSW runs under the instance's restore lock. It checks the
-// actual private installer input, including media left after an interruption.
+// actual private installer input, including media left after an interruption,
+// and returns its physical pathname for Virtualization.framework.
 func verifiedMacOSIPSW(ctx context.Context, inst *limatype.Instance) (string, error) {
 	if err := ensureIPSW(inst.Dir); err != nil {
 		return "", err
 	}
-	ipsw := filepath.Join(inst.Dir, filenames.ImageIPSW)
+	ipsw, err := restoreImagePath(inst.Dir)
+	if err != nil {
+		return "", err
+	}
 	images := inst.Config.Images
 	if len(images) != 1 || !filepath.IsAbs(images[0].Location) || images[0].Digest == "" {
 		return ipsw, nil

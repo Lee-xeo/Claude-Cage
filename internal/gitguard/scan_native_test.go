@@ -108,9 +108,6 @@ func TestScanGitTimeout(t *testing.T) {
 	if !strings.Contains(got, "could not check the repository of the project: git did not answer in time") {
 		t.Errorf("risks:\n%s", got)
 	}
-	if st := BareState(context.Background()); st != BareUnavailable {
-		t.Errorf("BareState with a hung git: %s", st)
-	}
 }
 
 // An option's value, or an assignment, can be the command: ssh -o
@@ -317,21 +314,5 @@ func TestVisible(t *testing.T) {
 		if got := visible(in); got != want {
 			t.Errorf("visible(%q) = %q, want %q", in, got, want)
 		}
-	}
-}
-
-func TestBareStateScopes(t *testing.T) {
-	b := newBox(t)
-	b.useEnv()
-	if st := BareState(context.Background()); st != BareUnset && st != BareOld {
-		t.Errorf("unset: %s", st)
-	}
-	b.write(b.home+"/.gitconfig", "[safe]\n\tbareRepository = explicit\n")
-	if st := BareState(context.Background()); st != BareOK && st != BareOld {
-		t.Errorf("explicit in the global config: %s", st)
-	}
-	b.write(b.home+"/.gitconfig", "[safe]\n\tbareRepository = all\n")
-	if st := BareState(context.Background()); st != BareUnset && st != BareOld {
-		t.Errorf("all: %s", st)
 	}
 }

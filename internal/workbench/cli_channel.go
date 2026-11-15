@@ -83,6 +83,7 @@ type terminalConversation struct {
 	ChannelReady        bool         `json:"channel_ready"`
 	HasHistory          bool         `json:"has_history"`
 	Running             bool         `json:"running"`
+	ClaudeDesktop       bool         `json:"claude_desktop"`
 	Active              bool         `json:"active"`
 	ConnectionNotice    string       `json:"connection_notice"`
 	HistoryTruncated    bool         `json:"history_truncated"`
@@ -91,20 +92,20 @@ type terminalConversation struct {
 func cliChannelCommand(mode, argument string) string {
 	// Versioned helpers let an open terminal keep its original protocol while a
 	// rebuilt host begins new sessions. No account configuration is overwritten.
-	bootstrap := fmt.Sprintf(`import base64, gzip, os, pathlib, sys, tempfile
-folder = pathlib.Path.home() / ".local/share/cage/cli-channel-code"
-folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-name = "%x"
-files = gzip.decompress(base64.b85decode("%s")).decode("utf-8").split("\0")
-for suffix, content in zip((".py", ".resume.md", ".account-resume.md"), files):
-    path = folder / (name + suffix)
-    if not path.exists():
-        with tempfile.NamedTemporaryFile(dir=folder, delete=False) as stream:
-            stream.write(content.encode("utf-8"))
-            temporary = stream.name
-        os.replace(temporary, path)
-path = folder / (name + ".py")
-os.execv(sys.executable, [sys.executable, "-I", str(path), *sys.argv[1:]])
+	bootstrap := fmt.Sprintf(`import base64,gzip,os,pathlib,sys,tempfile
+d=pathlib.Path.home()/".local/share/cage/cli-channel-code"
+d.mkdir(parents=True,exist_ok=True,mode=0o700)
+n="%x"
+a=gzip.decompress(base64.b85decode("%s")).decode().split("\0")
+for s,v in zip((".py",".resume.md",".account-resume.md"),a):
+ p=d/(n+s)
+ if not p.exists():
+  with tempfile.NamedTemporaryFile(dir=d,delete=False) as f:
+   f.write(v.encode())
+   t=f.name
+  os.replace(t,p)
+p=d/(n+".py")
+os.execv(sys.executable,[sys.executable,"-I",str(p),*sys.argv[1:]])
 `, sha256.Sum256([]byte(cliChannelHelper+cliResumePrompt+claudeAccountResumePrompt)), cliChannelEncoded)
 	return shellescape.QuoteCommand([]string{"python3", "-I", "-c", bootstrap, mode, argument})
 }
@@ -196,6 +197,7 @@ func (s *Server) discoverTerminalConversations(ctx context.Context, paths []stri
 	defer m.mu.Unlock()
 	known := map[string]*mobileRecord{}
 	running := map[string]bool{}
+	desktop := map[string]bool{}
 	for id := range m.catalog {
 		record, err := m.record(s.profile, id)
 		if err != nil {
@@ -255,9 +257,11 @@ func (s *Server) discoverTerminalConversations(ctx context.Context, paths []stri
 		}
 		m.catalog[record.ID] = record.summary()
 		running[record.ID] = running[record.ID] || item.Running
+		desktop[record.ID] = desktop[record.ID] || item.Running && item.ClaudeDesktop
 		known[record.CLIID] = record
 	}
 	m.running = running
+	m.desktop = desktop
 	return nil
 }
 
@@ -447,6 +451,10 @@ func (s *Server) terminalConversationAction(ctx context.Context, id string, inpu
 }
 
 func (s *Server) prepareTerminalConversation(workspace string, selection claudeSelection, existing string) (string, *mobileRecord, error) {
+	directories, err := s.projectAdditionalDirectories(workspace)
+	if err != nil {
+		return "", nil, err
+	}
 	s.mu.Lock()
 	launcher := claudeTerminalCommand(s.preferences)
 	s.mu.Unlock()
@@ -494,6 +502,9 @@ func (s *Server) prepareTerminalConversation(workspace string, selection claudeS
 		record.Connection = record.Switch.ID
 	}
 	payload := map[string]any{"id": record.Connection, "session_id": record.CLIID, "prefix": prefix, "config": record.GuestConfig}
+	if len(directories) > 0 {
+		payload["additional_directories"] = directories
+	}
 	if record.Resume {
 		payload["resume"] = record.CLIID
 	}

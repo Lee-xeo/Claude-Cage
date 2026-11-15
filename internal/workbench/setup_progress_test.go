@@ -1,10 +1,42 @@
 package workbench
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestSetupProgressParsesComponentNamesBeforeLogRedaction(t *testing.T) {
+	var m jobManager
+	var op sync.Mutex
+	_, err := m.submit(&op, "setup", 0, nil, nil, func() error {
+		e := m.execution()
+		e.setSetupProgress(&SetupProgress{Phase: "image", System: "macos"})
+		for _, part := range []string{"CAGE_HOST_BYTES macos-cli-", "python.tar.gz 25 100\n"} {
+			_, _ = e.Write([]byte(part))
+		}
+		p := m.snapshot().SetupProgress
+		if p.Operation != "download" || p.Received == nil || *p.Received != 25 || p.Total != 100 {
+			t.Errorf("host component progress lost: %+v", p)
+		}
+		_, _ = e.Write([]byte("CAGE_TOOL_BYTES chromium-common.deb 5 10\n"))
+		p = m.snapshot().SetupProgress
+		if p.Phase != "packages" || p.Received == nil || *p.Received != 5 || p.Total != 10 {
+			t.Errorf("tool component progress lost: %+v", p)
+		}
+		_, _ = e.Write([]byte("connect error: static.example-provider.io:1337\n"))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitJobIdle(t, &m)
+	log := m.snapshot().Log
+	if strings.Contains(log, "static.example-provider.io") || strings.Contains(log, "1337") || strings.Contains(log, "CAGE_") || !strings.Contains(log, "connect error:") {
+		t.Fatalf("job log leaked raw output or lost error evidence: %q", log)
+	}
+}
 
 func TestWindowsInstallationInteractionStages(t *testing.T) {
 	for _, stage := range []string{"account", "oobe", "credentials", "media", "tools", "services"} {

@@ -56,7 +56,7 @@ Claude Cage သည် terminal၊ browser၊ editor နှင့် တရား
 ဤတောင်းဆိုချက်ကို သင်၏ AI အေးဂျင့် (codex၊ dsh၊ workbuddy — Claude Code ဖြစ်နိုင်သည် 😁) ။
 
 ```markdown
-တပ်ဆင်ကူညီပေးပါ။ https://github.com/Lee-xeo/Claude-Cage ကျွန်ုပ်၏စက်တွင်း Clash တပ်ဆင်မှုတွင် xxx အဆုံးမှတ်ကို အသုံးပြုရန် Cage ၏ကွန်ရက်ပရောက်စီကို စီစဉ်သတ်မှတ်ပါ။
+https://github.com/Lee-xeo/Claude-Cage ၏ နောက်ဆုံး source code ကို ရယူပြီး build လုပ်၊ package ပြုလုပ်ကာ install လုပ်ပေးပါ။ Cage proxy ကို ကျွန်ုပ်၏ local Clash ရှိ xx node မှတစ်ဆင့် ကျွန်ုပ်၏ xx IP ဖြင့် ထွက်နိုင်အောင် သတ်မှတ်ပေးပါ။ လုပ်ငန်းစဉ်တစ်လျှောက် စောင့်ကြည့်ပြီး ပြဿနာများကို တိုက်ရိုက်ပြင်ဆင်ပါ။ လိုအပ်ပါက compatibility ပိုကောင်းစေရန် project တွင် issue တင်ပေးပါ။
 ```
 
 သင်လိုအပ်သည်မှာ ယုံကြည်စိတ်ချရသော ကွန်ရက် proxy အဆုံးမှတ်တစ်ခုဖြစ်သည်။ ဤပရောဂျက်သည် မည်သည့်ပရောက်စီဝန်ဆောင်မှုပေးသူကိုမျှ မြှင့်တင်မည်မဟုတ်ပါ။ ဥပမာအားဖြင့် Black Error ဝဘ်ဆိုက်ကို ရှာဖွေခြင်းဖြင့် ပံ့ပိုးပေးသူကို သင်ကိုယ်တိုင် ရှာဖွေနိုင်သည်။
@@ -141,6 +141,7 @@ Cage သည် လွတ်လပ်သောအသိုင်းအဝို�
 - [code-server](https://github.com/coder/code-server) - ဘရောက်ဆာအခြေခံကုဒ်တည်းဖြတ်သူ။
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): လုပ်ငန်းခွင်ပတ်ဝန်းကျင်နှင့် အပြန်အလှန်အကျိုးပြုမှုဒီဇိုင်းအတွက် ကိုးကားချက်များ။
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) နှင့် [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): ကွန်ရက်စစ်ဆေးမှုများနှင့် လုံခြုံရေးဆိုင်ရာ စစ်ဆေးမှုများအတွက် ကိုးကားချက်များ။
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): တိကျသောစာရင်းစစ်ဆေးမှု၊ အသုံးပြုသူဒေတာကာကွယ်မှုနှင့် ပြန်လည်ရယူနိုင်သော cache ရှင်းလင်းမှုလုပ်ငန်းစဉ်ကို ကိုးကားထားပြီး Cage တွင် သီးခြားအကောင်အထည်ဖော်ထားသည်။
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

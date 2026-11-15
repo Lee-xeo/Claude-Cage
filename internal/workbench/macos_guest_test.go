@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
@@ -259,5 +260,25 @@ func TestMacOSSetupAdministratorIdentity(t *testing.T) {
 				t.Fatalf("incorrect setup identity: %v", cmd.Args)
 			}
 		})
+	}
+}
+
+func TestMacOSComponentDriftFromReceipt(t *testing.T) {
+	required := cage.GuestManifest{Protocol: 1, Revision: "7edc041c", AppVersion: "0.1.7"}
+	for name, test := range map[string]struct {
+		receipt string
+		drifted bool
+	}{
+		"current":            {`{"protocol":1,"revision":"7edc041c","app_version":"0.1.7","system":"macos"}`, false},
+		"older app version":  {`{"protocol":1,"revision":"7edc041c","app_version":"0.1.7-rc.1","system":"macos"}`, false},
+		"older revision":     {`{"protocol":1,"revision":"dd93682c","app_version":"0.1.7-rc.1","system":"macos"}`, true},
+		"other protocol":     {`{"protocol":2,"revision":"7edc041c","system":"macos"}`, true},
+		"other system":       {`{"protocol":1,"revision":"7edc041c","system":"windows11"}`, true},
+		"missing receipt":    {`null`, true},
+		"unreadable receipt": {`not json`, true},
+	} {
+		if got := macOSComponentsDrifted([]byte(test.receipt), required); got != test.drifted {
+			t.Errorf("%s: drifted=%v, want %v", name, got, test.drifted)
+		}
 	}
 }

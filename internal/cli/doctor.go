@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"slices"
 	"strconv"
@@ -126,25 +125,6 @@ func (e *app) doctorCmd(ctx context.Context, args []string) int {
 		}
 		d.line("info", "QEMU also needs the 'Windows Hypervisor Platform' feature, which only an administrator can check or turn on",
 			"Without it, VMs fail to start with a WHPX error. An administrator runs, once, then reboots:", host.WHPXOn)
-	}
-
-	// A bare repository is not named .git, so the names do not cover one the
-	// VM plants in a project.
-	if st := gitguard.BareState(ctx); st != gitguard.BareNoGit {
-		d.section("Git on this machine")
-		switch st {
-		case gitguard.BareOK:
-			d.line("ok", "safe.bareRepository = explicit")
-		case gitguard.BareUnavailable:
-			d.line("warn", "host Git could not be checked; check the Git installation, then retry")
-		case gitguard.BareOld:
-			out, _ := exec.CommandContext(ctx, "git", "--version").Output()
-			d.line("warn", strings.TrimSpace(string(out))+" is older than 2.38: it would use a repository a VM creates under another name than .git, and run what its config names",
-				"Upgrade git, then: git config --global safe.bareRepository explicit")
-		default:
-			d.line("warn", "safe.bareRepository is not 'explicit': git would use a repository a VM creates under another name than .git, and run what its config names",
-				"git config --global safe.bareRepository explicit")
-		}
 	}
 
 	d.section("Base template")

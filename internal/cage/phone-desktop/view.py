@@ -46,7 +46,10 @@ def set_display_scale(value):
     dpi = round(value * 96 * 1024)
     config = Path('/run/cage-desktop/xsettings.conf')
     temporary = config.with_suffix('.new')
-    temporary.write_text(f'Xft/DPI {dpi}\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI {dpi}\nGtk/DecorationLayout ":"\n')
+    # A session started by an earlier version has no list of its other settings.
+    fixed = Path('/run/cage-desktop/xsettings.fixed')
+    rest = fixed.read_text() if fixed.exists() else 'Gtk/DecorationLayout ":"\n'
+    temporary.write_text(f'Xft/DPI {dpi}\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI {dpi}\n' + rest)
     temporary.replace(config)
     pid = int(Path('/run/cage-desktop/xsettings.pid').read_text())
     if Path(f'/proc/{pid}/comm').read_text().strip() != 'xsettingsd':
