@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -120,6 +121,39 @@ func TestResumePendingMacOSInstallDistinguishesRecoveryRecordFailures(t *testing
 	events := diagnosticEvents(t, s.profile)
 	if !strings.Contains(events, "继续原安装被拒绝，恢复入口身份校验未通过") {
 		t.Fatalf("diagnostics missing resume refusal cause: %s", events)
+	}
+}
+
+func TestPendingMacOSWithoutDiskReturnsToInstallerAdmission(t *testing.T) {
+	for _, started := range []bool{false, true} {
+		t.Run(fmt.Sprint(started), func(t *testing.T) {
+			s := testServer(t)
+			install := guestos.Installation{Version: 1, System: guestos.MacOS, ID: uuid.New()}
+			if err := guestos.SaveInstallation(s.profile, install); err != nil {
+				t.Fatal(err)
+			}
+			if started {
+				if err := os.MkdirAll(filepath.Join(s.profile, "state", "lima", "mac"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r := httptest.NewRequest(http.MethodPost, s.origin+"/api/start", strings.NewReader(`{}`))
+			r.Header.Set("Content-Type", "application/json")
+			r.AddCookie(&http.Cookie{Name: s.cookieName() + "-desktop", Value: trustedViewProof(s.token)})
+			w := httptest.NewRecorder()
+			s.start(w, r)
+			want := "请先注册或确认 Cage 账密"
+			if started {
+				want = "请先准备与原客机身份匹配的恢复入口"
+			}
+			if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), want) || s.jobs.snapshot().Running {
+				t.Fatalf("wrong pending installation admission: %d %s", w.Code, w.Body.String())
+			}
+			pending, err := guestos.LoadInstallation(s.profile)
+			if err != nil || pending == nil || *pending != install {
+				t.Fatal("original installation identity changed", err)
+			}
+		})
 	}
 }
 

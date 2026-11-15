@@ -850,7 +850,17 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pending != nil && pending.System == guestos.MacOS {
-		s.resumePendingMacOSInstall(w, r, pending.ID)
+		unstarted, err := guestos.UnstartedInstallation(s.profile, *pending)
+		if err != nil {
+			requestError(w, err)
+			return
+		}
+		if unstarted {
+			input.System = pending.System
+			s.beginGuestInstall(w, r, input)
+		} else {
+			s.resumePendingMacOSInstall(w, r, pending.ID)
+		}
 		return
 	}
 	if pending != nil && !hostimage.IsLinux(pending.System) {

@@ -181,63 +181,8 @@ func PrepareIntelRecovery(ctx context.Context, cache, version string, transport 
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return "", err
 	}
-	failures := 0
-	for offset < size {
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
-		end := offset + (1 << 20) - 1
-		if end >= size {
-			end = size - 1
-		}
-		uri, err := url.Parse(values["AU"])
-		if err != nil {
-			return "", err
-		}
-		query := uri.Query()
-		query.Set("range_start", strconv.FormatInt(offset, 10))
-		query.Set("range_end", strconv.FormatInt(end, 10))
-		query.Set("request", nonce(8))
-		uri.RawQuery = query.Encode()
-		if err := validateRecoveryURL(uri); err != nil {
-			return "", err
-		}
-		req, err := http.NewRequestWithContext(ctx, "GET", uri.String(), nil)
-		if err != nil {
-			return "", err
-		}
-		if uri.Host != "oscdn.apple.com" && uri.Host != "swcdn.apple.com" && uri.Host != "updates.cdn-apple.com" {
-			return "", errors.New("untrusted Apple recovery CDN")
-		}
-		req.Header.Set("User-Agent", "InternetRecovery/1.0")
-		req.Header.Set("Cookie", "AssetToken="+values["AT"])
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, end))
-		req.Header.Set("Accept-Encoding", "identity")
-		res, err := client.Do(req)
-		if err != nil {
-			failures++
-			if failures >= 5 || ctx.Err() != nil {
-				return "", err
-			}
-			continue
-		}
-		var start, finish, total int64
-		_, parseErr := fmt.Sscanf(res.Header.Get("Content-Range"), "bytes %d-%d/%d", &start, &finish, &total)
-		if res.StatusCode != 206 || parseErr != nil || start != offset || finish != end || total != size {
-			res.Body.Close()
-			return "", errors.New("Apple recovery download range mismatch")
-		}
-		n, copyErr := io.CopyN(file, res.Body, end-offset+1)
-		res.Body.Close()
-		offset += n
-		if copyErr != nil {
-			failures++
-			if failures >= 5 || ctx.Err() != nil {
-				return "", copyErr
-			}
-			continue
-		}
-		failures = 0
+	if err := downloadRecoveryRanges(ctx, client, values["AU"], values["AT"], file, size, offset); err != nil {
+		return "", err
 	}
 	if err := file.Close(); err != nil {
 		return "", err
@@ -252,6 +197,83 @@ func PrepareIntelRecovery(ctx context.Context, cache, version string, transport 
 		return "", err
 	}
 	return image, nil
+}
+
+// downloadRecoveryRanges preserves received bytes and changes stalled intervals.
+// The caller verifies the signed chunklist and complete image before use.
+func downloadRecoveryRanges(ctx context.Context, client *http.Client, address, token string, file *os.File, size, offset int64) error {
+	failures := 0
+	chunkSize := int64(1 << 20)
+	for offset < size {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		end := offset + chunkSize - 1
+		if end >= size {
+			end = size - 1
+		}
+		uri, err := url.Parse(address)
+		if err != nil {
+			return err
+		}
+		query := uri.Query()
+		query.Set("range_start", strconv.FormatInt(offset, 10))
+		query.Set("range_end", strconv.FormatInt(end, 10))
+		query.Set("request", rand.Text())
+		uri.RawQuery = query.Encode()
+		if err := validateRecoveryURL(uri); err != nil {
+			return err
+		}
+		req, err := http.NewRequestWithContext(ctx, "GET", uri.String(), nil)
+		if err != nil {
+			return err
+		}
+		if uri.Host != "oscdn.apple.com" && uri.Host != "swcdn.apple.com" && uri.Host != "updates.cdn-apple.com" {
+			return errors.New("untrusted Apple recovery CDN")
+		}
+		req.Header.Set("User-Agent", "InternetRecovery/1.0")
+		req.Header.Set("Cookie", "AssetToken="+token)
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, end))
+		req.Header.Set("Accept-Encoding", "identity")
+		res, err := client.Do(req)
+		if err != nil {
+			failures++
+			if failures >= 5 || ctx.Err() != nil {
+				return err
+			}
+			continue
+		}
+		var start, finish, total int64
+		_, parseErr := fmt.Sscanf(res.Header.Get("Content-Range"), "bytes %d-%d/%d", &start, &finish, &total)
+		if res.StatusCode != 206 || parseErr != nil || start != offset || finish != end || total != size {
+			res.Body.Close()
+			return errors.New("Apple recovery download range mismatch")
+		}
+		n, copyErr := io.CopyN(file, res.Body, end-offset+1)
+		res.Body.Close()
+		offset += n
+		if copyErr != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if n > 0 {
+				failures = 0
+				chunkSize = 1 << 20
+			} else {
+				failures++
+				// Some CDN edges return valid range headers with an empty body
+				// for one interval. Request a smaller interval at the same offset.
+				chunkSize = max(1, (end-offset+1)/2)
+			}
+			if failures >= 5 {
+				return fmt.Errorf("下载 Apple 恢复镜像中断（已保存 %d/%d 字节）: %w", offset, size, copyErr)
+			}
+			continue
+		}
+		failures = 0
+		chunkSize = 1 << 20
+	}
+	return nil
 }
 
 func validateRecoveryURL(u *url.URL) error {
