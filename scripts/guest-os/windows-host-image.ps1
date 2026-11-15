@@ -1,7 +1,7 @@
 ﻿#requires -Version 5.1
 # Functions used only for a new private Windows guest disk.
 function Assert-CageComputerName([string]$Name) {
-    if ($Name -cne '*' -and $Name -cnotmatch '^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?$') { throw 'Invalid guest computer name. Use 1-15 ASCII letters, digits or hyphens, starting with a letter.' }
+    if ($Name -cne '*' -and $Name -cnotmatch '^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?\z') { throw 'Invalid guest computer name. Use 1-15 ASCII letters, digits or hyphens, starting with a letter.' }
 }
 
 function Get-CageGuestComputerName([string]$Profile) {

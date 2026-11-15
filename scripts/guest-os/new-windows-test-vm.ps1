@@ -25,7 +25,7 @@ param(
     [string]$ImageLanguage,
     [string]$ImageBuild,
     [pscredential]$GuestAdministrator,
-    [ValidatePattern('^(?:\*|[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?)$')][string]$ComputerName = '*',
+    [ValidatePattern('^(?:\*|[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?)\z')][string]$ComputerName = '*',
     [ValidateRange(2, 2048)][int]$CpuCount = 2,
     [ValidateRange(4, 65536)][int]$MemoryGiB = 4,
     [ValidateRange(64, 65536)][int]$DiskGiB = 64,

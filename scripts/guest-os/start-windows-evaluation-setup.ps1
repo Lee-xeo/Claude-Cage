@@ -19,7 +19,7 @@ param(
     [Parameter(Mandatory)][string]$InstanceDirectory,
     [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ExpectedIsoSha256,
     [string]$PowerShellZip,
-    [ValidatePattern('^(?:\*|[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?)$')][string]$ComputerName = '*',
+    [ValidatePattern('^(?:\*|[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?)\z')][string]$ComputerName = '*',
     [switch]$AcceptEvaluationTerms,
     [switch]$Start
 )
@@ -27,7 +27,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'windows-guest-media.ps1')
 
 function New-EvaluationAnswer([string]$Template, [int]$ImageIndex, [long]$DiskBytes, [bool]$TermsAccepted, [string]$ComputerName = '*') {
-    if ($ComputerName -cne '*' -and $ComputerName -cnotmatch '^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?$') { throw 'Invalid guest computer name.' }
+    if ($ComputerName -cne '*' -and $ComputerName -cnotmatch '^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?\z') { throw 'Invalid guest computer name.' }
     if ($ImageIndex -lt 1 -or $DiskBytes -lt 64GB) { throw 'Invalid evaluation image index or disk capacity.' }
     # Preserve 1.5 GiB for WinRE, plus GPT alignment, the ESP and MSR.
     $osMiB = [long][Math]::Floor($DiskBytes / 1MB) - 1536 - 2 - 260 - 16
