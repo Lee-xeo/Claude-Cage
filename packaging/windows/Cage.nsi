@@ -286,7 +286,29 @@ FunctionEnd
 !macro CheckStopped FILE
   ${If} ${FileExists} "$INSTDIR\${FILE}"
     ; Exclusive write access also detects images whose VM/controller has no window.
-    System::Call 'kernel32::CreateFileW(w "$INSTDIR\${FILE}", i 0x40000000, i 0, p 0, i 3, i 0, p 0) p .r0'
+    ; Process exit can precede release of its executable's sharing lock.
+    ; Retry sharing/lock violations briefly; never replace an image still in use.
+    Push $1
+    Push $2
+    StrCpy $1 0
+    ${Do}
+      System::Call 'kernel32::CreateFileW(w "$INSTDIR\${FILE}", i 0x40000000, i 0, p 0, i 3, i 0, p 0) p .r0 ?e'
+      Pop $2
+      ${If} $0 != -1
+        ${ExitDo}
+      ${EndIf}
+      ${If} $2 != 32
+      ${AndIf} $2 != 33
+        ${ExitDo}
+      ${EndIf}
+      IntOp $1 $1 + 1
+      ${If} $1 >= 30
+        ${ExitDo}
+      ${EndIf}
+      Sleep 100
+    ${Loop}
+    Pop $2
+    Pop $1
     ${If} $0 == -1
       StrCpy $HelperExit "application_file_in_use"
       SetErrorLevel 2
