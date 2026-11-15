@@ -42,15 +42,17 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
       - name: Application version consistency
         run: |
           node scripts/check-version.mjs
           node --test scripts/macos-sshfs-sources.test.mjs scripts/guest-os/tests/install-macos-project-tools.test.mjs
       - name: Install native guest and Intel runtime build dependencies
         run: |
-          brew install glib gettext pcre2 libffi pixman pkgconf meson ninja python@3.13
+          brew install glib gettext pcre2 libffi pixman pkgconf meson ninja
           brew upgrade glib gettext pcre2
-          echo "$(brew --prefix python@3.13)/libexec/bin" >> "$GITHUB_PATH"
       - name: Build the macOS application without release credentials
         env:
           CAGE_SIGNING_IDENTITY: '-'
