@@ -85,3 +85,27 @@ func TestMissingAndCorruptProfiles(t *testing.T) {
 		}
 	}
 }
+
+func TestConcurrentCreateUsesOneCompleteProfile(t *testing.T) {
+	dir := t.TempDir()
+	start := make(chan struct{})
+	results := make(chan *Profile, 24)
+	for range cap(results) {
+		go func() {
+			<-start
+			p, err := Create(dir, Options{})
+			if err != nil {
+				t.Errorf("concurrent creation: %v", err)
+			}
+			results <- p
+		}()
+	}
+	close(start)
+	first := <-results
+	for i := 1; i < cap(results); i++ {
+		next := <-results
+		if first == nil || next == nil || *first != *next {
+			t.Error("installers did not receive the same complete profile")
+		}
+	}
+}

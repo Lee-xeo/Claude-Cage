@@ -295,13 +295,11 @@ func Create(directory string, o Options) (*Profile, error) {
 	if e != nil {
 		return nil, e
 	}
-	f, e := os.OpenFile(filepath.Join(directory, Filename), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if os.IsExist(e) {
-		return Load(directory)
-	}
+	f, e := os.CreateTemp(directory, ".guest-profile-*")
 	if e != nil {
 		return nil, e
 	}
+	defer os.Remove(f.Name())
 	if e = host.ProtectFile(f.Name()); e == nil {
 		_, e = f.Write(append(b, '\n'))
 	}
@@ -314,6 +312,13 @@ func Create(directory string, o Options) (*Profile, error) {
 	}
 	if e != nil {
 		return nil, e
+	}
+	// Publish the complete file exactly once. A competing installer may have won.
+	if err := os.Link(f.Name(), filepath.Join(directory, Filename)); err != nil {
+		if os.IsExist(err) {
+			return Load(directory)
+		}
+		return nil, err
 	}
 	return p, nil
 }
