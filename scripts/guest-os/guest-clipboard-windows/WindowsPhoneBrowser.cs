@@ -16,7 +16,7 @@ internal static class WindowsPhoneBrowser
     private static GuestProcessJob? job;
     private static Stream? replies;
     private static string current = "";
-    internal static bool Installed() => BrowserRpc.BrowserExecutableInstalled() && new[] { "node.exe", "windows-browser.mjs", "browser-protocol.mjs", "windows-browser-extensions.mjs", "windows-phone-browser.mjs", "playwright/index.mjs", "modules/browser-phone.mjs", "modules/browser-phone-network.mjs" }
+    internal static bool Installed() => BrowserRpc.BrowserExecutableInstalled() && new[] { "node.exe", "windows-browser.mjs", "browser-protocol.mjs", "device-observation.mjs", "windows-browser-extensions.mjs", "windows-phone-browser.mjs", "playwright/index.mjs", "modules/browser-phone.mjs", "modules/browser-phone-network.mjs" }
         .All(file => File.Exists(Path.Combine(AppContext.BaseDirectory, file)));
 
     private static JsonObject Error(int status) => new() { ["error"] = "phone_browser_unavailable", ["code"] = "phone_browser_error", ["status"] = status };

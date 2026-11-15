@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
 )
 
 // The server that runs on the guest, started here as a local process.
@@ -64,6 +66,27 @@ func TestGuestSessionRunsScriptsOverOneConnection(t *testing.T) {
 	}
 	if starts.Load() != 1 {
 		t.Fatalf("%d connections were opened for consecutive scripts", starts.Load())
+	}
+}
+
+func TestGuestSharedPreservesPathWithProfileTemplateText(t *testing.T) {
+	s := &Server{profile: t.TempDir()}
+	if _, err := guestprofile.Create(s.profile, guestprofile.Options{Username: "alex", AudioName: "speakers"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.controlSession.close)
+	ctx := t.Context()
+	// Use the same reusable control connection as a real workbench request.
+	_, sent, err := s.controlSession.run(ctx, ctx, func(ctx context.Context) *exec.Cmd {
+		return exec.CommandContext(ctx, "python3", "-I", "-u", "-c", guestSessionServer)
+	}, "true")
+	if err != nil || !sent {
+		t.Fatalf("opening control connection: sent=%v, err=%v", sent, err)
+	}
+	const path = "/home/cage/projects/cage_output"
+	reply, sent, err := s.guestShared(ctx, "printf %s '"+path+"'")
+	if err != nil || !sent || reply.code != 0 || string(reply.stdout) != path {
+		t.Fatalf("path returned by guest: %q, sent=%v, err=%v", reply.stdout, sent, err)
 	}
 }
 

@@ -4,8 +4,11 @@ $ErrorActionPreference = 'Stop'
 function Assert-Check([bool]$Condition, [string]$Message) { if (!$Condition) { throw $Message } }
 $credential = [pscredential]::new('CageAdmin', (ConvertTo-SecureString 'Test-only<&>"Account!123' -AsPlainText -Force))
 $answer = New-CageISOAnswer $credential
+$named = New-CageISOAnswer $credential 'MY-PC'
 $ns = [Xml.XmlNamespaceManager]::new($answer.NameTable)
 $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+Assert-Check ($answer.SelectSingleNode('//u:ComputerName', $ns).InnerText -ceq '*') 'Default ISO computer name is fixed.'
+Assert-Check ($named.SelectSingleNode('//u:ComputerName', $ns).InnerText -ceq 'MY-PC') 'ISO setup ignored the manual name.'
 $roundtrip = [xml]$answer.OuterXml
 Assert-Check ($roundtrip.SelectSingleNode('//u:LocalAccount/u:Name', $ns).InnerText -ceq 'CageAdmin') 'Initial account name changed.'
 Assert-Check ($roundtrip.SelectSingleNode('//u:LocalAccount/u:Password/u:Value', $ns).InnerText -ceq $credential.GetNetworkCredential().Password) 'Password XML escaping changed the credential.'
@@ -31,9 +34,11 @@ $createAnswer = [scriptblock]::Create($selection.Extent.Text)
 $script:prompts = 0
 function Get-Credential { param($UserName, $Message); $script:prompts++; return $credential }
 $fromHost = $false
+$ComputerName = 'Office-PC'
 $GuestAdministrator = $null
 . $createAnswer
 Assert-Check ($script:prompts -eq 1 -and $answer.SelectNodes('//u:LocalAccount', $ns).Count -eq 1) 'The manual route did not collect an offline account.'
+Assert-Check ($answer.SelectSingleNode('//u:ComputerName', $ns).InnerText -ceq $ComputerName) 'The manual route dropped the selected computer name.'
 . $createAnswer
 Assert-Check ($script:prompts -eq 1) 'An explicit credential prompted again.'
 $fromHost = $true
@@ -42,6 +47,7 @@ $ImageLanguage = 'zh-CN'
 . $createAnswer
 Assert-Check ($answer.SelectSingleNode('//u:LocalAccount/u:Name', $ns).InnerText -ceq 'cagesetup') 'Clone setup account changed.'
 Assert-Check ($answer.SelectSingleNode('//u:UILanguage', $ns).InnerText -ceq 'zh-CN') 'Clone locale changed.'
+Assert-Check ($answer.SelectSingleNode('//u:ComputerName', $ns).InnerText -ceq $ComputerName) 'The clone route dropped the selected computer name.'
 
 # The owner's progress reader accepts only known stages and reads the final
 # stage after process exit. Arbitrary child output never becomes UI content.

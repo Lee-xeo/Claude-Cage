@@ -1,6 +1,9 @@
 package vm
 
 import (
+	"encoding/json"
+	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +13,45 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/limayaml"
 	"github.com/lima-vm/lima/v2/pkg/yqutil"
 )
+
+func TestLimaManualHostnameAndAccounts(t *testing.T) {
+	l := newTestLima(t)
+	profile := t.TempDir()
+	path := filepath.Join(profile, "config.json")
+	b, err := json.Marshal(cage.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := guestprofile.Create(profile, guestprofile.Options{Hostname: "MY-PC", Username: "alex", BrowserUsername: "web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(cage.ConfigEnv, path)
+	none := []Mount{}
+	if err = l.Create(t.Context(), "configured", "template:debian-13", Settings{Mounts: &none}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	source, err := l.inspect(t.Context(), "configured")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Config.GuestIdentity.Hostname != p.Hostname || *source.Config.User.Name != "alex" || *source.Config.User.Home != "/home/alex" {
+		t.Fatal("creation did not apply configured name and account")
+	}
+	if err = l.Clone(t.Context(), "configured", "copy"); err != nil {
+		t.Fatal(err)
+	}
+	copy, err := l.inspect(t.Context(), "copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copy.Config.GuestIdentity.Hostname != p.Hostname || copy.Config.GuestIdentity.UUID == source.Config.GuestIdentity.UUID || copy.Config.GuestIdentity.MACAddress == source.Config.GuestIdentity.MACAddress {
+		t.Fatal("clone did not retain chosen hostname with fresh hardware identity")
+	}
+}
 
 func TestLimaCreationCloneAndEditIdentity(t *testing.T) {
 	l := newTestLima(t)

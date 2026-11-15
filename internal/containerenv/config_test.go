@@ -126,14 +126,14 @@ func TestSSHKeyIsStableAndHostKeyPathsAreQuoted(t *testing.T) {
 	if string(first) != string(second) {
 		t.Fatal("SSH key changed on reconnect")
 	}
-	if err := r.writeSSHConfig(17770); err != nil {
+	if err := r.writeSSHConfig(17770, "alex"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(r.SSHConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "StrictHostKeyChecking yes") || !strings.Contains(string(data), `IdentityFile "`) {
+	if !strings.Contains(string(data), "\n User alex\n") || !strings.Contains(string(data), "StrictHostKeyChecking yes") || !strings.Contains(string(data), `IdentityFile "`) {
 		t.Fatal("SSH trust or paths were not preserved")
 	}
 }

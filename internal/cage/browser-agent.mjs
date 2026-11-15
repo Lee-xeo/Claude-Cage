@@ -890,7 +890,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.url === "/audit") {
       if (typeof input.timezone !== "string" || input.timezone.length > 128) throw new Error("诊断时区无效");
-      res.end(JSON.stringify(await auditBrowser(auditCDP, auditExclusions, input.network === true, input.timezone)));
+      res.end(JSON.stringify(await auditBrowser(auditCDP, auditExclusions, input.network === true, input.timezone, input.device === true)));
       return;
     }
     const result = await mutate(async () => {

@@ -183,7 +183,7 @@ umask 022
 
 // Read the workbench preference at service startup so CLI and desktop launches
 // use the same setting without modifying the network configuration.
-func StartGuestServices(ctx context.Context, configPath string, cfg cage.Config, stdout, stderr io.Writer) error {
+func StartGuestServices(ctx context.Context, configPath string, stdout, stderr io.Writer) error {
 	prefs := Preferences{BalancedDisplay: true}
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), "workbench.json"))
 	if err == nil {
@@ -198,7 +198,11 @@ func StartGuestServices(ctx context.Context, configPath string, cfg cage.Config,
 	if prefs.BalancedDisplay {
 		scale = "1.5"
 	}
-	return RunMaintenanceScript(ctx, configPath, "export CAGE_DISPLAY_SCALE="+scale+"\n"+cfg.StartScript(), stdout, stderr)
+	cfg, err := cage.Load(configPath)
+	if err != nil {
+		return err
+	}
+	return runMaintenanceScript(ctx, configPath, cfg, "export CAGE_DISPLAY_SCALE="+scale+"\n"+cfg.StartScript(), stdout, stderr)
 }
 
 func RunMaintenanceScript(ctx context.Context, configPath, script string, stdout, stderr io.Writer) error {
@@ -206,8 +210,12 @@ func RunMaintenanceScript(ctx context.Context, configPath, script string, stdout
 	if err != nil {
 		return err
 	}
+	return runMaintenanceScript(ctx, configPath, cfg, cfg.GuestProfile.Linux(script), stdout, stderr)
+}
+
+func runMaintenanceScript(ctx context.Context, configPath string, cfg cage.Config, script string, stdout, stderr io.Writer) error {
 	profile := filepath.Dir(configPath)
-	if err = cfg.RequireManagedProxy(profile); err != nil {
+	if err := cfg.RequireManagedProxy(profile); err != nil {
 		return err
 	}
 	egress, err := cage.NewEgress(cfg)
@@ -232,7 +240,8 @@ func RunMaintenanceScript(ctx context.Context, configPath, script string, stdout
 	defer stop()
 	s := &Server{profile: profile}
 	forward := fmt.Sprintf("127.0.0.1:%d:%s", maintenancePort, listener.Addr().String())
-	command := "sudo systemd-run --quiet --pipe --wait --collect --unit=cage-maintenance-operation --property=User=cage --property=RuntimeMaxSec=infinity --property=KillMode=control-group --setenv=HOME=/home/cage --working-directory=" + shellescape.Quote(guestPath(s.environmentDir())) + " /bin/bash -se"
+	command := "sudo systemd-run --quiet --pipe --wait --collect --unit=cage-maintenance-operation --property=User=cage --property=RuntimeMaxSec=infinity --property=KillMode=control-group --setenv=HOME=/home/cage "
+	command = cfg.GuestProfile.Linux(command) + "--working-directory=" + shellescape.Quote(guestPath(s.environmentDir())) + " /bin/bash -se"
 	cmd := s.sshCommandWithForwarding(ctx, "-o", "ExitOnForwardFailure=yes", "-R", forward, "-T", s.sshTarget(), "--", command)
 	cmd.Stdin = strings.NewReader(maintenanceScript(cage.DebianPrepareScript+"\n"+script, proxy.token))
 	var output failureOutput

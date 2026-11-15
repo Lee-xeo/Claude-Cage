@@ -122,7 +122,7 @@ func containerOperation(configPath string, args []string, cfg cage.Config, keepP
 		return true, err
 	}
 	if needsServices {
-		if err := workbench.StartGuestServices(ctx, configPath, cfg, os.Stdout, os.Stderr); err != nil {
+		if err := workbench.StartGuestServices(ctx, configPath, os.Stdout, os.Stderr); err != nil {
 			return true, err
 		}
 	}

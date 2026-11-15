@@ -263,7 +263,7 @@ func (r *Runtime) ServeNetwork(ctx context.Context, configPath string) error {
 	defer func() { endpoint.Close(); _ = wait() }()
 	networkDone := make(chan error, 1)
 	go func() { err := network.Run(ctx, endpoint); cancel(); networkDone <- err }()
-	client, err := r.connectGuestSSH(ctx, network)
+	client, err := r.connectGuestSSH(ctx, network, cfg.GuestProfile.WorkUser())
 	if err != nil {
 		return err
 	}
@@ -291,7 +291,7 @@ func (r *Runtime) ServeNetwork(ctx context.Context, configPath string) error {
 		return err
 	}
 	defer vncListener.Close()
-	if err := r.writeSSHConfig(sshListener.Addr().(*net.TCPAddr).Port); err != nil {
+	if err := r.writeSSHConfig(sshListener.Addr().(*net.TCPAddr).Port, cfg.GuestProfile.WorkUser()); err != nil {
 		return err
 	}
 	serviceDone := make(chan error, 3)
@@ -324,8 +324,8 @@ func (r *Runtime) ServeNetwork(ctx context.Context, configPath string) error {
 	}
 }
 
-func (r *Runtime) connectGuestSSH(ctx context.Context, network *Network) (*ssh.Client, error) {
-	configuration, err := r.guestSSHConfiguration()
+func (r *Runtime) connectGuestSSH(ctx context.Context, network *Network, user string) (*ssh.Client, error) {
+	configuration, err := r.guestSSHConfiguration(user)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +362,7 @@ func (r *Runtime) connectGuestSSH(ctx context.Context, network *Network) (*ssh.C
 	}
 }
 
-func (r *Runtime) guestSSHConfiguration() (*ssh.ClientConfig, error) {
+func (r *Runtime) guestSSHConfiguration(user string) (*ssh.ClientConfig, error) {
 	private, err := os.ReadFile(filepath.Join(r.InstanceDir(), "id_ed25519"))
 	if err != nil {
 		return nil, err
@@ -375,7 +375,7 @@ func (r *Runtime) guestSSHConfiguration() (*ssh.ClientConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	configuration := &ssh.ClientConfig{User: "cage", Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: check, HostKeyAlgorithms: []string{ssh.KeyAlgoED25519}}
+	configuration := &ssh.ClientConfig{User: user, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: check, HostKeyAlgorithms: []string{ssh.KeyAlgoED25519}}
 	return configuration, nil
 }
 
@@ -420,7 +420,7 @@ func (r *Runtime) shareEnvironment(ctx context.Context, client *ssh.Client, work
 		return nil, nil, err
 	}
 	interrupt := context.AfterFunc(ctx, func() { _ = prepare.Close() })
-	err = prepare.Run("if mountpoint -q " + quoted + "; then fusermount3 -uz " + quoted + "; fi; sudo mkdir -p " + quoted + " && sudo chown cage:cage " + quoted)
+	err = prepare.Run("if mountpoint -q " + quoted + "; then fusermount3 -uz " + quoted + "; fi; sudo mkdir -p " + quoted + " && sudo chown \"$(id -u):$(id -g)\" " + quoted)
 	interrupt()
 	prepare.Close()
 	if err != nil {

@@ -176,6 +176,15 @@ func (s *Server) runDesktopScript(script string, timeout time.Duration) error {
 	// A guest cgroup owns apt and all descendants, including across SSH loss.
 	// The application's persistent service is separate from this operation.
 	command := fmt.Sprintf("sudo systemd-run --quiet --pipe --wait --collect --unit=cage-desktop-operation --property=User=cage --property=RuntimeMaxSec=%d --property=KillMode=control-group --setenv=HOME=/home/cage --working-directory=/home/cage /bin/bash -se", int(timeout.Seconds()))
+	var renderErr error
+	command, renderErr = s.linuxTemplate(command)
+	if renderErr != nil {
+		return renderErr
+	}
+	script, renderErr = s.linuxTemplate(script)
+	if renderErr != nil {
+		return renderErr
+	}
 	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", command)
 	cmd.Stdin = strings.NewReader(script)
 	cmd.Stdout, cmd.Stderr = s.jobs.execution(), s.jobs.execution()
@@ -200,7 +209,7 @@ func (s *Server) claudeDesktopCredentials(w http.ResponseWriter, r *http.Request
 	defer cancel()
 	b, err := s.guestQuick(ctx, `set -eu
 systemctl is-active --quiet cage-claude-desktop.service
-password=$(cat /home/cage/.config/claude-cage/desktop-password)
+password=$(cat "$HOME/.config/claude-cage/desktop-password")
 printf '%s\n' "$password"
 if test -f /run/cage-desktop/base-display-scale; then cat /run/cage-desktop/base-display-scale
 elif test -f /run/cage-desktop/display-scale; then cat /run/cage-desktop/display-scale

@@ -33,7 +33,7 @@ if ! command -v xdg-mime >/dev/null; then
 fi
 sudo install -d -m 0755 /usr/local/share/applications
 printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Tailscale' 'NoDisplay=true' 'Exec=/usr/local/bin/cage-open %u' 'MimeType=x-scheme-handler/tailscale;' | sudo tee /usr/local/share/applications/tailnet-login.desktop >/dev/null
-sudo -Hu cage-browser xdg-mime default tailnet-login.desktop x-scheme-handler/tailscale
+sudo -H -u cage-browser xdg-mime default tailnet-login.desktop x-scheme-handler/tailscale
 sudo tee /usr/local/bin/cage-editor-start >/dev/null <<'SCRIPT'
 #!/bin/sh
 set -eu
@@ -158,7 +158,7 @@ if ! grep -q 'CAGE_WORKBENCH_PROMPT' /home/cage/.bashrc; then
   sudo tee -a /home/cage/.bashrc >/dev/null <<'PROMPT'
 # CAGE_WORKBENCH_PROMPT
 if [ "${CAGE_WORKBENCH:-}" = 1 ]; then
-  PS1='\[\e[32m\]cage\[\e[0m\]:\[\e[34m\]\W\[\e[0m\]\$ '
+  PS1='\[\e[32m\]\u\[\e[0m\]:\[\e[34m\]\W\[\e[0m\]\$ '
 fi
 PROMPT
 fi

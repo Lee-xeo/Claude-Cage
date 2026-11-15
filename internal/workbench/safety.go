@@ -98,6 +98,7 @@ type resolverObservation struct {
 	Confined *bool `json:"confined"`
 }
 type browserObservation struct {
+	Device           *deviceObservation `json:"device,omitempty"`
 	Timezone         string             `json:"timezone"`
 	ExpectedTimezone string             `json:"expected_timezone"`
 	Language         string             `json:"language"`

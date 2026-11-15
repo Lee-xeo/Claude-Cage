@@ -67,6 +67,12 @@ func TestCageDebianMirrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if *instance.Config.User.Name != "cage" || *instance.Config.User.Home != "/home/cage" {
+		t.Fatal("recreating a base for a legacy environment changed its Linux account")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(config), "guest-profile.json")); !os.IsNotExist(err) {
+		t.Fatalf("base creation must not assign a new profile to a legacy environment: %v", err)
+	}
 	earlyAPT := false
 	for _, step := range instance.Config.Provision {
 		if step.Mode == limatype.ProvisionModeDependency && step.Script != nil && *step.Script == cage.DebianPrepareScript {

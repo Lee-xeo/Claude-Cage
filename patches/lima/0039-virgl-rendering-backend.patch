@@ -1,0 +1,80 @@
+diff --git a/pkg/driver/qemu/graphics.go b/pkg/driver/qemu/graphics.go
+new file mode 100644
+index 0000000..3a5564a
+--- /dev/null
++++ b/pkg/driver/qemu/graphics.go
+@@ -0,0 +1,19 @@
++// SPDX-License-Identifier: Apache-2.0
++package qemu
++
++// Accelerated variants expose real VirGL rendering, not a renamed 2D device.
++func graphicsDevice(arch string, windows, accelerated bool) string {
++	if arch == "x86_64" || arch == "riscv64" {
++		if accelerated {
++			return "virtio-vga-gl"
++		}
++		return "virtio-vga"
++	}
++	if windows {
++		return "ramfb"
++	}
++	if accelerated {
++		return "virtio-gpu-gl-pci"
++	}
++	return "virtio-gpu"
++}
+diff --git a/pkg/driver/qemu/graphics_test.go b/pkg/driver/qemu/graphics_test.go
+new file mode 100644
+index 0000000..f998789
+--- /dev/null
++++ b/pkg/driver/qemu/graphics_test.go
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: Apache-2.0
++package qemu
++
++import "testing"
++
++func TestGraphicsDeviceSelection(t *testing.T) {
++	for _, row := range []struct {
++		arch                 string
++		windows, accelerated bool
++		device               string
++	}{{"x86_64", false, false, "virtio-vga"}, {"x86_64", false, true, "virtio-vga-gl"}, {"aarch64", false, false, "virtio-gpu"}, {"aarch64", false, true, "virtio-gpu-gl-pci"}, {"aarch64", true, false, "ramfb"}} {
++		if got := graphicsDevice(row.arch, row.windows, row.accelerated); got != row.device {
++			t.Fatalf("%s: %s != %s", row.arch, got, row.device)
++		}
++	}
++}
+diff --git a/pkg/driver/qemu/qemu.go b/pkg/driver/qemu/qemu.go
+index 4f2fa75..4335d81 100644
+--- a/pkg/driver/qemu/qemu.go
++++ b/pkg/driver/qemu/qemu.go
+@@ -938,6 +938,9 @@ func cmdline(ctx context.Context, cfg Config, workingDir *string) (exe string, a
+ 		}
+ 	}
+ 	// Graphics
++	if *y.Video.Display == "egl-headless" && (runtime.GOOS != "linux" || *y.OS != limatype.LINUX) {
++		return "", nil, errors.New("egl-headless VirGL requires a Linux host and Linux guest")
++	}
+ 	if *y.Video.Display != "" {
+ 		display := *y.Video.Display
+ 		if display == "vnc" {
+@@ -950,17 +953,7 @@ func cmdline(ctx context.Context, cfg Config, workingDir *string) (exe string, a
+ 	}
+ 
+ 	if *y.Video.Display != "none" {
+-		switch *y.Arch {
+-		// FIXME: use virtio-gpu on all the architectures
+-		case limatype.X8664, limatype.RISCV64:
+-			args = append(args, "-device", "virtio-vga")
+-		default:
+-			if *y.OS == limatype.WINDOWS {
+-				args = append(args, "-device", "ramfb")
+-			} else {
+-				args = append(args, "-device", "virtio-gpu")
+-			}
+-		}
++		args = append(args, "-device", graphicsDevice(string(*y.Arch), *y.OS == limatype.WINDOWS, *y.Video.Display == "egl-headless"))
+ 		args = append(args, "-device", "virtio-keyboard-pci")
+ 		args = append(args, "-device", "virtio-"+input+"-pci")
+ 	} else {

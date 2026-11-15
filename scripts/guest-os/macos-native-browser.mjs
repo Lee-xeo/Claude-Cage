@@ -9,6 +9,7 @@ import { browserCallback, browserSettingsInputs, nativeBrowserDispatch, windowRe
 import { createTailnetClient } from "./tailnet-client.mjs";
 import { relayMacOSBrowser, serveMacOSBrowser } from "./macos-browser-service.mjs";
 import { lstat, readFile } from "node:fs/promises";
+import { checkedBrowserProfile } from "./browser-protocol.mjs";
 
 const data = path.join(homedir(), "Library", "Application Support", "Cage");
 const editors = new Map();
@@ -88,7 +89,14 @@ if (process.argv[2] !== "--service") {
   const socket = path.join(homedir(), "Library", "Caches", "dev.cage.GuestClaudeWindow", "window.sock");
   const tailnet = createTailnetClient();
   void tailnet.restore().catch(() => {});
-  const dispatch = nativeBrowserDispatch({ settingsInputs: info => browserSettingsInputs(info, path.join(data, "Browser")), window: (action, fields, signal) => windowRequest(socket, action, fields, signal), editor: openEditor, tailnet });
+  const profile = async input => {
+    const value = JSON.stringify(checkedBrowserProfile(input));
+    await mkdir(data, { recursive: true, mode: 0o700 });
+    const file = path.join(data, "guest-profile.json");
+    try { await writeFile(file, value, { flag: "wx", mode: 0o600 }); }
+    catch (error) { if (error.code !== "EEXIST" || JSON.stringify(checkedBrowserProfile(JSON.parse(await readFile(file, "utf8")))) !== value) throw error; }
+  };
+  const dispatch = nativeBrowserDispatch({ settingsInputs: info => browserSettingsInputs(info, path.join(data, "Browser")), window: (action, fields, signal) => windowRequest(socket, action, fields, signal), editor: openEditor, tailnet, profile });
   const close = async () => {
     for (const { child } of editors.values()) child.kill();
     tailnet.close();

@@ -20,6 +20,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/guestos"
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/hostproxy"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
@@ -608,10 +609,22 @@ func run() int {
 		return 0
 	}
 	if args[0] == "setup" {
+		if cfg.GuestProfile == nil {
+			loc, e := cage.GetStorageLocation(filepath.Dir(path))
+			if e != nil {
+				return fail(e)
+			}
+			if !loc.HasEnvironment {
+				cfg.GuestProfile, e = guestprofile.Create(filepath.Dir(path), guestprofile.Options{})
+				if e != nil {
+					return fail(e)
+				}
+			}
+		}
 		if err = os.MkdirAll(state, 0700); err != nil {
 			return fail(err)
 		}
-		if err = os.WriteFile(filepath.Join(state, "setup.sh"), []byte(cage.GuestSetup), 0600); err != nil {
+		if err = os.WriteFile(filepath.Join(state, "setup.sh"), []byte(cfg.SetupScript()), 0600); err != nil {
 			return fail(err)
 		}
 		memory, cpus, resourceErr := cage.ConfiguredResourceLimits(path)
@@ -625,7 +638,7 @@ func run() int {
 		if result != 0 {
 			return result
 		}
-		if err := workbench.StartGuestServices(context.Background(), path, cfg, os.Stdout, os.Stderr); err != nil {
+		if err := workbench.StartGuestServices(context.Background(), path, os.Stdout, os.Stderr); err != nil {
 			return fail(err)
 		}
 		fmt.Println("Cage local services are ready. Open Cage or run cage desktop to complete the required network checks. External networking stays closed until the workbench approves this VM; no local access password is required.")

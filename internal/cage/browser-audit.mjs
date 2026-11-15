@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { collectDeviceObservation } from "./device-observation.mjs";
 
 // Read settings in a background blank page in the user profile, excluded from
 // Cage's tab strip. Chromium's hidden-target path skips the profile's renderer
 // preferences and reads UI-locale defaults even in the default context.
-async function readBrowserSettings(cdp, exclusions, expectedTimezone) {
+async function readBrowserSettings(cdp, exclusions, expectedTimezone, device) {
   const url = `about:blank#cage-settings-${randomUUID()}`;
   // Target events can arrive before the createTarget reply.
   exclusions.add(url);
@@ -14,10 +15,11 @@ async function readBrowserSettings(cdp, exclusions, expectedTimezone) {
     }));
     const { sessionId } = await cdp("Target.attachToTarget", { targetId, flatten: true });
     const response = await cdp("Runtime.evaluate", {
-      expression: `({timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      expression: `(async () => ({timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         expected_timezone: new Intl.DateTimeFormat('en', {timeZone:${JSON.stringify(expectedTimezone)}}).resolvedOptions().timeZone,
-        language: navigator.language, languages: [...navigator.languages], platform: navigator.platform})`,
-      returnByValue: true,
+        language: navigator.language, languages: [...navigator.languages], platform: navigator.platform
+        ${device ? `, device: await (${collectDeviceObservation.toString()})()` : ""}}))()`,
+      awaitPromise: true, returnByValue: true,
     }, sessionId);
     if (response.exceptionDetails || !response.result?.value)
       throw new Error("浏览器配置诊断未完成");
@@ -40,8 +42,9 @@ export async function auditBrowser(
   exclusions,
   network,
   expectedTimezone,
+  device = false,
 ) {
-  const settings = await readBrowserSettings(cdp, exclusions, expectedTimezone);
+  const settings = await readBrowserSettings(cdp, exclusions, expectedTimezone, device);
   if (!network) return settings;
   const { browserContextId } = await cdp("Target.createBrowserContext", {
     disposeOnDetach: true,

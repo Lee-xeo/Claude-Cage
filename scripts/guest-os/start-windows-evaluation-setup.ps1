@@ -19,17 +19,19 @@ param(
     [Parameter(Mandatory)][string]$InstanceDirectory,
     [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ExpectedIsoSha256,
     [string]$PowerShellZip,
+    [ValidatePattern('^(?:\*|[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?)\z')][string]$ComputerName = '*',
     [switch]$AcceptEvaluationTerms,
     [switch]$Start
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'windows-guest-media.ps1')
 
-function New-EvaluationAnswer([string]$Template, [int]$ImageIndex, [long]$DiskBytes, [bool]$TermsAccepted) {
+function New-EvaluationAnswer([string]$Template, [int]$ImageIndex, [long]$DiskBytes, [bool]$TermsAccepted, [string]$ComputerName = '*') {
+    if ($ComputerName -cne '*' -and $ComputerName -cnotmatch '^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?\z') { throw 'Invalid guest computer name.' }
     if ($ImageIndex -lt 1 -or $DiskBytes -lt 64GB) { throw 'Invalid evaluation image index or disk capacity.' }
     # Preserve 1.5 GiB for WinRE, plus GPT alignment, the ESP and MSR.
     $osMiB = [long][Math]::Floor($DiskBytes / 1MB) - 1536 - 2 - 260 - 16
-    return $Template.Replace('OS_SIZE_MIB', "$osMiB").Replace('EVAL_IMAGE_INDEX', "$ImageIndex").Replace('ACCEPT_EULA', $TermsAccepted.ToString().ToLowerInvariant())
+    return $Template.Replace('<ComputerName>*</ComputerName>', ('<ComputerName>'+$ComputerName+'</ComputerName>')).Replace('OS_SIZE_MIB', "$osMiB").Replace('EVAL_IMAGE_INDEX', "$ImageIndex").Replace('ACCEPT_EULA', $TermsAccepted.ToString().ToLowerInvariant())
 }
 
 function Get-EvaluationImage([string]$Path) {
@@ -115,7 +117,7 @@ try {
         $stageReceipt = Join-Path $stage 'receipt.json'
         $null = [IO.Directory]::CreateDirectory($stage)
         try {
-            $answer = New-EvaluationAnswer ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-evaluation-autounattend.xml'))) $edition.ImageIndex $vhd.Size $AcceptEvaluationTerms.IsPresent
+            $answer = New-EvaluationAnswer ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-evaluation-autounattend.xml'))) $edition.ImageIndex $vhd.Size $AcceptEvaluationTerms.IsPresent $ComputerName
             New-WindowsGuestAnswerISO $stageISO ([xml]$answer) $PowerShellZip $genericAnswer
             Grant-VMAnswerReadAccess $stageISO $VMId
             $metadata = [ordered]@{
@@ -123,7 +125,7 @@ try {
                 Edition = $edition.EditionId; ImageIndex = $edition.ImageIndex
                 WindowsIsoSHA256 = $ExpectedIsoSha256; AnswerISO = $answerISO
                 AnswerSHA256 = (Get-FileHash -LiteralPath $stageISO -Algorithm SHA256).Hash
-                LicenseUI = $mode; RequiresMicrosoftOOBE = $true
+                LicenseUI = $mode; RequiresMicrosoftOOBE = $true; ComputerName = $ComputerName
                 PowerShellVersion = $GuestPowerShellVersion; PowerShellSHA256 = $GuestPowerShellSHA256
             }
             if ($AcceptEvaluationTerms) { $metadata['EvaluationTermsAcceptedUtc'] = [DateTime]::UtcNow.ToString('o') }
@@ -139,6 +141,9 @@ try {
     }
     $mediaReceipt = Join-Path $mediaDir 'receipt.json'
     $receipt = Get-Content -LiteralPath $mediaReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
+    # Media created before name selection always used the Windows Setup default.
+    $recordedName = if ($receipt.PSObject.Properties['ComputerName']) { $receipt.ComputerName } else { '*' }
+    if ($recordedName -cne $ComputerName) { throw 'Existing answer media uses a different computer name.' }
     if ([guid]$receipt.VMId -ne $VMId -or $receipt.Disk -ne $diskFile.FullName -or $receipt.AnswerISO -ne $answerISO -or
         $receipt.WindowsIsoSHA256 -ne $ExpectedIsoSha256 -or $receipt.LicenseUI -ne $mode -or
         $receipt.PowerShellSHA256 -ne $GuestPowerShellSHA256 -or

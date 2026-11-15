@@ -154,6 +154,7 @@ if ($readyToProvision) {
         $imageOptions = @{}
         if ($fromHost) { $imageOptions = @{ ImageEdition=$owner.source.host.edition; ImageLanguage=$owner.source.host.language; ImageBuild=$owner.source.build; GuestAdministrator=$setupCredential } }
         else { Write-Output 'CAGE_GUEST_STAGE windows-11 account' }
+        $imageOptions['ComputerName'] = Get-CageGuestComputerName $Profile
         $created=& (Join-Path $PSScriptRoot 'new-windows-guest.ps1') -Name $name -IsoPath $IsoPath -ExpectedIsoSha256 $ExpectedIsoSha256 -InstanceDirectory $instance -Confirm:$false @imageOptions
         $vm=Hyper-V\Get-VM -Id $created.VMId
     } elseif ($vm.Count -eq 1) { $vm=$vm[0] }

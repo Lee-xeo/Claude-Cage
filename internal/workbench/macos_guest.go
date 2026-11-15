@@ -177,6 +177,9 @@ func (s *Server) attachMacOSGuest() error {
 	ctx, cancel := s.controlContext()
 	defer cancel()
 	err := s.checkMacOSGuest(ctx)
+	if err == nil {
+		err = s.syncNativeBrowserProfile(ctx)
+	}
 	s.mu.Lock()
 	if err != nil {
 		s.macComponentsChecked = false

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"io"
 	"os"
 	"path/filepath"
@@ -86,6 +87,11 @@ func (r *Runtime) Prepare(ctx context.Context, log io.Writer) error {
 	if err != nil {
 		return err
 	}
+	profile, err := guestprofile.Create(r.profile, guestprofile.Options{})
+	if err != nil {
+		return err
+	}
+	identity.Hostname = profile.Hostname
 	if _, err := r.output(ctx, r.createArguments(identity)...); err != nil {
 		return err
 	}

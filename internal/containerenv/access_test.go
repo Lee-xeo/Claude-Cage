@@ -40,7 +40,7 @@ func TestGuestSSHNegotiatesPinnedHostKeyAndRejectsReplacement(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(r.InstanceDir(), "known_hosts"), []byte(known), 0600); err != nil {
 		t.Fatal(err)
 	}
-	configuration, err := r.guestSSHConfiguration()
+	configuration, err := r.guestSSHConfiguration("alex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,12 @@ func TestGuestSSHNegotiatesPinnedHostKeyAndRejectsReplacement(t *testing.T) {
 			}
 			defer connection.Close()
 			_ = connection.SetDeadline(time.Now().Add(3 * time.Second))
-			serverConfig := &ssh.ServerConfig{NoClientAuth: true}
+			serverConfig := &ssh.ServerConfig{NoClientAuth: true, NoClientAuthCallback: func(conn ssh.ConnMetadata) (*ssh.Permissions, error) {
+				if conn.User() != "alex" {
+					return nil, fmt.Errorf("unexpected login account %q", conn.User())
+				}
+				return nil, nil
+			}}
 			serverConfig.AddHostKey(ecdsaHost)
 			serverConfig.AddHostKey(hostKey)
 			server, _, _, err := ssh.NewServerConn(connection, serverConfig)

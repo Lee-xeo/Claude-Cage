@@ -28,10 +28,12 @@ const clipboardWireLimit = 30 << 20
 
 // 保留当前后端配套的客机脚本，使已有 Linux 客机也能建立剪贴板连接。
 // 将脚本压缩为单个参数，避免完整脚本经过两层转义后超出 Windows 进程命令行上限。
-var linuxClipboardCommand = sync.OnceValues(func() (string, error) {
+var linuxClipboardCommand = sync.OnceValues(func() (string, error) { return compressedClipboardCommand(cage.SharedClipboardHelper) })
+
+func compressedClipboardCommand(script string) (string, error) {
 	var compressed bytes.Buffer
 	writer := zlib.NewWriter(&compressed)
-	if _, err := io.WriteString(writer, cage.SharedClipboardHelper); err != nil {
+	if _, err := io.WriteString(writer, script); err != nil {
 		return "", err
 	}
 	if err := writer.Close(); err != nil {
@@ -41,7 +43,7 @@ var linuxClipboardCommand = sync.OnceValues(func() (string, error) {
 	const bootstrap = `import base64,sys,zlib; exec(compile(zlib.decompress(base64.b64decode(sys.argv.pop(1))), '<cage-shared-clipboard>', 'exec'))`
 	return "exec sudo -n /usr/bin/python3 -c " + shellescape.Quote(bootstrap) + " " +
 		base64.StdEncoding.EncodeToString(compressed.Bytes()), nil
-})
+}
 
 type clipboardPayload struct {
 	Hello   *clipboardHello `json:"hello,omitempty"`
@@ -101,7 +103,11 @@ func (s *Server) clipboardCommand(ctx context.Context, operation string, selecti
 		}
 		return cmd, "guest", nil
 	}
-	command, err := linuxClipboardCommand()
+	helper, err := s.linuxTemplate(cage.SharedClipboardHelper)
+	if err != nil {
+		return nil, "", err
+	}
+	command, err := compressedClipboardCommand(helper)
 	if err != nil {
 		return nil, "", err
 	}

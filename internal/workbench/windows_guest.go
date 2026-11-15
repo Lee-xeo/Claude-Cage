@@ -159,6 +159,9 @@ func (s *Server) attachWindowsGuestContext(parent context.Context) error {
 	if err == nil {
 		err = s.ensureProjectShare(s.environmentDir())
 	}
+	if err == nil {
+		err = s.syncNativeBrowserProfile(ctx)
+	}
 	s.mu.Lock()
 	if s.storageRecoveryError != "" {
 		err = errors.New(s.storageRecoveryError)
