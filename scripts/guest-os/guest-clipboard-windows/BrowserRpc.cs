@@ -477,7 +477,7 @@ internal static class BrowserRpc
     internal static JsonObject Status()
     {
         var root = AppContext.BaseDirectory;
-        var installed = new[] { "node.exe", "windows-browser.mjs", "browser-protocol.mjs", "windows-browser-extensions.mjs", "playwright/index.mjs", "modules/browser-clipboard.mjs", "modules/browser-uploads.mjs", "modules/browser-downloads.mjs", "modules/browser-cookies.mjs", "modules/browser-extensions.mjs", "modules/browser-vault.mjs", "split-extension/manifest.json", "split-extension/control.html", "split-extension/control.js" }.All(file => File.Exists(Path.Combine(root, file)));
+        var installed = new[] { "node.exe", "windows-browser.mjs", "browser-protocol.mjs", "device-observation.mjs", "windows-browser-extensions.mjs", "playwright/index.mjs", "modules/browser-clipboard.mjs", "modules/browser-uploads.mjs", "modules/browser-downloads.mjs", "modules/browser-cookies.mjs", "modules/browser-extensions.mjs", "modules/browser-vault.mjs", "split-extension/manifest.json", "split-extension/control.html", "split-extension/control.js" }.All(file => File.Exists(Path.Combine(root, file)));
         installed &= BrowserExecutableInstalled();
         var network = false;var phoneNetwork = false;
         try

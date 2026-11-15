@@ -34,9 +34,11 @@ $createAnswer = [scriptblock]::Create($selection.Extent.Text)
 $script:prompts = 0
 function Get-Credential { param($UserName, $Message); $script:prompts++; return $credential }
 $fromHost = $false
+$ComputerName = 'Office-PC'
 $GuestAdministrator = $null
 . $createAnswer
 Assert-Check ($script:prompts -eq 1 -and $answer.SelectNodes('//u:LocalAccount', $ns).Count -eq 1) 'The manual route did not collect an offline account.'
+Assert-Check ($answer.SelectSingleNode('//u:ComputerName', $ns).InnerText -ceq $ComputerName) 'The manual route dropped the selected computer name.'
 . $createAnswer
 Assert-Check ($script:prompts -eq 1) 'An explicit credential prompted again.'
 $fromHost = $true
@@ -45,6 +47,7 @@ $ImageLanguage = 'zh-CN'
 . $createAnswer
 Assert-Check ($answer.SelectSingleNode('//u:LocalAccount/u:Name', $ns).InnerText -ceq 'cagesetup') 'Clone setup account changed.'
 Assert-Check ($answer.SelectSingleNode('//u:UILanguage', $ns).InnerText -ceq 'zh-CN') 'Clone locale changed.'
+Assert-Check ($answer.SelectSingleNode('//u:ComputerName', $ns).InnerText -ceq $ComputerName) 'The clone route dropped the selected computer name.'
 
 # The owner's progress reader accepts only known stages and reads the final
 # stage after process exit. Arbitrary child output never becomes UI content.

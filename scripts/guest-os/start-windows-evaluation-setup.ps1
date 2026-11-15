@@ -125,7 +125,7 @@ try {
                 Edition = $edition.EditionId; ImageIndex = $edition.ImageIndex
                 WindowsIsoSHA256 = $ExpectedIsoSha256; AnswerISO = $answerISO
                 AnswerSHA256 = (Get-FileHash -LiteralPath $stageISO -Algorithm SHA256).Hash
-                LicenseUI = $mode; RequiresMicrosoftOOBE = $true
+                LicenseUI = $mode; RequiresMicrosoftOOBE = $true; ComputerName = $ComputerName
                 PowerShellVersion = $GuestPowerShellVersion; PowerShellSHA256 = $GuestPowerShellSHA256
             }
             if ($AcceptEvaluationTerms) { $metadata['EvaluationTermsAcceptedUtc'] = [DateTime]::UtcNow.ToString('o') }
@@ -141,6 +141,9 @@ try {
     }
     $mediaReceipt = Join-Path $mediaDir 'receipt.json'
     $receipt = Get-Content -LiteralPath $mediaReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
+    # Media created before name selection always used the Windows Setup default.
+    $recordedName = if ($receipt.PSObject.Properties['ComputerName']) { $receipt.ComputerName } else { '*' }
+    if ($recordedName -cne $ComputerName) { throw 'Existing answer media uses a different computer name.' }
     if ([guid]$receipt.VMId -ne $VMId -or $receipt.Disk -ne $diskFile.FullName -or $receipt.AnswerISO -ne $answerISO -or
         $receipt.WindowsIsoSHA256 -ne $ExpectedIsoSha256 -or $receipt.LicenseUI -ne $mode -or
         $receipt.PowerShellSHA256 -ne $GuestPowerShellSHA256 -or

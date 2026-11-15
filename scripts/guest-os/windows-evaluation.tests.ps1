@@ -94,6 +94,7 @@ try {
     $script:mounts = 0
     $script:answerAttachments = 0
     $Start = $false
+    $ComputerName = 'Study-PC'
     [switch]$AcceptEvaluationTerms = $false
     function Get-VM { param($Id) $script:testVM }
     function Get-VMFirmware { param($VM) [pscustomobject]@{SecureBoot='On'; SecureBootTemplate='MicrosoftWindows'} }
@@ -153,6 +154,11 @@ try {
     $ready = & $orchestration
     Assert-Check ($ready.LicenseUI -eq 'native' -and !$ready.PSObject.Properties['EvaluationTermsAcceptedUtc']) 'Native setup receipt claimed acceptance'
     Assert-Check ($script:answerAttachments -eq 1) 'Reused VM received duplicate DVD'
+    $publishedAnswer = [xml][IO.File]::ReadAllText($ready.AnswerISO)
+    Assert-Check ($publishedAnswer.SelectSingleNode('//u:ComputerName', $ns).InnerText -ceq $ComputerName) 'The selected name did not reach the answer media.'
+    $ComputerName = 'Other-PC'
+    Expect-Error { & $orchestration } 'computer name'
+    $ComputerName = 'Study-PC'
     $AcceptEvaluationTerms = $true
     $ready = & $orchestration
     Assert-Check ($ready.LicenseUI -eq 'accepted' -and [bool]$ready.EvaluationTermsAcceptedUtc) 'Explicit acceptance not recorded'
