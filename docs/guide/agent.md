@@ -108,7 +108,11 @@ cage agent call proxy.select --input /private/path/selection.json --wait 2m
 cage agent call proxy.status
 ```
 
-链式代理使用 `proxy.route`，输入 `{"node_ids":["入口ID","最终出口ID"]}`，顺序为入口到出口。更新订阅使用 `proxy.refresh` 和已有来源 `id`；`proxy.import` 每次创建来源，不能盲目重试。成功应用代理只表示代理已准备好，客机启动后的安全检查还需单独验证。
+链式代理使用 `proxy.route`，输入 `{"node_ids":["入口ID","最终出口ID"]}`，顺序为入口到出口。更新订阅使用 `proxy.refresh` 和已有来源 `id`；`proxy.import` 每次创建来源，不能盲目重试。
+
+`proxy.import` 成功表示节点格式和核心配置通过校验。应用节点后，用 `settings.get` 读取完整设置，再将设置对象作为 `settings.probe` 的输入，通过所选代理发起真实 HTTPS 请求，核对返回的出口 IP 和位置。报告时分别说明导入校验、实际连通性与出口验证结果；主机上其他代理客户端可用或核心进程正在运行，都不能代替实际出口验证。客机启动后，仍需按下文核对 `network.check` 和当前网络授权，确认终端与浏览器等路径通过检查。
+
+VLESS + TCP + REALITY 节点若在语法校验通过后报 `REALITY authentication failed`，先对照原客户端与服务端参数，再按[网络指南的 REALITY 排查步骤](network.md#vless-reality-握手失败)检查 `reality-opts.support-x25519mlkem768`。按节点要求只调整这一项，重新导入、应用并重复相同的 HTTPS 与出口验证；不要批量改写所有 REALITY 节点、关闭证书校验或绕过出口规则。节点地址、UUID、公钥、short-id 和原始日志仍应留在私有排查材料中。
 
 ### 准备环境并打开项目
 

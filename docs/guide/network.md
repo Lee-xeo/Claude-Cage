@@ -3,7 +3,7 @@ title: 网络与代理
 description: 导入节点与订阅、配置多次中转，理解联网检查、时区和出口变化规则。
 group: 开始使用
 order: 2
-keywords: Clash Mihomo YAML SOCKS5 SSH 私钥 住宅 IP DNS DoH 暂停 断网 代理链 订阅
+keywords: Clash Mihomo YAML VLESS REALITY ML-KEM SOCKS5 SSH 私钥 住宅 IP DNS DoH 暂停 断网 代理链 订阅
 ---
 <figure class="guide-shot">
   <a href="../../www/public/docs/screenshots/proxy-subscription.jpg" target="_blank" rel="noopener" aria-label="查看原图：添加订阅链接与首次主机下载选项"><img src="../../www/public/docs/screenshots/proxy-subscription.jpg" alt="添加订阅链接与首次主机下载选项" width="2560" height="1764" loading="lazy" decoding="async" /></a>
@@ -21,6 +21,11 @@ keywords: Clash Mihomo YAML SOCKS5 SSH 私钥 住宅 IP DNS DoH 暂停 断网 �
 | 手动节点 | 选择 HTTP、SOCKS5 或 SSH，填写服务器、端口和认证信息。SSH 默认端口为 22，用户名必填；可选择密码或私钥认证。私钥认证须粘贴完整私钥内容，加密私钥还需填写私钥口令。 |
 
 点击“导入并验证”，进入“节点”，选最终出口，再点“应用代理”。“保存设置”用于其他设置，不能替代应用代理。未应用的选择只是草稿。
+
+“导入并验证”检查节点格式和核心配置，成功后仍需验证实际连接与出口：
+
+1. 应用节点后，在“设置 → 网络与代理”点击“验证出口”。该检查通过所选代理发起真实 HTTPS 请求，确认能取得出口 IP 和位置，并与预期出口核对；主机上其他代理客户端能够访问外网，不能代替这一步。
+2. 启动工作环境，查看底部网络状态及检查结果。宿主、客机终端和浏览器的出口采样及其他关键检查通过后，才会显示“已联网”。失败项的处理见[为什么应用了节点仍然离线](#为什么应用了节点仍然离线)。
 
 订阅必须包含 `proxies` 或 `payload` 节点。Base64 列表、单个节点分享链接、只引用远程 provider 的配置暂不支持。导入只采用支持的节点与代理链，不采用订阅中的主机系统代理、TUN、监听端口或直连规则。
 
@@ -125,6 +130,21 @@ proxies:
 业务 DNS 通过所选代理转发。节点域名的启动解析属于准备通信，与客机业务 DNS 的设置分开。Cage 不修改主机系统代理或 TUN，也不改变本机其他代理软件的节点。
 
 代理页“诊断”可检查核心状态、重启 Cage 核心或选择独立监听端口。端口占用时选择未占用端口即可，修改后按提示重启环境。具体症状见[故障排查](troubleshooting.md#节点已应用但无法联网)。
+
+### VLESS REALITY 握手失败
+
+从 V2rayN 等客户端迁入 VLESS + TCP + REALITY 节点后，可能出现配置校验通过、真实 HTTPS 请求失败，核心日志报 `REALITY authentication failed` 的情况。先逐项对照原客户端与服务端参数，包括服务器、端口、UUID、传输方式、SNI、客户端指纹、flow、公钥和 short-id；配置语法正确仍可能存在握手兼容问题。
+
+参数核对一致后，可按 [Mihomo 官方 TLS 文档](https://wiki.metacubex.one/config/proxies/tls/#reality-optssupport-x25519mlkem768)检查 `reality-opts.support-x25519mlkem768`，该选项用于支持 X25519-MLKEM768 密钥交换。对于需要此兼容选项的节点，在该节点现有的 `reality-opts` 中保留原公钥和 short-id，并添加：
+
+```yaml
+reality-opts:
+  public-key: <原节点公钥>
+  short-id: <原节点 short-id>
+  support-x25519mlkem768: true
+```
+
+这是节点内的配置片段，需放回完整的 Clash/Mihomo YAML 后重新导入、应用。保留原配置，每次只调整这一项，再重复相同的 HTTPS 与出口检查。部分节点在启用此项后可以恢复连接；请按原节点与服务端要求使用，不要对所有 REALITY 节点无条件添加或重写参数。若仍失败，保留日志继续排查，不能仅凭该错误判断服务端版本或设置，也不要通过关闭证书校验、放宽出口规则或启用直连回退处理。
 
 ## 通过 Tailscale 私网使用 SSH
 
