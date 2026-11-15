@@ -45,6 +45,16 @@ try {
   await page.keyboard.press("Meta+v");
   await waitFor(() => display.stats.keys.some(key => key.down && key.symbol === 118));
   assert.equal(display.stats.clipboardUpdates.at(-1).text,"new host copy");
+  const png = await page.evaluate(() => document.createElement("canvas").toDataURL("image/png").split(",")[1]);
+  clipboard = { png }; revision++;
+  display.stats.keys.length = 0;
+  assert.equal(await page.evaluate(() => window.cageEditAction("paste")), true);
+  await waitFor(() => display.stats.keys.length >= 4);
+  assert.deepEqual(display.stats.keys, [
+    { down:true, symbol:0xffe3 }, { down:true, symbol:118 },
+    { down:false, symbol:118 }, { down:false, symbol:0xffe3 },
+  ]);
+  assert.equal(display.stats.clipboardUpdates.at(-1).png, png);
   assert.equal(state.requests.some(request => request.path === "/input/image"),false,"synchronized paste uses the actual guest clipboard");
 
   await page.getByRole("button",{ name:"工作台", exact:true }).click();

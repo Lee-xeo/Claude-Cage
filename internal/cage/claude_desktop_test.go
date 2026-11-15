@@ -104,6 +104,28 @@ func TestDesktopCallbackFocusAfterHandoff(t *testing.T) {
 	}
 }
 
+func TestTailnetBrowserOpenPassesOnlyReturnSignal(t *testing.T) {
+	bin := t.TempDir()
+	helper := filepath.Join(bin, "return-helper")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\""), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\nshift 4\nexec \"$@\""), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "id"), []byte("#!/bin/sh\nprintf '%s' \"$TEST_IDENTITY\""), 0755); err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(guestOpen, "/usr/local/bin/cage-tailnet", helper)
+	for _, identity := range []string{"cage", "cage-browser"} {
+		cmd := exec.Command("sh", "-c", script, "open", "tailscale://return?code=private-fixture")
+		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "TEST_IDENTITY="+identity)
+		if out, err := cmd.CombinedOutput(); err != nil || string(out) != "--browser-return\n" {
+			t.Fatalf("unexpected handoff for %s: %q %v", identity, out, err)
+		}
+	}
+}
+
 func TestClaudeDesktopInstallerRejectsUntrustedKey(t *testing.T) {
 	dir := t.TempDir()
 	commands := map[string]string{

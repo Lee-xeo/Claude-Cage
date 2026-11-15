@@ -137,6 +137,7 @@ func windowsPhoneDesktopFixture(t *testing.T) (*Server, string, *cage.EgressGate
 
 func TestWindowsPhoneDesktopProductionHandlerSharesWindowAndGuardsInput(t *testing.T) {
 	s, directory, _ := windowsPhoneDesktopFixture(t)
+	resumeRememberedPhoneHost(t, s)
 	id := uuid.NewString()
 	base := "/api/mobile/desktop/" + id
 	open := fmt.Sprintf(`{"id":%q,"width":390,"height":640,"pixel_ratio":2}`, id)
@@ -209,6 +210,20 @@ func TestWindowsPhoneDesktopProductionHandlerSharesWindowAndGuardsInput(t *testi
 	if !bytes.Contains(requests, []byte(`"phone_focus":"editable-focus"`)) || !bytes.Contains(requests, []byte(`"mask":1`)) || !bytes.Contains(requests, []byte(`"mask":0`)) {
 		t.Fatal("native input guard or release missing")
 	}
+	if w := windowsBrowserRequestForTest(s, "POST", "/api/account/lock", []byte("{}")); w.Code != 200 {
+		t.Fatalf("manual lock: %d", w.Code)
+	}
+	if w := windowsPhoneRequest(t, s, "GET", base+"/frame", "", "phone-window-room"); w.Code != 423 {
+		t.Fatalf("frame after manual lock: %d", w.Code)
+	}
+	post(map[string]any{"type": "key", "document": resized["document"], "focus": resized["focus"], "key": "Enter"}, 423)
+	if w := windowsBrowserRequestForTest(s, "POST", "/api/account/unlock", []byte(`{"password":"test-password"}`)); w.Code != 200 {
+		t.Fatalf("password unlock: %d", w.Code)
+	}
+	if w := windowsPhoneRequest(t, s, "POST", "/api/mobile/desktop/open", open, "phone-window-room"); w.Code != 200 {
+		t.Fatalf("reopen after password unlock: %d", w.Code)
+	}
+	readFrame()
 }
 
 func TestWindowsPhoneDesktopReadinessAndCapabilities(t *testing.T) {

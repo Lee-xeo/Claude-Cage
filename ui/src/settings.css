@@ -1,0 +1,633 @@
+/*
+ * Settings page design system.
+ *
+ * One type scale and spacing rhythm for every settings section. Sizes are in
+ * rem so the appearance "界面字号" preference keeps scaling the whole page.
+ * Rules are scoped to .settings-page so they win over the older shared rules
+ * in style.css and the per-component stylesheets without !important.
+ *
+ * Scale at the default 14px UI size:
+ *   xs 13px  help, footnotes, metadata
+ *   sm 14px  field labels, buttons, table cells
+ *   md 15px  body, inputs, row titles, navigation
+ *   lg 17px  group headings inside a section
+ *   xl 26px  section title
+ */
+.settings-page {
+  --s-xs: 0.9286rem;
+  --s-sm: 1rem;
+  --s-md: 1.0714rem;
+  --s-lg: 1.2143rem;
+  --s-xl: 1.8571rem;
+  --s-radius: 10px;
+  --s-control: 40px;
+  --s-content: 760px;
+  --s-gutter: max(48px, calc((100% - var(--s-content)) / 2));
+  line-height: 1.6;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+.settings-page .settings-sidebar {
+  width: max(var(--sidebar-width), 248px);
+  padding: 20px 14px;
+}
+.settings-page .back-to-workspace {
+  align-self: flex-start;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: var(--s-sm);
+  color: var(--muted);
+}
+.settings-page .back-to-workspace:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--strong);
+}
+.settings-page .settings-sidebar h2 {
+  margin: 28px 12px 16px;
+  font-size: 1.5714rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--strong);
+}
+.settings-page .settings-sidebar nav {
+  gap: 2px;
+}
+.settings-page .settings-sidebar nav button {
+  min-height: 40px;
+  padding: 8px 12px;
+  gap: 12px;
+  border-radius: 8px;
+  font-size: var(--s-md);
+  color: var(--ink);
+}
+.settings-page .settings-sidebar nav button svg {
+  color: var(--muted);
+}
+.settings-page .settings-sidebar nav button:hover:not(:disabled):not(.selected) {
+  background: var(--hover);
+}
+.settings-page .settings-sidebar nav button.selected {
+  font-weight: 600;
+  color: var(--strong);
+}
+.settings-page .settings-sidebar nav button.selected svg {
+  color: var(--strong);
+}
+
+/* ── Content column ──────────────────────────────────────── */
+.settings-page .settings-content {
+  padding: 48px var(--s-gutter) 72px;
+  font-size: var(--s-md);
+}
+.settings-page .settings-content.settings-content--remote {
+  padding: 48px clamp(16px, 4vw, 64px) 72px;
+}
+
+/* Section title: the one large heading on each page. */
+.settings-page .settings-content .section-title {
+  margin: 0 0 32px;
+}
+.settings-page .settings-content .section-title h3 {
+  margin: 0 0 8px;
+  font-size: var(--s-xl);
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: var(--strong);
+}
+.settings-page .settings-content .section-title p {
+  margin: 0;
+  font-size: var(--s-md);
+  line-height: 1.65;
+  color: var(--muted);
+}
+/* A second section title further down a page (e.g. IP 变化规则) reads as a
+   major group, so it gets a separator instead of competing with the page title. */
+.settings-page .settings-content .network-exit-policy .section-title {
+  margin-bottom: 24px;
+}
+.settings-page .settings-content .network-exit-policy {
+  margin-top: 48px;
+  padding-top: 40px;
+  border-top: 1px solid var(--line);
+}
+.settings-page .settings-content .network-exit-policy .section-title h3 {
+  font-size: var(--s-lg);
+  font-weight: 600;
+}
+.settings-page .settings-content .network-exit-policy .section-title p {
+  font-size: var(--s-sm);
+}
+
+/* Group headings inside a section. Only headings that open a group of
+   settings; headings inside cards, dialogs and lists keep their own layout. */
+.settings-page .settings-fields > h4,
+.settings-page .settings-fields > section > h4,
+.settings-page .environment-versions > h4,
+.settings-page .appearance-fields > h4,
+.settings-page .settings-group > h3 {
+  margin: 44px 0 16px;
+  font-size: var(--s-lg);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--strong);
+}
+.settings-page .settings-content h4 {
+  color: var(--strong);
+}
+.settings-page .settings-content h5 {
+  font-size: var(--s-md);
+  font-weight: 600;
+  color: var(--strong);
+}
+
+/* ── Form fields ─────────────────────────────────────────── */
+.settings-page .settings-content label:not(.check-line):not(.choice):not(.toggle-row) {
+  gap: 10px;
+  margin-bottom: 24px;
+  font-size: var(--s-sm);
+  font-weight: 600;
+  color: var(--strong);
+}
+.settings-page .settings-content input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+.settings-page .settings-content .inline-select-trigger {
+  height: var(--s-control);
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: var(--s-md);
+  font-weight: 400;
+  color: var(--strong);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.settings-page .settings-content input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.settings-page .settings-content input::placeholder {
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
+}
+
+/* Help text: muted, one step smaller, tucked under the field it explains. */
+.settings-page .settings-content .field-help,
+.settings-page .settings-content .footnote {
+  margin: 12px 0 24px;
+  font-size: var(--s-xs);
+  line-height: 1.7;
+  color: var(--muted);
+}
+.settings-page .settings-content label + .field-help {
+  margin-top: -14px;
+}
+.settings-page .settings-content .footnote + .field-help {
+  margin-top: -16px;
+}
+.settings-page .settings-content .footnote {
+  margin-top: 16px;
+}
+.settings-page .settings-content .check-line {
+  font-size: var(--s-sm);
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.settings-page .settings-content button:not(.text-button):not(.icon-button) {
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: var(--s-sm);
+}
+.settings-page .settings-content .text-button {
+  font-size: var(--s-sm);
+}
+
+/* ── Toggle rows ─────────────────────────────────────────── */
+.settings-page .settings-content .toggle-row {
+  gap: 24px;
+  margin: 0 0 24px;
+  padding: 4px 0 24px;
+}
+.settings-page .settings-content .toggle-row strong {
+  font-size: var(--s-md);
+  font-weight: 550;
+  color: var(--strong);
+}
+.settings-page .settings-content .toggle-row small {
+  margin-top: 4px;
+  font-size: var(--s-xs);
+  line-height: 1.65;
+  color: var(--muted);
+}
+.settings-page .toggle-row input,
+.settings-page .appearance-row input[role="switch"] {
+  width: 40px;
+  height: 24px;
+}
+.settings-page .toggle-row input:after,
+.settings-page .appearance-row input[role="switch"]:after {
+  width: 18px;
+  height: 18px;
+}
+.settings-page .toggle-row input:checked:after,
+.settings-page .appearance-row input[role="switch"]:checked:after {
+  transform: translateX(16px);
+}
+
+/* Inline notes under an automatic setting. */
+.settings-page .settings-content .inline-info {
+  align-items: center;
+  gap: 10px;
+  margin: -8px 0 24px;
+  padding: 12px 14px;
+  border-radius: var(--s-radius);
+  font-size: var(--s-xs);
+  line-height: 1.6;
+}
+.settings-page .settings-content .inline-info button {
+  font-size: var(--s-xs);
+  min-height: 24px;
+}
+
+/* ── Choice cards (keyboard habit) ───────────────────────── */
+.settings-page .settings-content .choice-list {
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.settings-page .settings-content .choice {
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: var(--s-radius);
+  transition: border-color 0.12s, background 0.12s;
+}
+.settings-page .settings-content .choice:hover:not(.checked) {
+  background: var(--hover);
+}
+.settings-page .settings-content .choice.checked {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.settings-page .settings-content .choice input {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+}
+.settings-page .settings-content .choice strong {
+  margin-bottom: 4px;
+  font-size: var(--s-md);
+  font-weight: 600;
+  color: var(--strong);
+}
+.settings-page .settings-content .choice small {
+  font-size: var(--s-xs);
+  line-height: 1.65;
+}
+
+/* ── Shortcut list ───────────────────────────────────────── */
+.settings-page .settings-content .shortcut-list {
+  border: 1px solid var(--line);
+  border-radius: var(--s-radius);
+  overflow: hidden;
+}
+.settings-page .settings-content .shortcut-list > div {
+  align-items: center;
+  min-height: 48px;
+  padding: 8px 18px;
+  font-size: var(--s-md);
+  color: var(--ink);
+}
+.settings-page .settings-content .shortcut-list > div:last-child {
+  border-bottom: 0;
+}
+.settings-page .settings-content .shortcut-list kbd {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--chrome);
+  font-size: var(--s-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--strong);
+}
+
+/* ── Summary rows, explanations, results ─────────────────── */
+.settings-page .setting-summary-row {
+  gap: 8px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  font-size: var(--s-sm);
+  font-weight: 600;
+  color: var(--strong);
+}
+.settings-page .setting-summary-row strong {
+  font-size: var(--s-md);
+}
+.settings-page .settings-content .project-explanation {
+  gap: 16px;
+  margin: 8px 0 0;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--s-radius);
+  background: var(--chrome);
+}
+.settings-page .settings-content .project-explanation strong {
+  font-size: var(--s-md);
+  font-weight: 600;
+  color: var(--strong);
+}
+.settings-page .settings-content .project-explanation p {
+  margin-top: 6px;
+  font-size: var(--s-xs);
+  line-height: 1.7;
+  color: var(--muted);
+}
+.settings-page .settings-content .probe-line {
+  gap: 14px;
+  margin: 4px 0 16px;
+}
+.settings-page .settings-content .probe-line span {
+  font-size: var(--s-xs);
+}
+.settings-page .settings-content .location-result {
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: var(--s-radius);
+}
+.settings-page .settings-content .location-result strong {
+  font-size: var(--s-md);
+}
+.settings-page .settings-content .location-result code {
+  font-size: var(--s-sm);
+}
+.settings-page .settings-content .location-result small {
+  font-size: var(--s-xs);
+  color: var(--muted);
+}
+.settings-page .settings-content .error-message {
+  padding: 12px 16px;
+  border-radius: var(--s-radius);
+  font-size: var(--s-sm);
+}
+
+/* ── Environment: versions table, resources, diagnostics ─── */
+.settings-page .environment-versions {
+  margin-top: 8px;
+}
+.settings-page .environment-tool-table {
+  margin: 8px 0 16px;
+  font-size: var(--s-sm);
+}
+.settings-page .environment-tool-table th {
+  font-size: var(--s-xs);
+  font-weight: 500;
+  color: var(--muted);
+}
+.settings-page .environment-tool-table th,
+.settings-page .environment-tool-table td {
+  padding: 12px 8px 12px 0;
+  border-bottom-color: var(--line);
+  vertical-align: top;
+}
+.settings-page .environment-tool-table td:first-child {
+  color: var(--strong);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.settings-page .environment-version-actions {
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+.settings-page .resource-fields {
+  gap: 24px;
+}
+.settings-page .settings-content .resource-input input {
+  height: 46px;
+  font-size: var(--s-lg);
+}
+.settings-page .resource-input > span,
+.settings-page .resource-fields small,
+.settings-page .resource-mode,
+.settings-page .resource-observation-note {
+  font-size: var(--s-xs);
+}
+.settings-page .resource-actions {
+  margin-top: 24px;
+}
+.settings-page .resource-runtime {
+  margin-top: 32px;
+  padding-top: 20px;
+}
+.settings-page .resource-runtime-heading h5 {
+  font-size: var(--s-md);
+}
+.settings-page .resource-runtime .setting-summary-row {
+  padding: 12px 0;
+  font-size: var(--s-md);
+  font-weight: 400;
+  color: var(--ink);
+}
+.settings-page .resource-runtime .setting-summary-row strong {
+  font-weight: 500;
+  color: var(--strong);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Account ─────────────────────────────────────────────── */
+.settings-page .account-settings {
+  max-width: none;
+}
+.settings-page .account-settings h4 {
+  margin: 0;
+  font-size: var(--s-lg);
+  font-weight: 600;
+}
+/* Account forms space their children with flex gap, so field margins reset. */
+.settings-page .settings-content .account-field > label:not(.check-line):not(.choice):not(.toggle-row) {
+  margin: 0;
+}
+.settings-page .settings-content .account-settings fieldset > .field-help {
+  margin: -8px 0 4px;
+}
+.settings-page .account-saved,
+.settings-page .account-device-option strong {
+  font-size: var(--s-md);
+}
+.settings-page .account-settings-note,
+.settings-page .account-device-option small {
+  font-size: var(--s-xs);
+}
+
+/* ── Password vault ──────────────────────────────────────── */
+.settings-page .vault-note {
+  font-size: var(--s-xs);
+}
+.settings-page .vault-entry strong {
+  font-size: var(--s-md);
+}
+.settings-page .settings-content .vault-actions button {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: var(--s-xs);
+}
+
+/* ── Appearance ──────────────────────────────────────────── */
+.settings-page .appearance-row > div:first-child > span {
+  font-size: var(--s-md);
+  font-weight: 550;
+  color: var(--strong);
+}
+.settings-page .appearance-row p,
+.settings-page .appearance-import p,
+.settings-page .theme-options-hint,
+.settings-page .theme-preset-summary p,
+.settings-page .appearance-save-state {
+  font-size: var(--s-xs);
+  color: var(--muted);
+}
+.settings-page .appearance-mode button,
+.settings-page .appearance-import button,
+.settings-page .theme-library button,
+.settings-page .theme-color-group summary {
+  font-size: var(--s-sm);
+}
+.settings-page .theme-card-heading strong,
+.settings-page .appearance-import strong,
+.settings-page .settings-content .theme-library-heading h4 {
+  font-size: var(--s-md);
+  font-weight: 600;
+  color: var(--strong);
+}
+.settings-page .theme-card-heading small,
+.settings-page .theme-customize,
+.settings-page .theme-color-field > span,
+.settings-page .theme-library-manage span,
+.settings-page .theme-status-preview span,
+.settings-page .theme-reset-colors {
+  font-size: var(--s-xs);
+}
+/* Hex and number fields are sized for their content; keep them compact. */
+.settings-page .settings-content .theme-color-field input:not([type="color"]),
+.settings-page .settings-content .font-size-control input {
+  height: 36px;
+  padding: 0 8px;
+  font-size: var(--s-sm);
+}
+.settings-page .theme-card-heading .inline-select,
+.settings-page .appearance-control .inline-select,
+.settings-page .font-size-control {
+  font-size: var(--s-md);
+}
+
+/* ── Proxy (px-based component, lifted to the same scale) ── */
+.settings-page .proxy-node small,
+.settings-page .proxy-source small,
+.settings-page .proxy-connection small,
+.settings-page .proxy-summary > div > span,
+.settings-page .proxy-route-heading p,
+.settings-page .proxy-hop-control small,
+.settings-page .proxy-route-actions > span,
+.settings-page .proxy-toolbar > span,
+.settings-page .proxy-yaml-help,
+.settings-page .proxy-yaml-status,
+.settings-page .proxy-yaml-error,
+.settings-page .proxy-notice,
+.settings-page .proxy-diagnostics,
+.settings-page .proxy-source-error,
+.settings-page .proxy-source-skipped,
+.settings-page .proxy-empty p,
+.settings-page .proxy-delay,
+.settings-page .proxy-node-role {
+  font-size: var(--s-xs);
+}
+.settings-page .proxy-node-choice strong,
+.settings-page .proxy-source strong,
+.settings-page .proxy-yaml-file strong {
+  font-size: var(--s-md);
+}
+
+/* ── About ───────────────────────────────────────────────── */
+.settings-page .about-build > div {
+  padding: 14px 0;
+  font-size: var(--s-md);
+}
+.settings-page .about-result h4 {
+  margin: 0 0 8px;
+  font-size: var(--s-md);
+}
+.settings-page .about-result-detail {
+  font-size: var(--s-xs);
+}
+
+/* ── Remote connection ───────────────────────────────────── */
+.settings-page .settings-content .remote-link-settings .section-title h3 {
+  font-size: var(--s-xl);
+}
+.settings-page .settings-content .remote-relay-settings h4 {
+  margin-top: 0;
+}
+.settings-page .remote-pair-privacy {
+  font-size: var(--s-xs);
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+.settings-page .settings-footer {
+  padding: 14px var(--s-gutter);
+  gap: 12px;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
+.settings-page .settings-footer .save-note {
+  margin-right: auto;
+  font-size: var(--s-sm);
+}
+.settings-page .settings-footer button {
+  min-height: 38px;
+  padding: 6px 18px;
+  border-radius: 8px;
+  font-size: var(--s-sm);
+}
+.settings-page .settings-footer button.primary {
+  font-weight: 550;
+}
+
+/* ── Narrow windows ──────────────────────────────────────── */
+@media (max-width: 1050px) {
+  .settings-page {
+    --s-gutter: 40px;
+  }
+  .settings-page .settings-sidebar {
+    width: 224px;
+  }
+}
+@media (max-width: 720px) {
+  .settings-page {
+    --s-gutter: 24px;
+    --s-xl: 1.5714rem;
+  }
+  .settings-page .settings-sidebar {
+    width: 192px;
+  }
+  .settings-page .settings-content {
+    padding-top: 32px;
+  }
+}
+@media (max-width: 520px) {
+  .settings-page {
+    --s-gutter: 16px;
+  }
+  .settings-page .settings-sidebar {
+    width: 148px;
+    padding: 14px 8px;
+  }
+  .settings-page .settings-sidebar nav button {
+    min-height: 36px;
+    padding: 6px 8px;
+    gap: 8px;
+    font-size: var(--s-sm);
+  }
+  .settings-page .settings-content {
+    padding-top: 28px;
+  }
+  .settings-page .settings-footer button {
+    padding: 6px 10px;
+  }
+}

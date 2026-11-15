@@ -425,6 +425,15 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             guard !controllerNeedsUpdate else { replyHandler(nil,"后台版本尚未同步，更新未完成"); return }
             appUpdater?.markLaunchReady()
             replyHandler(true,nil)
+        case "appReference":
+            let path: String
+            switch body["kind"] as? String {
+            case "source": path = "commits/main"
+            case "releases": path = "releases"
+            default: replyHandler(nil,"未知的项目页面"); return
+            }
+            let opened = NSWorkspace.shared.open(URL(string: "https://github.com/Lee-xeo/Claude-Cage/" + path)!)
+            replyHandler(opened ? true : nil, opened ? nil : "无法打开项目页面，请检查默认浏览器")
         case "appUpdate":
             guard let operation = body["operation"] as? String, ["status", "check", "install", "cancel"].contains(operation) else { replyHandler(nil,"更新操作无效"); return }
             replyHandler(appUpdater.handle(operation),nil)
@@ -575,6 +584,23 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                     guard data.count <= 256 * 1024, let text = String(data: data, encoding: .utf8) else { replyHandler(nil, "请选择不超过 256 KB 的 UTF-8 JSON 主题文件"); return }
                     replyHandler(text, nil)
                 } catch { replyHandler(nil, "无法读取主题文件，请检查文件权限") }
+            }
+        case "saveRecoveryKey":
+            guard !nativeFilePanelOpen else { replyHandler(nil, "请先完成当前文件窗口"); return }
+            guard let key = body["key"] as? String, key.utf8.count == 71,
+                  key.range(of: "^[A-F0-9]{8}(-[A-F0-9]{8}){7}$", options: .regularExpression) != nil,
+                  let data = (key + "\n").data(using: .utf8) else { replyHandler(nil, "恢复密钥格式无效"); return }
+            let panel = NSSavePanel(); panel.allowedContentTypes = [.plainText]; panel.canCreateDirectories = true
+            panel.nameFieldStringValue = "账户恢复密钥.txt"; panel.prompt = "保存"; panel.title = "保存账户恢复密钥"
+            nativeFilePanelOpen = true
+            panel.beginSheetModal(for: window) { response in
+                self.nativeFilePanelOpen = false
+                guard response == .OK, let url = panel.url else { replyHandler(false, nil); return }
+                do {
+                    try data.write(to: url, options: .atomic)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                    replyHandler(true, nil)
+                } catch { replyHandler(nil, "恢复密钥未能保存，请检查保存位置的权限") }
             }
         case "exportTheme":
             guard let text = body["text"] as? String, let data = text.data(using: .utf8), data.count <= 256 * 1024,

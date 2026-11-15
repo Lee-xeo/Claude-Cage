@@ -1,11 +1,15 @@
 export function operationName(path = "", method = "GET") {
   const reading = method === "GET";
+  if (path === "/client/about") return reading ? "读取软件版本" : "检测应用更新";
   if (path.startsWith("/api/mobile/cli")) return reading ? "读取会话消息" : "提交会话操作";
   if (path.startsWith("/api/mobile/browser")) return "连接电脑上的浏览器";
   if (path.startsWith("/api/mobile/desktop")) return "连接电脑上的 Claude Desktop";
   if (path.startsWith("/environment/resources")) return reading ? "读取资源配置" : "应用资源配置";
   if (path === "/environment/initialization") return reading ? "读取初始化进度" : "保存初始化状态";
   if (path.startsWith("/environment/versions")) return "读取环境组件版本";
+  if (path === "/environment/cache/inventory") return "盘点当前环境缓存";
+  if (path === "/environment/cache/clean") return "清理所选缓存";
+  if (path === "/environment/cache/restore") return "恢复缓存";
   if (path.startsWith("/environment/")) return "更新环境";
   if (path.startsWith("/input/files") || path.startsWith("/browser/files")) return "传递文件";
   if (path.startsWith("/tailscale")) return reading ? "读取 Tailscale 状态" : "操作 Tailscale";

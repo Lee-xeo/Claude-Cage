@@ -98,6 +98,25 @@ try {
   await page.locator('.browser-upload-body input[type="file"]').setInputFiles({ name: "native-dialog.txt", mimeType: "text/plain", buffer: Buffer.from("chooser bytes") });
   await waitForCount("finish", 4);
   assert.equal(operations.filter(item => item.action === "finish").at(-1).body.id, "99999999-2222-4333-8444-111111111111");
+  const nativeCalls = [];
+  await page.exposeFunction("chooserBridge", (body) => {
+    nativeCalls.push(body);
+    if (body.action === "chooseUploadFiles") return nativeCalls.length === 1 ? { canceled: true } : { fileSelection: "fixture-image" };
+    assert.equal(body.action, "uploadHostFiles");
+    assert.equal(body.id, chooser.id);
+    assert.equal(body.target, "desktop");
+    assert.equal(body.selection, "fixture-image");
+    return { ok: true };
+  });
+  await page.evaluate(() => { window.cageNativeBridge = { postMessage: window.chooserBridge }; });
+  chooser = { id: "99999999-2222-4333-8444-222222222222", multiple: false, target: "desktop" };
+  await waitForCount("cancel", 2);
+  assert.equal(operations.at(-1).body.id, "99999999-2222-4333-8444-222222222222");
+  chooser = { id: "99999999-2222-4333-8444-333333333333", multiple: false, target: "desktop" };
+  await waitForCount("finish", 5);
+  assert.deepEqual(nativeCalls.map(call => call.action), ["chooseUploadFiles", "chooseUploadFiles", "uploadHostFiles"]);
+  assert.equal(nativeCalls[0].multiple, false);
+  assert.equal(operations.at(-1).body.id, "99999999-2222-4333-8444-333333333333");
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: "PASS", engine, checks: ["attachment button", "file drop", "PNG paste", "failed upload cancels", "retry after failure", "native chooser request"], operations: operations.map(({ body, ...item }) => ({ ...item, ...(body ? { target: body.target, kind: body.kind } : {}) })) }));
+  console.log(JSON.stringify({ result: "PASS", engine, checks: ["attachment button", "file drop", "PNG paste", "failed upload cancels", "retry after failure", "HTML chooser fallback", "native chooser automatic open, cancel and select"], operations: operations.map(({ body, ...item }) => ({ ...item, ...(body ? { target: body.target, kind: body.kind } : {}) })) }));
 } finally { await browser.close(); await vite.close(); }

@@ -356,11 +356,6 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 			return errors.New("请从首次安装入口完成本机系统材料准备")
 		}
 	}
-	// Check before proxy activation or the first image download. The UI cannot
-	// bypass this gate by calling /start or applying settings directly.
-	if err := requireHostGit(s.operationContext()); err != nil {
-		return err
-	}
 	if _, err := validateWorkspace(s.environmentDir(), s.profile); err != nil {
 		return err
 	}
@@ -524,7 +519,7 @@ func (s *Server) stopEnvironment() (returned error) {
 	}
 	s.setMessage("正在停止 Cage 环境…")
 	if (explicitStop || s.jobs.snapshot().Kind == "storage") && cage.InstanceJobID(filepath.Join(s.profile, "state"), "base-building") != "" {
-		if err := s.runCage("stop", "base-building"); err != nil {
+		if err := s.runCage("stop", "--keep-proxy", "base-building"); err != nil {
 			return err
 		}
 	}
@@ -548,7 +543,9 @@ func (s *Server) stopEnvironment() (returned error) {
 	if _, err := os.Stat(filepath.Join(s.instanceDir(), "lima.yaml")); !containerenv.Configured(s.profile) && os.IsNotExist(err) {
 		return nil
 	}
-	if err := s.runCage("stop"); err != nil {
+	// Internal restarts keep the already validated core alive. Explicit stop
+	// releases it above only after the environment has stopped successfully.
+	if err := s.runCage("stop", "--keep-proxy"); err != nil {
 		return err
 	}
 	return nil

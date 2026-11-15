@@ -73,7 +73,7 @@ internal sealed class AppUpdater : IDisposable
     {
         cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(25));
         var token = cancellation.Token;
-        Change("checking", "正在通过所选代理检查更新");
+        Change("checking", "正在检查更新，优先使用主机网络");
         string? archive = null;
         string retryAt = "";
         using var process = new Process { StartInfo = Backend.StartInfo(Backend.Executable, "app-update", checkOnly ? "check" : "download") };

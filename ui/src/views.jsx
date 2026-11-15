@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import { useAppearance } from "./appearance";
 import { terminalTheme, systemCodeFont } from "./appearance-state.mjs";
-import { Terminal } from "@xterm/xterm";
+import { Terminal } from "../.generated/xterm.mjs";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { claudeLoginLink, isClaudeLoginLink } from "./terminal-login-link.mjs";
 import { FitAddon } from "@xterm/addon-fit";
@@ -22,6 +22,7 @@ import { installRemoteInput } from "./remote-input";
 import { useWindowVisibility } from "./window-visibility";
 import { displayGeometry, displaySizeSync, watchPixelRatio } from "./remote-display.mjs";
 import { installLocalCursorFallback } from "./remote-cursor.mjs";
+import { guestKeys } from "./guest-keys.mjs";
 import { RefreshCw, Clipboard, ArrowUpRight } from "lucide-react";
 import { SessionAccount } from "./session-account";
 import "@xterm/xterm/css/xterm.css";
@@ -68,6 +69,7 @@ export const RemoteView = forwardRef(function RemoteView(
       resizeObserver,
       unwatchDensity,
       sizeSync,
+      keys,
       reconnectTimer;
     setConnection("connecting");
     setSizeError(false);
@@ -99,6 +101,12 @@ export const RemoteView = forwardRef(function RemoteView(
           },
         );
         rfb.current = client;
+        if (!/^(windows|darwin|macos)/.test(guestPlatform || "")) {
+          // A Linux guest takes key events as sent; see guest-keys.mjs. The
+          // other systems arrive here as "macos" and "windows-11".
+          keys = guestKeys(client.sendKey.bind(client));
+          client.sendKey = keys.sendKey;
+        }
         installLocalCursorFallback(client._cursor,
           !desktop && ["darwin", "macos"].includes(guestPlatform));
         client.scaleViewport = true;
@@ -228,6 +236,7 @@ export const RemoteView = forwardRef(function RemoteView(
           if (current.current.visible && !document.activeElement?.closest(".chrome")) client.focus();
         });
         client.addEventListener("disconnect", () => {
+          keys?.stop();
           if (disposed) return;
           input.current?.dispose();
           input.current = null;
@@ -253,6 +262,7 @@ export const RemoteView = forwardRef(function RemoteView(
       unwatchDensity?.();
       input.current?.dispose();
       input.current = null;
+      keys?.stop();
       client?.disconnect();
       rfb.current = null;
     };

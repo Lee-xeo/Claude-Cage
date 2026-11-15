@@ -56,7 +56,7 @@ Claude Cage ተርሚናልን፣ አሳሽን፣ አርታዒን እና ኦፊ�
 ይህንን ጥያቄ ወደ AI ወኪልዎ ይላኩ (ኮዴክስ ፣ ዲኤስኤስ ፣ የስራ ጓደኛ - ምናልባት Claude ኮድ 😁 ላይሆን ይችላል)
 
 ```markdown
-እንድጫን እርዳኝ። https://github.com/Lee-xeo/Claude-Cage እና የCage's network proxy አዋቅር በእኔ የአከባቢ ግጭት የ xxx የመጨረሻ ነጥብ ለመጠቀም።
+የ https://github.com/Lee-xeo/Claude-Cage የቅርብ ጊዜ ምንጭ ኮድ አውርድ፣ ገንባ፣ ጥቅል አድርግና ጫን። የCage ፕሮክሲ በአካባቢዬ ያለውን የClash xx ኖድ ተጠቅሞ በእኔ xx IP እንዲወጣ አዋቅር። ሂደቱን በሙሉ ተከታተል፣ ችግሮችን በቀጥታ አስተካክል፣ አስፈላጊ ከሆነም ተስማሚነትን ለማሻሻል በፕሮጀክቱ issue አስገባ።
 ```
 
 የሚያስፈልግህ አስተማማኝ የአውታረ መረብ ተኪ የመጨረሻ ነጥብ ነው። ይህ ፕሮጀክት ማንኛውንም ተኪ አቅራቢን አያስተዋውቅም። አቅራቢን እራስዎ ማግኘት ይችላሉ፣ ለምሳሌ የጥቁር ስህተት ድህረ ገጽን በመፈለግ።
@@ -141,6 +141,7 @@ Cage ራሱን የቻለ የማህበረሰብ ፕሮጀክት ነው እና ከ
 - [code-server](https://github.com/coder/code-server): በአሳሽ ላይ የተመሰረተ ኮድ አርታዒ.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox) የሥራ አካባቢ እና መስተጋብር ንድፍ ማጣቀሻዎች.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) እና [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian) ለአውታረ መረብ ፍተሻዎች እና የደህንነት ምርመራዎች ማጣቀሻዎች።
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): ለትክክለኛ ቆጠራ፣ ለውሂብ ጥበቃ እና ሊመለስ ለሚችል የመሸጎጫ ማጽዳት ሂደት ማጣቀሻ፤ በCage በተናጠል ተተግብሯል።
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

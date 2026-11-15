@@ -6,7 +6,7 @@ import "../src/style.css";
 
 function Fixture() {
   const [notice, setNotice] = useState("");
-  const files = useDesktopFiles(true, setNotice);
+  const files = useDesktopFiles(true, setNotice, true);
   return <div className="app">
     <output>{notice}</output>
     <MacOSAppWindow visible uploads={files.uploads} onStatus={setNotice} onConfirm={async () => true} />

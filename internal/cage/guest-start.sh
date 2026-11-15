@@ -5,9 +5,32 @@ if ! cage_is_ubuntu && [[ ! -x /usr/bin/chromium ]]; then
   echo 'Missing chromium; run cage setup first.' >&2
   exit 1
 fi
-for app in code-server X0tigervnc Xtigervnc openbox websockify; do
+for app in code-server Xtigervnc openbox websockify; do
   command -v "$app" >/dev/null || { echo "Missing $app; run cage setup first." >&2; exit 1; }
 done
+# English text keeps its requested fonts. For missing Han glyphs, prefer the
+# Simplified Chinese face of the installed Noto collection.
+sudo tee /etc/fonts/conf.d/71-english-cjk-fallback.conf >/dev/null <<'FONTCONFIG'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <match target="pattern">
+    <test name="lang" qual="first" compare="contains"><string>en</string></test>
+    <test name="family"><string>sans-serif</string></test>
+    <edit name="family" mode="append_last" binding="weak"><string>Noto Sans CJK SC</string></edit>
+  </match>
+  <match target="pattern">
+    <test name="lang" qual="first" compare="contains"><string>en</string></test>
+    <test name="family"><string>serif</string></test>
+    <edit name="family" mode="append_last" binding="weak"><string>Noto Serif CJK SC</string></edit>
+  </match>
+  <match target="pattern">
+    <test name="lang" qual="first" compare="contains"><string>en</string></test>
+    <test name="family"><string>monospace</string></test>
+    <edit name="family" mode="append_last" binding="weak"><string>Noto Sans Mono CJK SC</string></edit>
+  </match>
+</fontconfig>
+FONTCONFIG
 mkdir -p "$HOME/.config/claude-cage"
 chmod 700 "$HOME/.config/claude-cage"
 if [ ! -s "$HOME/.config/claude-cage/code-server.yaml" ]; then
@@ -62,9 +85,9 @@ d["credentials_enable_service"] = False
 d.setdefault("profile", {})["password_manager_enabled"] = False
 p.write_text(json.dumps(d))
 PYCODE
-sudo systemctl reset-failed cage-display cage-window-manager cage-browser cage-vnc cage-webvnc 2>/dev/null || true
+sudo systemctl reset-failed cage-display cage-window-manager cage-browser cage-webvnc 2>/dev/null || true
 sudo systemctl reset-failed cage-display-governor 2>/dev/null || true
-sudo systemctl restart cage-display cage-window-manager cage-browser cage-vnc cage-webvnc
+sudo systemctl restart cage-display cage-window-manager cage-browser cage-webvnc
 # Seed only appearance settings for a new editor profile. Existing preferences stay intact.
 python3 - <<'PYEDITOR'
 import shutil

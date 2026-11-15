@@ -271,6 +271,22 @@ func (s *Server) createWindowsCLITerminal(input terminalRequest) (*terminalSessi
 				return nil, errors.New("Claude 会话请求无效")
 			}
 			request["conversation"] = value
+			folders, err := s.projectFolders(workspace)
+			if err != nil {
+				return nil, err
+			}
+			additional := []map[string]string{}
+			for _, folder := range folders {
+				if folder == workspace {
+					continue
+				}
+				binding, err := s.windowsProjectForHost(folder)
+				if err != nil {
+					return nil, err
+				}
+				additional = append(additional, map[string]string{"id": binding.ID, "grant": binding.Grant})
+			}
+			request["additional_projects"] = additional
 		}
 	}
 	if project != nil {

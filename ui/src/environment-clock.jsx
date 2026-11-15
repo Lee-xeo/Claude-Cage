@@ -7,6 +7,7 @@ export function EnvironmentClock({ timezone }) {
     try {
       return new Intl.DateTimeFormat("en-GB", {
         timeZone: timezone,
+        weekday: "short",
         hour: "2-digit",
         minute: "2-digit",
         hourCycle: "h23",

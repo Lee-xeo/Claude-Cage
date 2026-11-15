@@ -34,6 +34,8 @@ for (const file of htmlFiles) {
   }
 }
 const published = JSON.parse(fs.readFileSync(path.join(root, 'www/src/data/release.json'), 'utf8'));
+const downloads = published.platforms;
+assert.ok(downloads, 'Per-platform release metadata is missing');
 for (const code of codes) {
   const html = fs.readFileSync(path.join(dist,code === 'zh' ? '' : code,'index.html'),'utf8');
   const picker = html.match(/<details\b[^>]*id="site-language"[^>]*>([\s\S]*?)<\/details>/)?.[1];
@@ -52,7 +54,7 @@ for (const code of codes) {
     assert.ok(fs.existsSync(target), `${code}: broken local asset or link ${match[1]}`);
   }
   assert.ok(!html.includes('/Users/'), `${code}: local developer path leaked`);
-  assert.ok(html.includes(`href="${published.downloadURL}"`), `${code}: macOS download is missing`);
+  assert.ok(html.includes(`href="${downloads.macos.downloadURL}"`), `${code}: macOS download is missing`);
   const downloadSection = html.match(/<section\b[^>]*id="download"[^>]*>([\s\S]*?)<\/section>/)?.[1];
   assert.ok(downloadSection?.includes(`CLAUDE CAGE · v${published.version}`), `${code}: download release label must follow published metadata`);
   assert.ok(!downloadSection?.includes('CLAUDE CAGE · ALPHA'), `${code}: stale release channel label`);
@@ -62,10 +64,17 @@ for (const code of codes) {
     assert.ok(html.includes(`data-platform="${platform}"`), `${code}: missing ${platform} choice`);
   }
   const windowsLinks = [...html.matchAll(/href="([^"]*windows-amd64-setup\.exe)"/g)].map(match => match[1]);
-  assert.deepEqual(windowsLinks, published.windowsDownloadURL ? [published.windowsDownloadURL, published.windowsDownloadURL] : [], `${code}: Windows download must match the verified optional release metadata`);
-  for (const [suffix, url] of [['linux-amd64.deb', published.linuxDownloadURL], ['android-arm64.apk', published.androidDownloadURL], ['windows-amd64-setup-unsigned.exe', published.windowsDownloadURL ? undefined : published.windowsPreview?.downloadURL]]) {
+  assert.deepEqual(windowsLinks, downloads.windows && !downloads.windows.unsigned ? [downloads.windows.downloadURL, downloads.windows.downloadURL] : [], `${code}: Windows download must match the verified optional release metadata`);
+  for (const [suffix, url] of [['linux-amd64.deb', downloads.linux?.downloadURL], ['android-arm64.apk', downloads.android?.downloadURL], ['windows-amd64-setup-unsigned.exe', downloads.windows?.unsigned ? downloads.windows.downloadURL : undefined]]) {
     const links = [...html.matchAll(/href="([^"]+)"/g)].map(match => match[1]).filter(link => link.endsWith(suffix));
     assert.deepEqual(links, url ? [url, url] : [], `${code}: ${suffix} must match verified metadata`);
+  }
+  for (const [name, key] of Object.entries({ macOS: 'macos', Windows: 'windows', Linux: 'linux', Android: 'android' })) {
+    const entry = downloads[key];
+    if (!entry) continue;
+    const article = html.match(new RegExp(`<article\\b[^>]*data-platform="${name}"[^>]*>([\\s\\S]*?)<\\/article>`))?.[1];
+    assert.ok(article?.includes(` · v${entry.version}</bdi>`), `${code}: ${name} version must match its package`);
+    assert.ok(article?.includes(`href="${entry.releaseURL}"`), `${code}: ${name} notes must match its package`);
   }
   const ios = html.match(/<article\b[^>]*data-platform="iOS"[^>]*>([\s\S]*?)<\/article>/)?.[1];
   assert.ok(ios?.includes('href="/docs/mobile/"'), `${code}: iOS needs its local build guide`);

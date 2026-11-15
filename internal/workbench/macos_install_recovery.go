@@ -34,7 +34,7 @@ func macOSInstallRecoveryRoute(method, path string) bool {
 	}
 	if method == http.MethodPost {
 		switch path {
-		case "/api/account/unlock", "/api/account/lock", "/api/environment/initialization",
+		case "/api/account/unlock", "/api/account/lock", "/api/account/recovery-generate", "/api/account/recovery-reset", "/api/environment/initialization",
 			"/api/environment/guest-systems/activate", "/api/host/git", "/api/stop", "/api/start",
 			"/api/macos/install-recovery", "/api/session", "/api/launch", "/api/handoff":
 			return true
@@ -203,7 +203,7 @@ func (s *Server) macOSInstallRecovery(w http.ResponseWriter, r *http.Request) {
 			s.jobs.cancelRunning()
 		}
 	}
-	epoch, _ := s.account.accessFor(true)
+	epoch, _ := s.account.access()
 	// lifetimeContext takes s.mu; resolve it before the lease critical section
 	// below takes the same lock.
 	lifetime := s.lifetimeContext()

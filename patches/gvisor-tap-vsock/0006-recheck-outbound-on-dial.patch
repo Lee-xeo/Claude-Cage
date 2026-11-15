@@ -1,0 +1,135 @@
+--- a/pkg/services/forwarder/tcp.go
++++ b/pkg/services/forwarder/tcp.go
+@@ -2,7 +2,7 @@
+ 
+ import (
+ 	"context"
+-	"fmt"
++	"errors"
+ 	"net"
+ 	"net/netip"
+ 	"sync"
+@@ -33,7 +33,8 @@
+ 			localAddress = replaced
+ 		}
+ 		natLock.Unlock()
+-		if dst, ok := netip.AddrFromSlice(localAddress.AsSlice()); !ok || !outbound.Allows("tcp", netip.AddrPortFrom(dst, r.ID().LocalPort)) {
++		dst, ok := netip.AddrFromSlice(localAddress.AsSlice())
++		if !ok {
+ 			r.Complete(true)
+ 			return
+ 		}
+@@ -41,7 +42,7 @@
+ 		if len(dialers) > 0 && dialers[0] != nil {
+ 			dial = dialers[0]
+ 		}
+-		outbound, err := dial(context.Background(), "tcp", net.JoinHostPort(localAddress.String(), fmt.Sprint(r.ID().LocalPort)))
++		outbound, err := dialAllowed(outbound, "tcp", netip.AddrPortFrom(dst, r.ID().LocalPort), dial)
+ 		if err != nil {
+ 			log.Tracef("net.Dial() = %v", err)
+ 			r.Complete(true)
+@@ -75,3 +76,22 @@
+ 	subnet, _ := tcpip.NewSubnet(tcpip.AddrFromSlice(parsedSubnet.IP), tcpip.MaskFromBytes(parsedSubnet.Mask))
+ 	return &subnet
+ }
++
++// Recheck the numeric destination after a potentially slow proxy handshake or
++// direct dial, before any guest payload can cross the new connection.
++func dialAllowed(policy types.Outbound, network string, dst netip.AddrPort, dial types.DialContext) (net.Conn, error) {
++	if !policy.Allows(network, dst) {
++		return nil, errDestinationDenied
++	}
++	conn, err := dial(context.Background(), network, dst.String())
++	if err != nil {
++		return nil, err
++	}
++	if !policy.Allows(network, dst) {
++		conn.Close()
++		return nil, errDestinationDenied
++	}
++	return conn, nil
++}
++
++var errDestinationDenied = errors.New("destination denied by outbound policy")
+--- a/pkg/services/forwarder/udp.go
++++ b/pkg/services/forwarder/udp.go
+@@ -3,7 +3,6 @@
+ import (
+ 	"net"
+ 	"net/netip"
+-	"strconv"
+ 	"sync"
+ 
+ 	"github.com/containers/gvisor-tap-vsock/pkg/types"
+@@ -29,7 +28,9 @@
+ 			localAddress = replaced
+ 		}
+ 		natLock.Unlock()
+-		if dst, ok := netip.AddrFromSlice(localAddress.AsSlice()); !ok || !outbound.Allows("udp", netip.AddrPortFrom(dst, r.ID().LocalPort)) {
++		dst, ok := netip.AddrFromSlice(localAddress.AsSlice())
++		target := netip.AddrPortFrom(dst, r.ID().LocalPort)
++		if !ok || !outbound.Allows("udp", target) {
+ 			return
+ 		}
+ 
+@@ -46,7 +47,7 @@
+ 		}
+ 
+ 		p, _ := NewUDPProxy(&autoStoppingListener{underlying: gonet.NewUDPConn(&wq, ep)}, func() (net.Conn, error) {
+-			return net.Dial("udp", net.JoinHostPort(localAddress.String(), strconv.Itoa(int(r.ID().LocalPort))))
++			return dialAllowed(outbound, "udp", target, (&net.Dialer{}).DialContext)
+ 		})
+ 		go func() {
+ 			p.Run()
+--- /dev/null
++++ b/pkg/services/forwarder/outbound_test.go
+@@ -0,0 +1,49 @@
++package forwarder
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net"
++	"net/netip"
++	"testing"
++	"time"
++
++	"github.com/containers/gvisor-tap-vsock/pkg/types"
++)
++
++func TestDialRequiresCurrentPolicyBeforeForwarding(t *testing.T) {
++	for _, network := range []string{"tcp", "udp"} {
++		t.Run(network, func(t *testing.T) {
++			dst := netip.MustParseAddrPort("8.8.8.8:443")
++			allowed := true
++			policy := types.Outbound(func(n string, target netip.AddrPort) bool {
++				return allowed && n == network && target == dst
++			})
++			client, peer := net.Pipe()
++			defer client.Close()
++			defer peer.Close()
++			calls := 0
++			dial := func(_ context.Context, n, address string) (net.Conn, error) {
++				calls++
++				if n != network || address != dst.String() {
++					t.Fatal("dial did not use checked destination")
++				}
++				allowed = false
++				return client, nil
++			}
++			for range 2 {
++				conn, err := dialAllowed(policy, network, dst, dial)
++				if conn != nil || !errors.Is(err, errDestinationDenied) {
++					t.Fatalf("denied flow returned %v, %v", conn, err)
++				}
++			}
++			if calls != 1 {
++				t.Fatalf("dial called %d times", calls)
++			}
++			if err := client.SetDeadline(time.Time{}); !errors.Is(err, io.ErrClosedPipe) {
++				t.Fatalf("denied socket remained open: %v", err)
++			}
++		})
++	}
++}

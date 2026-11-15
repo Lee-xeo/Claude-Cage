@@ -1,9 +1,33 @@
-.settings-content.settings-content--accounts {
+.workspace[hidden] { display: none; }
+.management-page {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  padding-bottom: clamp(12px, 3vh, 28px);
+  overflow: hidden;
+  background: var(--paper);
 }
-.settings-content--accounts > .settings-fields:empty { display: none; }
+.management-header {
+  min-height: var(--workbench-header-height);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+}
+.management-header h1 {
+  margin: 0;
+  font-size: 1.1429rem;
+  font-weight: 600;
+}
+.management-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 22px;
+  overflow-y: auto;
+}
 .claude-profiles {
   container-type: inline-size;
   --crab-coral: #cd745b;
@@ -19,7 +43,19 @@
   margin-inline: auto;
 }
 .claude-profiles > :not(.claude-profile-list) { flex: none; }
-.settings-content .claude-profiles .section-title { margin-bottom: 16px; }
+.claude-profiles .section-title { margin-bottom: 16px; }
+.claude-profiles .section-title p, .claude-profiles .field-help { color: var(--muted); }
+.claude-profiles input:not([type="checkbox"]), .claude-profiles .inline-select-trigger {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 7px 10px;
+  font: inherit;
+}
+.claude-profiles input:disabled { background: var(--chrome); color: var(--muted); }
 .claude-add-profile, .claude-profile-rename, .claude-profile-name,
 .claude-profile-actions, .claude-profile-meta {
   display: flex;
@@ -50,7 +86,7 @@
   justify-content: space-between;
   margin: 23px 0 10px;
 }
-.settings-content .claude-list-heading h4 {
+.claude-list-heading h4 {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -113,7 +149,7 @@
 }
 .claude-profile-identity { min-width: 0; }
 .claude-profile-name { gap: 6px; }
-.settings-content .claude-profiles .claude-profile h4 {
+.claude-profiles .claude-profile h4 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

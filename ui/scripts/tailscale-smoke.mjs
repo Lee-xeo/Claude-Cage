@@ -7,10 +7,10 @@ const output = new URL(`../../docs/test-reports/2026-11-09-tailscale-redesign/${
 await mkdir(output, { recursive: true });
 let copied = "", fail = false, delayed = false, failKey = false, failService = false, failBrowser = true;
 let tail = { installed: true, version: "1.104.5", enabled: false, backend: "Stopped", ips: [], peers: [], keys: [], forwards: [], user: "cage", ssh_port: 22 };
-const { browser, page, state, errors } = await createWorkbench({ nativeRequest: body => { if (body.action === "clipboardWrite") { copied = body.text; return true; } } });
+const { browser, page, state, errors } = await createWorkbench({ beforeNavigate: (_page, fixture) => { fixture.status.ready = fixture.status.vm_running = true; }, nativeRequest: body => { if (body.action === "clipboardWrite") { copied = body.text; return true; } } });
 const checks = [];
 const open = page.getByRole("button", { name: "打开 Tailscale", exact: true });
-const panel = page.getByRole("dialog", { name: "Tailscale", exact: true });
+const panel = page.getByRole("main", { name: "Tailscale", exact: true });
 const refresh = () => panel.getByRole("button", { name: "刷新 Tailscale 状态" }).click();
 try {
   await page.route("**/api/browser/new", route => failBrowser ? route.fulfill({ status: 502, body: "浏览器暂未响应" }) : route.fallback());
@@ -31,11 +31,12 @@ try {
     }
     return route.fulfill({ json: tail });
   });
-  state.status.ready = state.status.vm_running = true;
-  await page.reload(); await open.waitFor();
+  await open.waitFor();
   const position = await open.boundingBox(), browserPosition = await page.getByRole("button", { name: "打开浏览器", exact: true }).boundingBox();
   assert.ok(position.y > browserPosition.y && position.y < browserPosition.y + browserPosition.height * 2 + 8);
   await open.focus(); await page.keyboard.press("Enter"); await panel.getByText("已断开", { exact: true }).waitFor();
+  assert.equal(await open.getAttribute("aria-current"), "page");
+  assert.equal(await page.getByRole("dialog").count(), 0);
   assert.equal(await panel.locator("textarea").count(), 0);
   await panel.getByText("连接后查看你的设备", { exact: true }).waitFor();
   await page.screenshot({ animations: "disabled", path: fileURLToPath(new URL("disconnected.png", output)) });
@@ -48,7 +49,7 @@ try {
   checks.push("keyboard entry; enrollment precedes SSH; browser launch failure keeps login retry; official login opens in regular Cage browser");
   const connected = { ...tail, enabled: true, backend: "Running", tailnet: "林间私网", account: "owner@example.invalid", name: "cage-workbench.test.ts.net", hostname: "cage-workbench", os: "macOS", auth_url: "", ips: ["100.88.2.3"], proxy_url: "http://cage:fixture-credential@127.0.0.1:32100", peers: [{ name: "offline-server.test.ts.net", hostname: "offline-server", os: "linux", ip: "100.88.2.5", online: false }, { name: "my-computer.test.ts.net", hostname: "my-computer", os: "macOS", ip: "100.88.2.4", online: true }] };
   tail = structuredClone(connected);
-  await open.click(); await panel.getByText("已连接", { exact: true }).waitFor();
+  await panel.getByText("已连接", { exact: true }).waitFor();
   await panel.getByText("林间私网", { exact: true }).waitFor();
   await panel.getByText("登录账号 · owner@example.invalid", { exact: true }).waitFor();
   assert.equal(await panel.locator(".tailscale-peer").first().getByText("my-computer", { exact: true }).count(), 1);
@@ -89,7 +90,7 @@ try {
   await panel.locator(".tailscale-key").waitFor();
   await panel.getByRole("button", { name: "移除 SSH 公钥" }).click(); await panel.locator(".tailscale-key").waitFor({ state: "hidden" });
   checks.push("application proxy credential copied without rendering; SSH opt-in keyboard disclosure; failed key keeps input; saved key survives refresh and can be revoked");
-  await page.keyboard.press("Escape"); await panel.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "工作台", exact: true }).click(); await panel.waitFor({ state: "hidden" });
   await open.click(); await panel.getByRole("button", { name: "断开连接", exact: true }).click();
   await page.getByRole("dialog", { name: "断开 Tailscale？", exact: true }).getByRole("button", { name: "取消", exact: true }).click(); assert.equal(tail.enabled, true);
   await panel.getByRole("button", { name: "断开连接", exact: true }).click();
@@ -99,7 +100,9 @@ try {
   await panel.getByRole("button", { name: "连接并登录", exact: true }).click(); await panel.getByText("等待登录", { exact: true }).waitFor();
   tail.auth_url = "https://login.tailscale.com/a/delayed-login"; await panel.waitFor({ state: "hidden" });
   assert.ok(state.requests.some(r => r.path === "/browser/new" && r.body.url === tail.auth_url));
-  tail = { ...tail, auth_url: "", backend: "NeedsMachineAuth" }; await open.click(); await panel.getByText("等待管理员批准", { exact: true }).waitFor();
+  tail.return_id = "fixture-return"; await panel.getByText("等待登录", { exact: true }).waitFor();
+  assert.equal(await panel.getByText("已连接", { exact: true }).count(), 0);
+  tail = { ...tail, auth_url: "", backend: "NeedsMachineAuth" }; await refresh(); await panel.getByText("等待管理员批准", { exact: true }).waitFor();
   assert.equal(await panel.getByRole("button", { name: "重新发起登录", exact: true }).count(), 0);
   checks.push("disconnect cancellation preserves network; confirmation clears device controls; delayed auth URL opens automatically; approval is distinct from login");
   tail = { ...connected, peers: [], forwards: [] }; await refresh(); await panel.getByText("私网已连接，还没有发现其他设备", { exact: true }).waitFor();
@@ -109,6 +112,8 @@ try {
   await page.screenshot({ animations: "disabled", path: fileURLToPath(new URL("compact.png", output)) });
   assert.ok(await panel.evaluate(node => node.scrollWidth <= node.clientWidth + 1));
   await page.setViewportSize({ width: 520, height: 700 });
+  await open.click();
+  await panel.getByRole("button", { name: "展开侧栏" }).waitFor();
   await panel.locator(".tailscale-peer").first().getByRole("button", { name: "使用设备", exact: true }).click();
   await page.screenshot({ animations: "disabled", path: fileURLToPath(new URL("narrow.png", output)) });
   assert.ok(await panel.evaluate(node => node.scrollWidth <= node.clientWidth + 1));

@@ -34,8 +34,9 @@ internal sealed class NativeInput : TextBox
             ["selectionStart"] = start, ["selectionEnd"] = end });
     }
 
-    internal bool ProcessRequest(JsonElement value, Control web, double zoom)
+    internal bool ProcessRequest(JsonElement value, Control web, double zoom, out bool returnedFocus)
     {
+        returnedFocus = false;
         var requestedOwner = value.Text("owner");
         if (!Guid.TryParse(requestedOwner, out _)) return false;
         var operation = value.Text("operation");
@@ -59,7 +60,16 @@ internal sealed class NativeInput : TextBox
             PositionCandidates();
         }
         else if (operation == "cancel") Cancel();
-        else if (operation == "deactivate") { Cancel(); owner = ""; Visible = false; web.Focus(); }
+        else if (operation == "deactivate")
+        {
+            bool hadFocus = Focused && FindForm() == Form.ActiveForm;
+            Cancel(); owner = ""; Visible = false;
+            if (hadFocus && FindForm() == Form.ActiveForm)
+            {
+                web.Focus();
+                returnedFocus = web.ContainsFocus;
+            }
+        }
         else return false;
         return true;
     }

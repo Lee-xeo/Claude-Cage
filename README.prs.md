@@ -56,7 +56,7 @@ Claude Cage ترمینل، مرورگر، ویرایشگر و برنامۀ رس�
 این درخواست را برای عامل هوش مصنوعی خود (codex، dsh، workbuddy - احتمالاً Claude Code) ارسال کنید:
 
 ```markdown
-کمکم کن نصب کنم https://github.com/Lee-xeo/Claude-Cage و پروکسی شبکه Cage را برای استفاده از نقطه پایانی xxx در نصب محلی Clash من پیکربندی کنید.
+آخرین کد منبع https://github.com/Lee-xeo/Claude-Cage را دریافت کن، بساز، بسته‌بندی و نصب کن. پراکسی Cage را طوری تنظیم کن که از گره xx در Clash محلی من و خروجی IP من یعنی xx استفاده کند. تمام روند را زیر نظر بگیر، مشکلات را مستقیماً رفع کن و در صورت نیاز برای بهبود سازگاری در پروژه issue ثبت کن.
 ```
 
 تنها چیزی که نیاز دارید یک نقطه پایانی پروکسی شبکه قابل اعتماد است. این پروژه هیچ ارائه دهنده پروکسی را تبلیغ نمی کند. می توانید خودتان یک ارائه دهنده پیدا کنید، برای مثال با جستجوی وب سایت Black Error.
@@ -141,6 +141,7 @@ Cage یک پروژه اجتماعی مستقل است و به آنتروپیک �
 - [code-server](https://github.com/coder/code-server): ویرایشگر کد مبتنی بر مرورگر.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): مراجع برای طراحی محیط کار و تعامل.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) و [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): مراجع برای بررسی شبکه و تشخیص امنیتی.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): مرجع برای فهرست‌برداری دقیق، حفاظت از داده‌ها و پاک‌سازی قابل‌بازیابی حافظهٔ نهان؛ پیاده‌سازی مستقل در Cage.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

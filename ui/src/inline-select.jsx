@@ -4,14 +4,14 @@ import { useSelectPopup } from "./select-popup";
 import { Check, ChevronDown } from "lucide-react";
 import "./inline-select.css";
 
-// Keep keyboard focus on the control in either layout.
+// Keep keyboard focus on the control for both inline and popup lists.
 export function InlineSelect({
   children,
   value,
   onValueChange,
   disabled,
-  inline = false,
   editable = false,
+  inline = false,
   displayLabel,
   ...props
 }) {
@@ -46,7 +46,12 @@ export function InlineSelect({
   const active = filtered.findIndex(
     (item) => item.value === cursor && !item.disabled,
   );
-  const position = useSelectPopup(visible && !inline, control, list, filtered.length);
+  const position = useSelectPopup(
+    visible && !inline,
+    control,
+    list,
+    filtered.length,
+  );
   useEffect(() => {
     if (visible && active >= 0) {
       const row = list.current.querySelector(`[data-index="${active}"]`);
@@ -63,7 +68,11 @@ export function InlineSelect({
   useEffect(() => {
     if (!open) return;
     const outside = (event) => {
-      if (!root.current.contains(event.target) && !list.current?.contains(event.target)) setOpen(false);
+      if (
+        !root.current.contains(event.target) &&
+        !list.current?.contains(event.target)
+      )
+        setOpen(false);
     };
     document.addEventListener("click", outside, true);
     return () => document.removeEventListener("click", outside, true);
@@ -126,7 +135,44 @@ export function InlineSelect({
       visible && active >= 0 ? id + "-" + active : undefined,
     onKeyDown: keydown,
   };
-  const renderList = (options) => inline ? options : createPortal(options, document.body);
+  const listbox = visible && (
+    <span
+      ref={list}
+      id={id}
+      role="listbox"
+      aria-label={(props["aria-label"] || "") + "选项"}
+      className={`inline-select-list${inline ? " inline-select-list--inline" : ""}`}
+      style={inline ? undefined : position}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={(event) => event.preventDefault()}
+    >
+      {filtered.map((item, index) => (
+        <React.Fragment key={item.value}>
+          {item.group && item.group !== filtered[index - 1]?.group && (
+            <span className="inline-select-group" aria-hidden="true">
+              {item.group}
+            </span>
+          )}
+          <span
+            role="option"
+            id={id + "-" + index}
+            data-index={index}
+            data-value={item.value}
+            data-active={index === active || undefined}
+            aria-disabled={Boolean(item.disabled)}
+            aria-selected={item === selected}
+            onClick={() => choose(item)}
+          >
+            <span>
+              {editable && item.label !== item.value ? item.value + " · " : ""}
+              {item.label}
+            </span>
+            {item === selected && <Check size={14} aria-hidden="true" />}
+          </span>
+        </React.Fragment>
+      ))}
+    </span>
+  );
   return (
     <span ref={root} className="inline-select">
       {editable ? (
@@ -157,46 +203,7 @@ export function InlineSelect({
           <ChevronDown size={14} aria-hidden="true" />
         </button>
       )}
-      {visible && renderList(
-        <span
-          ref={list}
-          id={id}
-          role="listbox"
-          aria-label={(props["aria-label"] || "") + "选项"}
-          className={`inline-select-list${inline ? " is-inline" : ""}`}
-          style={inline ? undefined : position}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={(event) => event.preventDefault()}
-        >
-          {filtered.map((item, index) => (
-            <React.Fragment key={item.value}>
-              {item.group && item.group !== filtered[index - 1]?.group && (
-                <span className="inline-select-group" aria-hidden="true">
-                  {item.group}
-                </span>
-              )}
-              <span
-                role="option"
-                id={id + "-" + index}
-                data-index={index}
-                data-value={item.value}
-                data-active={index === active || undefined}
-                aria-disabled={Boolean(item.disabled)}
-                aria-selected={item === selected}
-                onClick={() => choose(item)}
-              >
-                <span>
-                  {editable && item.label !== item.value
-                    ? item.value + " · "
-                    : ""}
-                  {item.label}
-                </span>
-                {item === selected && <Check size={14} aria-hidden="true" />}
-              </span>
-            </React.Fragment>
-          ))}
-        </span>
-      )}
+      {visible && (inline ? listbox : createPortal(listbox, document.body))}
     </span>
   );
 }

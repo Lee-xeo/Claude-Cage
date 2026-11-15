@@ -52,7 +52,8 @@ cage access        Inspect legacy viewer credentials (diagnostics only)
 cage shell         Open a shell in the shared environment
 cage run COMMAND   Execute a command in the shared environment
 cage claude        Run Claude Code in the shared environment
-cage stop          Stop the shared Cage environment
+cage stop          Stop the shared Cage environment and its proxy core
+                   --keep-proxy keeps the core running for an environment restart
 cage list          List this cage profile's VMs
 cage doctor        Diagnose the VM
 cage diagnostics --json PATH.zip   Export a redacted diagnostic bundle
@@ -489,6 +490,12 @@ func run() int {
 		fmt.Println("Configuration created:", path)
 		return 0
 	}
+	// The workbench owns the proxy lifetime during internal environment
+	// restarts. A normal CLI stop still shuts down both the guest and core.
+	keepProxy := len(args) > 1 && args[0] == "stop" && args[1] == "--keep-proxy"
+	if keepProxy {
+		args = append([]string{"stop"}, args[2:]...)
+	}
 	cfg, err := cage.Load(path)
 	management := args[0] == "stop" || args[0] == "list" || args[0] == "info"
 	if err != nil && !management {
@@ -549,7 +556,7 @@ func run() int {
 		}
 		return 0
 	}
-	if handled, err := containerOperation(path, args, cfg); handled {
+	if handled, err := containerOperation(path, args, cfg, keepProxy); handled {
 		if err != nil {
 			return fail(err)
 		}
@@ -568,7 +575,7 @@ func run() int {
 	}
 	if management {
 		code := cli.Main(args, cli.Stdio())
-		if code == 0 && args[0] == "stop" {
+		if code == 0 && args[0] == "stop" && !keepProxy {
 			if err := managedproxy.Stop(filepath.Dir(path)); err != nil {
 				return fail(err)
 			}

@@ -40,7 +40,7 @@ internal static class NativeInputTests
         var owner = Guid.NewGuid().ToString();
         Check(input.ProcessRequest(JsonSerializer.SerializeToElement(new {
             owner, operation = "activate", x = 0, y = 0, height = 24,
-        }), web, 1), "native input activation rejected");
+        }), web, 1, out _), "native input activation rejected");
         Check(!host.Visible, "regression fixture must remain hidden");
 
         var down = typeof(NativeInput).GetMethod("OnKeyDown", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -112,6 +112,18 @@ internal static class NativeInputTests
         var restored = new byte[256];
         if (!GetKeyboardState(restored)) throw new Win32Exception(Marshal.GetLastWin32Error());
         Check(original.SequenceEqual(restored), "test thread keyboard state was not restored");
+        Check(!input.ProcessRequest(JsonSerializer.SerializeToElement(new {
+            owner = Guid.NewGuid().ToString(), operation = "deactivate",
+        }), web, 1, out var returnedFocus), "another owner must not release native input");
+        Check(!returnedFocus, "a rejected release must not confirm focus return");
+        Check(input.ProcessRequest(JsonSerializer.SerializeToElement(new {
+            owner, operation = "deactivate",
+        }), web, 1, out returnedFocus), "matching owner release rejected");
+        Check(!returnedFocus, "a hidden, unfocused control must not confirm focus return");
+        Check(!input.ProcessRequest(JsonSerializer.SerializeToElement(new {
+            owner, operation = "caret", x = 0, y = 0, height = 24,
+        }), web, 1, out returnedFocus), "a released owner must not update native input");
+        Check(!returnedFocus, "a stale owner must not confirm focus return");
         Console.WriteLine($"Windows native input: {assertions} assertions passed; CapsLock on/off, Shift combinations, printable/command down/up, thread state restored.");
     }
 

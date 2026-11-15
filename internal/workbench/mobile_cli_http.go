@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -205,14 +204,14 @@ func (s *Server) mobileProjects(w http.ResponseWriter, r *http.Request) {
 	if s.windowsGuest != nil {
 		s.refreshWindowsComponents()
 	}
-	paths, err := s.projectPaths()
+	groups, err := s.projectGroups()
 	if err != nil {
 		http.Error(w, "无法读取已授权的项目", 500)
 		return
 	}
-	var projects = []map[string]string{}
-	for _, path := range paths {
-		projects = append(projects, map[string]string{"path": path, "name": filepath.Base(path)})
+	projects := []map[string]any{}
+	for _, group := range groups {
+		projects = append(projects, map[string]any{"path": group.Workspace, "name": group.Name, "folders": group.Folders})
 	}
 	s.mu.Lock()
 	ready := s.ready && !s.closing

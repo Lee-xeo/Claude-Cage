@@ -56,7 +56,7 @@ Claude Cage ተርሚናል፣ መርበብ መዳህሰሲ፣ ኣርታዒን �
 ነዚ ሕቶ ናብ AI ወኪልካ ስደዶ (codex, dsh, workbuddy — ምናልባት ክላውድ ኮድ ኣይኮነን 😁):
 
 ```markdown
-ንኽተክል ሓግዙኒ። https://github.com/Lee-xeo/Claude-Cage ከምኡ’ውን ናይ Cage መርበብ ፕሮክሲ ኣብቲ ናተይ ከባብያዊ ክላሽ ምትካል xxx መወዳእታ ነጥቢ ንኽጥቀም ምውቃር።
+ካብ https://github.com/Lee-xeo/Claude-Cage እቲ ሓድሽ ምንጪ ኮድ ኣምጽእ፣ ሃንጾ፣ ጠቕሊልካ ኣትክሎ። ፕሮክሲ Cage ብናይ ኣካባቢየይ Clash xx ኖድ ኣቢሉ ብናተይ xx IP ክወጽእ ኣዋቕሮ። ንብምሉኡ ሂደት ተኸታተል፣ ጸገማት ብቐጥታ ኣርም፣ እንተድልዩ ድማ ምስምማዕ ንምምሕያሽ ኣብ ፕሮጀክቱ issue ኣቕርብ።
 ```
 
 ዘድልየካ ዘተኣማምን ናይ መርበብ ፕሮክሲ መወዳእታ ነጥቢ ጥራይ እዩ። እዚ ፕሮጀክት ንዝኾነ ፕሮክሲ ወሃቢ ዘስፋሕፍሕ ኣይኮነን፤ ባዕልኻ ኣቕራቢ ክትረክብ ትኽእል ኢኻ፣ ንኣብነት ኣብ መርበብ ሓበሬታ Black Error ብምድላይ።
@@ -141,6 +141,7 @@ Cage ናጻ ማሕበረሰባዊ ፕሮጀክት ኮይኑ ምስ ኣንትሮ�
 - [code-server](https://github.com/coder/code-server): እቲ ኣብ መርበብ ሓበሬታ ዝተመርኮሰ ናይ ኮድ ኣርታዒ።
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): መወከሲታት ንሃዋህው ስራሕን ዲዛይን ምትእስሳርን.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) ከምኡ’ውን... [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): መወከሲታት ንናይ መርበብ ምፍታሽን ናይ ድሕነት መርመራታትን።
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): ንትኽክለኛ ቆጸራ፣ ንሓለዋ ዳታን ክምለስ ንዝኽእል ምጽራይ መሸጎጫን መወከሲ፤ Cage ብናጻ ኣተግቢሩዎ።
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

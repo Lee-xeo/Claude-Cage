@@ -298,7 +298,6 @@ func (s *Server) createClientProjectShare(request context.Context, session *remo
 	g.mu.Unlock()
 	endpoint := session.Origin + "/api/projects/client-share?id=" + id
 	upgraded := make(chan struct{})
-	var checkErr error // read after entry.done closes
 	go func() {
 		defer func() {
 			cancel()
@@ -308,11 +307,6 @@ func (s *Server) createClientProjectShare(request context.Context, session *remo
 			close(entry.done)
 			g.mu.Unlock()
 		}()
-		if !readonly {
-			if checkErr = requireHostGit(ctx); checkErr != nil {
-				return
-			}
-		}
 		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, nil)
 		if err != nil {
 			return
@@ -342,9 +336,6 @@ func (s *Server) createClientProjectShare(request context.Context, session *remo
 	failed := func() (ClientProjectShare, error) {
 		cancel()
 		<-entry.done
-		if checkErr != nil {
-			return empty, checkErr
-		}
 		return empty, errors.New("云端未确认项目挂载，请检查 Cage 是否已解锁、环境是否已启动")
 	}
 	select {

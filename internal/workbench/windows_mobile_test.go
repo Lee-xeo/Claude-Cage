@@ -74,7 +74,7 @@ func windowsPhoneRequest(t *testing.T, s *Server, method, path, body, proof stri
 	return w
 }
 
-func TestWindowsMobileHandlerRequiresCurrentRoomAndOrdinaryAccountUnlock(t *testing.T) {
+func TestWindowsMobileHandlerRequiresCurrentRoomAndUnlockedAccount(t *testing.T) {
 	s, record, cancel := windowsMobileFixture(t)
 	path := "/api/mobile/cli/sessions/" + record.ID
 	for _, proof := range []string{"", "old-private-room"} {
@@ -85,11 +85,12 @@ func TestWindowsMobileHandlerRequiresCurrentRoomAndOrdinaryAccountUnlock(t *test
 	if w := windowsPhoneRequest(t, s, "GET", path, "", s.phones.roomProof); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"can_send":true`) {
 		t.Fatalf("actual native dispatch failed: %d %s", w.Code, w.Body.String())
 	}
-	s.account.trustedSession = true
-	if w := windowsPhoneRequest(t, s, "GET", path, "", s.phones.roomProof); w.Code != http.StatusLocked {
-		t.Fatalf("phone gained desktop-only unlock: %d", w.Code)
+	if err := s.account.lockAccess(false); err != nil {
+		t.Fatal(err)
 	}
-	s.account.trustedSession = false
+	if w := windowsPhoneRequest(t, s, "GET", path, "", s.phones.roomProof); w.Code != http.StatusLocked {
+		t.Fatalf("locked account allowed a mobile session read: %d", w.Code)
+	}
 	cancel()
 	if w := windowsPhoneRequest(t, s, "GET", path, "", s.phones.roomProof); w.Code != http.StatusForbidden {
 		t.Fatalf("revoked room admitted: %d", w.Code)

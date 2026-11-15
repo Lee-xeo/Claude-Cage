@@ -105,7 +105,7 @@ func WindowsRelayCommand(ctx context.Context, root, operation string, args ...st
 	}
 	switch operation {
 	case "versions":
-	case "stream", "status", "import", "export", "terminal", "browser", "desktop", "attachments", "audio", "resources", "diagnostics", "safety", "project-mount", "network-stream", "network-settings", "cli":
+	case "stream", "status", "import", "export", "terminal", "browser", "desktop", "attachments", "audio", "resources", "diagnostics", "safety", "project-mount", "network-stream", "network-settings", "cli", "cache-maintenance":
 	default:
 		return nil, errors.New("Windows 客机剪贴板操作无效")
 	}

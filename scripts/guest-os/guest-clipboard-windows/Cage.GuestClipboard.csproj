@@ -14,6 +14,7 @@
     <AssemblyName>Cage.GuestClipboard</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../../internal/workbench/cache_maintenance.py" LogicalName="Cage.CacheMaintenance" />
     <EmbeddedResource Include="../../../internal/workbench/cli_channel.py" LogicalName="Cage.CliChannel" />
     <EmbeddedResource Include="../../../internal/cage/claude-account.py" LogicalName="Cage.CliAccount" />
     <EmbeddedResource Include="../../../internal/cage/client_runtime.py" LogicalName="Cage.ClientRuntime" />

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
 import { useAppearance } from "./appearance";
+import { isLinux } from "./platform.mjs";
 import {
   colorGroups,
   colorTokens,
@@ -37,6 +38,25 @@ import {
   systemCodeFont,
   themeVariables,
 } from "./appearance-state.mjs";
+
+const codeFontSuggestions = ["SF Mono", "Menlo", "Monaco", "JetBrains Mono"];
+const linuxCodeFontSuggestions = [
+  "Sarasa Mono SC", "Noto Sans Mono CJK SC", "Noto Sans Mono",
+  "JetBrains Mono", "Ubuntu Mono", "DejaVu Sans Mono",
+];
+
+async function installedLinuxCodeFonts() {
+  // A local-only source fails for a missing face, even when CSS can render a fallback.
+  const results = await Promise.all(linuxCodeFontSuggestions.map(async (name) => {
+    try {
+      await new FontFace(name, `local("${name}")`).load();
+      return name;
+    } catch {
+      return null;
+    }
+  }));
+  return results.filter(Boolean);
+}
 
 function SettingRow({ label, description, children }) {
   return (
@@ -126,7 +146,7 @@ function ColorField({ label, value, onChange, onReset }) {
     </div>
   );
 }
-function ThemeCard({ variant, value, active, onChange }) {
+function ThemeCard({ variant, value, active, onChange, codeFonts }) {
   const [advanced, setAdvanced] = useState(false);
   const label = variant === "light" ? "浅色主题" : "深色主题";
   const options = presets[variant];
@@ -340,10 +360,7 @@ function ThemeCard({ variant, value, active, onChange }) {
                 patch({ fonts: { ...value.fonts, code: next } })
               }
             >
-              <option value="SF Mono" />
-              <option value="Menlo" />
-              <option value="Monaco" />
-              <option value="JetBrains Mono" />
+              {codeFonts.map((name) => <option key={name} value={name} />)}
             </InlineSelect>
           </label>
           <label className="appearance-switch">
@@ -603,6 +620,10 @@ function ThemeLibrary({ appearance, update, saving, onError }) {
 export function AppearanceSettings() {
   const { appearance, theme, variant, loading, saving, error, update, retry } =
     useAppearance();
+  const [codeFonts, setCodeFonts] = useState(isLinux ? [] : codeFontSuggestions);
+  useEffect(() => {
+    if (isLinux) void installedLinuxCodeFonts().then(setCodeFonts);
+  }, []);
   const [syncing, setSyncing] = useState(false),
     [syncError, setSyncError] = useState(""),
     [synced, setSynced] = useState(false),
@@ -672,6 +693,7 @@ export function AppearanceSettings() {
             <ThemeCard
               key={key}
               variant={key}
+              codeFonts={codeFonts}
               value={appearance[key + "Theme"]}
               active={variant === key}
               onChange={(value) => patch({ [key + "Theme"]: value })}

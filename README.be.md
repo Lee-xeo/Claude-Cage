@@ -56,7 +56,7 @@ Claude Cage аб’ядноўвае тэрмінал, браўзер, рэдак
 Адпраўце гэты запыт свайму агенту штучнага інтэлекту (codex, dsh, workbuddy — верагодна, не Claude Code 😁):
 
 ```markdown
-Дапамажыце ўсталяваць https://github.com/Lee-xeo/Claude-Cage і наладзіць сеткавы проксі Cage для выкарыстання канцавой кропкі xxx у маёй лакальнай устаноўцы Clash.
+Атрымай апошні зыходны код https://github.com/Lee-xeo/Claude-Cage, збяры пакет і ўсталюй яго. Наладзь проксі Cage на выкарыстанне вузла xx майго лакальнага Clash і выхад праз мой IP xx. Сачы за ўсім працэсам, адразу выпраўляй праблемы і пры неабходнасці ствары issue ў праекце, каб палепшыць сумяшчальнасць.
 ```
 
 Усё, што вам трэба, гэта надзейная канчатковая кропка сеткавага проксі. Гэты праект не прасоўвае ніякіх проксі-правайдэраў; вы можаце знайсці пастаўшчыка самастойна, напрыклад, здзейсніўшы пошук на сайце Black Error.
@@ -141,6 +141,7 @@ Cage з'яўляецца незалежным грамадскім праект�
 - [code-server](https://github.com/coder/code-server): рэдактар ​​кода на аснове браўзера.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): спасылкі на дызайн працоўнага асяроддзя і ўзаемадзеяння.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) і [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): спасылкі для праверкі сеткі і дыягностыкі бяспекі.
+- [claude-post-ban-cleanup](https://github.com/l2461090/claude-post-ban-cleanup): прыклад дакладнай інвентарызацыі, абароны даных і ачысткі кэша з аднаўленнем; незалежная рэалізацыя ў Cage.
 
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">

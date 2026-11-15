@@ -1,7 +1,9 @@
 package workbench
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -48,57 +50,14 @@ func (s *Server) removeProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	for _, terminal := range s.terminals.snapshot() {
-		if terminal["workspace"] == path && terminal["closed"] != true {
-			http.Error(w, "请先关闭此项目的终端，再移除项目。会话历史会保留。", http.StatusConflict)
-			return
-		}
-	}
-	if ready && sharedCLILauncher(claudeTerminalCommand(preferences)) {
-		granted := make(map[string]bool, len(projects))
-		for _, project := range projects {
-			granted[project] = true
-		}
-		_, err = s.mobileCLI.summaries(s.profile, granted, false)
-		if err == nil {
-			err = s.discoverTerminalConversations(r.Context(), projects)
-		}
-		if err != nil {
-			http.Error(w, "暂时无法核对运行中的会话。请恢复会话连接，或保存工作并停止环境后再移除项目。", http.StatusConflict)
-			return
-		}
-	}
-	s.mobileCLI.mu.Lock()
-	active := false
-	for _, run := range s.mobileCLI.active {
-		active = active || run.record.Workspace == path
-	}
-	for id, running := range s.mobileCLI.running {
-		active = active || ready && running && s.mobileCLI.catalog[id].Workspace == path
-	}
-	s.mobileCLI.mu.Unlock()
-	if active {
-		http.Error(w, "请先结束此项目正在运行的会话，再移除项目。会话历史会保留。", http.StatusConflict)
+	folders, err := s.projectFolders(path)
+	if err != nil {
+		requestError(w, err)
 		return
 	}
-	if ready {
-		body, err := s.browserAction(r.Context(), "tabs", nil)
-		var browser struct {
-			Tabs []struct {
-				Kind      string `json:"kind"`
-				Workspace string `json:"workspace"`
-			} `json:"tabs"`
-		}
-		if err != nil || json.Unmarshal(body, &browser) != nil || browser.Tabs == nil {
-			http.Error(w, "暂时无法核对文件编辑器。请恢复浏览器连接，或保存工作并停止环境后再移除项目。", http.StatusConflict)
-			return
-		}
-		for _, tab := range browser.Tabs {
-			if tab.Kind == "editor" && tab.Workspace == path {
-				http.Error(w, "请先保存文件并关闭此项目的编辑器，再移除项目。", http.StatusConflict)
-				return
-			}
-		}
+	if err := s.checkProjectFoldersIdle(r.Context(), folders, ready); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
 	}
 	var saved sharedProjects
 	filename := filepath.Join(s.profile, "projects.json")
@@ -110,11 +69,11 @@ func (s *Server) removeProject(w http.ResponseWriter, r *http.Request) {
 		requestError(w, err)
 		return
 	}
-	if preferences.Workspace == path {
+	if slices.Contains(folders, preferences.Workspace) {
 		// Preserve a legacy current grant before changing the selection. If a
 		// later write fails, a retry can still find and remove this project.
-		if !slices.Contains(saved.Paths, path) {
-			saved.Paths = append(saved.Paths, path)
+		if !slices.Contains(saved.Paths, preferences.Workspace) {
+			saved.Paths = append(saved.Paths, preferences.Workspace)
 			if err = writePrivate(filename, saved); err != nil {
 				requestError(w, err)
 				return
@@ -122,7 +81,7 @@ func (s *Server) removeProject(w http.ResponseWriter, r *http.Request) {
 		}
 		preferences.Workspace = ""
 		for _, project := range projects {
-			if project != path && !isClientMountPath(project) {
+			if !slices.Contains(folders, project) && !isClientMountPath(project) {
 				preferences.Workspace = project
 				break
 			}
@@ -135,19 +94,104 @@ func (s *Server) removeProject(w http.ResponseWriter, r *http.Request) {
 		s.preferences.Workspace = preferences.Workspace
 		s.mu.Unlock()
 	}
-	deleteProject := func(value string) bool { return value == path }
+	deleteProject := func(value string) bool { return slices.Contains(folders, value) }
 	saved.Paths = slices.DeleteFunc(saved.Paths, deleteProject)
+	saved.Groups = slices.DeleteFunc(saved.Groups, func(g projectGroup) bool { return slices.Contains(folders, g.Workspace) })
 	if err = writePrivate(filename, saved); err != nil {
 		requestError(w, err)
 		return
 	}
-	s.mu.Lock()
-	share := s.projectShares[path]
-	delete(s.projectShares, path)
-	s.mu.Unlock()
-	if share != nil {
-		share.close()
-	}
-	s.setProjectError(path, nil)
+	s.detachProjectFolders(folders)
 	jsonReply(w, map[string]string{"workspace": s.workspace()})
+}
+
+func (s *Server) checkProjectFoldersIdle(ctx context.Context, folders []string, ready bool) error {
+	if len(folders) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	preferences := s.preferences
+	s.mu.Unlock()
+	projects, err := s.projectPaths()
+	if err != nil {
+		return err
+	}
+	for _, terminal := range s.terminals.snapshot() {
+		if slices.Contains(folders, terminal["workspace"].(string)) && terminal["closed"] != true {
+			return errors.New("请先关闭此项目的终端，再移除项目。会话历史会保留。")
+		}
+	}
+	if ready && sharedCLILauncher(claudeTerminalCommand(preferences)) {
+		granted := make(map[string]bool, len(projects))
+		for _, project := range projects {
+			granted[project] = true
+		}
+		_, err = s.mobileCLI.summaries(s.profile, granted, false)
+		if err == nil {
+			err = s.discoverTerminalConversations(ctx, projects)
+		}
+		if err != nil {
+			return errors.New("暂时无法核对运行中的会话。请恢复会话连接，或保存工作并停止环境后再移除项目。")
+		}
+	}
+	s.mobileCLI.mu.Lock()
+	active := false
+	for _, run := range s.mobileCLI.active {
+		active = active || slices.Contains(folders, run.record.Workspace)
+	}
+	for id, running := range s.mobileCLI.running {
+		active = active || ready && running && slices.Contains(folders, s.mobileCLI.catalog[id].Workspace)
+	}
+	s.mobileCLI.mu.Unlock()
+	if active {
+		return errors.New("请先结束此项目正在运行的会话，再移除项目。会话历史会保留。")
+	}
+	if ready {
+		body, err := s.browserAction(ctx, "tabs", nil)
+		var browser struct {
+			Tabs []struct {
+				Kind      string `json:"kind"`
+				Workspace string `json:"workspace"`
+			} `json:"tabs"`
+		}
+		if err != nil || json.Unmarshal(body, &browser) != nil || browser.Tabs == nil {
+			return errors.New("暂时无法核对文件编辑器。请恢复浏览器连接，或保存工作并停止环境后再移除项目。")
+		}
+		for _, tab := range browser.Tabs {
+			if tab.Kind == "editor" && slices.Contains(folders, tab.Workspace) {
+				return errors.New("请先保存文件并关闭此项目的编辑器，再移除项目。")
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Server) detachProjectFolders(folders []string) {
+	for _, folder := range folders {
+		s.mu.Lock()
+		share := s.projectShares[folder]
+		delete(s.projectShares, folder)
+		s.mu.Unlock()
+		if share != nil {
+			share.close()
+		}
+		s.setProjectError(folder, nil)
+	}
+}
+
+func (s *Server) replaceRemovedWorkspace(removed []string, replacement string) error {
+	s.mu.Lock()
+	preferences := s.preferences
+	s.mu.Unlock()
+	if !slices.Contains(removed, preferences.Workspace) {
+		return nil
+	}
+	preferences.Workspace = replacement
+	if err := writePrivate(filepath.Join(s.profile, "workbench.json"), preferences); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.preferences.Workspace = replacement
+	s.mu.Unlock()
+	return nil
 }

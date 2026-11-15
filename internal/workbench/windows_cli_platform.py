@@ -225,6 +225,10 @@ def launch_ccs_parent(request, channel):
     env = dict(os.environ, CAGE_CCS_LAUNCH_FILE=str(root / 'ccs-launch.json'))
     args = [env['CAGE_CCS_NODE'], '--require', env['CAGE_CCS_PRELOAD'], env['CAGE_CCS_MAIN'], profile,
             '--resume' if request.get('resume') else '--session-id', sid, '--setting-sources', 'user']
+    for directory in request.get('additional_directories', []):
+        if not isinstance(directory, str) or not Path(directory).is_absolute() or not Path(directory).is_dir():
+            raise ValueError('项目文件夹未连接，请重新打开项目')
+        args += ['--add-dir', directory]
     with channel['state_file'](connection) as state:
         if channel['live'](state.get('pid')) and not state.get('closed'):
             raise ValueError('目标会话已有进程，未重复启动')

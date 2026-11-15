@@ -2,7 +2,7 @@ package forwarder
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net"
 	"net/netip"
 	"sync"
@@ -33,7 +33,8 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 			localAddress = replaced
 		}
 		natLock.Unlock()
-		if dst, ok := netip.AddrFromSlice(localAddress.AsSlice()); !ok || !outbound.Allows("tcp", netip.AddrPortFrom(dst, r.ID().LocalPort)) {
+		dst, ok := netip.AddrFromSlice(localAddress.AsSlice())
+		if !ok {
 			r.Complete(true)
 			return
 		}
@@ -41,7 +42,7 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 		if len(dialers) > 0 && dialers[0] != nil {
 			dial = dialers[0]
 		}
-		outbound, err := dial(context.Background(), "tcp", net.JoinHostPort(localAddress.String(), fmt.Sprint(r.ID().LocalPort)))
+		outbound, err := dialAllowed(outbound, "tcp", netip.AddrPortFrom(dst, r.ID().LocalPort), dial)
 		if err != nil {
 			log.Tracef("net.Dial() = %v", err)
 			r.Complete(true)
@@ -76,3 +77,22 @@ func linkLocal() *tcpip.Subnet {
 	subnet, _ := tcpip.NewSubnet(tcpip.AddrFromSlice(parsedSubnet.IP), tcpip.MaskFromBytes(parsedSubnet.Mask))
 	return &subnet
 }
+
+// Recheck the numeric destination after a potentially slow proxy handshake or
+// direct dial, before any guest payload can cross the new connection.
+func dialAllowed(policy types.Outbound, network string, dst netip.AddrPort, dial types.DialContext) (net.Conn, error) {
+	if !policy.Allows(network, dst) {
+		return nil, errDestinationDenied
+	}
+	conn, err := dial(context.Background(), network, dst.String())
+	if err != nil {
+		return nil, err
+	}
+	if !policy.Allows(network, dst) {
+		conn.Close()
+		return nil, errDestinationDenied
+	}
+	return conn, nil
+}
+
+var errDestinationDenied = errors.New("destination denied by outbound policy")

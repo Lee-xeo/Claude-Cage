@@ -214,9 +214,6 @@ func (s *Server) startWindowsGuest() error {
 	if err := s.requireStorageReady(); err != nil {
 		return err
 	}
-	if err := requireHostGit(s.operationContext()); err != nil {
-		return err
-	}
 	cfg, err := loadConfig(s.configPath)
 	if err != nil {
 		return err

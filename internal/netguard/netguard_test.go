@@ -211,3 +211,30 @@ func TestOwnAddress(t *testing.T) {
 		}
 	}
 }
+
+func TestHostAddressDiscoveryFollowsChangesAndFailsClosed(t *testing.T) {
+	dst := ap("8.8.8.8:443")
+	p := &Policy{Allow: []Rule{{Net: netip.PrefixFrom(dst.Addr(), 32), Port: 8443}}}
+	var addrs []net.Addr
+	var err error
+	discover := func() ([]net.Addr, error) { return addrs, err }
+	addrs = []net.Addr{&net.IPNet{IP: net.ParseIP("127.0.0.1")}}
+	if !p.allows("tcp", dst, discover) {
+		t.Fatal("refused public destination")
+	}
+	addrs = append(addrs, &net.IPNet{IP: net.ParseIP(dst.Addr().String())})
+	if p.allows("tcp", dst, discover) {
+		t.Fatal("allowed newly assigned host address")
+	}
+	addrs, err = nil, os.ErrPermission
+	if p.allows("tcp", ap("1.1.1.1:443"), discover) {
+		t.Fatal("allowed public traffic without interface information")
+	}
+	if !p.allows("tcp", ap("8.8.8.8:8443"), discover) {
+		t.Fatal("lost explicit port grant")
+	}
+	addrs, err = []net.Addr{&net.IPNet{IP: net.ParseIP("127.0.0.1")}}, nil
+	if !p.allows("tcp", dst, discover) {
+		t.Fatal("did not recover after address removal and successful discovery")
+	}
+}

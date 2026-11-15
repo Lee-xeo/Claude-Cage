@@ -60,6 +60,14 @@ func sharedCLILauncher(launcher string) bool {
 
 func (s *Server) mobileRunner(prefix []string) cliconversation.Runner {
 	return cliconversation.Runner{SupervisedStdin: true, Command: func(ctx context.Context, workspace string, args []string) (*exec.Cmd, error) {
+		directories, err := s.projectAdditionalDirectories(workspace)
+		if err != nil {
+			return nil, err
+		}
+		args = slices.Clone(args)
+		for _, directory := range directories {
+			args = append(args, "--add-dir", directory)
+		}
 		// The login shell supplies the guest's PATH and Claude provider configuration.
 		// Shell startup output goes to stderr so stdout contains only CLI JSON.
 		login := `exec 3>&1 1>&2; exec /bin/bash -lc ` + shellescape.Quote(`exec 1>&3 3>&-; cd -- "$1" && shift && exec "$@"`) + ` "$0" "$@"`

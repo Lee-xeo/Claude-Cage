@@ -331,10 +331,7 @@ func (s *Server) desktopFileRequests(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	if err = s.rememberDesktopDownloads(result); err != nil {
-		requestError(w, err)
-		return
-	}
+	s.rememberDesktopDownloads(result)
 	s.acknowledgeDesktopDownloads(ctx, result)
 	jsonReply(w, result)
 }
@@ -366,53 +363,61 @@ func (s *Server) acknowledgeDesktopDownloads(ctx context.Context, result map[str
 
 // Register completed exports before the UI can ask a native bridge to save them.
 // Guest paths are never accepted as arbitrary host paths.
-func (s *Server) rememberDesktopDownloads(result map[string]any) error {
+func (s *Server) rememberDesktopDownloads(result map[string]any) {
 	items, _ := result["downloads"].([]any)
+	downloads := make([]any, 0, len(items))
 	visible := make(map[string]bool, len(items))
 	for _, value := range items {
-		item, ok := value.(map[string]any)
-		if !ok {
-			return errors.New("Desktop 下载记录无效")
-		}
+		item, _ := value.(map[string]any)
 		id, _ := item["id"].(string)
 		name, _ := item["name"].(string)
 		if !browserFileID.MatchString(id) || !browserFileName(name) {
-			return errors.New("Desktop 下载记录无效")
+			continue
 		}
-		visible[id] = true
 		item["target"] = "desktop"
 		if s.macosGuest != nil || s.windowsGuest != nil {
 			data, err := json.Marshal(item)
-			if err != nil {
-				return err
-			}
 			var native browserDownloadInfo
-			if err = json.Unmarshal(data, &native); err != nil {
-				return err
+			if err != nil || json.Unmarshal(data, &native) != nil {
+				continue
 			}
+			visible[id] = true
 			converted := s.nativeDownloadForHost(native)
 			item["name"], item["state"], item["path"] = converted.Name, converted.State, converted.Path
 			item["retryable"], item["error"] = converted.Retryable, converted.Error
-			continue
+		} else {
+			s.resolveSharedDesktopDownload(item, id, name)
 		}
-		if item["state"] != "saved" {
-			delete(item, "path")
-			continue
-		}
-		root := s.environmentDir()
-		if item["path"] != strings.TrimRight(guestPath(root), "/")+"/Downloads/"+name {
-			return errors.New("Desktop 下载保存位置无效")
-		}
-		path := filepath.Join(root, "Downloads", name)
-		if err := rememberDownload(s.profile, SavedDownload{ID: id, Name: name, Path: path}, true); err != nil {
-			return err
-		}
-		item["path"] = path
+		downloads = append(downloads, item)
 	}
+	result["downloads"] = downloads
 	if s.macosGuest != nil || s.windowsGuest != nil {
 		s.discardMissingNativeDownloads("desktop", visible)
 	}
-	return nil
+}
+
+func (s *Server) resolveSharedDesktopDownload(item map[string]any, id, name string) {
+	path, _ := item["path"].(string)
+	delete(item, "path")
+	if item["state"] != "saved" {
+		return
+	}
+	// A host receipt survives a change of download directory or a Save As.
+	if saved, err := readSavedDownload(s.profile, id); err == nil {
+		item["name"], item["path"] = saved.Name, saved.Path
+		return
+	}
+	root := s.environmentDir()
+	if path != strings.TrimRight(guestPath(root), "/")+"/Downloads/"+name {
+		item["state"], item["retryable"], item["error"] = "failed", false, "无法确认这条下载记录的本机保存位置。"
+		return
+	}
+	hostPath := filepath.Join(root, "Downloads", name)
+	if err := rememberDownload(s.profile, SavedDownload{ID: id, Name: name, Path: hostPath}, true); err != nil {
+		item["state"], item["retryable"], item["error"] = "failed", false, "无法记录这次下载的本机保存位置。"
+		return
+	}
+	item["path"] = hostPath
 }
 
 func (s *Server) fileInputUpload(w http.ResponseWriter, r *http.Request) {

@@ -22,7 +22,7 @@ internal static class UpdateInstaller
             throw new IOException("安装包产品身份或版本不匹配");
     }
 
-    public static async Task<int> Run()
+    public static async Task<int> Run(string? installerDiagnostics = null)
     {
         InstallPlan? plan = null;
         string? backup = null;
@@ -73,16 +73,17 @@ internal static class UpdateInstaller
             VerifyArchive(plan.Archive, plan.Digest, plan.Version, ownPublisher);
             // NSIS requires /D= to be the final, unquoted argument; the executable
             // path is passed separately and no command shell is involved.
+            var diagnosticOption = installerDiagnostics == null ? "" : $"/DIAGNOSTICS=\"{installerDiagnostics}\" ";
             using (var installer = Process.Start(new ProcessStartInfo(plan.Archive) {
                 UseShellExecute = false, CreateNoWindow = true,
-                Arguments = "/S /UPDATE /D=" + plan.Target,
+                Arguments = "/S /UPDATE " + diagnosticOption + "/D=" + plan.Target,
                 WorkingDirectory = Path.GetDirectoryName(plan.Archive),
             }) ?? throw new IOException("无法启动 Windows 安装器"))
             {
                 installerStarted = true;
                 try { await installer.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(10)); }
                 catch (TimeoutException) { if (!installer.HasExited) installer.Kill(true); await installer.WaitForExitAsync(); throw; }
-                if (installer.ExitCode != 0) throw new IOException("Windows 安装程序未完成安装");
+                if (installer.ExitCode != 0) throw new IOException($"Windows 安装程序未完成安装（退出码 {installer.ExitCode}）");
             }
             EnsureInstallationComplete(plan.Target);
             Authenticode.SamePublisher(original, ownPublisher);

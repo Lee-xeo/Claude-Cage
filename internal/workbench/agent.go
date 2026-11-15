@@ -54,7 +54,7 @@ func AgentOperations() []AgentOperation {
 	}
 	get("status", "Environment readiness, network checks and current job", "/api/status")
 	get("account.status", "Account presence and lock state; no credentials", "/api/account")
-	post("account.create", "Create an account only on an empty profile; user chooses the password", "/api/account/create", object(map[string]string{"username": "string", "password": "string", "confirm_password": "string", "avatar": "string"}))
+	post("account.create", "Create an account only on an empty profile; user chooses the password. Returns a recovery_key once; deliver it privately to the user for secure storage", "/api/account/create", object(map[string]string{"username": "string", "password": "string", "confirm_password": "string", "avatar": "string"}))
 	post("account.unlock", "Unlock using a user-provided password via private input", "/api/account/unlock", object(map[string]string{"password": "string"}))
 	get("settings.get", "Read settings without proxy credentials", "/api/settings")
 	post("settings.patch", "Merge specified fields under the operation lock; dry_run validates without writing", "/api/agent/settings", object(map[string]string{"patch": "object", "dry_run": "boolean"}))
@@ -85,7 +85,9 @@ func AgentOperations() []AgentOperation {
 	post("network.check", "Run existing safety checks; may reopen networking when checks pass", "/api/safety/check", object(nil))
 	post("network.pause", "Close external networking and persist pause intent", "/api/safety/close", object(nil))
 	post("project.open", "Grant access only to a user-authorized directory; add=true remembers the grant", "/api/projects/open", object(map[string]string{"workspace": "string", "add": "boolean", "activate": "boolean"}))
-	post("project.remove", "Remove an added directory and revoke its share. Close its terminals, running sessions and editor first. Preserve files and history", "/api/projects/remove", object(map[string]string{"workspace": "string"}))
+	post("project.save", "Save a named project with user-authorized folders. For a new project, omit workspace; the first folder becomes its stable default directory. To edit, provide its existing workspace and keep that folder. Returns approval if macOS authorization is needed; retry the same request after approval", "/api/projects/save", from(projectGroup{}))
+	post("project.remove", "Remove a project and revoke every bound folder share. Close its terminals, running sessions and editors first. Preserve files and history", "/api/projects/remove", object(map[string]string{"workspace": "string"}))
+	post("project.refresh", "Linux guests only: forget cached names and attributes of project files so host-side changes show at once", "/api/projects/refresh", object(nil))
 
 	for _, action := range []string{"profile", "password", "lock", "logout", "suspend"} {
 		schema := object(nil)
@@ -97,8 +99,6 @@ func AgentOperations() []AgentOperation {
 		}
 		post("account."+action, "Same account action and verification as the workbench", "/api/account/"+action, schema)
 	}
-	get("host.git", "Inspect the same host Git prerequisite as first setup", "/api/host/git")
-	post("host.git.enable", "Enable the workbench's host Git protection with the same confirm=true authorization", "/api/host/git", object(map[string]string{"confirm": "boolean"}))
 	get("appearance.get", "Read complete appearance and saved themes", "/api/appearance")
 	post("appearance.set", "Save complete appearance using the workbench validator", "/api/appearance", from(Appearance{}))
 	get("appearance.codex", "Read the same local Codex appearance import as the UI", "/api/appearance/codex")
