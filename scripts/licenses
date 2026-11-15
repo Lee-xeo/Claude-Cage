@@ -47,6 +47,7 @@ trap 'rm -f "$list"' EXIT
   modules darwin arm64 1 ./cmd/agent-vm
   modules darwin arm64 1 ./cmd/cage
   modules darwin amd64 1 ./cmd/agent-vm
+  modules darwin amd64 1 ./cmd/cage
   modules windows amd64 0 ./cmd/agent-vm
   modules windows amd64 0 ./cmd/cage
   modules windows arm64 0 ./cmd/agent-vm
