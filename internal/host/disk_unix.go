@@ -4,8 +4,8 @@ package host
 
 import "golang.org/x/sys/unix"
 
-// freeGiB is the space free for an unprivileged user on dir's file system.
-func freeGiB(dir string) (int, bool) {
+// statfsFreeGiB is the space free for an unprivileged user on dir's file system.
+func statfsFreeGiB(dir string) (int, bool) {
 	var st unix.Statfs_t
 	if err := unix.Statfs(dir+"/.", &st); err != nil {
 		return 0, false
