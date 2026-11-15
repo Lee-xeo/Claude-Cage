@@ -26,6 +26,12 @@ bash scripts/build-app.sh --intel-macos-test
 
 输出 `_output/Cage Intel.app`，可通过 `CAGE_BUILD_OUTPUT` 指定另一个绝对 `.app` 路径。包内包含独立运行时、客机安装工具、许可证及所需源码材料，不包含系统盘、账户或代理配置。测试包使用独立的应用标识和 `~/.claude-cage-intel-test` 默认配置目录；更新使用新的测试包。
 
+## GitHub Actions 产物
+
+三平台检查在 `macos-15-intel` 上独立运行 Intel 构建，产物名为 `cage-macos-amd64-test`，与 `cage-macos-arm64-test` 并列。Intel 任务使用标准的 `scripts/build-app.sh` 构建完整 `Cage.app`，包含 QEMU/HVF、macOS 安装工具、Linux 启动固件和相应源代码材料；本地独立测试包只是额外的应用标识与配置隔离选项。
+
+上传前执行 Go、工作台、原生维护、更新和账户检查，核对主程序与运行时的 x86_64 架构，并解压回验签名及可执行权限。GitHub 托管 runner 不启动嵌套客机；空盘系统安装和客机桌面验收仍需 Intel Mac 实机记录。
+
 ## 验证范围
 
 构建成功与系统启动不代表工作台验收完成。提交贡献时分别记录以下证据及未验证的平台：

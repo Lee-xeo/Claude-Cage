@@ -45,6 +45,12 @@ jobs:
       ref: ${{ github.sha }}
       release: false
       artifact_name: cage-macos-arm64-test
+  macos-intel:
+    needs: workflow-checks
+    uses: ./.github/workflows/macos-intel-build.yml
+    with:
+      ref: ${{ github.sha }}
+      artifact_name: cage-macos-amd64-test
   windows-updates:
     needs: workflow-checks
     strategy:
