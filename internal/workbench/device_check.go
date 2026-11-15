@@ -203,7 +203,7 @@ func evaluateDevice(p *guestprofile.Profile, v *deviceObservation) ([]deviceChec
 			evidence = "所选软件后端与实际渲染器不一致：" + evidence
 		}
 		markers := map[string]string{"metal": "metal", "d3d11": "direct3d11", "vulkan": "vulkan", "opengl": "opengl"}
-		if marker := markers[backend]; marker != "" && !strings.Contains(strings.ToLower(v.WebGL.Renderer+" "+v.WebGL.Version), marker) {
+		if marker := markers[backend]; marker != "" && !strings.Contains(strings.ToLower(v.WebGL.Renderer), marker) {
 			state = "unknown"
 			evidence = "驱动报告未能确认所选 API：" + evidence
 		}
@@ -294,7 +294,7 @@ func (s *Server) deviceCheck(w http.ResponseWriter, r *http.Request) {
 			state := "passed"
 			if item.observed == "" {
 				state = "unknown"
-			} else if !strings.EqualFold(item.observed, item.expected) {
+			} else if item.observed != item.expected && !(item.id == "hostname" && strings.EqualFold(item.observed, item.expected)) {
 				state = "failed"
 			}
 			report.Checks = append(report.Checks, deviceCheckItem{item.id, item.title, state, "实际值：" + item.observed})
@@ -320,14 +320,13 @@ func (s *Server) deviceCheck(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var observation browserObservation
-		if s.windowsGuest != nil {
-			data, e := s.nativeBrowserClient().request(ctx, "POST", "/audit", map[string]any{"timezone": cfg.Timezone, "network": false})
-			err = e
-			if e == nil {
-				err = json.Unmarshal(data, &observation)
-			}
-		} else {
-			observation, err = s.browserObservation(ctx, cfg, false)
+		s.mu.Lock()
+		token := s.credentials.Token
+		s.mu.Unlock()
+		body, _ := json.Marshal(map[string]any{"timezone": cfg.Timezone, "network": false, "device": true})
+		data, err := s.guestAPI(ctx, token, http.MethodPost, "/audit", body)
+		if err == nil {
+			err = json.Unmarshal(data, &observation)
 		}
 		if err != nil {
 			report.Checks = append(report.Checks, deviceCheckItem{"browser-evidence", "浏览器观测", "unknown", "本地诊断文档未完成，请确认浏览器及客机组件可用后重测。"})

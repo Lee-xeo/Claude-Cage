@@ -4,7 +4,6 @@
 <title>浏览器检测</title>
 <p>正在检查浏览器设置。</p>
 <script>
-/*CAGE_DEVICE_PROBE*/
 (async () => {
   const args = new URLSearchParams(location.hash.slice(1));
   const report = new URL(args.get("report"));
@@ -14,9 +13,9 @@
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     expected_timezone: new Intl.DateTimeFormat("en", {timeZone: args.get("zone")}).resolvedOptions().timeZone,
     language: navigator.language,
-    platform: navigator.platform,
-    device: await collectDeviceObservation()
+    platform: navigator.platform
   };
+  /*DEVICE_OBSERVATION*/
   if (args.get("network") === "1") {
     if (location.origin !== "http://198.18.0.254") return;
     try {

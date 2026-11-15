@@ -37,6 +37,12 @@ func TestGraphicsEvidenceDistinguishesFallback(t *testing.T) {
 	if class != "driver-reported" || checkState(items, "webgl-render") != "passed" {
 		t.Fatal("valid render sample rejected")
 	}
+	v.WebGL.Renderer = "ANGLE (Intel, Intel UHD Graphics, Direct3D11)"
+	v.WebGL.Version = "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+	items, _ = evaluateDevice(p, v)
+	if checkState(items, "graphics-backend") == "passed" {
+		t.Fatal("WebGL API version cannot confirm the native OpenGL backend")
+	}
 	v.WebGL.Renderer = "llvmpipe (LLVM 18)"
 	items, class = evaluateDevice(p, v)
 	if class != "software" || checkState(items, "graphics-backend") != "failed" {

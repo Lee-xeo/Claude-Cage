@@ -101,7 +101,7 @@ export async function auditBrowser(input, launch) {
     // The synthetic gateway serves the same fixed page only while checking
     // network policy. Routine language/timezone checks stay entirely local.
     if (!input.network) {
-      const html = (await readFile(new URL("./browser-check.html", import.meta.url), "utf8")).replace("/*CAGE_DEVICE_PROBE*/",collectDeviceObservation.toString());
+      const html = (await readFile(new URL("./browser-check.html", import.meta.url), "utf8")).replace("/*DEVICE_OBSERVATION*/", input.device === true ? `result.device = await (${collectDeviceObservation.toString()})();` : "");
       localPage = await browserCallback("127.0.0.1", (_, res) => {
         res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(html);
       });
@@ -180,6 +180,7 @@ export function nativeBrowserDispatch({ window, editor, tailnet, settingsInputs,
     const launch = url => window("launch", url ? { url } : {}, signal);
     if (path === "/audit") {
       if (info.login) throw failure("login_active", "请完成当前账号授权后重新检测");
+      if (input.device === true) return auditBrowser(input, launch);
       observed = undefined;
       let before;
       if (info.profile_pid) {

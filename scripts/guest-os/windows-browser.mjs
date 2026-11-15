@@ -1315,7 +1315,7 @@ export function createNativeBrowserService(options = {}) {
       try {
         const auditPage = await isolated.newPage();
         const result = await auditPage.evaluate(() => ({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, language: navigator.language, platform: navigator.platform }));
-        result.device = await auditPage.evaluate(collectDeviceObservation);
+        if (input.device === true) result.device = await auditPage.evaluate(collectDeviceObservation);
         result.expected_timezone = expected;
         if (input.network === true) {
           try {
