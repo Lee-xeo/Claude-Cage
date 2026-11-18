@@ -20,6 +20,7 @@ function harness(inputPending = () => false) {
     get delays() { return [...timers.values()].map(t => t.delay); },
     async complete(ms, value = "frame") { clock += ms; pending.shift().resolve(value); await Promise.resolve(); },
     async fail(error) { pending.shift().reject(error); await Promise.resolve(); },
+    advance(ms) { clock += ms; },
     tick() { const [id, timer] = timers.entries().next().value; timers.delete(id); timer.fn(); },
   };
 }
@@ -86,5 +87,22 @@ test("queued input takes priority over the next screenshot", async () => {
   h.tick();
   assert.equal(h.captures, 1);
   await h.complete(100);
+  h.polling.stop();
+});
+
+test("input that stays queued delays a screenshot only for a bounded time", async () => {
+  const h = harness(() => true);
+  h.tick();
+  h.advance(275); h.tick();
+  assert.equal(h.captures, 0);
+  assert.deepEqual(h.delays, [25]);
+  h.advance(25); h.tick();
+  assert.equal(h.captures, 1);
+  await h.complete(100);
+  // The next screenshot waits for input again, from the start.
+  h.tick();
+  assert.equal(h.captures, 1);
+  h.advance(300); h.tick();
+  assert.equal(h.captures, 2);
   h.polling.stop();
 });

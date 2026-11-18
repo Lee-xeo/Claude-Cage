@@ -40,9 +40,13 @@ static void *loginImage(int x, int y, int width, int height, int *size) {
     @autoreleasepool {
         __block CageGuestSetupView *owner;
         __block NSBitmapImageRep *source;
+        // The capture's temporaries belong to the main thread, which may not
+        // drain a pool of its own between requests.
         dispatch_sync(dispatch_get_main_queue(), ^{
-            owner = loginView;
-            source = [owner snapshotBitmap];
+            @autoreleasepool {
+                owner = loginView;
+                source = [owner snapshotBitmap];
+            }
         });
         if (!source.CGImage) return NULL;
         NSBitmapImageRep *output = source;
@@ -58,7 +62,7 @@ static void *loginImage(int x, int y, int width, int height, int *size) {
         // A view replaced or revoked while encoding must not deliver its frame.
         __block BOOL authorized = NO;
         dispatch_sync(dispatch_get_main_queue(), ^{
-            authorized = loginView == owner && [owner canUseView];
+            @autoreleasepool { authorized = loginView == owner && [owner canUseView]; }
         });
         if (!authorized || !image.length || image.length > (4<<20)) return NULL;
         void *copy = malloc(image.length);

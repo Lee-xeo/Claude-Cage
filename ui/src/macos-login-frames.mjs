@@ -1,13 +1,19 @@
 // One capture at a time, with a single pending refresh after user input.
 // Account for capture time instead of adding a full idle delay to every frame.
-export function pollLoginFrames({ capture, onFrame, onError, inputPending = () => false, interval = 550,
+export function pollLoginFrames({ capture, onFrame, onError, inputPending = () => false, interval = 550, inputLimit = 300,
   now = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout }) {
-  let active = true, running = false, requested = false, timer;
+  let active = true, running = false, requested = false, timer, held;
   async function poll() {
     timer = undefined;
     if (!active || running) return;
     // Do not put another screenshot ahead of already queued typing/scrolling.
-    if (inputPending()) { timer = setTimer(poll, 25); return; }
+    // A scroll or a held key can keep input queued for seconds, so the wait
+    // is bounded: the picture still follows what the input is doing.
+    if (inputPending()) {
+      held ??= now();
+      if (now() - held < inputLimit) { timer = setTimer(poll, 25); return; }
+    }
+    held = undefined;
     running = true;
     requested = false;
     const started = now();
