@@ -37,6 +37,7 @@ func mcpTools() []mcpTool {
 		{Name: "remove_key", Description: "Stop allowing an SSH public key.", InputSchema: key, action: "remove-key"},
 		{Name: "open_service", Description: "Make a port of a device on the network reachable on this system's loopback address.", InputSchema: service, action: "open-service"},
 		{Name: "browser_return", Description: "Note that the browser came back from signing in.", InputSchema: none, action: "browser-return"},
+		{Name: "acknowledge_rename", Description: "Note that the user has seen that this device was renamed.", InputSchema: none, action: "acknowledge-rename"},
 	}
 	for i := range tools {
 		tools[i].Meta = page
