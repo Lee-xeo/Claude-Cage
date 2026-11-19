@@ -208,6 +208,12 @@ var GuestSetup = APTBootstrapScript + "\n" + guestDependencies + "\n" + browserS
 //go:embed editor-theme.json
 var editorTheme string
 
+// guestMigrationScript moves environments installed by earlier versions to
+// the current names. It is the only place those names remain.
+//
+//go:embed guest-migrate.sh
+var guestMigrationScript string
+
 //go:embed guest-start.sh
 var guestStart string
 
@@ -315,7 +321,7 @@ func (c Config) StartScript() string {
 func (c Config) SetupScript() string { return c.GuestProfile.Linux(GuestSetup) }
 
 func componentStartScript() string {
-	return APTBootstrapScript + "\n" + claudeAccountScript() + browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet cage-editor.service; then sudo systemctl stop cage-editor.service; fi\n" + guestStart
+	return APTBootstrapScript + "\n" + guestMigrationScript + "\n" + claudeAccountScript() + browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet cage-editor.service; then sudo systemctl stop cage-editor.service; fi\n" + guestStart
 }
 
 func markGuestStart(body string) string {
