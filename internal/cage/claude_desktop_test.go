@@ -184,7 +184,7 @@ func TestPluginLinkGoesToTheWorkbench(t *testing.T) {
 	write("files", "#!/bin/sh\nprintf 'files %s' \"$*\"\n")
 	write("id", "#!/bin/sh\nprintf cage-browser\n")
 	script := strings.NewReplacer("/usr/local/lib/plugin-links", list, "/usr/bin/node", filepath.Join(bin, "node"),
-		"/usr/local/bin/cage-desktop-files", filepath.Join(bin, "files")).Replace(guestOpen)
+		"/usr/local/libexec/desktop-files", filepath.Join(bin, "files")).Replace(guestOpen)
 	for link, want := range map[string]string{
 		"Demo:open?id=1": "/plugin-link Demo:open?id=1",
 		"other:thing":    "files --open other:thing",

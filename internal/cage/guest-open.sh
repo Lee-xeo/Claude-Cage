@@ -28,7 +28,7 @@ case "${1:-}" in
     exec sudo -n -H -u cage /usr/local/bin/tailnet --browser-return
     ;;
   claude://*)
-    sudo -u cage /usr/local/bin/cage-claude-open "$1"
+    sudo -u cage /usr/local/libexec/claude-desktop-open "$1"
     # Publish focus only after the running application accepted the handoff.
     # The browser service never receives the login URL or its credentials.
     set -- /desktop-focus
@@ -59,7 +59,7 @@ case "${1:-}" in
     else
       # File operations belong to the desktop session, never the browser control
       # token. The host resolves them only within Cage project directories.
-      exec /usr/local/bin/cage-desktop-files --open "${1:-}"
+      exec /usr/local/libexec/desktop-files --open "${1:-}"
     fi
     ;;
 esac

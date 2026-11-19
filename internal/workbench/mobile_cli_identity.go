@@ -7,7 +7,7 @@ var mobileCLIIdentity string
 
 // Runs after the guest login shell has established the CLI's environment.
 func mobileIdentityCommand(prefix, args []string) []string {
-	if len(prefix) == 5 && prefix[0] == "env" && prefix[2] == "/usr/local/bin/cage-claude-account" && prefix[3] == "run" {
+	if len(prefix) == 5 && prefix[0] == "env" && prefix[2] == "/usr/local/libexec/claude-account" && prefix[3] == "run" {
 		command := []string{prefix[0], prefix[1], "python3", "-I", "-c", mobileCLIIdentity, "official", prefix[2], prefix[4]}
 		return append(command, args...)
 	}

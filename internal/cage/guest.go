@@ -29,18 +29,18 @@ var claudeAccountHelper string
 var ClientRuntimeHelper string
 
 func clientRuntimeScript() string {
-	return "sudo tee /usr/local/bin/client_runtime.py >/dev/null <<'CLIENT_RUNTIME'\n" + ClientRuntimeHelper + "\nCLIENT_RUNTIME\nsudo chmod 0644 /usr/local/bin/client_runtime.py\n"
+	return "sudo install -d -m 0755 /usr/local/libexec\nsudo tee /usr/local/bin/client_runtime.py >/dev/null <<'CLIENT_RUNTIME'\n" + ClientRuntimeHelper + "\nCLIENT_RUNTIME\nsudo chmod 0644 /usr/local/bin/client_runtime.py\n"
 }
 
 func claudeAccountScript() string {
 	return clientRuntimeScript() +
-		"sudo tee /usr/local/bin/cage-claude-account >/dev/null <<'CAGE_CLAUDE_ACCOUNT'\n" + claudeAccountHelper + "\nCAGE_CLAUDE_ACCOUNT\nsudo chmod 0755 /usr/local/bin/cage-claude-account\n" +
-		`sudo install -d -m 0755 /usr/local/lib/cage-claude-bin
-sudo tee /usr/local/lib/cage-claude-bin/claude >/dev/null <<'CAGE_CLAUDE_SHIM'
+		"sudo tee /usr/local/libexec/claude-account >/dev/null <<'CAGE_CLAUDE_ACCOUNT'\n" + claudeAccountHelper + "\nCAGE_CLAUDE_ACCOUNT\nsudo chmod 0755 /usr/local/libexec/claude-account\n" +
+		`sudo install -d -m 0755 /usr/local/libexec/claude-wrapper
+sudo tee /usr/local/libexec/claude-wrapper/claude >/dev/null <<'CAGE_CLAUDE_SHIM'
 #!/bin/sh
-exec /usr/local/bin/cage-claude-account run "$CAGE_CLAUDE_ACCOUNT_ID" "$@"
+exec /usr/local/libexec/claude-account run "$CAGE_CLAUDE_ACCOUNT_ID" "$@"
 CAGE_CLAUDE_SHIM
-sudo chmod 0755 /usr/local/lib/cage-claude-bin/claude
+sudo chmod 0755 /usr/local/libexec/claude-wrapper/claude
 `
 }
 
@@ -75,7 +75,7 @@ var displayDensity string
 var displayGovernor string
 
 func displayGovernorScript() string {
-	return "sudo tee /usr/local/bin/cage-display-governor >/dev/null <<'CAGE_DISPLAY_GOVERNOR'\n" + displayGovernor + "\nCAGE_DISPLAY_GOVERNOR\nsudo chmod 0755 /usr/local/bin/cage-display-governor\n"
+	return "sudo tee /usr/local/libexec/display-governor >/dev/null <<'CAGE_DISPLAY_GOVERNOR'\n" + displayGovernor + "\nCAGE_DISPLAY_GOVERNOR\nsudo chmod 0755 /usr/local/libexec/display-governor\n"
 }
 
 //go:embed browser-phone.mjs
@@ -164,20 +164,20 @@ var nativeIMESession string
 var nativeInputClient string
 
 func nativeInputScript() string {
-	return "\nsudo tee /usr/local/bin/cage-native-input >/dev/null <<'CAGE_NATIVE_INPUT'\n" + nativeIME + "\nCAGE_NATIVE_INPUT\nsudo chmod 0755 /usr/local/bin/cage-native-input\n" +
-		"sudo tee /usr/local/bin/cage-input-session >/dev/null <<'CAGE_INPUT_SESSION'\n" + nativeIMESession + "\nCAGE_INPUT_SESSION\nsudo chmod 0755 /usr/local/bin/cage-input-session\n" +
+	return "\nsudo tee /usr/local/libexec/native-input >/dev/null <<'CAGE_NATIVE_INPUT'\n" + nativeIME + "\nCAGE_NATIVE_INPUT\nsudo chmod 0755 /usr/local/libexec/native-input\n" +
+		"sudo tee /usr/local/libexec/input-session >/dev/null <<'CAGE_INPUT_SESSION'\n" + nativeIMESession + "\nCAGE_INPUT_SESSION\nsudo chmod 0755 /usr/local/libexec/input-session\n" +
 		"sudo tee /usr/local/lib/native-input.mjs >/dev/null <<'CAGE_INPUT_CLIENT'\n" + nativeInputClient + "\nCAGE_INPUT_CLIENT\n" +
-		"printf 'cage-browser ALL=(cage) NOPASSWD: /usr/local/bin/cage-native-input --request, /usr/local/bin/cage-native-input --relay\\n' | sudo tee /etc/sudoers.d/cage-input >/dev/null\nsudo chmod 0440 /etc/sudoers.d/cage-input\n"
+		"printf 'cage-browser ALL=(cage) NOPASSWD: /usr/local/libexec/native-input --request, /usr/local/libexec/native-input --relay\\n' | sudo tee /etc/sudoers.d/native-input >/dev/null\nsudo chmod 0440 /etc/sudoers.d/native-input\n"
 }
 
 func fileInputScript() string {
-	return "\nsudo tee /usr/local/bin/cage-desktop-files >/dev/null <<'CAGE_DESKTOP_FILES'\n" + desktopFiles + "\nCAGE_DESKTOP_FILES\nsudo chmod 0755 /usr/local/bin/cage-desktop-files\n" +
-		"sudo tee /usr/local/lib/cage-desktop-downloads.py >/dev/null <<'CAGE_DESKTOP_DOWNLOADS'\n" + desktopDownloads + "\nCAGE_DESKTOP_DOWNLOADS\n" +
-		"sudo tee /usr/local/bin/cage-save-download >/dev/null <<'CAGE_DESKTOP_DOWNLOAD_COPY'\n" + saveDownload + "\nCAGE_DESKTOP_DOWNLOAD_COPY\nsudo chmod 0755 /usr/local/bin/cage-save-download\n"
+	return "\nsudo tee /usr/local/libexec/desktop-files >/dev/null <<'CAGE_DESKTOP_FILES'\n" + desktopFiles + "\nCAGE_DESKTOP_FILES\nsudo chmod 0755 /usr/local/libexec/desktop-files\n" +
+		"sudo tee /usr/local/lib/desktop-downloads.py >/dev/null <<'CAGE_DESKTOP_DOWNLOADS'\n" + desktopDownloads + "\nCAGE_DESKTOP_DOWNLOADS\n" +
+		"sudo tee /usr/local/libexec/save-download >/dev/null <<'CAGE_DESKTOP_DOWNLOAD_COPY'\n" + saveDownload + "\nCAGE_DESKTOP_DOWNLOAD_COPY\nsudo chmod 0755 /usr/local/libexec/save-download\n"
 }
 
 func imageInputScript() string {
-	return nativeInputScript() + fileInputScript() + "\nsudo tee /usr/local/bin/cage-image-input >/dev/null <<'CAGE_IMAGE_INPUT'\n" + imageInput + "\nCAGE_IMAGE_INPUT\nsudo chmod 0755 /usr/local/bin/cage-image-input\n"
+	return nativeInputScript() + fileInputScript() + "\nsudo tee /usr/local/libexec/image-input >/dev/null <<'CAGE_IMAGE_INPUT'\n" + imageInput + "\nCAGE_IMAGE_INPUT\nsudo chmod 0755 /usr/local/libexec/image-input\n"
 }
 
 func phoneBrowserScript() string {
@@ -187,7 +187,7 @@ func phoneBrowserScript() string {
 
 func browserServices() string {
 	// Earlier versions installed an unused Tailscale stdio client here.
-	return "sudo rm -f /usr/local/lib/tailnet-client.mjs\n" + deviceObservationScript() + "sudo tee /usr/local/lib/cage-wait-services.py >/dev/null <<'CAGE_WAIT_SERVICES'\n" + guestWaitServices + "\nCAGE_WAIT_SERVICES\n" + toolInstallFunctions() + "\n" + "sudo tee /usr/local/lib/browser-visibility.mjs >/dev/null <<'CAGE_BROWSER_VISIBILITY'\n" + browserVisibility + "\nCAGE_BROWSER_VISIBILITY\nsudo tee /usr/local/lib/browser-wheel.mjs >/dev/null <<'CAGE_BROWSER_WHEEL'\n" + browserWheel + "\nCAGE_BROWSER_WHEEL\nsudo tee /usr/local/lib/display-density.mjs >/dev/null <<'CAGE_DISPLAY_DENSITY'\n" + displayDensity + "\nCAGE_DISPLAY_DENSITY\n" + displayGovernorScript() + PhoneDesktopProvisionScript() + phoneBrowserScript() + "\nsudo tee /usr/local/lib/browser-extensions.mjs >/dev/null <<'CAGE_BROWSER_EXTENSIONS'\n" + browserExtensions + "\nCAGE_BROWSER_EXTENSIONS\n" + "\nsudo tee /usr/local/lib/browser-extension-archive.py >/dev/null <<'CAGE_EXTENSION_ARCHIVE'\n" + browserExtensionArchive + "\nCAGE_EXTENSION_ARCHIVE\n" + "\nsudo tee /usr/local/lib/browser-private.mjs >/dev/null <<'CAGE_BROWSER_PRIVATE'\n" + browserPrivate + "\nCAGE_BROWSER_PRIVATE\n" + "\nsudo tee /usr/local/lib/browser-cookies.mjs >/dev/null <<'CAGE_BROWSER_COOKIES'\n" + browserCookies + "\nCAGE_BROWSER_COOKIES\n" + "\nsudo tee /usr/local/lib/browser-vault.mjs >/dev/null <<'CAGE_BROWSER_VAULT'\n" + browserVault + "\nCAGE_BROWSER_VAULT\n" + guestMemory + "\n" + guestDiagnostics() + guestAudio + "\n" + guestOpenScript() + splitExtensionScript() + browserClipboardScript() + imageInputScript() + "\nsudo tee /usr/local/lib/browser-uploads.mjs >/dev/null <<'CAGE_BROWSER_UPLOADS'\n" + browserUploads + "\nCAGE_BROWSER_UPLOADS\n" + guestServices + "\nsudo tee /usr/local/lib/browser-downloads.mjs >/dev/null <<'CAGE_BROWSER_DOWNLOADS'\n" + browserDownloads + "\nCAGE_BROWSER_DOWNLOADS\n" + "\nsudo tee /usr/local/bin/cage-editor-migrate >/dev/null <<'CAGE_EDITOR_MIGRATE'\n" + editorMigrate + "\nCAGE_EDITOR_MIGRATE\nsudo chmod 0755 /usr/local/bin/cage-editor-migrate\n" + "\nsudo tee /usr/local/lib/browser-audit.mjs >/dev/null <<'CAGE_BROWSER_AUDIT'\n" + browserAudit + "\nCAGE_BROWSER_AUDIT\n" + "\nsudo tee /usr/local/lib/cage-browser-agent.mjs >/dev/null <<'CAGE_BROWSER_AGENT'\n" + browserAgent + "\nCAGE_BROWSER_AGENT\n" + "sudo tee /usr/local/bin/cage-save-download >/dev/null <<'CAGE_DOWNLOAD_HELPER'\n" + saveDownload + "\nCAGE_DOWNLOAD_HELPER\nsudo chmod 0755 /usr/local/bin/cage-save-download\nprintf 'cage-browser ALL=(root) NOPASSWD: /usr/local/bin/cage-save-download *\\n' | sudo tee /etc/sudoers.d/cage-download >/dev/null\nsudo chmod 0440 /etc/sudoers.d/cage-download\n" + "\nsudo python3 - \"$cage_novnc_root\" <<'CAGE_NOVNC_PATCH'\n" + novncPatch + "\nCAGE_NOVNC_PATCH\n" + "\nsudo tee \"$cage_novnc_root/cage-clipboard.js\" >/dev/null <<'CAGE_CLIPBOARD_JS'\n" + clipboardJS + "\nCAGE_CLIPBOARD_JS\n" + `sudo python3 - <<'PYCODE'
+	return "sudo rm -f /usr/local/lib/tailnet-client.mjs\n" + deviceObservationScript() + "sudo tee /usr/local/lib/wait-services.py >/dev/null <<'CAGE_WAIT_SERVICES'\n" + guestWaitServices + "\nCAGE_WAIT_SERVICES\n" + toolInstallFunctions() + "\n" + "sudo tee /usr/local/lib/browser-visibility.mjs >/dev/null <<'CAGE_BROWSER_VISIBILITY'\n" + browserVisibility + "\nCAGE_BROWSER_VISIBILITY\nsudo tee /usr/local/lib/browser-wheel.mjs >/dev/null <<'CAGE_BROWSER_WHEEL'\n" + browserWheel + "\nCAGE_BROWSER_WHEEL\nsudo tee /usr/local/lib/display-density.mjs >/dev/null <<'CAGE_DISPLAY_DENSITY'\n" + displayDensity + "\nCAGE_DISPLAY_DENSITY\n" + displayGovernorScript() + PhoneDesktopProvisionScript() + phoneBrowserScript() + "\nsudo tee /usr/local/lib/browser-extensions.mjs >/dev/null <<'CAGE_BROWSER_EXTENSIONS'\n" + browserExtensions + "\nCAGE_BROWSER_EXTENSIONS\n" + "\nsudo tee /usr/local/lib/browser-extension-archive.py >/dev/null <<'CAGE_EXTENSION_ARCHIVE'\n" + browserExtensionArchive + "\nCAGE_EXTENSION_ARCHIVE\n" + "\nsudo tee /usr/local/lib/browser-private.mjs >/dev/null <<'CAGE_BROWSER_PRIVATE'\n" + browserPrivate + "\nCAGE_BROWSER_PRIVATE\n" + "\nsudo tee /usr/local/lib/browser-cookies.mjs >/dev/null <<'CAGE_BROWSER_COOKIES'\n" + browserCookies + "\nCAGE_BROWSER_COOKIES\n" + "\nsudo tee /usr/local/lib/browser-vault.mjs >/dev/null <<'CAGE_BROWSER_VAULT'\n" + browserVault + "\nCAGE_BROWSER_VAULT\n" + guestMemory + "\n" + guestDiagnostics() + guestAudio + "\n" + guestOpenScript() + splitExtensionScript() + browserClipboardScript() + imageInputScript() + "\nsudo tee /usr/local/lib/browser-uploads.mjs >/dev/null <<'CAGE_BROWSER_UPLOADS'\n" + browserUploads + "\nCAGE_BROWSER_UPLOADS\n" + guestServices + "\nsudo tee /usr/local/lib/browser-downloads.mjs >/dev/null <<'CAGE_BROWSER_DOWNLOADS'\n" + browserDownloads + "\nCAGE_BROWSER_DOWNLOADS\n" + "\nsudo tee /usr/local/libexec/editor-migrate >/dev/null <<'CAGE_EDITOR_MIGRATE'\n" + editorMigrate + "\nCAGE_EDITOR_MIGRATE\nsudo chmod 0755 /usr/local/libexec/editor-migrate\n" + "\nsudo tee /usr/local/lib/browser-audit.mjs >/dev/null <<'CAGE_BROWSER_AUDIT'\n" + browserAudit + "\nCAGE_BROWSER_AUDIT\n" + "\nsudo tee /usr/local/lib/browser-agent.mjs >/dev/null <<'CAGE_BROWSER_AGENT'\n" + browserAgent + "\nCAGE_BROWSER_AGENT\n" + "sudo tee /usr/local/libexec/save-download >/dev/null <<'CAGE_DOWNLOAD_HELPER'\n" + saveDownload + "\nCAGE_DOWNLOAD_HELPER\nsudo chmod 0755 /usr/local/libexec/save-download\nprintf 'cage-browser ALL=(root) NOPASSWD: /usr/local/libexec/save-download *\\n' | sudo tee /etc/sudoers.d/save-download >/dev/null\nsudo chmod 0440 /etc/sudoers.d/save-download\n" + "\nsudo python3 - \"$cage_novnc_root\" <<'CAGE_NOVNC_PATCH'\n" + novncPatch + "\nCAGE_NOVNC_PATCH\n" + "\nsudo tee \"$cage_novnc_root/cage-clipboard.js\" >/dev/null <<'CAGE_CLIPBOARD_JS'\n" + clipboardJS + "\nCAGE_CLIPBOARD_JS\n" + `sudo python3 - <<'PYCODE'
 from pathlib import Path
 import re
 p = Path("/usr/share/novnc/vnc.html")
@@ -213,6 +213,12 @@ var editorTheme string
 //
 //go:embed guest-migrate.sh
 var guestMigrationScript string
+
+// guestLegacyCleanup removes what earlier versions installed under former
+// names once no process started before the update can still use it.
+//
+//go:embed guest-legacy-cleanup.sh
+var guestLegacyCleanup string
 
 //go:embed guest-start.sh
 var guestStart string
@@ -321,7 +327,7 @@ func (c Config) StartScript() string {
 func (c Config) SetupScript() string { return c.GuestProfile.Linux(GuestSetup) }
 
 func componentStartScript() string {
-	return APTBootstrapScript + "\n" + guestMigrationScript + "\n" + claudeAccountScript() + browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet cage-editor.service; then sudo systemctl stop cage-editor.service; fi\n" + guestStart
+	return APTBootstrapScript + "\n" + guestMigrationScript + "\n" + claudeAccountScript() + browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet cage-editor.service; then sudo systemctl stop cage-editor.service; fi\n" + guestStart + "\n" + guestLegacyCleanup
 }
 
 func markGuestStart(body string) string {
@@ -350,7 +356,7 @@ func (m GuestManifest) Current() bool {
 }
 
 func guestDiagnostics() string {
-	return "sudo tee /usr/local/bin/cage-log-run >/dev/null <<'CAGE_LOG_RUN'\n" + diagnostics.GuestRunner() + "\nCAGE_LOG_RUN\nsudo chmod 0755 /usr/local/bin/cage-log-run\n" + `sudo install -d -m 0755 /etc/systemd/journald@cage.conf.d
+	return "sudo tee /usr/local/libexec/service-log >/dev/null <<'CAGE_LOG_RUN'\n" + diagnostics.GuestRunner() + "\nCAGE_LOG_RUN\nsudo chmod 0755 /usr/local/libexec/service-log\n" + `sudo install -d -m 0755 /etc/systemd/journald@cage.conf.d
 sudo tee /etc/systemd/journald@cage.conf.d/limits.conf >/dev/null <<'CAGE_JOURNAL'
 [Journal]
 Storage=persistent

@@ -23,7 +23,7 @@ ROOT = '/org/freedesktop/portal/desktop'
 
 
 def image_context():
-    result = subprocess.run(['/usr/local/bin/cage-native-input', '--request'],
+    result = subprocess.run(['/usr/local/libexec/native-input', '--request'],
                             input=b'{"mode":"status"}\n', stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, check=True, timeout=4)
     value = json.loads(result.stdout)
@@ -650,7 +650,7 @@ def main():
     directory = runtime / 'uploads'
     shutil.rmtree(directory, ignore_errors=True)
     from importlib.machinery import SourceFileLoader
-    downloads = SourceFileLoader('cage_desktop_downloads', '/usr/local/lib/cage-desktop-downloads.py').load_module()
+    downloads = SourceFileLoader('cage_desktop_downloads', '/usr/local/lib/desktop-downloads.py').load_module()
     broker = Broker(directory, downloads=downloads.create_downloads())
     portal = Portal(broker)
     broker.deliver = portal.deliver

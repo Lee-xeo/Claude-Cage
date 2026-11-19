@@ -241,7 +241,7 @@ func TestDiscoveryRunningStateUpdatesCatalogAndClearsMissingHistory(t *testing.T
 
 func installClaudeTestHelpers(t *testing.T, bin string) {
 	t.Helper()
-	for source, dest := range map[string]string{"claude-account.py": "cage-claude-account", "client_runtime.py": "client_runtime.py"} {
+	for source, dest := range map[string]string{"claude-account.py": "claude-account", "client_runtime.py": "client_runtime.py"} {
 		body, err := os.ReadFile(filepath.Join("../cage", source))
 		if err != nil {
 			t.Fatal(err)

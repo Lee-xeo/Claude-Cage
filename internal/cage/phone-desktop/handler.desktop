@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
 Name=Claude
-Exec=/usr/local/lib/cage-phone-desktop/xdg-open %u
+Exec=/usr/local/lib/phone-desktop/xdg-open %u
 Terminal=false
 MimeType=x-scheme-handler/claude;

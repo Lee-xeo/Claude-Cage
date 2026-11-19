@@ -1,7 +1,7 @@
 import { createConnection } from "node:net";
 import { spawn } from "node:child_process";
 
-const helper = ["-n", "-H", "-u", "cage", "/usr/local/bin/cage-native-input"];
+const helper = ["-n", "-H", "-u", "cage", "/usr/local/libexec/native-input"];
 const responseLimit = 32768;
 
 // The caret is polled several times a second while Desktop has focus. One

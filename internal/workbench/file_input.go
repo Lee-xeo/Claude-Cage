@@ -62,7 +62,7 @@ func (s *Server) guestFiles(ctx context.Context, target, method, path string, bo
 	}
 	script := asWorkUser + "curl --silent --show-error --max-time 1800 --write-out '\\nCAGE_FILE_HTTP:%{http_code}' --unix-socket /run/cage-desktop/files.sock -X " + method
 	if target == "terminal" {
-		script = asWorkUser + "/usr/local/bin/cage-desktop-files --save-file " + shellescape.Quote(name)
+		script = asWorkUser + "/usr/local/libexec/desktop-files --save-file " + shellescape.Quote(name)
 	} else {
 		if body != nil {
 			script += " --upload-file -"

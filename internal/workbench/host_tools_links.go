@@ -139,7 +139,7 @@ func pluginLinksScript(schemes []string) string {
 		"sudo mkdir -p /usr/local/lib /usr/local/share/applications\n" +
 		"printf '%s\\n' " + strings.Join(schemes, " ") + " | sudo tee " + pluginLinksList + " >/dev/null\n" +
 		"sudo chmod 0644 " + pluginLinksList + "\n" +
-		"printf '%s\\n' '[Desktop Entry]' 'Type=Application' 'Name=Links' 'NoDisplay=true' 'Exec=/usr/local/bin/cage-open %u' 'MimeType=" + mime + "' | sudo tee /usr/local/share/applications/plugin-links.desktop >/dev/null\n" +
+		"printf '%s\\n' '[Desktop Entry]' 'Type=Application' 'Name=Links' 'NoDisplay=true' 'Exec=/usr/local/bin/xdg-open %u' 'MimeType=" + mime + "' | sudo tee /usr/local/share/applications/plugin-links.desktop >/dev/null\n" +
 		"for user in \"$(id -un)\" cage-browser; do\n" +
 		"  id \"$user\" >/dev/null 2>&1 || continue\n"
 	for _, scheme := range schemes {

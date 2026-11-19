@@ -20,7 +20,7 @@ func TestConfiguredGuestScripts(t *testing.T) {
 				t.Fatalf("%s retains %q", name, bad)
 			}
 		}
-		for _, want := range []string{`"-u", "alex", "/usr/local/bin/cage-native-input"`, "sudo -H -u web xdg-mime", "User=web\n", "/home/alex", "--window-size=1280,720", "--disable-reading-from-canvas", "--disable-webgl", "browser-panes-" + p.ExtensionSuffix, `"name": "My Tab Layout"`, "set-default-source speaker123.monitor", "1920x1080"} {
+		for _, want := range []string{`"-u", "alex", "/usr/local/libexec/native-input"`, "sudo -H -u web xdg-mime", "User=web\n", "/home/alex", "--window-size=1280,720", "--disable-reading-from-canvas", "--disable-webgl", "browser-panes-" + p.ExtensionSuffix, `"name": "My Tab Layout"`, "set-default-source speaker123.monitor", "1920x1080"} {
 			if !strings.Contains(script, want) {
 				t.Fatalf("%s misses %q", name, want)
 			}

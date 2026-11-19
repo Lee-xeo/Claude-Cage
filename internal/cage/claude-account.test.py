@@ -400,10 +400,10 @@ printf '%s\\n' "$@"
     def test_installed_account_symlink_finds_its_versioned_runtime(self):
         installed = self.home / "version"
         (installed / "bin").mkdir(parents=True)
-        account = installed / "bin/cage-claude-account"
+        account = installed / "bin/claude-account"
         account.write_bytes(source.read_bytes())
         (installed / "client_runtime.py").write_bytes(source.with_name("client_runtime.py").read_bytes())
-        entry = self.home / "cage-claude-account"
+        entry = self.home / "claude-account"
         entry.symlink_to(account)
         result = subprocess.run([sys.executable, str(entry), "snapshot", FIRST], env=self.env,
                                 cwd=self.home, text=True, capture_output=True, check=True)

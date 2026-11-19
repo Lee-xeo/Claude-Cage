@@ -29,7 +29,7 @@ Environment=PULSE_RUNTIME_PATH=/run/cage-audio/runtime
 Environment=PULSE_STATE_PATH=/run/cage-audio/state
 RuntimeDirectory=cage-audio
 RuntimeDirectoryMode=0750
-ExecStart=/usr/local/bin/cage-log-run /usr/bin/pulseaudio -n --daemonize=no --exit-idle-time=-1 --disallow-exit --disallow-module-loading --disable-shm=true --realtime=no --high-priority=no --use-pid-file=no --file=/etc/claude-cage/audio.pa
+ExecStart=/usr/local/libexec/service-log /usr/bin/pulseaudio -n --daemonize=no --exit-idle-time=-1 --disallow-exit --disallow-module-loading --disable-shm=true --realtime=no --high-priority=no --use-pid-file=no --file=/etc/claude-cage/audio.pa
 LogNamespace=cage
 Restart=on-failure
 RestartSec=1

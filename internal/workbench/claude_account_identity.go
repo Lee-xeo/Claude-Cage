@@ -185,5 +185,5 @@ func (s *Server) archiveDefaultIfAvailable(ctx context.Context, list *claudeAcco
 }
 
 func (s *Server) archiveGuestLogin(ctx context.Context, source, target, subject string) (claudeGuestSnapshot, error) {
-	return s.readClaudeReportForSubject(ctx, source, subject, "exec /usr/local/bin/cage-claude-account archive-login "+target+" "+source+" "+subject)
+	return s.readClaudeReportForSubject(ctx, source, subject, "exec /usr/local/libexec/claude-account archive-login "+target+" "+source+" "+subject)
 }

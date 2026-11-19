@@ -153,7 +153,7 @@ func TestDefaultClaudeProbeUsesRegularLoginEnvironment(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "show-environment"), []byte("#!/bin/sh\nprintf '%s' \"$CAGE_FIXTURE_AUTH|$PWD|$1|$2\"\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	script := strings.Replace(claudeSnapshotCommand("default"), "/usr/local/bin/cage-claude-account", `"$HOME/show-environment"`, 1)
+	script := strings.Replace(claudeSnapshotCommand("default"), "/usr/local/libexec/claude-account", `"$HOME/show-environment"`, 1)
 	cmd := exec.Command("bash", "-c", script)
 	cmd.Dir = t.TempDir()
 	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}

@@ -197,7 +197,7 @@ fi
 				settings = filepath.Join(configDir, "settings.json")
 				email, organization := "synthetic@example.invalid", uuid.NewString()
 				prefix = []string{"env", fmt.Sprintf("CAGE_CLAUDE_SUBJECT=%x", sha256.Sum256([]byte(email+"\n"+organization))),
-					"/usr/local/bin/cage-claude-account", "run", slot}
+					"/usr/local/libexec/claude-account", "run", slot}
 				writeSubject = func(address string) {
 					state := map[string]any{"hasCompletedOnboarding": true, "oauthAccount": map[string]string{
 						"accountUuid": uuid.NewString(), "emailAddress": address, "organizationUuid": organization}}
@@ -234,7 +234,7 @@ fi
 						return nil, err
 					}
 					for i := range cmdline {
-						if cmdline[i] == "/usr/local/bin/cage-claude-account" {
+						if cmdline[i] == "/usr/local/libexec/claude-account" {
 							cmdline[i] = helper
 						}
 					}

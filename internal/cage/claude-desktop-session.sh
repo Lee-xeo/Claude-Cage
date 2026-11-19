@@ -8,7 +8,7 @@ if [ "${CAGE_DESKTOP_SESSION:-}" != 1 ]; then
 fi
 export DISPLAY=:78 XAUTHORITY=/run/cage-desktop/Xauthority
 export XDG_RUNTIME_DIR=/run/cage-desktop XDG_CURRENT_DESKTOP=Openbox
-export PATH="$HOME/.local/bin:$PATH" BROWSER=/usr/local/bin/cage-open
+export PATH="$HOME/.local/bin:$PATH" BROWSER=/usr/local/bin/xdg-open
 dbus-update-activation-environment DISPLAY XAUTHORITY XDG_RUNTIME_DIR XDG_CURRENT_DESKTOP
 umask 077
 touch "$XAUTHORITY"
@@ -31,8 +31,8 @@ done
 xdpyinfo -display "$DISPLAY" >/dev/null
 openbox --config-file /etc/claude-cage/desktop-openbox.xml &
 # Lower the refresh rate of unattended animation. Optional on older guests.
-if [ -x /usr/local/bin/cage-display-governor ]; then
-  /usr/local/bin/cage-display-governor &
+if [ -x /usr/local/libexec/display-governor ]; then
+  /usr/local/libexec/display-governor &
 fi
 mkfifo -m 0600 "$XDG_RUNTIME_DIR/unlock"
 gnome-keyring-daemon --unlock --components=secrets < "$XDG_RUNTIME_DIR/unlock" >/dev/null
@@ -84,7 +84,7 @@ connection.close()
 CAGE_DESKTOP_DPI_READY
   scale_args=()
 fi
-/usr/local/bin/cage-desktop-files &
+/usr/local/libexec/desktop-files &
 files_pid=$!
 for i in $(seq 1 100); do
   kill -0 "$files_pid"
@@ -109,7 +109,7 @@ if [[ -s "$XDG_RUNTIME_DIR/account-scope" ]]; then
     fi
   fi
 fi
-DESKTOP_LOG_LEVEL=debug CLAUDE_ENABLE_LOGGING=1 DEBUG='*current-account*' /usr/local/bin/cage-input-session /usr/bin/python3 -I /usr/local/bin/client_runtime.py claude-desktop "${scale_args[@]}" --password-store=gnome-libsecret --xdg-portal-required-version=3 > >(/usr/bin/python3 -I /usr/local/lib/desktop-identity.py "$XDG_RUNTIME_DIR/account.json" "${history_args[@]}") &
+DESKTOP_LOG_LEVEL=debug CLAUDE_ENABLE_LOGGING=1 DEBUG='*current-account*' /usr/local/libexec/input-session /usr/bin/python3 -I /usr/local/bin/client_runtime.py claude-desktop "${scale_args[@]}" --password-store=gnome-libsecret --xdg-portal-required-version=3 > >(/usr/bin/python3 -I /usr/local/lib/desktop-identity.py "$XDG_RUNTIME_DIR/account.json" "${history_args[@]}") &
 app_pid=$!
 printf '%s\n' "$app_pid" > "$XDG_RUNTIME_DIR/app-pid"
 # The service becomes ready only after the application has opened a window.

@@ -48,7 +48,7 @@ func mobileLaunchArgs(launcher string, account claudeSelection) ([]string, error
 	if (!boundDefault && !validClaudeID(account.ID)) || !validClaudeGuestID(account.GuestID) || len(account.Subject) != 64 {
 		return nil, errors.New("Claude 账号身份无效")
 	}
-	return []string{"env", "CAGE_CLAUDE_SUBJECT=" + account.Subject, "/usr/local/bin/cage-claude-account", "run", account.GuestID}, nil
+	return []string{"env", "CAGE_CLAUDE_SUBJECT=" + account.Subject, "/usr/local/libexec/claude-account", "run", account.GuestID}, nil
 }
 
 func sharedCLILauncher(launcher string) bool {
