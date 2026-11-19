@@ -325,13 +325,7 @@ export function WorkspaceSidebar({
                   aria-haspopup="menu"
                   data-terminal-location={path}
                   disabled={!running || busy}
-                  onClick={(event) => {
-                    setCollapsed((previous) => ({
-                      ...previous,
-                      [path]: false,
-                    }));
-                    onNewTerminal(path, event.currentTarget);
-                  }}
+                  onClick={(event) => onNewTerminal(path, event.currentTarget)}
                 >
                   <SquareTerminal size={15} />
                 </button>

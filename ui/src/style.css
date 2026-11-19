@@ -1785,15 +1785,18 @@ svg {
   cursor: progress;
 }
 .terminal-create-menu {
-  position: static;
-  width: min(100%, 184px);
+  position: fixed;
+  inset: auto;
+  z-index: 16;
+  width: min(184px, calc(100vw - 16px));
   min-width: 0;
-  margin: 3px 0;
-  box-shadow: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+  box-shadow: 0 8px 24px #00000020;
 }
 .terminal-create-form {
   display: grid;
-  width: min(100%, 272px);
+  width: min(272px, calc(100vw - 16px));
   gap: 10px;
   padding: 10px;
   border: 1px solid var(--line);
@@ -1802,9 +1805,6 @@ svg {
 }
 .terminal-create-form > label:first-child {display:grid;gap:4px;}
 .terminal-create-form > small {color:var(--muted);}
-.sidebar-project > .terminal-create-menu,
-.chrome > .terminal-create-menu { margin-inline-start: auto; }
-.welcome-shortcuts + .terminal-create-menu { margin-inline: auto; }
 .terminal-create-menu button {
   gap: 10px;
   white-space: nowrap;

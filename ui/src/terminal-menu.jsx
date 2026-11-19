@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { TerminalSquare } from "lucide-react";
 import { AgentIcon } from "./agent-icon";
 import { InlineSelect } from "./inline-select";
@@ -8,6 +9,7 @@ export function TerminalMenu({ choice, busy, profiles, usesOfficialCLI, onClose,
   const [configuring, setConfiguring] = useState(false);
   const [account, setAccount] = useState("auto");
   const [handoff, setHandoff] = useState(false);
+  const popupRoot = choice.anchor?.closest(".workbench-shell") || document.body;
   const close = useRef(onClose);
   close.current = onClose;
   useLayoutEffect(() => {
@@ -19,11 +21,33 @@ export function TerminalMenu({ choice, busy, profiles, usesOfficialCLI, onClose,
     }
     anchor.setAttribute("aria-expanded", "true");
     anchor.setAttribute("aria-controls", "terminal-create-menu");
-    node.querySelector("button:not(:disabled)")?.focus();
     const dismiss = (restoreFocus = false) => {
       if (restoreFocus) anchor.focus();
       close.current();
     };
+    const place = () => {
+      if (!anchor.getClientRects().length) { dismiss(); return; }
+      const { right, top, bottom } = anchor.getBoundingClientRect();
+      const margin = 8, gap = 4;
+      const above = top - gap - margin;
+      const below = window.innerHeight - bottom - gap - margin;
+      const contentHeight = node.scrollHeight + node.offsetHeight - node.clientHeight;
+      const opensAbove = below < contentHeight && above > below;
+      const height = Math.max(0, opensAbove ? above : below);
+      node.style.maxHeight = `${height}px`;
+      node.style.top = `${opensAbove ? top - gap - Math.min(contentHeight, height) : bottom + gap}px`;
+      node.style.left = `${Math.max(margin, Math.min(right - node.offsetWidth, window.innerWidth - node.offsetWidth - margin))}px`;
+    };
+    place();
+    node.querySelector("button:not(:disabled)")?.focus({ preventScroll: true });
+    const resize = new ResizeObserver(place);
+    resize.observe(anchor);
+    resize.observe(node);
+    const intersection = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) dismiss();
+    });
+    intersection.observe(anchor);
+    const scroll = event => { if (!node.contains(event.target)) place(); };
     const outside = (event) => {
       if (!node.contains(event.target) && !anchor.contains(event.target)) dismiss();
     };
@@ -46,12 +70,18 @@ export function TerminalMenu({ choice, busy, profiles, usesOfficialCLI, onClose,
     document.addEventListener("click", outside, true);
     document.addEventListener("keydown", keydown);
     document.addEventListener("cage-close-modal", closeCommand);
+    document.addEventListener("scroll", scroll, true);
+    window.addEventListener("resize", place);
     return () => {
       anchor.setAttribute("aria-expanded", "false");
       anchor.removeAttribute("aria-controls");
       document.removeEventListener("click", outside, true);
       document.removeEventListener("keydown", keydown);
       document.removeEventListener("cage-close-modal", closeCommand);
+      document.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("resize", place);
+      resize.disconnect();
+      intersection.disconnect();
     };
   }, [choice, configuring]);
 
@@ -77,7 +107,7 @@ export function TerminalMenu({ choice, busy, profiles, usesOfficialCLI, onClose,
     const handoffNote = account === "login" ? "登录后按该账号的接续分组查找备用账号。"
       : hasBackup ? "使用同一接续分组内的可用账号。"
       : "目前没有同组备用账号。在账号管理中设置接续分组并启用备用账号后生效。";
-    return <div ref={menu} id="terminal-create-menu" className="terminal-create-menu terminal-create-form"
+    return createPortal(<div ref={menu} id="terminal-create-menu" className="terminal-create-menu terminal-create-form"
       role="group" aria-label="新建 Claude Code 终端">
       <label>启动账号
         <InlineSelect inline aria-label="启动账号" value={account} disabled={busy} onValueChange={selectAccount}>
@@ -92,9 +122,9 @@ export function TerminalMenu({ choice, busy, profiles, usesOfficialCLI, onClose,
         onChange={e => setHandoff(e.target.checked)} />额度用尽后自动接续</label>
       {handoff && <small>{handoffNote}</small>}
       <button className="primary" disabled={busy} onClick={() => onSelect("claude", account, handoff)}>创建 Claude Code 终端</button>
-    </div>;
+    </div>, popupRoot);
   }
-  return (
+  return createPortal(
     <div ref={menu} id="terminal-create-menu" className="menu terminal-create-menu" role="menu" aria-label="新建终端">
       <button role="menuitem" disabled={busy} onClick={() => onSelect("shell")}>
         <TerminalSquare size={16} />普通终端
@@ -102,6 +132,7 @@ export function TerminalMenu({ choice, busy, profiles, usesOfficialCLI, onClose,
       <button role="menuitem" disabled={busy} onClick={configureCode}>
         <AgentIcon />Claude 终端
       </button>
-    </div>
+    </div>,
+    popupRoot,
   );
 }
