@@ -21,6 +21,7 @@ if ! command -v xdg-mime >/dev/null; then
 fi
 sudo install -d -m 0755 /usr/local/share/applications
 printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Tailscale' 'NoDisplay=true' 'Exec=/usr/local/bin/cage-open %u' 'MimeType=x-scheme-handler/tailscale;' | sudo tee /usr/local/share/applications/tailnet-login.desktop >/dev/null
+sudo -H -u cage-browser sh -ec 'mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}"'
 sudo -H -u cage-browser xdg-mime default tailnet-login.desktop x-scheme-handler/tailscale
 sudo tee /usr/local/bin/cage-editor-start >/dev/null <<'SCRIPT'
 #!/bin/sh
