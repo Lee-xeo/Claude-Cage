@@ -119,6 +119,9 @@ type RefusedError struct{ Reason error }
 func (e *RefusedError) Error() string { return e.Reason.Error() }
 func (e *RefusedError) Unwrap() error { return e.Reason }
 
+// ErrNotForPage is a page asking for a tool its plugin does not offer pages.
+var ErrNotForPage = errors.New("the tool is not offered to pages")
+
 // External is a plugin run as a child program. Its tools are offered under
 // their own names once they pass CheckWording; every call first goes
 // through Approve, if set.
@@ -287,7 +290,7 @@ var ErrCallTimedOut = errors.New("the tool did not answer in time")
 // user takes to decide does not count.
 func (e *External) CallFromView(ctx context.Context, name string, arguments json.RawMessage, wait time.Duration) (*mcp.CallToolResult, error) {
 	if !slices.ContainsFunc(e.PageTools(), func(tool *mcp.Tool) bool { return tool.Name == name }) {
-		return nil, &RefusedError{fmt.Errorf("plugin %s has no tool %s for its page", e.Manifest.Name, name)}
+		return nil, &RefusedError{fmt.Errorf("plugin %s, tool %s: %w", e.Manifest.Name, name, ErrNotForPage)}
 	}
 	return e.callWithin(ctx, name, arguments, true, wait)
 }
@@ -410,7 +413,6 @@ func LoadPlugins(ctx context.Context, dir string, options LoadOptions) ([]*Exter
 	var loaded []*External
 	var failures []error
 	names := slices.Clone(taken)
-	schemes := map[string]string{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -429,20 +431,6 @@ func LoadPlugins(ctx context.Context, dir string, options LoadOptions) ([]*Exter
 		}
 		if !manifest.Supported() || slices.Contains(off, manifest.Name) || manifest.Unavailable(version, true) == NeedsNewerApplication {
 			continue
-		}
-		conflict := ""
-		for _, scheme := range manifest.Schemes() {
-			if other, used := schemes[scheme]; used {
-				conflict = fmt.Sprintf("plugin %s: links of scheme %s are already handled by %s", manifest.Name, scheme, other)
-				break
-			}
-		}
-		if conflict != "" {
-			failures = append(failures, errors.New(conflict))
-			continue
-		}
-		for _, scheme := range manifest.Schemes() {
-			schemes[scheme] = manifest.Name
 		}
 		if manifest.Unavailable(version, options.Guest != nil) != "" || len(manifest.serverCommand()) == 0 {
 			continue

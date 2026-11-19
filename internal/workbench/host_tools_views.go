@@ -287,9 +287,14 @@ func (s *Server) callHostTool(w http.ResponseWriter, r *http.Request) {
 		// The limit is on the tool; the user may take longer to decide.
 		result, err := plugin.CallFromView(r.Context(), body.Name, body.Arguments, hostViewCallWait)
 		var refused *hostbridge.RefusedError
+		var unshowable unshowableRequest
 		switch {
 		case err == nil:
 			jsonReply(w, result)
+		case errors.Is(err, hostbridge.ErrNotForPage):
+			hostCallError(w, http.StatusForbidden, hostCallNotAllowed, "这个工具不提供给页面使用")
+		case errors.As(err, &unshowable):
+			hostCallError(w, http.StatusForbidden, hostCallNotAllowed, "请求超出限制："+unshowable.Error())
 		case errors.Is(err, hostbridge.ErrCallTimedOut):
 			hostCallError(w, http.StatusGatewayTimeout, hostCallTimedOut, "工具在 60 秒内没有返回结果")
 		case errors.As(err, &refused):

@@ -61,6 +61,12 @@ func (a *hostApprovals) approveTool(ctx context.Context, request hostbridge.Tool
 			"\n\n插件以你的用户权限运行。「始终允许」会记住对该插件的授权，以后不再询问；可以在插件页随时撤销。")
 }
 
+// unshowableRequest is a request refused before anyone is asked, because the
+// dialog could not show it in full.
+type unshowableRequest string
+
+func (e unshowableRequest) Error() string { return string(e) }
+
 // decide asks unless key was already allowed. shown is the text the user
 // must be able to read in full to judge the request.
 func (a *hostApprovals) decide(ctx context.Context, key string, permissions []string, shown string, length int, title, message string) error {
@@ -69,10 +75,10 @@ func (a *hostApprovals) decide(ctx context.Context, key string, permissions []st
 	if strings.ContainsFunc(shown, func(r rune) bool {
 		return (unicode.IsControl(r) && r != '\n' && r != '\t') || unicode.Is(unicode.Cf, r)
 	}) {
-		return errors.New("the request contains control or invisible characters and was not run")
+		return unshowableRequest("the request contains control or invisible characters and was not run")
 	}
 	if length > hostApprovalCommandMax {
-		return errors.New("the request is too long to show for approval and was not run; put long content in a file")
+		return unshowableRequest("the request is too long to show for approval and was not run; put long content in a file")
 	}
 	if a.alwaysAllowed(key, permissions) {
 		return nil

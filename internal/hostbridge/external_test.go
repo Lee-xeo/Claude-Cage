@@ -263,13 +263,13 @@ func TestPluginProgramIsRunAgainAfterItExits(t *testing.T) {
 
 func TestManifestMustBeComplete(t *testing.T) {
 	for name, content := range map[string]string{
-		"bad name":           `{"name":"Bad Name","version":"1","permissions":[],"command":["x"]}`,
+		"bad name":           `{"name":"Bad Name","version":"1","description":"A plugin.","permissions":[],"command":["x"]}`,
 		"no version":         `{"name":"a","permissions":[],"command":["x"]}`,
-		"no command":         `{"name":"a","version":"1","permissions":[]}`,
+		"no command":         `{"name":"a","version":"1","description":"A plugin.","permissions":[]}`,
 		"no permissions":     `{"name":"a","version":"1","command":["x"]}`,
-		"unknown permission": `{"name":"a","version":"1","permissions":["everything"],"command":["x"]}`,
-		"unknown platform":   `{"name":"a","version":"1","permissions":[],"platforms":["beos"],"command":["x"]}`,
-		"unknown field":      `{"name":"a","version":"1","permissions":[],"command":["x"],"autostart":true}`,
+		"unknown permission": `{"name":"a","version":"1","description":"A plugin.","permissions":["everything"],"command":["x"]}`,
+		"unknown platform":   `{"name":"a","version":"1","description":"A plugin.","permissions":[],"platforms":["beos"],"command":["x"]}`,
+		"unknown field":      `{"name":"a","version":"1","description":"A plugin.","permissions":[],"command":["x"],"autostart":true}`,
 	} {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, ManifestFile), []byte(content), 0o644); err != nil {

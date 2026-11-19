@@ -44,7 +44,7 @@ func TestManifestSecondFormat(t *testing.T) {
 	}
 
 	// The first format reads as a host plugin with one server.
-	first, err := parseManifest([]byte(`{"name":"clock","version":"1","description":"","permissions":[],"command":["python3","server.py"]}`))
+	first, err := parseManifest([]byte(`{"name":"clock","version":"1","description":"Tells the time.","permissions":[],"command":["python3","server.py"]}`))
 	if err != nil || first.Kind != KindHost || first.Contributes.MCPServers[0].ID != "clock" || first.serverCommand()[0] != "python3" || first.Unavailable("0.1.8", false) != "" {
 		t.Fatalf("first format %+v: %v", first, err)
 	}
@@ -93,12 +93,12 @@ func TestManifestSecondFormat(t *testing.T) {
 	}
 	// What the first format never had stays out of it.
 	for _, extra := range []string{`"kind":"guest"`, `"engines":{"cage":">=0.1.0"}`, `"activationEvents":["onStartupFinished"]`} {
-		if _, err := parseManifest([]byte(`{"name":"clock","version":"1","permissions":[],"command":["x"],` + extra + `}`)); err == nil {
+		if _, err := parseManifest([]byte(`{"name":"clock","version":"1","description":"A plugin.","permissions":[],"command":["x"],` + extra + `}`)); err == nil {
 			t.Errorf("first format accepted %s", extra)
 		}
 	}
 	// A page alone, with nothing to call, is a plugin too.
-	if _, err := parseManifest([]byte(`{"name":"notes","version":"1","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"host",
+	if _, err := parseManifest([]byte(`{"name":"notes","version":"1","description":"A plugin.","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"host",
 		"contributes":{"views":[{"id":"notes","title":"Notes","entry":"index.html"}]}}`)); err != nil {
 		t.Errorf("static page: %v", err)
 	}
@@ -120,8 +120,9 @@ func TestEngineRange(t *testing.T) {
 	}
 }
 
-// Plugins this application cannot run, and a second handler of a link
-// scheme, are left unstarted; the scheme clash is reported.
+// Plugins this application cannot run are left unstarted without a failure.
+// Link handlers are not in effect yet, so two plugins naming the same scheme
+// do not clash.
 func TestLoadPluginsLeavesOutWhatCannotRun(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, manifest string) {
@@ -133,7 +134,7 @@ func TestLoadPluginsLeavesOutWhatCannotRun(t *testing.T) {
 		}
 	}
 	v2 := func(name, kind, engine, scheme string) string {
-		return `{"name":"` + name + `","version":"1","permissions":[],"engines":{"cage":"` + engine + `"},"kind":"` + kind + `",
+		return `{"name":"` + name + `","version":"1","description":"A plugin.","permissions":[],"engines":{"cage":"` + engine + `"},"kind":"` + kind + `",
 			"contributes":{"mcpServers":[{"id":"main","command":["/nonexistent/program"]}],"uriHandlers":[{"scheme":"` + scheme + `","server":"main","tool":"open"}]}}`
 	}
 	write("a-guest", v2("a-guest", "guest", ">=0.1.0", "alpha"))
@@ -141,7 +142,7 @@ func TestLoadPluginsLeavesOutWhatCannotRun(t *testing.T) {
 	write("c-clash", v2("c-clash", "guest", ">=0.1.0", "alpha"))
 	write("d-later", v2("d-later", "guest", ">=0.1.0", "beta"))
 	plugins, failures := LoadPlugins(context.Background(), dir, LoadOptions{Version: "0.1.8"})
-	if len(plugins) != 0 || len(failures) != 1 || !strings.Contains(failures[0].Error(), "c-clash") || !strings.Contains(failures[0].Error(), "alpha") {
+	if len(plugins) != 0 || len(failures) != 0 {
 		t.Fatalf("plugins %d, failures %v", len(plugins), failures)
 	}
 }
@@ -193,7 +194,7 @@ func TestLoadPluginsRunsGuestPluginsWhereTold(t *testing.T) {
 	if err := InstallFromCatalog("clock", dir); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"name":"clock","version":"1","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"guest",
+	manifest := `{"name":"clock","version":"1","description":"Tells the time.","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"guest",
 		"contributes":{"mcpServers":[{"id":"main","command":["python3","server.py"]}]}}`
 	if err := os.WriteFile(filepath.Join(dir, "clock", ManifestFile), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)

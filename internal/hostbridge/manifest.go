@@ -130,6 +130,8 @@ func (m *Manifest) check() error {
 		return fmt.Errorf("name must be lowercase letters, digits and hyphens")
 	case m.Version == "":
 		return fmt.Errorf("version is missing")
+	case strings.TrimSpace(m.Description) == "":
+		return fmt.Errorf("description is missing")
 	case m.Permissions == nil:
 		return fmt.Errorf("permissions must be declared, as an empty list if there are none")
 	case len(m.DisplayName) > 80:

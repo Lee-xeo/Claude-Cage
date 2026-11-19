@@ -26,7 +26,7 @@ func TestPluginViewFilesAreServedConfined(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(hostbridge.ManifestFile, `{"name":"notes","version":"1","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"host",
+	write(hostbridge.ManifestFile, `{"name":"notes","version":"1","description":"A plugin.","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"host",
 		"contributes":{"views":[{"id":"main","title":"Notes","entry":"view/index.html"}]}}`)
 	write("view/index.html", "<p>page</p>")
 	write("view/app.js", "1")
@@ -130,7 +130,7 @@ func TestPluginViewCallsAreChecked(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"name":"notes","version":"1","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"guest",
+	manifest := `{"name":"notes","version":"1","description":"A plugin.","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"guest",
 		"contributes":{"mcpServers":[{"id":"main","command":["x"]}],
 		"views":[{"id":"bound","title":"A","entry":"a.html","server":"main"},{"id":"static","title":"B","entry":"b.html"}]}}`
 	if err := os.WriteFile(filepath.Join(dir, hostbridge.ManifestFile), []byte(manifest), 0o644); err != nil {

@@ -197,3 +197,29 @@ func TestHostApprovalForAPluginIsSeparateFromProjects(t *testing.T) {
 		t.Fatal("arguments with invisible characters were approved")
 	}
 }
+
+// Commands can be allowed for good on the plugin's page, one open project at
+// a time: Windows's dialog has only allow and deny.
+func TestCommandsAreAllowedForAProjectOnThePluginPage(t *testing.T) {
+	project := t.TempDir()
+	real, err := filepath.EvalSymlinks(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{profile: t.TempDir(), projectShares: map[string]*projectShare{project: {}}}
+	if err := s.setHostPluginAlways(hostCommandsPlugin, filepath.Join(t.TempDir(), "elsewhere"), true); err == nil {
+		t.Fatal("commands were allowed for a folder that is not an open project")
+	}
+	if err := s.setHostPluginAlways(hostCommandsPlugin, project, true); err != nil {
+		t.Fatal(err)
+	}
+	if projects := s.hostGrantStore().projects(); len(projects) != 1 || projects[0] != real {
+		t.Fatalf("allowed projects %q, want %q", projects, real)
+	}
+	if !s.hostGrantStore().allowed(hostGrantProject+real, []string{"commands"}) {
+		t.Fatal("the grant does not let commands through")
+	}
+	if err := s.setHostPluginAlways(hostCommandsPlugin, real, false); err != nil || len(s.hostGrantStore().projects()) != 0 {
+		t.Fatalf("taking the grant back: %v %q", err, s.hostGrantStore().projects())
+	}
+}

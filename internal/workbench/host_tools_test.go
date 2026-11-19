@@ -180,7 +180,7 @@ func TestHostToolsViewListsPluginFolders(t *testing.T) {
 	}
 	write("clock", `{"name":"clock","version":"1.0.0","description":"Tells the time","permissions":[],"command":["python3","server.py"]}`)
 	write("broken", `{"name":"broken"}`)
-	write("renamed", `{"name":"other","version":"1","permissions":["files"],"command":["x"]}`)
+	write("renamed", `{"name":"other","version":"1","description":"A plugin.","permissions":["files"],"command":["x"]}`)
 	write("notes", "")
 	view := s.hostToolsView()
 	if view.Enabled || view.Running || !view.Available || view.Folders == nil {
@@ -243,7 +243,7 @@ func TestHostToolsViewListsPluginFolders(t *testing.T) {
 // new one cannot be installed the old one is put back.
 func TestInstallFromMarketReplacesAndRestores(t *testing.T) {
 	manifest := func(version string) string {
-		return `{"name":"notes","version":"` + version + `","permissions":[],"command":["python3","server.py"]}`
+		return `{"name":"notes","version":"` + version + `","description":"Notes.","permissions":[],"command":["python3","server.py"]}`
 	}
 	pack := func(version string) []byte {
 		var packed bytes.Buffer

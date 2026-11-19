@@ -235,6 +235,21 @@ func (s *Server) setHostPluginOn(name string, on bool) error {
 	return s.recordHostPluginOn(name, on)
 }
 
+// hostToolProject finds dir among the project folders the commands may run
+// in, given as listed in folders or with links resolved, and returns it as
+// the commands name it: with links resolved.
+func (s *Server) hostToolProject(dir string) (string, bool) {
+	if dir == "" {
+		return "", false
+	}
+	for _, allowed := range s.hostToolDirs() {
+		if real, err := filepath.EvalSymlinks(allowed); err == nil && (allowed == dir || real == dir) {
+			return real, true
+		}
+	}
+	return "", false
+}
+
 // setHostPluginAlways records that the plugin's tools need no asking, or
 // takes that back. A grant taken back holds for calls already allowed in
 // this start too, so the tools are started again.
@@ -242,7 +257,14 @@ func (s *Server) setHostPluginAlways(name, project string, always bool) error {
 	grants := s.hostGrantStore()
 	if name == hostCommandsPlugin {
 		if always {
-			return errors.New("命令的长期授权按项目在确认窗口里给出")
+			// Commands are allowed for good one project at a time, here as in
+			// the dialog; Windows's dialog has no such choice, so this is the
+			// way there.
+			real, ok := s.hostToolProject(project)
+			if !ok {
+				return errors.New("请选择一个已打开的项目")
+			}
+			return grants.grant(hostGrantProject+real, []string{"commands"})
 		}
 		var err error
 		if project == "" {
