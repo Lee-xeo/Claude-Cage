@@ -55,11 +55,6 @@ jobs:
       - name: Application version consistency
         run: |
           node scripts/check-version.mjs
-          node --test scripts/macos-sshfs-sources.test.mjs scripts/guest-os/tests/install-macos-project-tools.test.mjs
-      - name: Install SSHFS build dependencies
-        run: |
-          brew install glib gettext pcre2
-          brew upgrade glib gettext pcre2
       - name: Build the macOS application without release credentials
         env:
           CAGE_SIGNING_IDENTITY: '-'
@@ -73,23 +68,7 @@ jobs:
           uv run internal/cage/display-governor.test.py
           uv run internal/cage/save-download.test.py
           uv run internal/cage/editor-migrate.test.py
-          uv run --no-project scripts/guest-os/tests/native-maintenance.py
-          uv run --no-project scripts/guest-os/tests/macos-release-downloads.py
           uv run --no-project internal/workbench/cache_maintenance_test.py
-      - name: Native Chrome capture window selection
-        run: |
-          check=$(mktemp -d "$RUNNER_TEMP/cage-window-selection.XXXXXX")
-          trap 'rm -rf "$check"' EXIT
-          xcrun swiftc -parse-as-library -O scripts/guest-os/macos-chrome-window-selection.swift scripts/guest-os/tests/macos-chrome-window-selection-test.swift -o "$check/test"
-          "$check/test"
-          xcrun swiftc -parse-as-library -O scripts/guest-os/macos-maintenance-compositor.swift scripts/guest-os/tests/macos-maintenance-compositor-test.swift -o "$check/maintenance-test"
-          "$check/maintenance-test"
-          xcrun swiftc -parse-as-library -O scripts/guest-os/macos-window-socket.swift scripts/guest-os/tests/macos-window-socket-test.swift -o "$check/socket-test"
-          LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 "$check/socket-test"
-          xcrun swiftc -parse-as-library -O scripts/guest-os/macos-project-panel.swift scripts/guest-os/tests/macos-project-panel-test.swift -o "$check/panel-test"
-          "$check/panel-test"
-          xcrun clang -fobjc-arc -framework AppKit -framework Virtualization scripts/guest-os/tests/macos-setup-image-test.m -o "$check/setup-image-test"
-          "$check/setup-image-test"
       - name: Go tests and vet
         run: |
           make test-go
@@ -185,7 +164,7 @@ jobs:
           release="$PWD/_output/releases/$version"
           node scripts/release-version.mjs metadata macos "$release/build-metadata.json"
           mkdir -p _output/ci-macos-release
-          cp "$release/Cage-$version-macos-arm64.dmg" "$release/mihomo-$source_version-source.tar.gz" "$release/cage-macos-guest-$version-source.tar.gz" "$release/SHA256SUMS" "$release/build-metadata.json" _output/ci-macos-release/
+          cp "$release/Cage-$version-macos-arm64.dmg" "$release/mihomo-$source_version-source.tar.gz" "$release/SHA256SUMS" "$release/build-metadata.json" _output/ci-macos-release/
           (cd _output/ci-macos-release && shasum -a 256 --check SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:

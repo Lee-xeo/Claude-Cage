@@ -176,7 +176,7 @@ class Factory(IBus.Factory):
     def do_create_engine(self, name):
         options = dict(connection=bus.get_connection(),
                        object_path='/org/freedesktop/IBus/Cage/' + str(len(engines)))
-        # Ubuntu 22.04's IBus uses the original per-context focus signals.
+        # Older IBus releases use the original per-context focus signals.
         # Newer IBus can reuse engines and supplies the explicit focus ID.
         if IBus.Engine.find_property('has-focus-id') is not None:
             options['has_focus_id'] = True

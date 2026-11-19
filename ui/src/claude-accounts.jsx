@@ -213,7 +213,12 @@ function DetectedProfile({ profile, usageEnvironment, busy, join, perform, chang
   </article>;
 }
 
-function ProfileCard({ profile, environment, usageEnvironment, busy, active, defaultActive, perform, change, login, cancelDraft }) {
+function accountCaption(profile) {
+  const label = profile.label || profile.email;
+  return profile.number ? `#${String(profile.number).padStart(2, "0")} ${label}` : label;
+}
+
+function ProfileCard({ proxySources, desktopNetwork, profile, environment, usageEnvironment, busy, active, defaultActive, perform, change, login, cancelDraft }) {
   const [renaming, setRenaming] = useState(false);
   const [label, setLabel] = useState("");
   const [group, setGroup] = useState(profile.handoff_group || "");
@@ -221,7 +226,7 @@ function ProfileCard({ profile, environment, usageEnvironment, busy, active, def
   const fromTerminal = profile.source === "default";
   const savedLabel = label.trim() || profile.email;
   const usage = useUsageCheck(profile, usageEnvironment, perform, change);
-  return <article className="claude-profile" aria-label={displayName} data-enabled={profile.enabled}>
+  return <article className="claude-profile" aria-label={accountCaption(profile)} data-enabled={profile.enabled}>
     <div className="claude-profile-heading">
       <span className="claude-profile-avatar" aria-hidden="true"><img src={crabIcon} alt="" /></span>
       <div className="claude-profile-identity">
@@ -233,13 +238,14 @@ function ProfileCard({ profile, environment, usageEnvironment, busy, active, def
           <button disabled={busy || !savedLabel} aria-label="保存备注"><Check size={15} /></button>
           <button type="button" disabled={busy} onClick={() => setRenaming(false)}>取消</button>
         </form> : <div className="claude-profile-name">
-          <h4 title={displayName}>{displayName}</h4>
+          <h4 title={accountCaption(profile)}>{accountCaption(profile)}</h4>
           {profile.plan && <span className="claude-profile-plan">{profile.plan}</span>}
           <button type="button" className="icon-button" disabled={busy} aria-label={`修改 ${displayName} 的备注`}
             onClick={() => { setLabel(profile.label === profile.email ? "" : profile.label || ""); setRenaming(true); }}><Pencil size={14} /></button>
         </div>}
         <div className="claude-profile-meta">
-          <span className="claude-profile-status" data-ready={profile.status === "ready"}>{statusLabels[profile.status] || "状态未知"}</span>
+          <span className="claude-profile-status" data-ready={profile.status === "ready"}>{profile.code_unlinked ? "Code 待授权" : "Code · "+(statusLabels[profile.status] || "状态未知")}</span>
+          <span className="claude-profile-status" data-ready={profile.desktop_status === "ready"}>{profile.desktop_status === "ready" ? "Desktop 已授权" : profile.desktop_instance_id ? "Desktop 待登录" : "Desktop 首次使用时授权"}</span>
           {profile.email && <span className="claude-profile-email" title={[profile.email, profile.organization].filter(Boolean).join(" · ")}>
             {[profile.email !== displayName && profile.email, profile.organization].filter(Boolean).join(" · ")}
           </span>}
@@ -249,10 +255,23 @@ function ProfileCard({ profile, environment, usageEnvironment, busy, active, def
         <input type="checkbox" aria-label="参与自动分配" checked={profile.enabled} disabled={busy}
           onChange={(e) => { const enabled = e.target.checked; perform(() => change({ action: "update", id: profile.id, enabled })); }} />
         <span className="claude-switch-track" aria-hidden="true" />
-        <span>{profile.enabled ? "参与分配" : "已暂停"}</span>
+        <span>{profile.enabled ? "参与分配" : "仅手动选择"}</span>
       </label>
     </div>
     <ProfileUsage quota={profile.quota} state={usage.state} />
+    {desktopNetwork && <label>账号出口
+      <InlineSelect inline aria-label={displayName + " 的代理节点"}
+        value={profile.proxy_node_id || (profile.desktop_dedicated_network ? "legacy" : "")} disabled={busy}
+        onValueChange={node => perform(() => change({ action: "update", id: profile.id, proxy_node_id: node }))}>
+        <option value="">跟随环境出口</option>
+        {profile.desktop_dedicated_network && <option value="legacy" disabled>已有手动网络</option>}
+        {profile.proxy_node_id && !proxySources.some(source => source.nodes.some(node => node.id === profile.proxy_node_id)) &&
+          <option value={profile.proxy_node_id} disabled>已绑定节点不可用</option>}
+        {proxySources.map(source => <optgroup label={source.name} key={source.id}>
+          {source.nodes.map(node => <option value={node.id} key={node.id}>{node.name}</option>)}
+        </optgroup>)}
+      </InlineSelect>
+    </label>}
     <form className="claude-handoff-group" onSubmit={event => { event.preventDefault(); perform(() => change({action:"update",id:profile.id,handoff_group:group})); }}>
       <label>接续分组<input aria-label={`${displayName} 的接续分组`} value={group} maxLength={32} placeholder="未分组，不跨账号接续" onChange={event => setGroup(event.target.value)} /></label>
       <button disabled={busy || group === (profile.handoff_group || "")}>保存分组</button>
@@ -262,15 +281,15 @@ function ProfileCard({ profile, environment, usageEnvironment, busy, active, def
       其中 {defaultActive} 个工作终端仍使用普通终端的登录。若普通终端已换号，请重新打开这些会话确认身份。
     </p>}
     {fromTerminal && ["changed", "signed_out"].includes(profile.status) && <p className="field-help">
-      {profile.status === "changed" ? "普通终端已换号，此账号暂不参与分配。新身份需单独加入。" : "普通终端已退出。要继续使用此账号，请先重新登录原身份。"}
+      {profile.status === "changed" ? "普通终端已换号，此账号暂不参与分配。新身份将单独归档。" : "普通终端已退出。要继续使用此账号，请先重新登录原身份。"}
       {active > 0 && " 原工作终端仍保留首次分配的标签。请重新打开工作会话确认身份。"}
     </p>}
-    {!fromTerminal && profile.status === "changed" && <p className="field-help">请用原账号重新登录。若要使用新的身份，请点击「登录新账号」。</p>}
+    {!fromTerminal && profile.status === "changed" && <p className="field-help">请用原账号重新登录。</p>}
     {profile.status === "duplicate" && <p className="field-help">同一订阅只参与一次分配。请在此位置登录另一个账号。</p>}
     <div className="claude-profile-actions">
       {fromTerminal ? <span className="claude-profile-source">普通终端账号</span> :
         <button className="quiet-button" disabled={busy || !!environment || active > 0} onClick={() => perform(() => login(profile.id))}>
-          <TerminalSquare size={14} />{profile.status === "ready" ? "重新登录" : "打开登录终端"}</button>}
+          <TerminalSquare size={14} />{profile.status === "ready" ? "重新授权 Code" : "授权 Code"}</button>}
       <button className="quiet-button" disabled={busy || !!usageEnvironment || usage.state === "checking"} onClick={usage.check}>
         <RefreshCw size={14} />检查状态</button>
       {!fromTerminal && !profile.email && !active && ["pending", "signed_out", "duplicate"].includes(profile.status) &&
@@ -280,9 +299,11 @@ function ProfileCard({ profile, environment, usageEnvironment, busy, active, def
   </article>;
 }
 
-export function ClaudeAccountsPanel({ store, running, environmentBusy, tabs, login, onConfirm }) {
+export function ClaudeAccountsPanel({ proxySources, desktopNetwork, store, running, environmentBusy, tabs, login, enrollmentID, cancelLogin, onConfirm }) {
   const { accounts, detected, detectionStatus, detectionError, loginNotice, usageRunning, usageUnavailable, load, error } = store;
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [node, setNode] = useState("");
   const [requestingUsage, setRequestingUsage] = useState(false);
   const [actionError, setActionError] = useState("");
   const visibleProfiles = useMemo(() => detected ? [detected, ...(accounts || [])] : accounts, [accounts, detected]);
@@ -348,7 +369,7 @@ export function ClaudeAccountsPanel({ store, running, environmentBusy, tabs, log
   };
   return <section className="claude-profiles" aria-label="Claude 账号管理">
     <div className="section-title">
-      <p>将普通终端已登录的订阅加入调度，或单独登录一个新账号。新建 Claude 终端时自动分配。</p>
+      <p>在这里添加账号，或直接在 Desktop 和 Claude Code 中登录。</p>
     </div>
     <details className="claude-scheduling">
       <summary>调度设置 · {store.scheduling.mode === "sequential" ? "顺序优先" : "均衡分配"}</summary>
@@ -362,7 +383,7 @@ export function ClaudeAccountsPanel({ store, running, environmentBusy, tabs, log
       </InlineSelect></label>
       <p className="field-help">已有会话保持原账号和授权。自动接续只在限额已确认、原任务可安全停止且目标账号属于同一接续分组时进行；跨账号可能重建缓存。</p>
       {store.scheduling.mode === "sequential" && accounts?.length > 1 && <div className="claude-account-order" aria-label="账号优先顺序">
-        {accounts.map((profile,index) => <div key={profile.id}><span>{index+1}. {profile.label || profile.email}</span>
+        {accounts.map((profile,index) => <div key={profile.id}><span>优先级 {index+1} · {accountCaption(profile)}</span>
           <button disabled={busy || index===0} aria-label={`提高 ${profile.label} 的优先级`} onClick={() => {
             const order=accounts.map(a=>a.id); [order[index-1],order[index]]=[order[index],order[index-1]];
             perform(() => load({action:"scheduling",scheduling:store.scheduling,order}));
@@ -370,16 +391,28 @@ export function ClaudeAccountsPanel({ store, running, environmentBusy, tabs, log
       </div>}
     </details>
     <div className="claude-add-profile">
-      <button className="primary" disabled={busy || environmentBusy || !!environment}
-        onClick={() => perform(() => login())}><Plus size={16} />登录新账号</button>
+      <button className="primary" disabled={busy || !!enrollmentID || environmentBusy || !!environment}
+        aria-expanded={adding} onClick={() => setAdding(!adding)}><Plus size={16} />添加账号</button>
     </div>
+    {adding && <form className="claude-add-form" onSubmit={e=>{
+      e.preventDefault();
+      perform(async()=>{await login(undefined,node);setAdding(false);});
+    }}>
+      {desktopNetwork && !!proxySources.length && <label>账号出口<InlineSelect inline aria-label="新账号出口" value={node} onValueChange={setNode}>
+        <option value="">跟随环境出口</option>
+        {proxySources.map(source=><optgroup key={source.id} label={source.name}>{source.nodes.map(n=><option value={n.id} key={n.id}>{n.name}</option>)}</optgroup>)}
+      </InlineSelect></label>}
+      <div><button className="primary" disabled={busy || !!environment}>开始授权</button>
+        <button type="button" onClick={()=>setAdding(false)}>取消</button></div>
+    </form>}
+    {enrollmentID && <div className="claude-add-profile"><span role="status">正在等待 Claude 授权…</span><button onClick={() => perform(cancelLogin)}>取消授权</button></div>}
     {(actionError || error) && <p className="account-error" role="alert">{actionError || error}</p>}
     {loginNotice && <p className="claude-profile-note" role="status">{loginNotice}</p>}
     {detectionError && <p className="account-error" role="alert">{detectionError}</p>}
     {usageUnavailable && !environment && <p className="claude-profile-note" role="status">{usageUnavailable}</p>}
     {!running ? <p className="claude-profile-note">启动 Cage 环境后可检测普通终端的登录，也可登录新账号。</p> :
       detectionStatus === "offline" ? <p className="claude-profile-note">工作环境就绪后可检测和登录账号。</p> :
-      detectionStatus === "signed_out" && <p className="claude-profile-note">普通终端尚未登录 Claude 订阅。可在其中运行 <code>claude auth login</code>，登录后会在这里出现。</p>}
+      detectionStatus === "signed_out" && !accounts?.length && <p className="claude-profile-note">普通终端尚未登录 Claude 订阅。可在其中运行 <code>claude auth login</code>，登录后会在这里出现。</p>}
     <div className="claude-list-heading">
       <h4>账号列表 <span>{visibleProfiles?.length ?? "—"}</span></h4>
       {requestingUsage || checking ? <small role="status">{requestingUsage ? "正在请求账号用量…" : "正在查询账号用量…"}</small> :
@@ -388,13 +421,13 @@ export function ClaudeAccountsPanel({ store, running, environmentBusy, tabs, log
     <div className="claude-profile-list" role="region" aria-label="账号列表" tabIndex={0}>
       {accounts === null && !error && <p role="status">正在读取账号…</p>}
       {accounts?.length === 0 && !detected && <div className="claude-profile-empty">
-        <img src={crabIcon} alt="" /><p>尚无已加入调度的账号。</p><small>加入第一个账号前，新终端沿用环境原有的登录。</small>
+        <img src={crabIcon} alt="" /><p>尚未添加账号</p><small>登录成功后，账号会出现在这里。</small>
       </div>}
       <QuotaClock accounts={visibleProfiles}>
         {detected && <DetectedProfile key={detected.identity} profile={detected} usageEnvironment={usageEnvironment} busy={busy || environmentBusy || !!environment}
           perform={perform} change={load}
           join={() => perform(joinDetected)} />}
-        {accounts?.map((profile) => <ProfileCard key={profile.id} profile={profile} environment={environment} usageEnvironment={usageEnvironment}
+        {accounts?.map((profile) => <ProfileCard proxySources={proxySources} desktopNetwork={desktopNetwork} key={profile.id} profile={profile} environment={environment} usageEnvironment={usageEnvironment}
           busy={busy || environmentBusy} perform={perform} change={load} login={login} cancelDraft={cancelDraft}
           active={activeCounts.get(profile.id)?.all || 0} defaultActive={activeCounts.get(profile.id)?.fromDefault || 0} />)}
       </QuotaClock>

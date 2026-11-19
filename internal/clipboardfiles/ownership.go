@@ -166,21 +166,6 @@ func (store CacheStore) Read(input io.Reader) (CachedSelection, error) {
 	return store.create(func(directory func() (string, error)) ([]string, error) { return read(input, directory) })
 }
 
-func (store CacheStore) Copy(paths []string) (CachedSelection, error) {
-	return store.create(func(directory func() (string, error)) ([]string, error) { return copyFiles(paths, directory) })
-}
-
-func (store CacheStore) Save(input io.Reader, name string) (CachedSelection, error) {
-	return store.create(func(directory func() (string, error)) ([]string, error) {
-		path, err := save(input, name, directory)
-		return []string{path}, err
-	})
-}
-
-func (store CacheStore) LinkCachedFiles(paths []string) (CachedSelection, error) {
-	return store.create(func(directory func() (string, error)) ([]string, error) { return linkCachedFiles(paths, directory) })
-}
-
 func (store CacheStore) save(record cacheRecord) error {
 	path, err := store.recordPath(record.ID)
 	if err != nil {

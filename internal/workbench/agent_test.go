@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
 func agentTestController(t *testing.T) *Server {
@@ -174,14 +173,6 @@ func TestAgentNoImplicitStartAndUnknownInput(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("read created profile")
 	}
-	for _, path := range []string{"/api/agent/settings", "/api/agent/jobs/012345abcdef"} {
-		if !macOSWorkbenchRoute(path) || !windowsWorkbenchRoute(path) {
-			t.Fatal("missing native platform route", path)
-		}
-	}
-	if !macOSSetupRoute("/api/agent/jobs/012345abcdef") {
-		t.Fatal("cannot track first setup")
-	}
 }
 
 func TestAgentCannotFollowSelectedRemote(t *testing.T) {
@@ -214,15 +205,9 @@ func TestAgentRejectsOtherConfigFileInSameProfile(t *testing.T) {
 }
 
 func TestAgentNativeDiagnosticExport(t *testing.T) {
-	for _, system := range []string{"linux", "macos", "windows"} {
+	for _, system := range []string{"linux"} {
 		t.Run(system, func(t *testing.T) {
 			s := agentTestController(t)
-			if system == "macos" {
-				s.macosGuest = &guestos.MacOSProfile{Instance: "test", User: "test"}
-			}
-			if system == "windows" {
-				s.windowsGuest = &guestos.WindowsProfile{}
-			}
 			s.account.lock()
 			path := filepath.Join(t.TempDir(), "diagnostics.zip")
 			if err := ExportAgentDiagnostics(s.configPath, path); err != nil {

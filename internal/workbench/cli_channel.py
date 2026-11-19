@@ -80,8 +80,11 @@ def save(path, value):
 
 
 @contextlib.contextmanager
-def state_file(connection):
+def state_file(connection, readonly=False):
     folder = ROOT / identifier(connection)
+    if readonly:
+        yield read_json(folder / "state.json", {})
+        return
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (folder / "lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -230,12 +233,15 @@ def connection_for(session_id, config):
 def view(config, session_id, path=None):
     connection, state = connection_for(session_id, config)
     path = path or next((config / "projects").glob("*/" + session_id + ".jsonl"), None)
-    native_history = path is not None
-    if path is None and state.get("resume_transcript"):
+    turns, workspace, title, received = transcript(path)
+    native_history = bool(turns)
+    # The target creates a JSONL header before writing the resumed history.
+    # Keep showing the frozen source until that first target turn is readable.
+    if not native_history and state.get("resume_transcript"):
         frozen = Path(state["resume_transcript"])
         if frozen.parent.parent == ROOT.parent / "cli-account-switches" and frozen.name == "history.jsonl":
             path = frozen
-    turns, workspace, title, received = transcript(path)
+            turns, workspace, title, received = transcript(path)
     has_history = bool(turns)
     if connection and any(sent["id"] in received for sent in state.get("sent", [])):
         with state_file(connection) as latest:
@@ -380,6 +386,8 @@ def hook(connection):
     payload = json.load(sys.stdin)
     event = payload.get("hook_event_name")
     with state_file(connection) as state:
+        if event == "UserPromptSubmit" and state.get("login_subject") and client_runtime().get("changed_prompt_login", lambda _: False)(state):
+            return {"decision": "block", "reason": "正在核对这个终端已更改的 Claude 登录，请稍后继续。"}
         if state.get("account_switch"):
             if event == "UserPromptSubmit":
                 return {"decision": "block", "reason": "Cage 正在切换账号，请在目标会话中继续。"}
@@ -701,6 +709,7 @@ def launch(request):
     policy_available = migrate_cage_policy()
     connection = identifier(request["id"])
     folder = ROOT / connection
+    os.environ["CAGE_LOGIN_CONNECTION"] = connection
     folder.mkdir(parents=True, exist_ok=True, mode=PRIVATE_MODE)
     prefix = request["prefix"]
     if os.name == "nt":
@@ -744,7 +753,7 @@ def launch(request):
     with state_file(connection) as state:
         if live(state.get("pid")) and not state.get("closed"):
             raise ValueError("目标会话已有进程，未重复启动")
-        state.update(cli_id=session_id, config=str(config_directory("default")),
+        state.update(codex_enabled=request.get("codex_enabled") is True, cli_id=session_id, config=str(config_directory("default")), login_subject=_controller_context.get("CAGE_CLAUDE_SUBJECT"),
                      workspace=str(Path.cwd()), pid=os.getpid(), closed=False, updated_at=time.time(), approvals=[], busy=False,
                      channel_pid=None, pending_send=None, display=None, stopped=False,
                      requests=previous.get("requests", {}), sent=previous.get("sent", []))
@@ -796,7 +805,7 @@ def rpc(request):
     connection = identifier(request["connection"])
     os.chdir(ROOT / connection)
     with socket.socket(socket.AF_UNIX) as client:
-        client.settimeout(5)
+        client.settimeout(12 if request.get("action") == "codex-read" else 5)
         client.connect("rpc")
         client.sendall(json.dumps(request).encode() + b"\n")
         with client.makefile("rb") as stream:
@@ -812,17 +821,27 @@ def serve(connection):
             sys.stdout.write(json.dumps({"jsonrpc": "2.0", **message}) + "\n")
             sys.stdout.flush()
 
+    mailbox = None
+    if read_json(ROOT / connection / "state.json", {}).get("codex_enabled"):
+        factory = client_runtime().get("CodexMailbox")
+        if factory:
+            mailbox = factory()
+
     class Handler(socketserver.StreamRequestHandler):
         def handle(self):
             self.connection.settimeout(5)
             try:
                 request = json.loads(self.rfile.readline(72 << 10))
-                with state_file(connection) as state:
+                action = request["action"]
+                delegate = mailbox and action in ("codex-read", "codex-done")
+                with state_file(connection, readonly=delegate) as state:
                     if request["cli_id"] != state.get("cli_id") or state.get("closed"):
                         raise ValueError("终端已切换会话，请重新读取列表")
-                    action = request["action"]
                     if state.get("account_switch"):
                         raise ValueError("此会话正在切换账号，请等待交接完成")
+                    if delegate:
+                        self.wfile.write(json.dumps(mailbox.exchange(request)).encode() + b"\n")
+                        return
                     if action == "send":
                         request_id = identifier(request["request_id"])
                         text = request["text"]
@@ -864,7 +883,7 @@ def serve(connection):
                             # inject the same continuation twice.
                             save(ROOT / connection / "state.json", state)
                             emit({"method": "notifications/claude/channel", "params": {
-                                "content": Path(__file__).with_suffix(".account-resume.md" if state.get("account_resume") else ".resume.md").read_text(encoding="utf-8"),
+                                "content": request.get("account_resume_text" if state.get("account_resume") else "resume_text") or Path(__file__).with_suffix(".account-resume.md" if state.get("account_resume") else ".resume.md").read_text(encoding="utf-8"),
                                 "meta": {"resume": "true"}}})
                     else:
                         raise ValueError("unsupported operation")
@@ -896,7 +915,15 @@ def serve(connection):
                 method = message.get("method")
                 if method == "initialize":
                     emit({"id": message["id"], "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "session", "version": "1"},
-                          "capabilities": {"experimental": {"claude/channel": {}, "claude/channel/permission": {}}}}})
+                          "capabilities": {**({"tools": {}} if mailbox else {}), "experimental": {"claude/channel": {}, "claude/channel/permission": {}}}}})
+                elif mailbox and method == "tools/list":
+                    emit({"id": message["id"], "result": {"tools": mailbox.tools}})
+                elif mailbox and method == "tools/call":
+                    try:
+                        result = {"content": [{"type": "text", "text": json.dumps(mailbox.call(message["params"]), ensure_ascii=False)}]}
+                    except (KeyError, TypeError, ValueError) as error:
+                        result = {"isError": True, "content": [{"type": "text", "text": str(error)}]}
+                    emit({"id": message["id"], "result": result})
                 elif method == "notifications/initialized":
                     with state_file(connection) as state:
                         state["channel_pid"] = os.getpid()
@@ -946,6 +973,16 @@ def main():
             if state.get("cli_id") == request["cli_id"] and state.get("config"):
                 config = Path(state["config"])
             result = view(config, identifier(request["cli_id"]))
+            if "login_stamp" in request and result["running"]:
+                observe = client_runtime().get("changed_login")
+                if observe:
+                    result["login_hint"] = observe(config, request["login_stamp"])
+        elif mode == "account-binding":
+            with state_file(request["connection"]) as state:
+                ok = state.get("cli_id") == request["cli_id"] and re.fullmatch("[a-f0-9]{64}", request["subject"])
+                if ok:
+                    state["login_subject"] = request["subject"]
+                result = {"ok": bool(ok)}
         elif mode == "rpc":
             result = rpc(request)
         elif mode == "active":

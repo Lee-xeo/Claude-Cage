@@ -57,7 +57,6 @@ try {
     run("codesign", ["--verify", "--deep", "--strict", installed]);
     assert.equal(await hash(path.join(installed, "Contents/Resources/cage")), result.backend_sha256);
     cli("verify-web-assets");
-    if (process.arch === "arm64") cli("verify-macos-guest");
     running = true;
     const entry = JSON.parse(cli("desktop", "--json"));
     assert.equal(entry.status, "ready");

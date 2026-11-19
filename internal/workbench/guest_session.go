@@ -251,9 +251,6 @@ func (s *Server) guestSessionCommand(ctx context.Context) *exec.Cmd {
 // guestShared runs a script on the shared connection. ok is false when the
 // script was not sent and the caller should open a connection of its own.
 func (s *Server) guestShared(ctx context.Context, script string) (reply guestSessionReply, ok bool, err error) {
-	if s.windowsGuest != nil || s.macosGuest != nil {
-		return reply, false, nil
-	}
 	reply, sent, err := s.controlSession.run(ctx, s.lifetimeContext(), s.guestSessionCommand, script)
 	return reply, sent, err
 }

@@ -5,7 +5,7 @@ import "github.com/sylvinus/agent-vm/internal/containerenv"
 // Lima can change its base share only while stopped. Reconnecting a running
 // instance must not keep serving the former project as the transfer directory.
 func (s *Server) requireCurrentLinuxTransferMount() error {
-	if s.macosGuest != nil || s.windowsGuest != nil || containerenv.Configured(s.profile) || !s.vmRunning() {
+	if containerenv.Configured(s.profile) || !s.vmRunning() {
 		return nil
 	}
 	if shares, _ := s.inspectVMLayout(); shares {

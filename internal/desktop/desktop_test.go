@@ -135,3 +135,56 @@ func TestAskDarwin(t *testing.T) {
 		})
 	}
 }
+
+func TestScopeFromEachDialog(t *testing.T) {
+	type want struct {
+		scope Scope
+		ok    bool
+	}
+	check := func(name string, scope Scope, ok bool, w want) {
+		t.Helper()
+		if scope != w.scope || ok != w.ok {
+			t.Errorf("%s: got %v %v, want %v %v", name, scope, ok, w.scope, w.ok)
+		}
+	}
+	exited := fmt.Errorf("exit")
+	s, ok := macScope(result{stdout: "button returned:" + onceLabel + "\n"})
+	check("mac once", s, ok, want{Once, true})
+	s, ok = macScope(result{stdout: "button returned:" + alwaysLabel + "\n"})
+	check("mac session", s, ok, want{Always, true})
+	s, ok = macScope(result{stdout: "button returned:" + denyLabel + "\n"})
+	check("mac deny", s, ok, want{Deny, true})
+	s, ok = macScope(result{err: exited, code: 1, stderr: "execution error: User canceled. (-128)"})
+	check("mac closed", s, ok, want{Deny, true})
+	s, ok = macScope(result{err: exited, code: 1, stderr: "no window server"})
+	check("mac no session", s, ok, want{Deny, false})
+	s, ok = macScope(result{err: exited, code: -1, timedOut: true})
+	check("mac timeout", s, ok, want{Deny, true})
+
+	s, ok = zenityScope(result{})
+	check("zenity once", s, ok, want{Once, true})
+	s, ok = zenityScope(result{err: exited, code: 1, stdout: alwaysLabel + "\n"})
+	check("zenity session", s, ok, want{Always, true})
+	s, ok = zenityScope(result{err: exited, code: 1})
+	check("zenity deny", s, ok, want{Deny, true})
+	s, ok = zenityScope(result{err: exited, code: 1, stderr: "Gtk-WARNING: cannot open display: "})
+	check("zenity no display", s, ok, want{Deny, false})
+
+	s, ok = kdialogScope(result{})
+	check("kdialog once", s, ok, want{Once, true})
+	s, ok = kdialogScope(result{err: exited, code: 1})
+	check("kdialog session", s, ok, want{Always, true})
+	s, ok = kdialogScope(result{err: exited, code: 2})
+	check("kdialog deny", s, ok, want{Deny, true})
+	s, ok = kdialogScope(result{err: exited, code: 1, stderr: "qt.qpa: could not connect to display"})
+	check("kdialog no display", s, ok, want{Deny, false})
+
+	s, ok = windowsScope("Yes", nil, false)
+	check("windows yes", s, ok, want{Once, true})
+	s, ok = windowsScope("No", nil, false)
+	check("windows no", s, ok, want{Deny, true})
+	s, ok = windowsScope("", exited, false)
+	check("windows failed", s, ok, want{Deny, false})
+	s, ok = windowsScope("", exited, true)
+	check("windows timeout", s, ok, want{Deny, true})
+}

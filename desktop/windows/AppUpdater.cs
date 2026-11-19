@@ -48,7 +48,14 @@ internal sealed class AppUpdater : IDisposable
         {
             case "status": break;
             case "check": if (cancellation == null && prepared == null) _ = Run(true); break;
-            case "install": if (cancellation == null) _ = prepared != null ? Install() : Run(false); break;
+            case "install":
+                if (cancellation == null)
+                {
+                    if (prepared != null) Change("ready", "更新已下载，请保存工作并手动停止环境后安装", true);
+                    else _ = Run(false);
+                }
+                break;
+            case "complete": if (cancellation == null && prepared != null) _ = Install(); break;
             case "cancel": if (!committed && state["phase"] as string != "installing") cancellation?.Cancel(); break;
             default: throw new InvalidDataException("更新操作无效");
         }
@@ -118,7 +125,6 @@ internal sealed class AppUpdater : IDisposable
                 AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar), Environment.ProcessId,
                 Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks, Guid.NewGuid().ToString());
             archive = null;
-            Change("ready", "更新已下载并验证，可安装重启", true);
         }
         catch (OperationCanceledException) { Change("failed", "更新已暂停，可稍后重试", true); }
         catch (Exception error) { Change("failed", error.Message, true, retryAt); }
@@ -128,7 +134,7 @@ internal sealed class AppUpdater : IDisposable
             if (archive != null) { try { Directory.Delete(Path.GetDirectoryName(archive)!, true); } catch (IOException) { } }
             cancellation.Dispose(); cancellation = null;
         }
-        if (prepared != null) await Install();
+        if (prepared != null) Change("ready", "更新已下载，请保存工作并手动停止环境后安装", true);
     }
 
     private async Task Install()
@@ -160,7 +166,7 @@ internal sealed class AppUpdater : IDisposable
             var (exit, data) = await Backend.Json(["prepare-update", "--json"], token);
             if (data.Text("status") == "stop_required")
             {
-                (exit, data) = await Backend.Json(["prepare-update", "--json", "--stop"], token);
+                throw new IOException("环境仍在运行，请在工作台停止环境后重试安装");
             }
             if (exit != 0 || data.Text("status") != "prepared") throw new IOException(data.Text("message") is { Length: > 0 } detail ? detail : "环境未能安全停止");
             if (helper.HasExited) throw new IOException("安装程序已退出，原应用已保留");

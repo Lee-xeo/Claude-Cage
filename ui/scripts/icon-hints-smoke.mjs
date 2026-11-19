@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { createWorkbench } from "./workbench-fixture.mjs";
 
-const { browser, page, errors } = await createWorkbench();
+const { browser, page, errors } = await createWorkbench({
+  beforeNavigate: async (page, state) => {
+    state.status.local_vm_storage = true;
+    await page.route("**/api/host-tools**", route => route.fulfill({ json: {
+      available: true, enabled: true, plugins: [], catalog: [], entries: [],
+    } }));
+  },
+});
 try {
   const button = page.getByRole("button", { name: "收起侧栏" });
   await button.hover();
@@ -15,6 +22,24 @@ try {
   await page.keyboard.press("Escape");
   assert.equal(await hint.isVisible(), false);
 
+  // Clicking Back replaces the whole sidebar without a reliable pointerout/focusout.
+  await page.getByRole("button", { name: "MCP 插件", exact: true }).click();
+  const back = page.getByRole("button", { name: "退出 MCP 插件", exact: true });
+  await back.hover();
+  assert.equal(await hint.textContent(), "退出 MCP 插件（Esc）");
+  await back.click();
+  assert.equal(await back.count(), 0);
+  assert.equal(await hint.isVisible(), false, "Back must dismiss its hint when the sidebar closes");
+
+  await button.hover();
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  assert.equal(await hint.isVisible(), false, "Window blur must dismiss the hint");
+  await page.mouse.move(1200, 800);
+  assert.equal(await hint.isVisible(), false, "Pointer exit must not revive dismissed focus state");
+  await button.focus();
+  assert.equal(await hint.isVisible(), true, "Keyboard focus must still reveal the hint after dismissal");
+  await page.keyboard.press("Escape");
+
   // A native dialog is in the browser's top layer, so its hint must join it.
   await page.evaluate(() => {
     const dialog = document.createElement("dialog");
@@ -26,6 +51,9 @@ try {
   await dialogButton.focus();
   assert.equal(await hint.textContent(), "关闭测试");
   assert.equal(await hint.evaluate(el => el.parentElement.tagName), "DIALOG");
+  await dialogButton.evaluate(el => el.remove());
+  assert.equal(await page.locator(".icon-hint").evaluate(el => el.hidden), true,
+    "Removing a focused control without a blur event must dismiss its hint");
   await page.evaluate(() => document.querySelector("dialog").remove());
 
   // A long press reveals the label without activating the control on release.
@@ -42,7 +70,7 @@ try {
   });
   assert.equal(await page.evaluate(() => window.__hintClicks), 0);
   assert.deepEqual(errors, []);
-  console.log("Icon hints: hover, focus, Escape, title restoration, dialog and touch passed");
+  console.log("Icon hints: sidebar exit, removed control, window blur, hover, focus, Escape, title restoration, dialog and touch passed");
 } finally {
   await browser.close();
 }

@@ -183,7 +183,7 @@ export function BrowserHeader({ vault, onManageVault, tab, tabs, metadata, ready
         </button>
       </div>
       <form className="address-bar" onSubmit={event => { event.preventDefault(); onNavigate(address); }}>
-        {tab.incognito ? <span className="browser-private-badge" title="关闭全部无痕标签后清理此会话"><ScanEye size={13} />无痕</span> : <Globe2 size={13} />}
+        {tab.incognito ? <span className="browser-private-badge" title={tab.login ? "授权结束后清理本次登录会话" : "关闭全部无痕标签后清理此会话"}><ScanEye size={13} />无痕</span> : <Globe2 size={13} />}
         <input
           aria-label="网页地址或搜索"
           value={address}
@@ -237,12 +237,12 @@ export function BrowserHeader({ vault, onManageVault, tab, tabs, metadata, ready
           <RefreshCw size={16} className={recoveringEditor ? "spin" : ""} /><span>恢复编辑器</span>
         </button>}
       </div>
-      {vault && !tab.incognito && tab.kind === "web" && <BrowserVaultBar menu tab={tab} vault={vault} ready={ready} onManage={onManageVault} />}
+      {vault && !tab.login && !tab.incognito && tab.kind === "web" && <BrowserVaultBar menu tab={tab} vault={vault} ready={ready} onManage={onManageVault} />}
       <div className="browser-settings-menu-row"><button className="browser-menu-item" role="menuitem" disabled={!ready || busy} onClick={() => onSettings('general')}><Settings size={16} />设置</button></div>
     </div>
     </div>
     {cookiesOpen && <BrowserCookies key={`${tab.id}:${tab.url}`} tab={tab} onClose={() => { setCookiesOpen(false); toolsTrigger.current?.focus(); }} />}
-    {tab.incognito && <p className="browser-private-note">无痕会话 · 关闭全部无痕标签后清理网站数据；下载和主动保存的收藏会保留。</p>}
+    {tab.incognito && <p className="browser-private-note">{tab.login ? "本次授权使用独立的无痕会话，授权结束后清理。" : "无痕会话 · 关闭全部无痕标签后清理网站数据；下载和主动保存的收藏会保留。"}</p>}
     {menu}
     {busy && <div className="progress-line" />}
   </header>;

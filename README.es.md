@@ -22,7 +22,7 @@
 
 Como usuarios normales que sólo queremos hablar y colaborar con Claude, estamos cansados de configurar instancias de VPS, perfiles de huellas dactilares del navegador y comprobaciones del entorno, mientras nos preocupamos por las prohibiciones de cuentas y las pérdidas financieras. presentamos **Claude Cage** — **una aplicación de escritorio lista para usar: configure su propio proxy de red y administre su entorno aislado, zona horaria, idioma y comprobaciones de entorno en un solo lugar.**
 
-Claude Cage reúne terminal, navegador, editor y Claude Desktop oficial en un mismo espacio de trabajo aislado. Usa una máquina virtual macOS en Mac, Windows en un PC compatible o un entorno Linux ligero. Comparte solo los proyectos que elijas, gestiona la red por separado, conecta tu servidor por SSH y continúa las tareas desde el teléfono. Sus funciones principales:
+Claude Cage reúne terminal, navegador, editor y Claude Desktop oficial en un mismo espacio de trabajo aislado. En macOS, Windows y Linux se usa el mismo entorno Debian 13 ligero. Comparte solo los proyectos que elijas, gestiona la red por separado, conecta tu servidor por SSH y continúa las tareas desde el teléfono. Sus funciones principales:
 
 - Configuraciones de red aisladas del host; Cage enruta todo el tráfico de red dentro de su entorno a través de su propio proxy de red.
 - Configuración de huellas digitales del navegador aislada del host, incluida la zona horaria y el idioma, con sincronización automática con la ubicación IP del proxy de red
@@ -44,7 +44,7 @@ Claude Cage reúne terminal, navegador, editor y Claude Desktop oficial en un mi
 ## ¿Qué puedes hacer con la jaula?
 
 - **Trabaja en una sola ventana.** Ejecute Claude Code en la terminal, revise los cambios en el editor y use el navegador Cage para obtener una vista previa de los servicios e iniciar sesión.
-- **Desarrolla en tu sistema habitual.** Elige macOS, Windows o Linux como sistema invitado con sus herramientas, o clona el sistema del equipo para crear un entorno independiente y limpio. [Elegir el sistema invitado](docs/guide/guest-systems.md)
+- **Un mismo entorno en todas las plataformas.** Cage usa el mismo entorno Debian 13 en macOS, Windows y Linux, con las mismas herramientas y la misma forma de trabajar. [Entorno Debian](docs/guide/guest-systems.md)
 - **Controla lo que compartes.** Solo se comparten el espacio de trabajo predeterminado y las carpetas de proyectos abiertas explícitamente. El estado de inicio de sesión de Claude, los perfiles del navegador y las claves SSH del host no se importan automáticamente.
 - **Vea el estado de su red.** La administración de proxy de red incorporada le permite importar suscripciones, seleccionar puntos finales y verificar la IP de salida. El entorno permanece fuera de línea hasta que se superan las comprobaciones críticas. Si el proxy de red no está disponible, no se recurre a una conexión directa como alternativa.
 - **Continúe la próxima vez.** Las herramientas, los archivos y el estado de inicio de sesión persisten en el disco virtual. Las tareas en segundo plano pueden seguir ejecutándose cuando cierras la ventana.
@@ -52,6 +52,7 @@ Claude Cage reúne terminal, navegador, editor y Claude Desktop oficial en un mi
 - **Continúa desde el teléfono.** Vincula Android o iPhone al ordenador mediante QR o código de emparejamiento. Retoma las mismas conversaciones de Claude Code, envía mensajes, aprueba herramientas y usa el navegador remoto o la ventana de Claude Desktop del ordenador.
 - **Ejecute Cage en la nube.** Conéctese por SSH a Cage desplegado en un VPS Linux x86_64 compatible, sin KVM. Los datos y la salida de red están en el servidor.
 - **Conecta por una red privada.** Inicia sesión en Tailscale dentro de Cage para conectar el equipo y el entorno por SSH en ambos sentidos. [Tailscale / SSH](docs/guide/tailscale.md)
+- **Herramientas del equipo (experimental).** Desactivadas de forma predeterminada. Al activarlas, Claude dentro del entorno puede ejecutar comandos en tu equipo en las carpetas de proyecto compartidas; cada llamada requiere tu confirmación en un diálogo del sistema. [Plugins](docs/plugins.md)
 
 ## Inicio rápido
 
@@ -71,7 +72,7 @@ Cage admite macOS, Windows y Linux: Apple Silicon con macOS 14+, Windows 10 22H2
 2. macOS: Abra el paquete de instalación y arrastre **Cage** en **Aplicaciones**; luego ejecútelo desde Aplicaciones. Windows: [Guía de instalación](docs/windows.md#安装并开始工作) · Linux: [Guía de instalación](docs/linux.md#安装并开始工作).
 3. Siga las instrucciones de la aplicación para configurar su propio proxy de red, iniciar el entorno y abrir un proyecto.
 
-El instalador incluye el espacio de trabajo y el motor del proxy. No necesitas instalar antes Go, Node.js, Docker ni Clash. Al crear el entorno, elige el sistema invitado y su ubicación y prepara la imagen oficial y las herramientas. Cage no proporciona licencias del sistema, servicio de proxy ni cuentas Claude.
+El instalador incluye el espacio de trabajo y el motor del proxy. No necesitas instalar antes Go, Node.js, Docker ni Clash. Al crear el entorno, elige su ubicación; Cage descarga la imagen de Debian 13 y las herramientas de desarrollo. Cage no proporciona servicio de proxy ni cuentas Claude.
 
 El código fuente y los instaladores son públicos. Las notas y sumas de comprobación están en [Releases](https://github.com/Lee-xeo/Claude-Cage/releases).
 
@@ -87,7 +88,7 @@ En la página de inicio, haga clic en "Configurar red y proxy" y luego en "Agreg
 
 ### 2. Iniciar el entorno
 
-Al crear el entorno, elige el sistema invitado o la clonación del sistema del equipo y la ubicación de almacenamiento. Inicia el entorno Cage y sigue la instalación y las autorizaciones. El progreso y los errores aparecen en los detalles de la operación. Los siguientes inicios reutilizan el mismo entorno.
+Al crear el entorno, elige la ubicación de almacenamiento. Inicia el entorno Cage y sigue la instalación y las autorizaciones. El progreso y los errores aparecen en los detalles de la operación. Los siguientes inicios reutilizan el mismo entorno.
 
 ### 3. Abra un proyecto y ejecute Claude.
 
@@ -96,7 +97,7 @@ Haga clic en 'Abrir proyecto' para seleccionar una carpeta en su equipo, abra un
 ## Comprenda estos límites antes de usarlo
 
 - Las ediciones y eliminaciones en proyectos compartidos afectan directamente a los archivos de su equipo. Utilice control de versiones o copias de seguridad. El directorio `.git` del proyecto permite lectura y escritura; puede preparar cambios, crear commits y cambiar de rama en Cage.
-- Todos los proyectos comparten un entorno Cage, incluidas sus herramientas, cuentas y sistema de archivos macOS / Windows / Debian / Ubuntu 22.04. Los proyectos no están aislados unos de otros.
+- Todos los proyectos comparten un entorno Cage, incluidas sus herramientas, cuentas y sistema de archivos Debian. Los proyectos no están aislados unos de otros.
 - Por defecto, las conexiones públicas salientes admiten IPv4 TCP y DNS usa el mismo proxy. UDP, IPv6, ICMP públicos y el acceso directo al equipo o a la red local están limitados. Al activar Tailscale, el acceso a los dispositivos sigue los permisos de la red privada.
 - Las comprobaciones de red muestran la configuración actual y pruebas de muestra. No pueden garantizar que una cuenta evite las restricciones de la plataforma y no reemplazan una auditoría completa de seguridad de virtualización.
 
@@ -108,7 +109,7 @@ Para consultar el índice completo, consulte [Índice de documentación](docs/RE
 
 | tu tarea | Empieza aquí |
 |---|---|
-| macOS / Windows / Debian / Ubuntu 22.04 | [Elegir el sistema invitado](https://claude-cage.com/docs/guest-systems/) |
+| Debian 13 | [Entorno Debian](https://claude-cage.com/docs/guest-systems/) |
 | Instale, configure un proxy de red y abra su primer proyecto | [Empezando](docs/getting-started.md) |
 | Solucionar problemas de descargas, inicio, conectividad e inicio de sesión | [Preguntas frecuentes y recuperación](docs/troubleshooting.md) |
 | Aprenda los controles del teclado, la apariencia, la persistencia de datos y el comportamiento de salida | [Uso diario](docs/getting-started.md#日常使用) |

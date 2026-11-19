@@ -31,13 +31,6 @@ if [[ "$actual_version" != "$version" ]]; then echo 'App version differs from VE
 codesign --verify --deep --strict --verbose=2 "$bundle"
 xcrun stapler validate "$bundle"
 spctl --assess --type execute --verbose=2 "$bundle"
-guest_source="cage-macos-guest-$version-source.tar.gz"
-guest_materials="$bundle/Contents/Resources/guest-os/sources/$guest_source"
-node scripts/guest-os/collect-macos-sshfs-sources.mjs verify "$guest_materials" \
-  "$bundle/Contents/Resources/guest-os/project/cage-sshfs" "$version"
-# Copy only the source frozen by this App build, including the final signed
-# helper hash. Packaging must not substitute newer Homebrew source material.
-cp "$guest_materials" "$release/$guest_source"
 
 stage="$(mktemp -d "$PWD/_output/dmg-stage.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
@@ -85,6 +78,6 @@ curl --fail --location --retry 2 --connect-timeout 15 --max-time 180 \
   -o "$release/$core_source.part"
 mv "$release/$core_source.part" "$release/$core_source"
 tar -tzf "$release/$core_source" > /dev/null
-(cd "$release" && shasum -a 256 "$artifact" "$core_source" "$guest_source" > SHA256SUMS)
+(cd "$release" && shasum -a 256 "$artifact" "$core_source" > SHA256SUMS)
 node scripts/cleanup-apps.mjs --keep "$bundle" --root "$PWD/_output"
-printf 'Verified release artifacts:\n%s/%s\n%s/%s\n%s/%s\n%s/SHA256SUMS\n' "$release" "$artifact" "$release" "$core_source" "$release" "$guest_source" "$release"
+printf 'Verified release artifacts:\n%s/%s\n%s/%s\n%s/SHA256SUMS\n' "$release" "$artifact" "$release" "$core_source" "$release"

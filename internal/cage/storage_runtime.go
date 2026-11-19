@@ -53,28 +53,3 @@ func RecoverStorage(ctx context.Context, profile string, runtime StorageRuntime)
 	}
 	return lock.Close()
 }
-
-// CopyStorage copies an additional runtime-owned directory into a fresh private
-// directory. It uses the same sparse-file and digest verification as the move.
-func CopyStorage(ctx context.Context, source, target string, excluded []string, report func(int64, int64)) error {
-	for _, path := range excluded {
-		if !filepath.IsAbs(path) || sameStoragePath(path, source) || !StorageContains(source, path) {
-			return errors.New("客机管理文件超出当前存储目录")
-		}
-	}
-	if err := os.Mkdir(target, 0700); err != nil {
-		return err
-	}
-	return copyStorageExcluding(ctx, source, target, excluded, report)
-}
-
-func CopyStorageFile(ctx context.Context, source, target string) error {
-	info, err := os.Lstat(source)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
-		return errors.New("环境磁盘需要真实本地文件")
-	}
-	return copyStorageFile(ctx, source, target, info, make([]byte, 1<<20), make([]byte, 1<<20), func(int) {})
-}

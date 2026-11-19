@@ -6,7 +6,7 @@ const localFiles = new Set([
   "docs/BACKLOG.md", "docs/agent-vm-upstream.md", "docs/ci-cd.md",
   "docs/public-releases.md", "docs/releasing.md", "patches/README.md",
   "third_party/SOURCES", "scripts/third-party-sync",
-  "scripts/guest-os/macos-setup-view.md", "tools/tailnet/README.md",
+  "tools/tailnet/README.md",
   "www/README.md", "internal/exitpolicy/data/README.md",
   "ui/vendor/novnc/README.cage.md", "ui/vendor/novnc/vendor/pako/README.md",
 ]);

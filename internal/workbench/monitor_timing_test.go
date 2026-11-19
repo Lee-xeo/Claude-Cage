@@ -50,6 +50,9 @@ func monitorTimingRecords(t *testing.T, s *Server, kind string) []map[string]str
 
 func TestNetworkMonitorRecordsRepeatedLockSkips(t *testing.T) {
 	s := testServer(t)
+	previous := physicalProxyInterface
+	physicalProxyInterface = func(context.Context) (string, error) { return "en0", nil }
+	defer func() { physicalProxyInterface = previous }()
 	s.ready = true
 	s.safety.VerifiedAt = time.Now().Add(-85 * time.Second)
 	s.safety.Gate = &cage.GateStatus{Mode: cage.GateOpen, Until: time.Now().Add(5 * time.Second)}
@@ -197,12 +200,13 @@ func TestNetworkMonitorRecordsAllOuterStages(t *testing.T) {
 		return "en0", nil
 	}
 	defer func() { physicalProxyInterface = previous }()
-	s.monitorNetworkTick()
+	var skipped int
+	s.runNetworkMonitorTick(context.Background(), &skipped)
 	records := monitorTimingRecords(t, s, "network")
 	if len(records) != 1 {
 		t.Fatalf("missing network round: %v", records)
 	}
-	for _, stage := range []string{"physical_interface", "proxy_health", "safety", "recovery", "subscriptions"} {
+	for _, stage := range []string{"physical_interface", "physical_interface_apply", "proxy_health", "recovery", "subscriptions"} {
 		if records[0][stage+"_ms"] == "" {
 			t.Fatalf("missing %s timing: %v", stage, records[0])
 		}

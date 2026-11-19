@@ -264,7 +264,7 @@ async function artifactFixture(t) {
   const root = await temporary(t);
   const commitSha = 'a'.repeat(40);
   const packages = {
-    macos: { [`Cage-${currentVersion}-macos-arm64.dmg`]: 'mac installer', [`mihomo-${macCoreVersion}-source.tar.gz`]: 'same core source', [`cage-macos-guest-${currentVersion}-source.tar.gz`]: 'mac guest corresponding source' },
+    macos: { [`Cage-${currentVersion}-macos-arm64.dmg`]: 'mac installer', [`mihomo-${macCoreVersion}-source.tar.gz`]: 'same core source' },
     windows: { [`Cage-${currentVersion}-windows-amd64-setup.exe`]: 'windows installer', [`mihomo-${windowsDependencies.mihomo.version}-source.tar.gz`]: 'same core source', [`qemu-${windowsDependencies.qemu.version}-windows-full-source.zip`]: 'complete qemu source' },
     linux: { [`Cage-${currentVersion}-linux-amd64.deb`]: 'linux installer', [linuxDependencies.mihomoSource.file]: 'same core source' },
   };

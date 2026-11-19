@@ -128,7 +128,7 @@ func TestImportCompilesOnlyOwnedNetworkBoundary(t *testing.T) {
 	if config["mixed-port"] != 17896 || config["allow-lan"] != false || config["ipv6"] != false || config["external-controller"] != nil {
 		t.Fatalf("import changed boundary: %v", config)
 	}
-	if !strings.Contains(string(b), "MATCH,CAGE") || strings.Contains(string(b), "DIRECT") || strings.Contains(string(b), "enable: true\nproxies:") {
+	if !strings.Contains(string(b), "IN-USER,cage,CAGE") || !strings.Contains(string(b), "MATCH,REJECT") || strings.Contains(string(b), "DIRECT") || strings.Contains(string(b), "enable: true\nproxies:") {
 		t.Fatal("unsafe imported routing")
 	}
 	if config["tun"].(map[string]any)["enable"] != false {

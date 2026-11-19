@@ -3,7 +3,7 @@ package workbench
 import (
 	"context"
 	"errors"
-	"strings"
+	"slices"
 	"time"
 )
 
@@ -95,22 +95,11 @@ func (s *Server) inspectClaudeDefault(parent context.Context, force bool) (claud
 		if loadErr != nil {
 			err = loadErr
 		} else {
-			if subject := reading.subject(); subject != "" && list.bySubject(subject) == nil {
-				m.rememberDetected(subject, reading, now)
-			}
-			changed := false
-			for i := range list.Accounts {
-				a := &list.Accounts[i]
-				if a.Source != "default" {
-					continue
+			if reading.subject() != "" || slices.ContainsFunc(list.Accounts, func(a claudeAccount) bool { return a.Source == "default" }) {
+				err = s.archiveDefaultIfAvailable(ctx, &list, reading, now, force)
+				if err == nil {
+					err = s.saveClaudeAccounts(list)
 				}
-				if err = list.observe(a.ID, reading, now); err != nil {
-					break
-				}
-				changed = true
-			}
-			if changed && err == nil {
-				err = s.saveClaudeAccounts(list)
 			}
 		}
 	}
@@ -119,31 +108,6 @@ func (s *Server) inspectClaudeDefault(parent context.Context, force bool) (claud
 		m.defaultChecked = time.Time{}
 	}
 	return reading, now, err
-}
-
-// Keep a small, process-local history for unjoined identities. Switching the
-// default login cannot expose another identity's readings or erase a recent
-// observation when the same user returns to the default directory.
-func (m *claudeAccountManager) rememberDetected(subject string, reading claudeGuestSnapshot, now time.Time) {
-	if m.detectedUsage == nil {
-		m.detectedUsage = make(map[string]*claudeAccount)
-	}
-	a := m.detectedUsage[subject]
-	if a == nil {
-		if len(m.detectedUsage) >= 16 {
-			oldest := ""
-			for key, entry := range m.detectedUsage {
-				if oldest == "" || entry.CheckedAt < m.detectedUsage[oldest].CheckedAt {
-					oldest = key
-				}
-			}
-			delete(m.detectedUsage, oldest)
-		}
-		a = &claudeAccount{Email: reading.email(), Organization: reading.Organization}
-		m.detectedUsage[subject] = a
-	}
-	a.CheckedAt = now.Unix()
-	a.mergeQuota(reading.Quota, now)
 }
 
 func (s *Server) joinClaudeDefault(ctx context.Context, expected string) error {
@@ -165,19 +129,15 @@ func (s *Server) joinClaudeDefault(ctx context.Context, expected string) error {
 	if err != nil {
 		return err
 	}
-	if list.bySubject(expected) != nil {
+	a := list.bySubject(expected)
+	if a == nil {
+		return errors.New("登录身份尚未归档")
+	}
+	if a.Source != "default" || a.Enabled {
 		return nil
 	}
-	id := randomToken()[:24]
-	list.Accounts = append(list.Accounts, claudeAccount{ID: id, Source: "default", Label: reading.email(), Enabled: true})
-	if err := list.observe(id, reading, now); err != nil {
-		return err
-	}
-	if cached := m.detectedUsage[expected]; cached != nil {
-		a := list.find(id)
-		a.mergeQuota(cached.Quota, now)
-		a.UsageCheckedAt, a.UsageStatus = cached.UsageCheckedAt, cached.UsageStatus
-	}
+	a.Enabled = true
+	a.CheckedAt = now.Unix()
 	return s.saveClaudeAccounts(list)
 }
 
@@ -190,13 +150,12 @@ func (s *Server) claudePanelView(ctx context.Context) (claudePanel, claudeAccoun
 		view.UsageUnavailableReason = unavailable.Error()
 	}
 	var reading claudeGuestSnapshot
-	var checked time.Time
 	if update {
 		view.DetectionStatus = "update_required"
 		view.DetectionError = "请同步环境组件后再检测普通终端的登录"
 	} else if ready {
 		var err error
-		reading, checked, err = s.inspectClaudeDefault(ctx, false)
+		reading, _, err = s.inspectClaudeDefault(ctx, false)
 		if err != nil {
 			view.DetectionStatus, view.DetectionError = "unavailable", err.Error()
 		} else if reading.subject() == "" {
@@ -224,18 +183,9 @@ func (s *Server) claudePanelView(ctx context.Context) (claudePanel, claudeAccoun
 	view.Accounts, view.LoginNotice = list.Accounts, m.loginNotice
 	view.Scheduling = list.Scheduling
 	view.UsagePanelRunning = m.panelRunning
-	if subject := reading.subject(); view.DetectionStatus == "ready" && list.bySubject(subject) == nil {
-		view.Detected = &claudeDetected{Identity: subject, Email: reading.email(), Organization: strings.TrimSpace(reading.Organization), Plan: reading.Plan, Quota: reading.Quota, CheckedAt: checked.Unix()}
-	}
 	for i := range view.Accounts {
 		a := &view.Accounts[i]
 		a.UsageChecking = m.usageActive[claudeIdentityHash(a.Email, a.Organization)] != nil
-	}
-	if d := view.Detected; d != nil {
-		if stored := m.detectedUsage[d.Identity]; stored != nil {
-			d.Quota, d.UsageCheckedAt, d.UsageStatus = stored.Quota, stored.UsageCheckedAt, stored.UsageStatus
-		}
-		d.UsageChecking = m.usageActive[d.Identity] != nil
 	}
 	return view, list, nil
 }

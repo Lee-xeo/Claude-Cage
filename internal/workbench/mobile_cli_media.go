@@ -98,16 +98,7 @@ func (s *Server) mobileSessionMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	var name string
 	var err error
-	if s.windowsGuest != nil {
-		project, lookup := s.windowsProjectForHost(view.Workspace)
-		if lookup != nil {
-			http.Error(w, "Windows 项目连接已撤销，请重新连接项目。", http.StatusConflict)
-			return
-		}
-		name, err = windowsMediaFileName(project.Path, view.mediaWorkingDir, in.Reference)
-	} else {
-		name, err = mediaFileName(s.cliWorkspace(view.Workspace), view.mediaWorkingDir, in.Reference)
-	}
+	name, err = mediaFileName(guestPath(view.Workspace), view.mediaWorkingDir, in.Reference)
 	if err != nil {
 		http.Error(w, "只能预览当前项目中的媒体文件。", 403)
 		return

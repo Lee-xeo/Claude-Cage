@@ -248,22 +248,9 @@
 .account-settings {
   max-width: 560px;
 }
-.account-profile-heading {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  margin: 10px 0 4px;
-}
-.account-profile-heading .field-help {
-  margin: 8px 0 0;
-}
 .account-settings form button.primary,
 .account-settings form button.quiet-button {
   align-self: flex-start;
-}
-.account-section-divider {
-  margin: 32px 0;
-  border-top: 1px solid var(--line);
 }
 .account-settings h4 {
   margin: 0;

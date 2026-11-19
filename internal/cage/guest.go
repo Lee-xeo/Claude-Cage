@@ -23,9 +23,6 @@ func tailnetClientScript() string {
 	return "sudo tee /usr/local/lib/tailnet-client.mjs >/dev/null <<'CAGE_TAILNET_CLIENT'\n" + tailnetClient + "\nCAGE_TAILNET_CLIENT\n"
 }
 
-//go:embed ubuntu-browser.sh
-var ubuntuBrowser string
-
 //go:embed guest-services.sh
 var guestServices string
 
@@ -122,7 +119,7 @@ var browserSettingsPage string
 var splitControl string
 
 func splitExtensionScript() string {
-	return "split_directory=/usr/local/lib/cage-split\nif cage_is_ubuntu; then split_directory=/var/snap/chromium/common/workbench-extension; fi\nsudo install -d -m 0755 \"$split_directory\"\n" +
+	return "split_directory=/usr/local/lib/cage-split\nsudo install -d -m 0755 \"$split_directory\"\n" +
 		"sudo tee \"$split_directory\"/manifest.json >/dev/null <<'CAGE_MANIFEST'\n" + splitManifest + "\nCAGE_MANIFEST\n" +
 		"sudo tee \"$split_directory\"/control.html >/dev/null <<'CAGE_HTML'\n" + splitPage + "\nCAGE_HTML\n" +
 		"sudo tee \"$split_directory\"/settings.html >/dev/null <<'CAGE_SETTINGS_HTML'\n" + browserSettingsPage + "\nCAGE_SETTINGS_HTML\n" +
@@ -160,10 +157,6 @@ var imageInput string
 
 //go:embed desktop-files.py
 var desktopFiles string
-
-// DesktopFileReceiver shares the same bounded attachment writer with native
-// guests. Its --save-file mode uses only Python's standard library.
-func DesktopFileReceiver() string { return desktopFiles }
 
 //go:embed desktop-downloads.py
 var desktopDownloads string
@@ -259,7 +252,12 @@ cage_curl_download() {
 ` + toolDownload + `
 CAGE_DOWNLOAD_IDLE
 }
-` + guestTools + "\n" + ubuntuBrowser
+` + guestTools + `
+cage_install_chromium() {
+  cage_cache_chromium --no-install-recommends chromium chromium-l10n
+  sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends chromium chromium-l10n </dev/null
+}
+`
 }
 
 func ToolInstallPrelude() string {
@@ -276,7 +274,7 @@ CAGE_CHROMIUM_DOWNLOAD
 }
 
 func RequiredToolVersions() map[string]string {
-	result := map[string]string{"chromium": "Debian security repository / Ubuntu Chromium latest/stable"}
+	result := map[string]string{"chromium": "Debian security repository"}
 	for _, line := range strings.Split(toolVersions, "\n") {
 		key, value, ok := strings.Cut(line, "=")
 		if !ok {

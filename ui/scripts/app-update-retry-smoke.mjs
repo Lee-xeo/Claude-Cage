@@ -14,7 +14,9 @@ for (const platform of ["darwin", "windows", "linux"]) {
     nativeRequest: async body => {
       if (body.action !== "appUpdate") return null;
       calls.push(body.operation);
-      if (body.operation === "check") update = { phase: "current", currentVersion: "0.1.0", retryAt: "" };
+      if (body.operation === "check") update = platform === "linux"
+        ? { phase: "manual", currentVersion: "0.1.0", message: "使用系统包更新" }
+        : { phase: "current", currentVersion: "0.1.0", retryAt: "" };
       return update;
     },
   });
@@ -23,7 +25,9 @@ for (const platform of ["darwin", "windows", "linux"]) {
     await page.waitForFunction(() => document.querySelector(".app-update-button") || !document.querySelector(".loading-screen"));
     if (platform === "linux") {
       await page.clock.fastForward(7*60*60*1000);
-      assert.deepEqual(calls, ["status"], "Linux must keep system package updates");
+      assert.ok(calls.includes("check"), "Linux can check for newer system packages");
+      assert.ok(calls.every(operation => ["status", "check"].includes(operation)), "Linux must keep system package installation manual");
+      assert.equal(await page.locator(".app-update-button").count(), 0, "no automatic installation is offered");
     } else {
       await page.getByRole("button", { name: "等待重试更新", exact: true }).waitFor();
       assert.ok(await page.getByRole("button", { name: "等待重试更新", exact: true }).isDisabled());

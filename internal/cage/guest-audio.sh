@@ -18,12 +18,6 @@ load-module module-native-protocol-unix socket=/run/cage-audio/native auth-anony
 set-default-sink cage_output
 set-default-source cage_output.monitor
 PULSE
-if cage_is_ubuntu; then
-  # snapd gives Chromium a private mount namespace. Publish the same sink
-  # through a group-authenticated socket inside chromium's common data.
-  sudo install -d -m 0750 -o cage -g cage-audio /var/snap/chromium/common/audio
-  printf '%s\n' 'load-module module-native-protocol-unix socket=/var/snap/chromium/common/audio/native auth-anonymous=0 auth-cookie-enabled=0 auth-group-enable=1 auth-group=cage-audio' | sudo tee -a /etc/claude-cage/audio.pa >/dev/null
-fi
 sudo tee /etc/systemd/system/cage-audio.service >/dev/null <<'UNIT'
 [Unit]
 Description=Cage virtual audio output

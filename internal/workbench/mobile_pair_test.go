@@ -203,7 +203,7 @@ func TestDesktopPhonePairingLifecycle(t *testing.T) {
 		{"/api/settings", proof},
 		{"/api/mobile-pair", proof},
 	} {
-		if got := windowsPhoneRequest(t, newHost, "GET", denied.path, "", denied.proof); got.Code != http.StatusLocked {
+		if got := phoneRequestForTest(t, newHost, "GET", denied.path, "", denied.proof); got.Code != http.StatusLocked {
 			t.Fatalf("untrusted access to %s: HTTP %d", denied.path, got.Code)
 		}
 	}

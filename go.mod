@@ -144,8 +144,14 @@ require (
 require (
 	github.com/anchore/go-lzo v0.1.0 // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20260129054604-cfde2086bc57 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/hhrutter/tiff v1.0.7 // indirect
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pkg/xattr v0.4.12 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 )

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createWorkbench } from "./workbench-fixture.mjs";
+import { createWorkbench, chooseInline } from "./workbench-fixture.mjs";
 
 const parts = [];
 for await (const chunk of process.stdin) parts.push(chunk);
@@ -32,11 +32,13 @@ try {
     };
     new MutationObserver(check).observe(document.body, { attributes: true, childList: true, subtree: true });
   });
-  await page.getByRole("button", { name: "新建终端", exact: true }).first().click();
-  await page.getByRole("menuitem", { name: "Claude 终端", exact: true }).click();
+  await page.locator(`[data-terminal-location=${JSON.stringify(input.project)}]`).click();
+  await page.getByRole("menuitem", {name:/Claude 终端$/}).click();
+  await chooseInline(page.getByRole("combobox", {name:"启动账号"}), "auto");
+  await page.getByRole("button", {name:"创建 Claude Code 终端"}).click();
   await page.getByText("正在准备 Claude 会话…", { exact: true }).waitFor();
   await page.locator(".terminal-host").waitFor({ state: "visible" });
-  await page.waitForFunction(() => document.querySelector(".xterm-rows")?.textContent.includes("Claude Code"));
+  await page.waitForFunction(() => document.querySelector(".xterm-rows")?.textContent.replace(/\s/g, "").includes("ClaudeCode"));
   const text = output.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "").replace(/\s/g, "");
   assert.ok(text.includes("Loadingdevelopmentchannels"), "the genuine CLI confirmation must still exist in the raw output");
   assert.equal(await page.evaluate(() => window.visibleStartupWarnings), 0, "the genuine startup confirmation flashed on screen");

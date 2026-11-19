@@ -19,9 +19,7 @@ def launch():
     if not any(host == d or host.endswith('.' + d) for d in ('anthropic.com', 'claude.ai', 'claude.com')):
         return 1
     port = (Path(os.environ['XDG_RUNTIME_DIR']) / 'proxy').read_text()
-    browser = '/usr/local/lib/workbench-browser/chromium'
-    if not os.path.isfile(browser):
-        browser = '/usr/bin/chromium'
+    browser = '/usr/bin/chromium'
     os.execv(browser, ['chromium', '--user-data-dir=' + str(Path.home() / 'LoginProfile'),
         '--class=CagePhoneLogin', '--no-first-run', '--no-default-browser-check', '--disable-extensions',
         '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',

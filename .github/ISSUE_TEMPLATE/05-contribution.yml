@@ -44,27 +44,13 @@ body:
         - 不涉及或不确定
     validations:
       required: true
-  - type: dropdown
-    id: guest-systems
-    attributes:
-      label: 涉及的客机系统
-      description: 客机是 Cage 内运行的系统，可多选；适用于所有客机时全部选中。
-      multiple: true
-      options:
-        - macOS
-        - Windows
-        - Linux
-        - 不涉及或不确定
-    validations:
-      required: true
   - type: textarea
     id: platforms
     attributes:
       label: 系统版本与架构
-      description: 说明方案涉及的系统版本及架构；没有版本或架构限制时填写“无限制”。
+      description: 说明方案涉及的主机系统版本及架构；没有版本或架构限制时填写“无限制”。
       placeholder: |
         主机：……
-        客机：……
     validations:
       required: true
   - type: textarea

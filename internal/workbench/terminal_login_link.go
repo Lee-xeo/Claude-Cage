@@ -30,7 +30,8 @@ func claudeAuthorizationURL(raw string) bool {
 
 func (s *Server) terminalLoginLink(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		URL string `json:"url"`
+		URL  string `json:"url"`
+		Open bool   `json:"open,omitempty"`
 	}
 	if !readJSON(w, r, &input) {
 		return
@@ -58,6 +59,11 @@ func (s *Server) terminalLoginLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a, err := s.accountForRoute(terminal.accountID())
+	if err != nil {
+		requestError(w, err)
+		return
+	}
 	login := terminal.id
 	if terminal.loginGuestID != "" {
 		// Match the official CLI helper's private browser and cleanup key.
@@ -65,7 +71,21 @@ func (s *Server) terminalLoginLink(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	payload, _ := json.Marshal(map[string]string{"login": login, "url": input.URL})
+	s.mu.Lock()
+	reuse := s.preferences.ReuseClaudeLogin
+	s.mu.Unlock()
+	open := map[string]any{"login": login, "url": input.URL, "private": !reuse}
+	if a.Source != "" {
+		open["account"] = a.ID
+	}
+	if a.ProxyNodeID != "" {
+		if err := s.ensureAccountNetwork(ctx, a.ID, a.ProxyNodeID); err != nil {
+			requestError(w, err)
+			return
+		}
+		open["route"] = a.ID
+	}
+	payload, _ := json.Marshal(open)
 	data, err := s.guestAPI(ctx, token, "POST", "/login-open", payload)
 	if terminal.loginGuestID == "" {
 		terminal.loginLinkCleanup.Do(func() {
@@ -92,6 +112,9 @@ func (s *Server) terminalLoginLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Cage 浏览器未能打开授权页，请检查浏览器连接并重试", 502)
 		return
 	}
+	terminal.mu.Lock()
+	terminal.loginRequested = time.Now()
+	terminal.mu.Unlock()
 	w.Header().Set("Cache-Control", "no-store")
-	jsonReply(w, tab)
+	jsonReply(w, map[string]any{"id": tab.ID, "incognito": !reuse})
 }

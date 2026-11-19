@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDownToLine, RefreshCw } from "lucide-react";
-import { native, nativeAvailable } from "./api";
+import { ArrowDownToLine, LoaderCircle, RefreshCw } from "lucide-react";
+import { api, native, nativeAvailable } from "./api";
+import { getClientContext } from "./client-context.mjs";
+import { Modal } from "./modal";
+import { stopAndExit } from "./quit";
 
 const activePhases = new Set(["checking", "downloading", "downloaded", "verifying", "installing"]);
 const checkInterval = 6 * 60 * 60 * 1000;
@@ -9,6 +12,7 @@ const retryInterval = 5 * 60 * 1000;
 export function useAppUpdates() {
   const [state, setState] = useState({ phase: "idle", message: "" });
   const [startupFailure, setStartupFailure] = useState("");
+  const [installationPrompt, setInstallationPrompt] = useState(false);
   const [retryClock, setRetryClock] = useState(Date.now);
   const retryAt = Date.parse(state.retryAt || "");
   const coolingDown = state.phase === "failed" && retryAt > Date.now();
@@ -19,6 +23,10 @@ export function useAppUpdates() {
   const available = nativeAvailable();
   const run = useCallback(async (operation) => {
     if (!available || requestPending.current || activePhases.has(current.current.phase)) return;
+    if (operation === "install" && current.current.phase === "ready") {
+      setInstallationPrompt(true);
+      return;
+    }
     if (["check", "install"].includes(operation) && Date.parse(current.current.retryAt || "") > Date.now()) return;
     requestPending.current = true;
     if (operation === "check") lastCheck.current = Date.now();
@@ -26,10 +34,16 @@ export function useAppUpdates() {
     try {
       const next = await native("appUpdate", { operation });
       if (next?.phase) setState(next);
+      return next;
     } catch (error) {
-      setState(previous => ({ ...previous, phase: "failed", message: error.message, retryable: true }));
+      const next = { ...current.current, phase: "failed", message: error.message, retryable: true };
+      setState(next);
+      return next;
     } finally { requestPending.current = false; }
   }, [available]);
+  useEffect(() => {
+    if (state.phase === "ready") setInstallationPrompt(true);
+  }, [state.phase]);
 
   useEffect(() => {
     if (!coolingDown) return;
@@ -81,7 +95,64 @@ export function useAppUpdates() {
     const timer = setTimeout(() => setStartupFailure(""), 8000);
     return () => clearTimeout(timer);
   }, [startupFailure]);
-  return { state, run, available, startupFailure, coolingDown };
+  return { state, run, available, startupFailure, coolingDown, installationPrompt, setInstallationPrompt };
+}
+
+export function AppUpdateDialog({ updates, onStatus }) {
+  const { installationPrompt, setInstallationPrompt, run } = updates;
+  const [stopping, setStopping] = useState(false);
+  const [error, setError] = useState("");
+  const attempt = useRef(null);
+  useEffect(() => () => { attempt.current = null; }, []);
+  const close = () => {
+    attempt.current = null;
+    setStopping(false);
+    setError("");
+    setInstallationPrompt(false);
+  };
+  const install = async () => {
+    if (attempt.current) return;
+    const request = { connection: getClientContext().connection_id };
+    attempt.current = request;
+    setStopping(true);
+    setError("");
+    try {
+      // Only the local workbench can stop its own environment. A selected
+      // remote host must never receive the desktop application's stop request.
+      if (getClientContext().mode !== "local") throw new Error("请先切回本机工作台，再点击更新按钮继续安装。云端任务会继续运行。");
+      await stopAndExit({
+        stop: () => api("/stop", {}),
+        readStatus: () => api("/status"),
+        exit: async () => {
+          const next = await run("complete");
+          if (next?.phase !== "installing") throw new Error(next?.message || "安装尚未开始，请重试。");
+        },
+        isCancelled: () => attempt.current !== request || getClientContext().connection_id !== request.connection,
+        onStatus,
+      });
+      if (attempt.current === request) close();
+    } catch (failure) {
+      if (attempt.current === request) {
+        attempt.current = null;
+        setStopping(false);
+        setError(failure.message);
+      }
+    }
+  };
+  if (!installationPrompt) return null;
+  return <Modal title="停止环境并安装更新？" onClose={close} footer={<>
+    <button onClick={close}>{stopping ? "稍后安装" : "取消"}</button>
+    <button className="primary" disabled={stopping} onClick={install}>
+      {stopping ? "正在停止环境…" : error ? "重试停止并安装" : "保存并停止环境后安装"}
+    </button>
+  </>}>
+    <div className="modal-body">
+      <p>更新已下载并验证。请先保存文件，点击下方按钮停止环境后安装并重启 Cage。当前终端任务会结束，项目、账户和登录状态会保留。</p>
+      <p>取消可稍后安装，已下载的更新会保留。停止开始后，取消只推迟安装，环境仍会停止。</p>
+      {stopping && <p role="status"><LoaderCircle size={16} className="spin" /> 正在等待环境停止，完成后继续安装…</p>}
+      {error && <p className="error-message" role="alert">{error}</p>}
+    </div>
+  </Modal>;
 }
 
 export function AppUpdateButton({ updates }) {
@@ -115,12 +186,12 @@ export function AppUpdateButton({ updates }) {
     : state.phase === "verifying" || state.phase === "downloaded" ? "正在验证更新"
     : state.phase === "installing" ? "正在安装更新，完成后自动重启"
     : state.phase === "checking" ? "正在准备更新"
-    : coolingDown ? "等待重试更新" : failed ? "重试更新" : manual ? "查看新版本" : "下载更新";
+    : coolingDown ? "等待重试更新" : failed ? "重试更新" : manual ? "查看新版本" : state.phase === "ready" ? "安装已下载的更新" : "下载更新";
   const hint = coolingDown ? `${state.message || "更新源请求受限"}，可于 ${new Date(state.retryAt).toLocaleString()} 后重试`
     : failed ? `${state.message || "更新未完成"}，点击重试`
     : busy ? label
     : manual ? `新版本 ${state.latestVersion} 已发布。${state.message || ""}点击打开发布页面。`
-    : `更新至 ${state.latestVersion}。请先保存工作，点击后将自动停止环境、安装并重启。`;
+    : `更新至 ${state.latestVersion}。先下载并验证，安装前会提示你保存工作并手动停止环境。`;
   const circumference = 2 * Math.PI * 15;
   return (
     <>

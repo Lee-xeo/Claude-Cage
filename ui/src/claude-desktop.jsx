@@ -16,24 +16,22 @@ import { SafetyMessage } from "./safety-message";
 import { DeviceCheckButton } from "./device-checks";
 import { RemoteView } from "./views";
 import { useWindowVisibility } from "./window-visibility";
-import { guestCapability } from "./guest-capabilities.mjs";
 import "./claude-desktop.css";
 
 const desktopZooms = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
 
-export function useDesktopZoom(automatic = false) {
+export function useDesktopZoom() {
   const [zoom, setZoom] = useState(() => {
     try {
-      const stored = localStorage.getItem(automatic ? "cage-windows-desktop-zoom" : "cage-desktop-zoom");
-      if (automatic && (stored === null || stored === "auto")) return "auto";
+      const stored = localStorage.getItem("cage-desktop-zoom");
       const value = Number(stored);
-      return desktopZooms.includes(value) ? value : automatic ? "auto" : 1;
-    } catch { return automatic ? "auto" : 1; }
+      return desktopZooms.includes(value) ? value : 1;
+    } catch { return 1; }
   });
   return [zoom, setZoom];
 }
 
-export function DesktopToolbar({ desktop, platform, title = "Claude Desktop", zoom, setZoom, onConfirm, onStop, busy, refresh, sidebarCollapsed, onExpand, children, automatic = false }) {
+export function DesktopToolbar({ desktop, platform, title = "Claude Desktop", zoom, setZoom, onConfirm, onStop, busy, refresh, sidebarCollapsed, onExpand, children }) {
   const [hidden, setHidden] = useState(() => {
     try { return localStorage.getItem("cage-desktop-toolbar-hidden") === "true"; }
     catch { return false; }
@@ -74,11 +72,10 @@ export function DesktopToolbar({ desktop, platform, title = "Claude Desktop", zo
           <label className="desktop-display-size">
             显示大小
             <InlineSelect aria-label="Desktop 显示大小" value={zoom} onValueChange={(next) => {
-              const value = next === "auto" ? "auto" : Number(next);
+              const value = Number(next);
               setZoom(value);
-              try { localStorage.setItem(automatic ? "cage-windows-desktop-zoom" : "cage-desktop-zoom", String(value)); } catch { /* Session-only preference. */ }
+              try { localStorage.setItem("cage-desktop-zoom", String(value)); } catch { /* Session-only preference. */ }
             }}>
-              {automatic && <option value="auto">自适应（推荐）</option>}
               {desktopZooms.map((value) => <option key={value} value={value}>{Math.round(value * 100)}%{value === 1 ? "（默认）" : ""}</option>)}
             </InlineSelect>
           </label>
@@ -130,9 +127,7 @@ export function ClaudeDesktop({
 }) {
   const [closedChooser, setClosedChooser] = useState("");
   const directoryRequest = uploads.find((item) => item.directory && item.id !== closedChooser);
-  const automatic = status.guest_system?.startsWith("windows");
-  const available = guestCapability(status, "desktop");
-  const [zoom, setZoom] = useDesktopZoom(automatic);
+  const [zoom, setZoom] = useDesktopZoom();
   const windowVisible = useWindowVisibility();
   const screenVisible = visible && windowVisible;
   const [desktop, setDesktop] = useState(null);
@@ -146,7 +141,6 @@ export function ClaudeDesktop({
   const ownJob = status.job?.kind?.startsWith("claude-desktop-");
   const busy = submitting || Boolean(status.job?.running) || Boolean(jobID);
   const refresh = async (valid = () => true) => {
-    if (!available) return null;
     const revision = statusRevision.current;
     const request = statusRequest.current ??= api("/claude-desktop");
     try {
@@ -163,7 +157,6 @@ export function ClaudeDesktop({
     }
   };
   const run = async (action) => {
-    if (!available) return;
     statusRevision.current++;
     statusRequest.current = null;
     setSubmitting(true);
@@ -178,7 +171,7 @@ export function ClaudeDesktop({
     }
   };
   useEffect(() => {
-    if (!available || !screenVisible || !status.vm_running || status.job?.running) return;
+    if (!screenVisible || !status.vm_running || status.job?.running) return;
     let disposed = false;
     let timer;
     const poll = async () => {
@@ -196,7 +189,7 @@ export function ClaudeDesktop({
       disposed = true;
       clearTimeout(timer);
     };
-  }, [available, screenVisible, status.vm_running, status.job?.running]);
+  }, [screenVisible, status.vm_running, status.job?.running]);
   useEffect(() => {
     if (!jobID || status.job?.id !== jobID || status.job.running) return;
     setJobID("");
@@ -224,9 +217,9 @@ export function ClaudeDesktop({
           await onProjectOpened(workspace);
         }}
       />}
-      <DesktopToolbar desktop={desktop} platform={automatic ? "Windows" : "Linux"} zoom={zoom} setZoom={setZoom} automatic={automatic}
-        onConfirm={onConfirm} onStop={() => run("stop")} busy={busy || !available} refresh={() => refresh()} sidebarCollapsed={sidebarCollapsed} onExpand={onExpand}>
-        {desktop?.installed && !status.guest_system?.startsWith("windows") && <button className="quiet-button" disabled={busy} onClick={async () => {
+      <DesktopToolbar desktop={desktop} platform="Linux" zoom={zoom} setZoom={setZoom}
+        onConfirm={onConfirm} onStop={() => run("stop")} busy={busy} refresh={() => refresh()} sidebarCollapsed={sidebarCollapsed} onExpand={onExpand}>
+        {desktop?.installed && <button className="quiet-button" disabled={busy} onClick={async () => {
           if (!desktop.running || await onConfirm({ title: "更新 Claude Desktop？", body: "请先保存应用内的工作。更新会关闭 Claude Desktop，从官方软件源安装可用版本，再重新打开；登录资料继续保留。", confirm: "更新应用" })) run("update");
         }}>更新应用</button>}
       </DesktopToolbar>
@@ -249,20 +242,13 @@ export function ClaudeDesktop({
         </div>
       )}
       <div className="desktop-screen">
-        {!available ? (
-          <div className="desktop-empty">
-            <Monitor size={36} />
-            <h2>Windows 云端暂不支持 Claude Desktop</h2>
-            <p>当前可使用隔离 PowerShell{guestCapability(status, "browser") && " 和浏览器"}，无需登录 Claude 账户。</p>
-          </div>
-        ) : desktop?.running && status.vm_running ? (
+        {desktop?.running && status.vm_running ? (
           <RemoteView
             ref={remoteRef}
             desktop
             zoom={zoom}
             visible={visible}
             keyboard={status.keyboard}
-            guestPlatform={status.guest_system?.startsWith("windows") ? "windows" : status.guest_system}
             onStatus={onStatus}
             onFallback={onFallback}
           />
@@ -298,7 +284,7 @@ export function ClaudeDesktop({
                   {desktop.installed ? "打开 Claude Desktop" : "下载并安装"}
                 </button>
               )}
-              {desktop?.installed && !status.guest_system?.startsWith("windows") && (
+              {desktop?.installed && (
                 <button
                   className="quiet-button"
                   disabled={busy}
@@ -317,9 +303,7 @@ export function ClaudeDesktop({
                 </button>
               )}
             </div>
-            {desktop?.installed && <p>{status.guest_system?.startsWith("windows")
-              ? "在 Claude Desktop 应用内检查并安装更新。"
-              : "Linux 版通过系统软件源更新。可点击上方“更新应用”，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。"}</p>}
+            {desktop?.installed && <p>Linux 版通过系统软件源更新。可点击上方“更新应用”，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。</p>}
             <p className="desktop-note">
               关闭应用后释放图形会话资源，登录状态保留在 Cage
               环境中。需要额外虚拟机的 Cowork 功能暂未适配。

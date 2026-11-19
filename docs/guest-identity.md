@@ -6,13 +6,11 @@
 | --- | --- | --- | --- |
 | 客机主机名 | 常见 PC 命名样式或真实型号简称 + 随机后缀，最长 15 字符 | 同左 | 同左，由客机初始化配置应用 |
 | UUID | 每个容器独立生成 | 通过 `-uuid` 传给 QEMU | 平台标识仍由 Apple 框架生成并持久化 |
-| `/etc/machine-id` | 空白镜像首次启动时，systemd 使用 `container_uuid` 初始化 | 不修改磁盘中已有的 machine-id | 不适用 macOS；不修改 Linux 磁盘中已有的 machine-id |
+| `/etc/machine-id` | 空白镜像首次启动时，systemd 使用 `container_uuid` 初始化 | 不修改磁盘中已有的 machine-id | 不修改磁盘中已有的 machine-id |
 | 默认客机网卡 MAC | 随机本地单播地址 | 同左，客机配置与 DHCP 租约同步 | 同左 |
 | 独立虚拟网络的网关 MAC | 独立随机本地单播地址 | 同左 | 同左 |
 
 首次设置中可以手动填写主机名，留空则随机生成。Linux 账户、主目录、初始尺寸、控制扩展及浏览器图形后端也可在创建时配置，音频输出名称从真实产品型号库中自动选择，见[客机创建配置](guest-profile.md)。浏览器保留实际 UA 与 Client Hints；配置随环境保存，重启不重新抽取。环境检测可核对配置和实际渲染能力，未观测到的硬件或应用内部数据不会标为通过。
-
-Windows 新系统安装使用选定的计算机名；独立运行正式版或评估版的 PowerShell 创建脚本时可通过 `-ComputerName` 指定，不指定则使用 `*`，由 Windows Setup 生成。用户导入的已有 Windows 系统不改名。Windows 原生 Hyper-V 的硬件标识仍由 Hyper-V 管理。
 
 主机名没有 `claude-cage-`、`cage-` 或 `lima-` 固定前缀，也不包含项目目录、宿主机名或路径哈希。MAC 的第一个字节只保留本地单播位约束，不使用固定三字节前缀。
 
@@ -31,7 +29,7 @@ Windows 新系统安装使用选定的计算机名；独立运行正式版或评
 
 离线库包含 **1,593 条真实型号记录、1,181 个不同简称**：联想 506 条、戴尔 499 条、惠普 551 条、华擎主板 37 条。记录来自厂商公开型号/驱动部署目录，保留完整型号、厂商和来源校验信息。联想目录中的 `Type` 型号变体保留在原始型号列，生成简称时去掉这些尾部 SKU 字段，以保留更容易识别的型号和代数。
 
-简称是本项目从真实型号整理出的命名素材，不声称是厂家出厂主机名，也不代表实际 SMBIOS、主板、CPU 或客机系统。Windows 的 `DESKTOP-` 默认形态也可出现在笔记本上；这些权重用于混合样式，不代表市场份额。Linux 容器与 Lima 客机共享该生成器，Windows 原生安装仍使用 Setup 自身的命名规则。
+简称是本项目从真实型号整理出的命名素材，不声称是厂家出厂主机名，也不代表实际 SMBIOS、主板、CPU 或客机系统。Windows 的 `DESKTOP-` 默认形态也可出现在笔记本上；这些权重用于混合样式，不代表市场份额。Linux 容器与 Lima 虚拟机共享该生成器。
 
 数据随程序嵌入，创建时不联网、不查询宿主硬件、不安装驱动。更新方式与来源见 `docs/hostname-catalog.md`、`hostname-sources.json` 和 `scripts/update-hostname-catalog.py`。后者只从本地 XML/JSON 编译数据，输出可重复构建。
 
@@ -53,4 +51,4 @@ Linux 容器基础镜像必须保持 `/etc/machine-id` 为空，且不得保留�
 
 手工验收时，在两个全新环境内分别检查主机名、默认网卡 MAC、网关邻居项；Linux 容器还应检查 `/etc/machine-id`。同一环境完整停止再启动后重复检查，确认身份稳定。不要在 Issue 或测试报告中附带认证文件、私钥或原始日志。
 
-参考：[systemd 容器接口](https://systemd.io/CONTAINER_INTERFACE/)、[Windows ComputerName](https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-computername)。
+参考：[systemd 容器接口](https://systemd.io/CONTAINER_INTERFACE/)。

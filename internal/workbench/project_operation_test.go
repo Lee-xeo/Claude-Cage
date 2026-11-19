@@ -23,9 +23,11 @@ func holdProjectNetworkMonitor(t *testing.T, s *Server) func() {
 	monitorStopped := make(chan struct{})
 	go func() {
 		defer close(monitorStopped)
-		s.runNetworkMonitor(ctx, func() {
-			close(probeStarted)
-			<-releaseProbe
+		runNetworkMonitor(ctx, func(skipped *int) {
+			s.withNetworkMonitorLock(s.startMonitorTiming(), skipped, func() {
+				close(probeStarted)
+				<-releaseProbe
+			})
 		})
 	}()
 	stop := sync.OnceFunc(func() {
@@ -173,7 +175,11 @@ func TestNetworkMonitorSeparatesProjectYieldFromLockSkips(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			s.runNetworkMonitor(ctx, func() { panic("monitor acquired held lock") })
+			runNetworkMonitor(ctx, func(skipped *int) {
+				timing := s.startMonitorTiming()
+				s.withNetworkMonitorLock(timing, skipped, func() { panic("monitor acquired held lock") })
+				s.recordMonitorTiming("network", timing)
+			})
 		}()
 		synctest.Wait()
 		// The log store rotates using filesystem mtimes (real time), while

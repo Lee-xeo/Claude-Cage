@@ -8,48 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/sylvinus/agent-vm/internal/guestos"
 )
-
-func TestNativeDesktopProjectPathsUseCurrentGuestMount(t *testing.T) {
-	for _, system := range []string{"macos", "windows"} {
-		t.Run(system, func(t *testing.T) {
-			s := testServer(t)
-			project := t.TempDir()
-			file := filepath.Join(project, "中文 #+%.md")
-			if err := os.WriteFile(file, []byte("project document"), 0600); err != nil {
-				t.Fatal(err)
-			}
-			var guest string
-			closed := make(chan struct{})
-			if system == "macos" {
-				s.macosGuest = &guestos.MacOSProfile{User: "cage"}
-				guest = macOSProjectPath("cage", project)
-			} else {
-				s.windowsGuest = &guestos.WindowsProfile{}
-				guest = "C:/Cage/Projects/0123456789abcdef"
-				s.projectShares = map[string]*projectShare{project: {done: closed, windowsProject: &windowsProjectBinding{Path: guest, ID: "0123456789abcdef", Grant: "test"}}}
-			}
-			got, err := s.resolveDesktopProjectFile(guest+"/"+filepath.Base(file), []string{project})
-			want, _ := filepath.EvalSymlinks(file)
-			if err != nil || got != want {
-				t.Fatalf("guest mount did not resolve to host original: %q %v", got, err)
-			}
-			for _, invalid := range []string{guest + "-other/" + filepath.Base(file), guest + "/../outside", guest + "/missing", "relative", "file://" + guest} {
-				if _, err := s.resolveDesktopProjectFile(invalid, []string{project}); err == nil {
-					t.Fatalf("accepted invalid guest path %q", invalid)
-				}
-			}
-			if system == "windows" {
-				close(closed)
-				if _, err := s.resolveDesktopProjectFile(guest+"/"+filepath.Base(file), []string{project}); err == nil {
-					t.Fatal("revoked Windows share still granted file access")
-				}
-			}
-		})
-	}
-}
 
 func TestDesktopFilePathsStayInProjectGrants(t *testing.T) {
 	project := t.TempDir()

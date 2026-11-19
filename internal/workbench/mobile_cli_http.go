@@ -89,10 +89,6 @@ func (s *Server) mobileOpenTerminal(w http.ResponseWriter, r *http.Request) {
 			mode = "handoff"
 		}
 		query := map[string]any{"cli_id": record.CLIID, "config": record.GuestConfig, "workspace": record.GuestWorkspace}
-		if err := s.windowsConversationInput(record, query); err != nil {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
 		if err := s.runCLIChannel(r.Context(), mode, query, &state); err != nil {
 			http.Error(w, err.Error(), 503)
 			return
@@ -107,11 +103,7 @@ func (s *Server) mobileOpenTerminal(w http.ResponseWriter, r *http.Request) {
 					var result struct {
 						OK bool `json:"ok"`
 					}
-					resume := map[string]any{"cli_id": record.CLIID, "connection": record.Connection, "action": "resume"}
-					if err := s.windowsConversationInput(record, resume); err != nil {
-						http.Error(w, err.Error(), http.StatusConflict)
-						return
-					}
+					resume := resumeChannelRequest(record)
 					if err := s.runCLIChannel(r.Context(), "rpc", resume, &result); err != nil || !result.OK {
 						http.Error(w, "会话恢复暂未完成，请重试", 503)
 						return
@@ -201,9 +193,6 @@ func (s *Server) mobileApprovalResponse(w http.ResponseWriter, r *http.Request) 
 	http.Error(w, "这项请求已结束或由其他设备处理，请重新读取会话", 409)
 }
 func (s *Server) mobileProjects(w http.ResponseWriter, r *http.Request) {
-	if s.windowsGuest != nil {
-		s.refreshWindowsComponents()
-	}
 	groups, err := s.projectGroups()
 	if err != nil {
 		http.Error(w, "无法读取已授权的项目", 500)
@@ -216,10 +205,6 @@ func (s *Server) mobileProjects(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	ready := s.ready && !s.closing
 	shared := sharedCLILauncher(claudeTerminalCommand(s.preferences))
-	if s.windowsGuest != nil {
-		available := s.windowsCapabilitiesLocked()["available"].(map[string]bool)
-		shared = shared && available["cli"] && available["terminal"] && available["projects"]
-	}
 	s.mu.Unlock()
 	name, _ := os.Hostname()
 	jsonReply(w, map[string]any{"projects": projects, "ready": ready, "host": name, "shared_sessions": shared})

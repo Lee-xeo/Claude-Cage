@@ -229,9 +229,6 @@ func (s *Server) purgeSession(ctx context.Context, id string) error {
 	if record.Purged {
 		return nil
 	}
-	if s.windowsGuest != nil && !record.Terminal && (record.Resume || len(record.Turns) > 0) {
-		return errWindowsLegacyMobile
-	}
 	if !record.Archived {
 		return errors.New("请先归档会话，再从已归档会话中永久删除")
 	}
@@ -259,9 +256,6 @@ func (s *Server) purgeSession(ctx context.Context, id string) error {
 			"cli_id": execution.CLIID, "config": execution.Config,
 			"account": execution.Account.GuestID, "workspace": guestPath(record.Workspace),
 			"expect_history": execution.CLIID != record.CLIID || record.Resume,
-		}
-		if err := s.windowsConversationInput(record, input); err != nil {
-			return err
 		}
 		if err := s.runCLIChannel(ctx, "purge", input, &result); err != nil {
 			return err
@@ -331,9 +325,6 @@ func (s *Server) terminalSummaries() []map[string]any {
 		}
 		item["custom_title"], item["pinned"], item["metadata_set"] = record.CustomTitle, record.Pinned, record.MetadataSet
 		item["title"] = record.snapshot().Title
-		if s.macOSLegacyWorkspace(record) != "" {
-			item["workspace_notice"] = macOSLegacyWorkspaceNotice
-		}
 	}
 	return list
 }

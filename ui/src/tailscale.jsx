@@ -94,7 +94,7 @@ export function TailscalePanel({ status, onOpenLogin, onOpenBrowser, onInstall, 
             setBusy(true); setError("");
             try { await onInstall(); } catch (e) { setError(e.message); }
             finally { if (mounted.current) setBusy(false); }
-          }}>{["macos", "windows-11"].includes(status.guest_system) ? "更新环境组件以安装" : "安装 Tailscale"}</button> : <>
+          }}>安装 Tailscale</button> : <>
             {!connected && !["NeedsMachineAuth", "Starting"].includes(state.backend) && <button className="primary-button" disabled={busy} onClick={login}>{busy ? <LoaderCircle size={15} className="spin" /> : <ExternalLink size={15} />}{state.enabled ? "重新发起登录" : "连接并登录"}</button>}
             {state.auth_url && !connected && <button className="quiet-button" disabled={busy} onClick={() => openLogin(state)}>打开登录页面</button>}
             {state.enabled && <button className="quiet-button" disabled={busy} onClick={() => stop(false)}>断开连接</button>}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -135,6 +136,34 @@ func TestManualProxySelectionHonorsLaterPause(t *testing.T) {
 	reloaded := reloadedIntentServer(t, s)
 	if err := reloaded.restoreNetworkIntent(); err != nil || !reloaded.networkPaused {
 		t.Fatal("later manual pause was not durable", err)
+	}
+}
+
+func TestProxyApplyReportsSavedNodeWhenGateCannotSynchronize(t *testing.T) {
+	s, gate, started, finish := pendingProxyApply(t)
+	cfg, err := loadConfig(s.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A real environment setting requires a restart, even when the proxy core
+	// itself was applied successfully. The selected node must not be rolled back.
+	cfg.Timezone = "Asia/Tokyo"
+	if err := writePrivate(s.configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := managedproxy.Load(s.profile)
+	if w := request(s, "POST", "/api/proxy/select", s.origin, `{"node_id":"`+p.Selected+`"}`, true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	awaitProxyStart(t, started)
+	finish()
+	job := awaitJobIdle(t, &s.jobs)
+	if !job.SettingsSaved || !strings.Contains(job.Error, "代理节点已保存") || gate.Status().Mode != cage.GateClosed {
+		t.Fatal("failed synchronization concealed the saved node or opened the gate", job)
+	}
+	saved, err := managedproxy.Load(s.profile)
+	if err != nil || saved.Revision == p.Revision || saved.Selected != p.Selected || !s.vmRunning() {
+		t.Fatal("failed synchronization rolled back the node or restarted the environment", err)
 	}
 }
 

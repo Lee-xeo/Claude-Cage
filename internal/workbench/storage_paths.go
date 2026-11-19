@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/mounts"
 	"github.com/sylvinus/agent-vm/internal/paths"
 )
@@ -41,7 +40,6 @@ func privateProjectDirectories(profile string) ([]string, error) {
 		return nil, err
 	}
 	directories = append(directories, profile)
-	directories = append(directories, guestos.WindowsPrivateStoragePaths()...)
 	for _, directory := range directories {
 		physical, err := cage.StoragePhysicalPath(directory)
 		if os.IsNotExist(err) {

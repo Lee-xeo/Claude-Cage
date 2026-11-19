@@ -22,10 +22,6 @@ func (s *Server) vnc(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "环境尚未就绪", 409)
 		return
 	}
-	if s.macosGuest != nil || s.windowsGuest != nil {
-		s.nativeBrowserVNC(w, r)
-		return
-	}
 	release, err := s.browserViews.acquire(s.changeBrowserVisibility)
 	if err != nil {
 		requestError(w, err)

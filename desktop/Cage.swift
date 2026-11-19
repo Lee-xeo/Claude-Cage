@@ -1,4 +1,6 @@
 import Cocoa
+import LocalAuthentication
+import CryptoKit
 import WebKit
 import UniformTypeIdentifiers
 
@@ -46,11 +48,44 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     }
 
     static func main() {
-        CageProfile.pinEnvironment()
-        if CommandLine.arguments.dropFirst().elementsEqual(["--store-trial-guest-password"]) {
-            do { try MacGuestLoginCredential.importFromPipe(); return }
-            catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(1) }
+        let args = Array(CommandLine.arguments.dropFirst())
+        if args == ["--confirm-codex-network"] {
+            let data = FileHandle.standardInput.readDataToEndOfFile()
+            guard data.count <= 131072,
+                  let request = try? JSONDecoder().decode([String:String].self, from: data),
+                  let command = request["command"], let cwd = request["cwd"], let project = request["project"] else { exit(1) }
+            let app = NSApplication.shared
+            app.setActivationPolicy(.accessory)
+            let reference = SHA256.hash(data: data).prefix(4).map { String(format: "%02x", $0) }.joined()
+            let alert = NSAlert()
+            alert.messageText = "允许 Codex 为这条命令使用网络？"
+            alert.informativeText = "项目「\(URL(fileURLWithPath: project).lastPathComponent)」。本次命令及其子进程可监听端口、连接网络。请核对完整命令及工作目录。请求编号 \(reference)"
+            let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 165))
+            scroll.hasVerticalScroller = true
+            let details = NSTextView(frame: scroll.contentView.bounds)
+            details.isEditable = false
+            details.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            details.isVerticallyResizable = true
+            details.textContainer?.widthTracksTextView = true
+            details.string = "工作目录　\(cwd)\n\n\(command)"
+            scroll.documentView = details
+            alert.accessoryView = scroll
+            alert.addButton(withTitle: "取消")
+            alert.addButton(withTitle: "验证并允许一次")
+            app.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertSecondButtonReturn else { exit(1) }
+            verifyCodexDecision("允许项目「\(URL(fileURLWithPath: project).lastPathComponent)」的 Codex 命令使用网络一次。请核对刚才查看的请求编号 \(reference)。")
         }
+        if args.first == "--confirm-codex-app" {
+            guard args.count == 4, ["once", "always"].contains(args[3]) else { exit(1) }
+            let bundleID = args[2]
+            let project = String(URL(fileURLWithPath: args[1]).lastPathComponent.prefix(80))
+            let label = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+                .map { FileManager.default.displayName(atPath: $0.path) } ?? bundleID
+            let scope = args[3] == "always" ? "验证即同意 Codex 记住对此应用的授权，其他使用同一授权的会话也可能受益。" : "验证仅允许本次请求。"
+            verifyCodexDecision("授权 Codex 查看和操作「\(label)」(\(bundleID))。\(scope) 请求项目：\(project)")
+        }
+        CageProfile.pinEnvironment()
         NSSetUncaughtExceptionHandler { exception in CageDiagnostics.record("Uncaught native exception: \(exception.name.rawValue): \(exception.reason ?? "")\n\(exception.callStackSymbols.joined(separator: "\n"))") }
         let app = NSApplication.shared
         let delegate = CageApp()
@@ -58,13 +93,22 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         app.setActivationPolicy(.regular)
         withExtendedLifetime(delegate) { app.run() }
     }
+    private static func verifyCodexDecision(_ reason: String) -> Never {
+        let auth = LAContext()
+        auth.localizedCancelTitle = "拒绝"
+        guard auth.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { exit(1) }
+        auth.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { granted, _ in
+            exit(granted ? 0 : 1)
+        }
+        return withExtendedLifetime(auth) { dispatchMain() }
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         let appearance = UserDefaults.standard.dictionary(forKey: "cage.windowAppearance") ?? [:]
         let mode = appearance["mode"] as? String ?? "system"
         NSApp.appearance = mode == "system" ? nil : NSAppearance(named: mode == "dark" ? .darkAqua : .aqua)
         makeMenus()
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 850), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = CageProfile.macGuestTrial ? "Cage macOS" : "Cage"
+        window.title = "Cage"
         window.titlebarAppearsTransparent = false
         window.backgroundColor = NSColor(srgbRed: 247.0/255, green: 247.0/255, blue: 247.0/255, alpha: 1)
         window.minSize = NSSize(width: 820, height: 580)
@@ -140,9 +184,6 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         completeUpdateMenu = appMenu.addItem(withTitle: "完成待安装更新…", action: #selector(completePendingUpdate), keyEquivalent: "")
         completeUpdateMenu.isHidden = true
         appMenu.addItem(.separator())
-        if CageProfile.macGuestTrial {
-            appMenu.addItem(withTitle: "复制试用客机登录密码", action: #selector(copyGuestLoginPassword), keyEquivalent: "")
-        }
         appMenu.addItem(withTitle: "设置…", action: #selector(settings), keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "隐藏 Cage", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -196,10 +237,6 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         let status = controllerNeedsUpdate ? "\n当前连接旧后台；更新尚未完成。" : ""
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName:"Cage", .applicationVersion:version, .credits:NSAttributedString(string:"本机隔离编码工作区\n基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js" + status)])
     }
-    @objc private func copyGuestLoginPassword() {
-        do { try MacGuestLoginCredential.copyForLogin() }
-        catch { let alert = NSAlert(error: error); alert.beginSheetModal(for: window) }
-    }
     @objc private func settings() { action("settings") }
     @objc private func openProject() { action("openProject") }
     @objc private func newTab() { action("newTab") }
@@ -222,12 +259,6 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     }
     private func action(_ name: String) { webView.evaluateJavaScript("window.cageNativeAction?.('\(name)')", completionHandler: nil) }
     private func requestEntry(options: [String] = [], _ completion: @escaping (Result<DesktopEntry, Error>) -> Void) {
-        if CageProfile.macGuestTrial {
-            let binding = CageProfile.configURL().deletingLastPathComponent().appendingPathComponent("macos-guest.json")
-            guard FileManager.default.fileExists(atPath: binding.path) else {
-                completion(.failure(CageUpdateError("这份试用版尚未绑定 macOS 客机，准备完成后请点重试。"))); return
-            }
-        }
         guard let executable = Bundle.main.url(forResource: "cage", withExtension: nil) else {
             completion(.failure(NSError(domain: "Cage", code: 1))); return
         }
@@ -262,7 +293,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             case .success(let entry):
                 self.controllerNeedsUpdate = entry.status != "ready"
                 self.completeUpdateMenu.isHidden = !self.controllerNeedsUpdate
-                let appTitle = CageProfile.macGuestTrial ? "Cage macOS" : "Cage"
+                let appTitle = "Cage"
                 self.window.title = self.controllerNeedsUpdate ? "\(appTitle)（更新待完成）" : appTitle
                 if let url = entry.url { self.expectedPort = url.port!; self.webView.load(URLRequest(url: url)) }
                 else { self.showError(entry.message); self.completeUpdateButton.isHidden = false; self.existingEnvironmentButton.isHidden = false }
@@ -443,7 +474,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             let opened = NSWorkspace.shared.open(URL(string: "https://github.com/Lee-xeo/Claude-Cage/" + path)!)
             replyHandler(opened ? true : nil, opened ? nil : "无法打开项目页面，请检查默认浏览器")
         case "appUpdate":
-            guard let operation = body["operation"] as? String, ["status", "check", "install", "cancel"].contains(operation) else { replyHandler(nil,"更新操作无效"); return }
+            guard let operation = body["operation"] as? String, ["status", "check", "install", "complete", "cancel"].contains(operation) else { replyHandler(nil,"更新操作无效"); return }
             replyHandler(appUpdater.handle(operation),nil)
         case "appearance":
             guard let mode = body["mode"] as? String, ["system", "light", "dark"].contains(mode), let background = body["background"] as? String, background.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil else { replyHandler(nil,"外观参数无效"); return }

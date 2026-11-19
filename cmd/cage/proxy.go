@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"os"
 	"path/filepath"
@@ -83,12 +82,5 @@ func managedGateFiles(profile string) ([]string, error) {
 	files, _ := filepath.Glob(filepath.Join(profile, "state", "lima", "*", "cage-gate.json"))
 	containers, _ := filepath.Glob(filepath.Join(profile, "state", "container", "*", "cage-gate.json"))
 	files = append(files, containers...)
-	binding, err := guestos.LoadWindowsProfile(profile)
-	if err != nil {
-		return nil, err
-	}
-	if binding != nil {
-		files = append(files, filepath.Join(binding.InstanceDirectory, "cage-gate.json"))
-	}
 	return files, nil
 }

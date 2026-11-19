@@ -4,15 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 func TestRecoveryResetPreservesDataRevokesGrantsAndRotatesSecret(t *testing.T) {
@@ -237,85 +234,5 @@ func TestRecoveryHTTPRegistrationEnrollmentAndLockedReset(t *testing.T) {
 	}
 	if w = request(s, "POST", "/api/account/unlock", s.origin, `{"password":"recovered-test-password"}`, true); w.Code != 200 {
 		t.Fatal("new password did not unlock", w.Code)
-	}
-}
-
-func TestRecoveryMacInterruptedSyncRetainsBothPasswordSteps(t *testing.T) {
-	for _, pending := range []bool{false, true} {
-		t.Run(map[bool]string{false: "synced", true: "interrupted"}[pending], func(t *testing.T) {
-			a := newSharedMacAccount(t)
-			id := uuid.New()
-			if _, err := a.macGuestCredentials(context.Background(), id); err != nil {
-				t.Fatal(err)
-			}
-			code, err := a.generateRecovery("initial-test-password")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if pending {
-				if err = a.changePassword("initial-test-password", "intermediate-test-password"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			a.lock()
-			next, err := a.resetPassword(code, "recovered-test-password")
-			if err != nil {
-				t.Fatal(err)
-			}
-			// Repeated recovery before a sync must preserve the original pending target.
-			if _, err = a.resetPassword(next, "final-test-password"); err != nil {
-				t.Fatal(err)
-			}
-			if err = a.unlock("final-test-password"); err != nil {
-				t.Fatal(err)
-			}
-			if !a.view().MacOSPasswordPending {
-				t.Fatal("missing pending guest password")
-			}
-			calls := 0
-			lostReply := true
-			apply := func(_ context.Context, old, target string) error {
-				calls++
-				if old != "initial-test-password" {
-					t.Fatal("original guest credential lost")
-				}
-				if pending && target != "intermediate-test-password" || !pending && target != "recovered-test-password" {
-					t.Fatal("interrupted target lost")
-				}
-				if lostReply {
-					return errors.New("reply lost after guest changed")
-				}
-				return nil
-			}
-			if err = a.syncMacPassword(context.Background(), id, "shihao", apply); err == nil {
-				t.Fatal("lost reply reported success")
-			}
-			profile := filepath.Dir(a.path)
-			a.lock()
-			a, err = loadLocalAccount(profile)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer a.lock()
-			if err = a.unlock("final-test-password"); err != nil {
-				t.Fatal(err)
-			}
-			lostReply = false
-			if err = a.syncMacPassword(context.Background(), id, "shihao", func(ctx context.Context, old, target string) error {
-				if target != "final-test-password" {
-					return apply(ctx, old, target)
-				}
-				if pending && old != "intermediate-test-password" || !pending && old != "recovered-test-password" {
-					t.Fatal("second sync step lost confirmed credential")
-				}
-				calls++
-				return nil
-			}); err != nil {
-				t.Fatal(err)
-			}
-			if calls != 3 || a.view().MacOSPasswordPending {
-				t.Fatal("recovery sync did not finish", calls)
-			}
-		})
 	}
 }

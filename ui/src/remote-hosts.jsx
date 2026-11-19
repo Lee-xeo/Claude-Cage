@@ -470,7 +470,11 @@ function Environment({ context, refresh, children }) {
       返回本机解锁
     </button>
   );
-  const access = { expanded: showHosts, open: openSidebar };
+  const access = {
+    expanded: showHosts,
+    open: openSidebar,
+    reconnectLocal: gateway ? () => act("local", () => requestTarget("local", null, "", true)) : undefined,
+  };
   const showBackground =
     gateway &&
     !local &&

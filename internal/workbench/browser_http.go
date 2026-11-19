@@ -1,8 +1,6 @@
 package workbench
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -22,7 +20,12 @@ func (s *Server) browser(w http.ResponseWriter, r *http.Request) {
 	var input *browserInput
 	if r.Method != http.MethodGet {
 		input = &browserInput{}
-		if !readJSON(w, r, input) {
+		limit := int64(64 << 10)
+		if action == "cookies" {
+			// A selection can contain keys from every page of the cookie list.
+			limit = 1 << 20
+		}
+		if !readJSON(w, r, input, limit) {
 			return
 		}
 	}
@@ -50,29 +53,6 @@ func (s *Server) remoteInput(w http.ResponseWriter, r *http.Request) {
 	// graphical sessions; it does not create another guest listener.
 	var input browserInput
 	if !readJSON(w, r, &input) {
-		return
-	}
-	if s.windowsGuest != nil && input.Target == "desktop" {
-		if input.ID != "desktop" || len(input.Text) > 8192 {
-			http.Error(w, "输入目标或文字无效", 400)
-			return
-		}
-		body, _ := json.Marshal(input)
-		var value map[string]any
-		_ = json.Unmarshal(body, &value)
-		var output map[string]any
-		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
-		defer cancel()
-		request := s.windowsDesktopRequest
-		if input.Mode == "status" {
-			// Caret polls only read the focused control.
-			request = s.windowsDesktopQuick
-		}
-		if err := request(ctx, "ime", value, &output); err != nil {
-			http.Error(w, err.Error(), 502)
-			return
-		}
-		jsonReply(w, output)
 		return
 	}
 	data, err := s.browserAction(r.Context(), "ime", &input)

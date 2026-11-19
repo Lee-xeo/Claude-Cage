@@ -41,6 +41,9 @@ try {
   await page.getByLabel("确认密码",{exact:true}).fill(password);
   const statusResponse = page.waitForResponse((response) => response.url().endsWith("/api/status") && response.ok());
   await page.getByRole("button",{name:"创建本地账户",exact:true}).click();
+  const recovery = page.getByRole("region", { name: "保存恢复密钥", exact: true });
+  await recovery.getByRole("checkbox", { name: "我已安全保存完整恢复密钥" }).check();
+  await recovery.getByRole("button", { name: "继续使用 Cage", exact: true }).click();
   const status = await (await statusResponse).json();
   assert.equal(status.vm_running, false);
   await page.getByRole("heading", { name: "为 Cage 准备独立环境", exact: true }).waitFor();

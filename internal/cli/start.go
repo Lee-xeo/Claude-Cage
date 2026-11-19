@@ -17,6 +17,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/env"
 	"github.com/sylvinus/agent-vm/internal/guard"
 	"github.com/sylvinus/agent-vm/internal/host"
+	"github.com/sylvinus/agent-vm/internal/hostimage"
 	"github.com/sylvinus/agent-vm/internal/mounts"
 	"github.com/sylvinus/agent-vm/internal/netguard"
 	"github.com/sylvinus/agent-vm/internal/paths"
@@ -321,6 +322,12 @@ func (s *start) ensureRunning() error {
 
 func (s *start) ensureRunningLocked() error {
 	o := &s.opts
+	// An environment created from a system that is no longer run stays as it
+	// is: starting it would apply this version's setup to the wrong system.
+	if system := hostimage.AbandonedEnvironment(string(s.state)); system != "" {
+		s.warnf("Error: %v", &hostimage.AbandonedSystemError{System: system})
+		return errStop
+	}
 	if o.Scratch && (o.Reset || o.ReadOnly) {
 		s.warnf("Error: --scratch makes a new VM that shares nothing: --reset and --readonly do not go with it.")
 		return errStop

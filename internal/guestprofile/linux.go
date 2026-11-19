@@ -53,10 +53,7 @@ func (p *Profile) Linux(script string) string {
 	script = strings.ReplaceAll(script, `"name": "Cage browser panes"`, `"name": `+string(manifestName))
 	// The unpacked extension ID is derived from its path. Give each new
 	// environment a saved path as well as a configurable display name.
-	script = strings.NewReplacer(
-		"/usr/local/lib/cage-split", "/usr/local/lib/browser-panes-"+p.ExtensionSuffix,
-		"/var/snap/chromium/common/workbench-extension", "/var/snap/chromium/common/browser-panes-"+p.ExtensionSuffix,
-	).Replace(script)
+	script = strings.ReplaceAll(script, "/usr/local/lib/cage-split", "/usr/local/lib/browser-panes-"+p.ExtensionSuffix)
 	flags := p.GraphicsFlags()
 	if p.WebGL == "disabled" {
 		flags = append(flags, "--disable-3d-apis", "--disable-webgl")

@@ -21,21 +21,27 @@ import (
 // A profile ID selects a guest CLI configuration directory. Only public status
 // fields enter this registry; the official CLI owns authentication in the VM.
 type claudeAccount struct {
-	ID             string       `json:"id"`
-	Label          string       `json:"label"`
-	Source         string       `json:"source"`
-	ProfileID      string       `json:"profile_id,omitempty"`
-	Enabled        bool         `json:"enabled"`
-	Status         string       `json:"status"`
-	Email          string       `json:"email,omitempty"`
-	Organization   string       `json:"organization,omitempty"`
-	Plan           string       `json:"plan,omitempty"`
-	HandoffGroup   string       `json:"handoff_group,omitempty"`
-	Quota          *claudeQuota `json:"quota,omitempty"`
-	CheckedAt      int64        `json:"checked_at,omitempty"`
-	UsageStatus    string       `json:"usage_status,omitempty"`
-	UsageCheckedAt int64        `json:"usage_checked_at,omitempty"`
-	UsageChecking  bool         `json:"usage_checking,omitempty"`
+	DesktopInstanceID       string       `json:"desktop_instance_id,omitempty"`
+	DesktopStatus           string       `json:"desktop_status,omitempty"`
+	CodeUnlinked            bool         `json:"code_unlinked,omitempty"`
+	ProxyNodeID             string       `json:"proxy_node_id,omitempty"`
+	DesktopDedicatedNetwork bool         `json:"desktop_dedicated_network,omitempty"`
+	Number                  uint32       `json:"number"`
+	ID                      string       `json:"id"`
+	Label                   string       `json:"label"`
+	Source                  string       `json:"source"`
+	ProfileID               string       `json:"profile_id,omitempty"`
+	Enabled                 bool         `json:"enabled"`
+	Status                  string       `json:"status"`
+	Email                   string       `json:"email,omitempty"`
+	Organization            string       `json:"organization,omitempty"`
+	Plan                    string       `json:"plan,omitempty"`
+	HandoffGroup            string       `json:"handoff_group,omitempty"`
+	Quota                   *claudeQuota `json:"quota,omitempty"`
+	CheckedAt               int64        `json:"checked_at,omitempty"`
+	UsageStatus             string       `json:"usage_status,omitempty"`
+	UsageCheckedAt          int64        `json:"usage_checked_at,omitempty"`
+	UsageChecking           bool         `json:"usage_checking,omitempty"`
 }
 
 type claudeQuota struct {
@@ -61,9 +67,13 @@ type claudeGuestSnapshot struct {
 }
 
 type claudeAccountList struct {
-	Accounts     []claudeAccount  `json:"accounts"`
-	PendingLogin string           `json:"pending_login,omitempty"`
-	Scheduling   claudeScheduling `json:"scheduling"`
+	PendingDesktop   string            `json:"pending_desktop,omitempty"`
+	DesktopRedirects map[string]string `json:"desktop_redirects,omitempty"`
+	PendingProxyNode string            `json:"pending_proxy_node,omitempty"`
+	LastNumber       uint32            `json:"last_number,omitempty"`
+	Accounts         []claudeAccount   `json:"accounts"`
+	PendingLogin     string            `json:"pending_login,omitempty"`
+	Scheduling       claudeScheduling  `json:"scheduling"`
 }
 
 type claudeScheduling struct {
@@ -90,7 +100,6 @@ type claudeAccountManager struct {
 	usageActive    map[string]*claudeUsageCall
 	panelRunning   bool
 	panelUntil     time.Time
-	detectedUsage  map[string]*claudeAccount
 	defaultGate    chan struct{}
 	loginNotice    string
 	defaultChecked time.Time
@@ -137,7 +146,7 @@ func (s *Server) loadClaudeAccounts() (claudeAccountList, error) {
 		if a.Source == "" {
 			a.Source = "managed"
 		}
-		if !validClaudeID(a.ID) || ids[a.ID] || a.Source != "managed" && a.Source != "default" || a.Source == "default" && (a.Email == "" || a.ProfileID != "") || a.ProfileID != "" && !validClaudeID(a.ProfileID) || len(a.HandoffGroup) > 64 {
+		if a.ProxyNodeID != "" && !validClaudeID(a.ProxyNodeID) || !validClaudeID(a.ID) || ids[a.ID] || a.Source != "managed" && a.Source != "default" || a.Source == "default" && (a.Email == "" || a.ProfileID != "") || a.ProfileID != "" && !validClaudeID(a.ProfileID) || len(a.HandoffGroup) > 64 {
 			return list, errors.New("Claude 账号文件含无效或重复的记录，请从备份恢复")
 		}
 		ids[a.ID] = true
@@ -151,13 +160,46 @@ func (s *Server) loadClaudeAccounts() (claudeAccountList, error) {
 	if list.PendingLogin != "" && (!validClaudeID(list.PendingLogin) || ids[list.PendingLogin] || profiles[list.PendingLogin]) {
 		return list, errors.New("Claude 登录记录损坏，请恢复备份")
 	}
-	return list, nil
+	if err := list.validateDesktopBindings(); err != nil {
+		return list, err
+	}
+	// Assign legacy records in their saved order before a caller can reorder them.
+	err = list.assignNumbers()
+	return list, err
+}
+
+func (list *claudeAccountList) assignNumbers() error {
+	seen := make(map[uint32]bool, len(list.Accounts))
+	for _, account := range list.Accounts {
+		if account.Number == 0 {
+			continue
+		}
+		if seen[account.Number] {
+			return errors.New("Claude 账号编号重复，请检查配置文件")
+		}
+		seen[account.Number] = true
+		list.LastNumber = max(list.LastNumber, account.Number)
+	}
+	for i := range list.Accounts {
+		if list.Accounts[i].Number == 0 {
+			if list.LastNumber == math.MaxUint32 {
+				return errors.New("Claude 账号编号已用尽")
+			}
+			list.LastNumber++
+			list.Accounts[i].Number = list.LastNumber
+		}
+	}
+	return nil
 }
 
 func (s *Server) saveClaudeAccounts(list claudeAccountList) error {
+	if err := list.assignNumbers(); err != nil {
+		return err
+	}
 	if err := writePrivate(filepath.Join(s.profile, "claude-accounts.json"), list); err != nil {
 		return errors.New("Claude 账号设置未保存，请检查配置目录权限和磁盘空间")
 	}
+	s.desktopCatalogRevision.Add(1)
 	return nil
 }
 
@@ -198,6 +240,12 @@ func (list *claudeAccountList) change(input claudeAccountInput) error {
 			return errors.New("备注最多 64 个字符，不能含控制字符")
 		}
 		a.Label = label
+	}
+	if input.DesktopDedicatedNetwork != nil {
+		if input.ProxyNodeID != nil || a.ProxyNodeID != "" {
+			return errors.New("请从账号出口选择代理节点或跟随环境出口")
+		}
+		a.DesktopDedicatedNetwork = *input.DesktopDedicatedNetwork
 	}
 	if input.Enabled != nil {
 		a.Enabled = *input.Enabled
@@ -331,9 +379,6 @@ type claudeSelection struct{ ID, GuestID, Subject string }
 
 func (s *Server) selectClaudeAccount(requestedID string, login bool, workspace string) (claudeSelection, error) {
 	var empty claudeSelection
-	if !login && requestedID != "" && requestedID != "auto" {
-		return empty, errors.New("Claude 终端会自动分配账号")
-	}
 	m := &s.claudeAccounts
 	m.mu.Lock()
 	list, err := s.loadClaudeAccounts()
@@ -372,6 +417,15 @@ func (s *Server) selectClaudeAccount(requestedID string, login bool, workspace s
 		}
 		return claudeSelection{ID: requestedID, GuestID: guestID}, nil
 	}
+	if requestedID != "" && requestedID != "auto" {
+		a := list.find(requestedID)
+		if a == nil || a.Status != "ready" || a.Email == "" {
+			return empty, errors.New("所选 Claude 账号需要重新登录")
+		}
+		// Participation controls automatic scheduling only. The official runner
+		// checks this subject again in the launch directory, including defaults.
+		return claudeSelection{ID: a.ID, GuestID: a.guestID(), Subject: claudeIdentityHash(a.Email, a.Organization)}, nil
+	}
 	if len(list.Accounts) == 0 {
 		return empty, nil
 	}
@@ -393,12 +447,6 @@ func (s *Server) readClaudeGuestQuotas(ctx context.Context, ids []string) (map[s
 	// server-controlled deadline; keep completed chunks when a later one fails.
 	readings := make(map[string]claudeGuestQuota)
 	for chunk := range slices.Chunk(ids, 96) {
-		if s.windowsGuest != nil {
-			if err := s.windowsCLIRequest(ctx, map[string]any{"action": "account", "mode": "quotas", "ids": chunk}, &readings); err != nil {
-				return readings, err
-			}
-			continue
-		}
 		data, err := s.guest(ctx, "exec /usr/local/bin/cage-claude-account quotas "+strings.Join(chunk, " "))
 		if err != nil {
 			return readings, err

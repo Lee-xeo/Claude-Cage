@@ -12,14 +12,16 @@ import (
 var errClaudeAccessLost = errors.New("Cage 已锁定，请先解锁")
 
 type claudeAccountInput struct {
-	Action       string            `json:"action"`
-	Identity     string            `json:"identity"`
-	ID           string            `json:"id"`
-	Label        string            `json:"label"`
-	Enabled      *bool             `json:"enabled"`
-	HandoffGroup *string           `json:"handoff_group"`
-	Scheduling   *claudeScheduling `json:"scheduling"`
-	Order        []string          `json:"order"`
+	ProxyNodeID             *string           `json:"proxy_node_id,omitempty"`
+	DesktopDedicatedNetwork *bool             `json:"desktop_dedicated_network,omitempty"`
+	Action                  string            `json:"action"`
+	Identity                string            `json:"identity"`
+	ID                      string            `json:"id"`
+	Label                   string            `json:"label"`
+	Enabled                 *bool             `json:"enabled"`
+	HandoffGroup            *string           `json:"handoff_group"`
+	Scheduling              *claudeScheduling `json:"scheduling"`
+	Order                   []string          `json:"order"`
 }
 
 func (s *Server) listClaudeAccounts(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +59,7 @@ func (s *Server) mutateClaudeAccounts(w http.ResponseWriter, r *http.Request) {
 			requestError(w, viewErr)
 			return
 		}
-		s.startClaudePanelUsage(list, view.Detected)
+		s.startClaudePanelUsage(list)
 		m := &s.claudeAccounts
 		m.mu.Lock()
 		view.UsagePanelRunning = m.panelRunning
@@ -67,12 +69,33 @@ func (s *Server) mutateClaudeAccounts(w http.ResponseWriter, r *http.Request) {
 	case "refresh", "refresh_default":
 		err = s.refreshClaudeUsage(r.Context(), input)
 	case "update", "scheduling":
-		s.op.Lock()
-		defer s.op.Unlock()
+		if input.ProxyNodeID != nil {
+			s.op.Lock()
+			defer s.op.Unlock()
+		}
 		m := &s.claudeAccounts
 		m.mu.Lock()
 		list, loadErr := s.loadClaudeAccounts()
 		err = loadErr
+		// Wait for a usage lookup on the previous route, then reload its result.
+		for err == nil && input.ProxyNodeID != nil {
+			a := list.find(input.ID)
+			if a == nil {
+				break
+			}
+			active := m.usageActive[claudeIdentityHash(a.Email, a.Organization)]
+			if active == nil {
+				break
+			}
+			m.mu.Unlock()
+			select {
+			case <-active.done:
+			case <-r.Context().Done():
+				return
+			}
+			m.mu.Lock()
+			list, err = s.loadClaudeAccounts()
+		}
 		if err == nil && input.Action == "scheduling" {
 			if input.Scheduling == nil || !input.Scheduling.valid() {
 				err = errors.New("请选择有效的调度模式和切换授权")
@@ -101,6 +124,9 @@ func (s *Server) mutateClaudeAccounts(w http.ResponseWriter, r *http.Request) {
 			}
 		} else if err == nil {
 			err = list.change(input)
+			if err == nil && input.ProxyNodeID != nil {
+				err = s.setAccountNode(&list, input)
+			}
 		}
 		if err == nil {
 			err = s.saveClaudeAccounts(list)
@@ -146,6 +172,19 @@ func (s *Server) cancelClaudeDraft(id string) (claudeAccountList, error) {
 	for _, session := range s.terminals.snapshot() {
 		if session["claude_account_id"] == id && session["closed"] == false {
 			return list, errors.New("请先结束该账号的登录或工作终端，再撤销添加")
+		}
+	}
+	if s.accountDesktopsSupported() && s.vmRunning() {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		state, err := s.guest(ctx, "systemctl show --property=ActiveState --value desktop-"+id+".service")
+		if err != nil {
+			return list, errors.New("无法确认 Desktop 已关闭，请重新连接环境后再撤销账号")
+		}
+		switch strings.TrimSpace(string(state)) {
+		case "inactive", "failed":
+		default:
+			return list, errors.New("请先关闭该账号的 Desktop，再撤销添加")
 		}
 	}
 	list.Accounts = slices.DeleteFunc(list.Accounts, func(a claudeAccount) bool { return a.ID == id })
@@ -357,7 +396,8 @@ func (s *Server) runClaudeRefresh(parent context.Context, id, guestID string, ca
 			switch {
 			case reading.subject() != "":
 				if existing := list.bySubject(reading.subject()); existing != nil {
-					if existing.Source == "default" {
+					if existing.Source == "default" || existing.CodeUnlinked {
+						existing.CodeUnlinked = false
 						// Keep the identity and terminal labels stable while future
 						// sessions use this independently authenticated directory.
 						existing.Source, existing.ProfileID = "managed", id
@@ -383,22 +423,28 @@ func (s *Server) runClaudeRefresh(parent context.Context, id, guestID string, ca
 						}
 					}
 				} else {
-					list.Accounts = append(list.Accounts, claudeAccount{ID: id, Source: "managed", Label: reading.email(), Enabled: true})
+					list.Accounts = append(list.Accounts, claudeAccount{ID: id, Source: "managed", Label: reading.email(), ProxyNodeID: list.PendingProxyNode})
 					err = list.observe(id, reading, time.Now())
-					notice = "已将登录成功的 Claude 账号加入自动分配"
+					notice = "已保存 Claude 账号，可在创建实例时选择"
 				}
-				list.PendingLogin = ""
+				list.PendingLogin, list.PendingProxyNode = "", ""
 			case finished:
 				notice = "本次登录未完成，没有添加账号"
 				// A new attempt may already be entering this guest profile.
 				// Keep its ID unless terminal admission is certainly idle.
 				if s.op.TryLock() {
 					if !s.claudeLoginActive(id) {
-						list.PendingLogin = ""
+						list.PendingLogin, list.PendingProxyNode = "", ""
 					}
 					s.op.Unlock()
 				}
 			}
+		} else if a := list.find(id); a != nil && reading.subject() != "" && (a.CodeUnlinked || a.Email != "" && claudeIdentityHash(a.Email, a.Organization) != reading.subject()) {
+			_, err = s.archiveCodeReading(ctx, &list, guestID, reading)
+			if err == nil {
+				m.loginNotice = "已按 Claude 确认的身份归档"
+			}
+			return
 		} else {
 			err = list.observe(id, reading, time.Now())
 		}
@@ -428,9 +474,6 @@ func (s *Server) recoverClaudeLogin(ctx context.Context, accountID, target, sour
 	}
 	if recover := s.claudeAccounts.recoverLogin; recover != nil {
 		return recover(ctx, target, source, subject)
-	}
-	if s.windowsGuest != nil {
-		return claudeGuestSnapshot{}, errors.New("请从原账号入口重新登录")
 	}
 	if !validClaudeID(target) || !validClaudeID(source) || len(subject) != 64 || strings.Trim(subject, "0123456789abcdef") != "" {
 		return claudeGuestSnapshot{}, errors.New("Claude 登录恢复参数无效")

@@ -14,9 +14,9 @@ Cage 采用“贡献 Issue 审核 → 邀请成为协作者 → 提交 PR → �
 
 ## 系统标签
 
-Issue 按涉及的系统带有六个标签：`macOS 主机`、`Windows 主机`、`Linux 主机`、`macOS 客机`、`Windows 客机`、`Linux 客机`。主机是运行 Cage 的电脑，客机是 Cage 内运行的系统；一条 Issue 可以同时带多个标签。各平台的维护者按标签筛选并认领自己负责的 Issue。
+Issue 按涉及的主机系统带有三个标签：`macOS 主机`、`Windows 主机`、`Linux 主机`。主机是运行 Cage 的电脑；Cage 内的环境固定为 Debian 13，不单独打标签。一条 Issue 可以同时带多个标签。各平台的维护者按标签筛选并认领自己负责的 Issue。
 
-新建 Issue 时，**Label issues by system** 工作流读取正文里标题含“主机”或“客机”的字段并添加对应标签。通过 GitHub CLI 或 API 创建时沿用表单的字段标题即可，例如 `### 主机系统` 下写 `macOS`，`### 客机系统` 下写 `Linux`。
+新建 Issue 时，**Label issues by system** 工作流读取正文里标题含“主机”的字段并添加对应标签。通过 GitHub CLI 或 API 创建时沿用表单的字段标题即可，例如 `### 主机系统` 下写 `macOS`。
 
 工作流只添加标签，维护者手动调整的标签会保留。正文修改后需要重新识别时，在 **Actions → Label issues by system** 选择 **Run workflow** 并填写 Issue 编号；识别有误或正文没有系统信息时由维护者手动修正。
 
@@ -44,14 +44,12 @@ macOS、Linux 和 Windows 的工作台构建都通过 `PATH` 上的 `uv` 运行 
 
 ## macOS 源码构建
 
-打包 SSHFS 需要经过审阅的 Homebrew 配方和静态库。Apple Silicon 使用 `glib`、`gettext`、`pcre2`，版本与配方摘要见 [SSHFS 依赖锁](../scripts/guest-os/macos-sshfs-dependencies.json)。Intel 仅从 Homebrew 取 `gettext`，其余两项由 Intel 依赖构建脚本按同一清单的 `intel` 节编译。可先运行 `node scripts/guest-os/collect-macos-sshfs-sources.mjs check`。如果 Homebrew 当前提供锁定版本，安装或升级本机依赖即可；配方发生变化时由维护者审阅锁定值。
-
-macOS 应用的构建入口是 `bash scripts/build-app.sh`，Apple Silicon 与 Intel 都会通过 `make cage` 构建嵌入式 Tailscale 客机组件。完整构建需要同时满足两个 Go 模块的最低版本：
+macOS 应用的构建入口是 `bash scripts/build-app.sh`，Apple Silicon 与 Intel 都会通过 `make cage` 构建嵌入式 Tailscale 环境组件。完整构建需要同时满足两个 Go 模块的最低版本：
 
 | 模块 | 最低 Go 版本 | 版本来源 |
 | --- | --- | --- |
 | 工作台与控制服务 | 1.26.10 | 根目录 [go.mod](../go.mod) |
-| Tailscale 客机组件 | 1.27.3 | [tools/tailnet/go.mod](../tools/tailnet/go.mod) |
+| Tailscale 环境组件 | 1.27.3 | [tools/tailnet/go.mod](../tools/tailnet/go.mod) |
 
 版本以各模块的 `go.mod` 为准。在仓库根目录先检查两个模块，再开始下载材料和编译：
 

@@ -88,7 +88,7 @@ func (s *Server) openProject(w http.ResponseWriter, r *http.Request) {
 	}
 	workspace, err := s.connectProject(input.Workspace, input.Add)
 	if err != nil {
-		s.projectConnectionError(w, err, input.Workspace)
+		s.projectConnectionError(w, err)
 		return
 	}
 	if input.Activate && isClientMountPath(workspace) {
@@ -122,15 +122,12 @@ type projectTransport struct {
 func (p projectTransport) Close() error { _ = p.ReadCloser.Close(); return p.WriteCloser.Close() }
 
 type projectShare struct {
-	cmd            *exec.Cmd
-	transport      projectTransport
-	done           chan struct{}
-	once           sync.Once
-	detach         func()
-	approval       string
-	approvalTimer  *time.Timer
-	windowsProject *windowsProjectBinding
-	stderr         *fileControlStderr
+	cmd       *exec.Cmd
+	transport projectTransport
+	done      chan struct{}
+	once      sync.Once
+	detach    func()
+	stderr    *fileControlStderr
 }
 
 func (p *projectShare) stop() {
@@ -145,9 +142,6 @@ func (p *projectShare) stop() {
 }
 
 func (p *projectShare) close() {
-	if p.approvalTimer != nil {
-		p.approvalTimer.Stop()
-	}
 	p.stop()
 	if p.done != nil {
 		<-p.done
@@ -157,8 +151,7 @@ func (p *projectShare) close() {
 	}
 }
 
-// The local SFTP server owns the host authorization boundary for both macOS
-// and Linux mounts. The remote shell receives only that directory's byte stream.
+// The local SFTP server owns the host authorization boundary for the mount. The remote shell receives only that directory's byte stream.
 func startProjectTransport(cmd *exec.Cmd, path string) (*projectShare, error) {
 	output, err := cmd.StdoutPipe()
 	if err != nil {
@@ -204,12 +197,6 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 		}
 		s.setProjectError(path, returned)
 	}()
-	if s.windowsGuest != nil {
-		return s.ensureWindowsProjectShare(path)
-	}
-	if s.macosGuest != nil {
-		return s.ensureMacOSProjectShare(path)
-	}
 	if path == s.environmentDir() {
 		return nil
 	}
@@ -305,10 +292,6 @@ func projectShareOptions(cache bool) string {
 // files, so that changes made on the host are visible at once. A file some
 // process holds open keeps its cached attributes until they expire.
 func (s *Server) refreshProjectFiles(w http.ResponseWriter, r *http.Request) {
-	if s.windowsGuest != nil || s.macosGuest != nil {
-		http.Error(w, "此环境的项目文件始终直接读取，无需刷新", 409)
-		return
-	}
 	s.mu.Lock()
 	ready, closing := s.ready, s.closing
 	s.mu.Unlock()

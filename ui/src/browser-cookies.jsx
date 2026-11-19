@@ -13,14 +13,25 @@ export function BrowserCookies({ tab, onClose }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
-  const generation = useRef(0), search = useRef(null), operation = useRef(false);
+  const [confirmation, setConfirmation] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const generation = useRef(0), search = useRef(null), operation = useRef(false), selectAll = useRef(null);
+  const selectableKeys = data?.selectableKeys || [];
+  const allSelected = selectableKeys.length > 0 && selectableKeys.every(key => selected.has(key));
+  useEffect(() => {
+    if (selectAll.current) selectAll.current.indeterminate = selected.size > 0 && !allSelected;
+  }, [selected, allSelected, data]);
   useEffect(() => { search.current?.focus(); }, []);
   useEffect(() => {
     const version = ++generation.current;
-    setLoading(true); setData(null); setValue(null); setError(""); setConfirmClear(false);
+    setLoading(true); setData(null); setValue(null); setError(""); setConfirmation(null);
     api("/browser/cookies", { id: tab.id, url: tab.url, mode: "list", scope, query, page })
-      .then(result => { if (version === generation.current) setData(result); })
+      .then(result => {
+        if (version !== generation.current) return;
+        setData(result);
+        const available = new Set(result.selectableKeys);
+        setSelected(previous => new Set([...previous].filter(key => available.has(key))));
+      })
       .catch(error => { if (version === generation.current) setError(error.message); })
       .finally(() => { if (version === generation.current) setLoading(false); });
     return () => { generation.current++; };
@@ -30,10 +41,15 @@ export function BrowserCookies({ tab, onClose }) {
     operation.current = true; setBusy(true); setError("");
     const version = generation.current;
     try {
-      const result = await api("/browser/cookies", { id: tab.id, url: tab.url, mode, scope, query, page, cookieKey });
+      const result = await api("/browser/cookies", { id: tab.id, url: tab.url, mode, scope, query, page, cookieKey,
+        ...(mode === "delete-selected" ? { cookieKeys: [...selected] } : {}) });
       if (version !== generation.current) return;
       if (mode === "details") setValue({ key: cookieKey, value: result.value });
-      else { setData(result); setValue(null); setConfirmClear(false); }
+      else {
+        setData(result); setValue(null); setConfirmation(null);
+        const available = new Set(result.selectableKeys);
+        setSelected(previous => new Set([...previous].filter(key => available.has(key))));
+      }
     } catch (error) {
       if (version === generation.current) setError(error.message);
     } finally { operation.current = false; setBusy(false); }
@@ -45,28 +61,56 @@ export function BrowserCookies({ tab, onClose }) {
       <button className="icon-button" aria-label="关闭 Cookie 管理" onClick={onClose}><ArrowLeft size={15} /></button>
       <strong>Cookie 管理</strong><span>{tab.incognito ? "无痕会话" : "普通会话"}</span>
       <button className="icon-button" aria-label="刷新 Cookie" disabled={busy || loading}
-        onClick={() => setRevision(revision + 1)}><RefreshCw size={15} /></button>
+        onClick={() => { setSelected(new Set()); setRevision(revision + 1); }}><RefreshCw size={15} /></button>
     </div>
     <div className="cookie-toolbar">
-      <InlineSelect aria-label="Cookie 网站范围" value={scope} disabled={busy} onValueChange={next => { setScope(next); setPage(0); }}>
+      <InlineSelect inline aria-label="Cookie 网站范围" value={scope} disabled={busy} onValueChange={next => { setSelected(new Set()); setScope(next); setPage(0); }}>
         <option value="site" disabled={!/^https?:/.test(tab.url)}>当前网站</option><option value="all">所有网站</option>
       </InlineSelect>
       <input ref={search} aria-label="搜索 Cookie" placeholder="搜索网站或 Cookie 名称" maxLength={200}
-        value={query} disabled={busy} onChange={event => { setQuery(event.target.value); setPage(0); }} />
-      <button disabled={busy || loading || !data} onClick={() => setConfirmClear(!confirmClear)}>
+        value={query} disabled={busy} onChange={event => { setSelected(new Set()); setQuery(event.target.value); setPage(0); }} />
+      <button disabled={busy || loading || !data} onClick={() => setConfirmation(confirmation === "clear" ? null : "clear")}>
         <Trash2 size={14} />清空{scope === "site" ? "当前网站" : "所有网站"}
       </button>
     </div>
-    {confirmClear && <div className="cookie-confirm" role="alert">
+    <div className="cookie-selection">
+      <label><input ref={selectAll} type="checkbox" checked={allSelected} disabled={busy || loading || !selectableKeys.length}
+        onChange={event => { setSelected(new Set(event.target.checked ? selectableKeys : [])); setConfirmation(null); }} />
+        全选当前搜索结果（{selectableKeys.length} 条，含所有分页）</label>
+      <span role="status">已选 {selected.size} 条</span>
+      <button disabled={busy || loading || !selected.size} onClick={() => setConfirmation(confirmation === "selected" ? null : "selected")}>
+        <Trash2 size={14} />删除所选</button>
+    </div>
+    {data && !data.selectableKeys && <p className="cookie-selection-note">批量删除需要更新环境组件。</p>}
+    {data?.selectableKeys && data.total > selectableKeys.length && <p className="cookie-selection-note">
+      {data.total - selectableKeys.length} 条特殊分区 Cookie 无法勾选；如需删除，请使用“清空所有网站”。
+    </p>}
+    {confirmation === "selected" && <div className="cookie-confirm" role="alert">
+      <span>删除所选的 {selected.size} 条 Cookie？仅删除已勾选的条目，相关网站可能需要重新登录。</span>
+      <button disabled={busy || loading || !selected.size} onClick={() => run("delete-selected")}>确认删除</button>
+      <button disabled={busy} onClick={() => setConfirmation(null)}>取消</button>
+    </div>}
+    {confirmation === "clear" && <div className="cookie-confirm" role="alert">
       <span>清空{scope === "site" ? data?.hostname : "此" + (tab.incognito ? "无痕" : "普通") + "会话所有网站"}的 Cookie？搜索条件不限制清空范围，网站可能需要重新登录。</span>
       <button disabled={busy} onClick={() => run("clear")}>确认清空</button>
-      <button disabled={busy} onClick={() => setConfirmClear(false)}>取消</button>
+      <button disabled={busy} onClick={() => setConfirmation(null)}>取消</button>
     </div>}
     {error && <p className="cookie-error" role="alert">{error}</p>}
     <div className="cookie-list" aria-busy={busy || loading}>
       {loading ? <p>正在读取 Cookie…</p> : data?.cookies.length === 0 ? <p>没有匹配的 Cookie。</p> : data?.cookies.map(cookie =>
         <article className="cookie-record" key={cookie.key}>
-          <div className="cookie-record-heading"><strong>{cookie.name || "（空名称）"}</strong>
+          <div className="cookie-record-heading">
+            <input type="checkbox" aria-label={`选择 Cookie ${cookie.name || "（空名称）"}`} checked={selected.has(cookie.key)}
+              disabled={busy || !selectableKeys.includes(cookie.key)} onChange={event => {
+                const checked = event.target.checked;
+                setSelected(previous => {
+                  const next = new Set(previous);
+                  if (checked) next.add(cookie.key); else next.delete(cookie.key);
+                  return next;
+                });
+                setConfirmation(null);
+              }} />
+            <strong>{cookie.name || "（空名称）"}</strong>
             <button disabled={busy} onClick={() => value?.key === cookie.key ? setValue(null) : run("details", cookie.key)}>
               {value?.key === cookie.key ? "隐藏值" : "查看值"}</button>
             <button disabled={busy || cookie.partitionKeyOpaque} aria-label={`删除 Cookie ${cookie.name}`}

@@ -97,6 +97,24 @@ printf '%s\\n' "$@"
         reading = {"logged_in": True, "email": self.email, "organization": "test-org", "plan": "pro"}
         return target, source, credential, reading
 
+    def test_archive_seeds_the_empty_profile_before_cli_status_initializes_it(self):
+        target, source, credential, reading = self.recovery_profiles()
+        account = {"emailAddress": self.email}
+        (source / "config/.claude.json").write_text(json.dumps({"oauthAccount": account}))
+
+        def status(binary, env, cwd):
+            config = Path(env["CLAUDE_CONFIG_DIR"])
+            if config == target / "config":
+                if not (config / ".credentials.json").exists():
+                    (config / ".claude.json").write_text("{}")
+                    return {"logged_in": False}
+                self.assertEqual(json.loads((config / ".claude.json").read_text()), {"oauthAccount": account})
+            return reading
+
+        with patch.dict(os.environ, self.env), patch.object(helper, "identity", side_effect=status):
+            self.assertEqual(helper.recover_login("claude", target, SECOND, self.subject, archive=True), reading)
+        self.assertEqual((target / "config/.credentials.json").read_bytes(), credential.read_bytes())
+
     def test_duplicate_login_recovers_missing_credentials_without_moving_history(self):
         target, source, credential, reading = self.recovery_profiles()
         history = target / "config/history.jsonl"

@@ -21,7 +21,6 @@ import { sendFiles, shellFilePaths } from "./file-transfer";
 import { installRemoteInput } from "./remote-input";
 import { useWindowVisibility } from "./window-visibility";
 import { displayGeometry, displaySizeSync, watchPixelRatio } from "./remote-display.mjs";
-import { installLocalCursorFallback } from "./remote-cursor.mjs";
 import { guestKeys } from "./guest-keys.mjs";
 import { RefreshCw, Clipboard, ArrowUpRight } from "lucide-react";
 import { SessionAccount } from "./session-account";
@@ -30,7 +29,7 @@ import "@xterm/xterm/css/xterm.css";
 const terminalAccountRequest = (path, options) => api("/cli" + path, options.body);
 
 export const RemoteView = forwardRef(function RemoteView(
-  { visible, focused = true, keyboard, guestPlatform = "linux", systemClipboard = true, tabId, copyScope = tabId, onStatus, onFallback, desktop = false, zoom = 1 },
+  { visible, focused = true, keyboard, systemClipboard = true, tabId, copyScope = tabId, onStatus, onFallback, desktop = false, zoom = 1 },
   ref,
 ) {
   const windowVisible = useWindowVisibility();
@@ -40,7 +39,7 @@ export const RemoteView = forwardRef(function RemoteView(
     input = useRef(),
     current = useRef({ visible, keyboard, onStatus, onFallback }),
     displayResize = useRef();
-  current.current = { visible: screenVisible && focused, keyboard, guestPlatform, systemClipboard, tabId, onStatus, onFallback, zoom };
+  current.current = { visible: screenVisible && focused, keyboard, systemClipboard, tabId, onStatus, onFallback, zoom };
   const failures = useRef(0);
   const [connection, setConnection] = useState("connecting"),
     [attempt, setAttempt] = useState(0),
@@ -92,7 +91,7 @@ export const RemoteView = forwardRef(function RemoteView(
           container,
           runtimeSocketURL(`${desktopPrefix}/vnc`),
           {
-            credentials: { password }, cageBrowserDisplay: !desktop, cageCursorFallback: desktop && guestPlatform === "windows",
+            credentials: { password }, cageBrowserDisplay: !desktop,
             // The Linux browser scrolls its page by the distance of a trackpad
             // gesture. A menu or a second pane declines it and gets wheel steps.
             cageWheelSink: !desktop && pixel_wheel === true
@@ -101,14 +100,9 @@ export const RemoteView = forwardRef(function RemoteView(
           },
         );
         rfb.current = client;
-        if (!/^(windows|darwin|macos)/.test(guestPlatform || "")) {
-          // A Linux guest takes key events as sent; see guest-keys.mjs. The
-          // other systems arrive here as "macos" and "windows-11".
-          keys = guestKeys(client.sendKey.bind(client));
-          client.sendKey = keys.sendKey;
-        }
-        installLocalCursorFallback(client._cursor,
-          !desktop && ["darwin", "macos"].includes(guestPlatform));
+        // A Linux guest takes key events as sent; see guest-keys.mjs.
+        keys = guestKeys(client.sendKey.bind(client));
+        client.sendKey = keys.sendKey;
         client.scaleViewport = true;
         client.resizeSession = false;
         client.background = "#ffffff";
@@ -159,7 +153,6 @@ export const RemoteView = forwardRef(function RemoteView(
             },
             runKeyAction: action => client.cageRunInput(action),
           }, container, {
-            guestPlatform: () => current.current.guestPlatform,
             systemClipboard: () => current.current.systemClipboard,
             copyText: !desktop
               ? (_sendCopy, valid, { id, context, key }) => {
@@ -330,7 +323,7 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       if (disposed || !visibleRef.current || !focusedRef.current || !isClaudeLoginLink(uri)) return;
       try {
         const tab = await api(`/terminals/${session.id}/login-link`, { url: uri });
-        if (!disposed && visibleRef.current && focusedRef.current) onLoginTab?.(tab);
+        if (!disposed && visibleRef.current && focusedRef.current) await onLoginTab?.({ ...tab, url: uri });
       } catch (error) { if (!disposed) onStatus(error.message); }
     };
     const terminal = new Terminal({
@@ -596,7 +589,7 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       terminal.dispose();
       instance.current = null;
     };
-  }, [session.id, attempt]);
+  }, [session.id, session.cli_session_id, attempt]);
   useEffect(() => {
     if (visible) {
       fit.current?.fit();
@@ -629,7 +622,7 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       {!connected && (
         <div className="terminal-note">
           {session.closed
-            ? "终端会话已结束。可点击项目右侧的终端图标新建终端。"
+            ? session.login_notice || "终端会话已结束。可点击项目右侧的终端图标新建终端。"
             : "正在连接终端…"}
           {!session.closed && (
             <button onClick={() => setAttempt((v) => v + 1)}>

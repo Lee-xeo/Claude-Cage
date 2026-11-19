@@ -16,22 +16,22 @@ import (
 func TestCreationPreferencesSurviveRetry(t *testing.T) {
 	s := &Server{profile: t.TempDir()}
 	o := guestprofile.Options{Hostname: "MY-PC", Username: "alex", BrowserUsername: "web"}
-	if e := s.prepareGuestProfile(&o, "debian-13"); e != nil {
+	if e := s.prepareGuestProfile(&o); e != nil {
 		t.Fatal(e)
 	}
 	p, e := guestprofile.Load(s.profile)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = s.prepareGuestProfile(&o, "debian-13"); e != nil {
+	if e = s.prepareGuestProfile(&o); e != nil {
 		t.Fatal(e)
 	}
-	if e = s.prepareGuestProfile(nil, "debian-13"); e != nil {
+	if e = s.prepareGuestProfile(nil); e != nil {
 		t.Fatal(e)
 	}
 	changed := o
 	changed.Hostname = "OTHER-PC"
-	if e = s.prepareGuestProfile(&changed, "debian-13"); e == nil {
+	if e = s.prepareGuestProfile(&changed); e == nil {
 		t.Fatal("changed saved preferences")
 	}
 	q, e := guestprofile.Load(s.profile)
@@ -71,7 +71,7 @@ func TestLegacyContainerRetainsItsGuestAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.prepareGuestProfile(nil, "debian-13"); err == nil {
+	if err := s.prepareGuestProfile(nil); err == nil {
 		t.Fatal("unreachable engine treated as a new container")
 	}
 	fixture := fmt.Sprintf(`#!/bin/sh
@@ -85,10 +85,10 @@ esac
 	if err := os.WriteFile(engine, []byte(fixture), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.prepareGuestProfile(nil, "debian-13"); err != nil {
+	if err := s.prepareGuestProfile(nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.prepareGuestProfile(&guestprofile.Options{Username: "alex"}, "debian-13"); err == nil {
+	if err := s.prepareGuestProfile(&guestprofile.Options{Username: "alex"}); err == nil {
 		t.Fatal("allowed renaming an existing container account")
 	}
 	if p, err := guestprofile.Load(s.profile); err != nil || p != nil {
@@ -102,11 +102,8 @@ func TestReselectValidatesSavedGraphicsWhenPreferencesOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.prepareGuestProfile(nil, "debian-13"); err == nil {
+	if err := s.prepareGuestProfile(nil); err == nil {
 		t.Fatal("started Linux with the macOS Metal backend")
-	}
-	if err := s.prepareGuestProfile(nil, "macos"); err != nil {
-		t.Fatal(err)
 	}
 	got, err := guestprofile.Load(s.profile)
 	if err != nil || *got != *p {

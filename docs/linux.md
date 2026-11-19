@@ -1,10 +1,10 @@
 # Linux 安装、使用与验收
 
-Cage 的 Linux 桌面版面向 Debian 12、Ubuntu 22.04/24.04 的 x86_64 电脑，使用 GTK 3 与 WebKitGTK 显示工作台。项目、终端、浏览器、编辑器和内置代理沿用其他平台的操作方式。选择本机时，默认创建持久 Debian 13 虚拟机，也可通过“自动匹配本机系统版本”下载官方镜像，创建与主机同发行版的 Linux 客机，包括 Ubuntu 22.04。所有本机项目共用所选的持久环境与 Linux 工具链。首次创建时可以直接选择 Ubuntu 22.04，无需主机也运行该版本。主机与客机可以是不同的 Linux 发行版；macOS、Windows、Debian 与 Ubuntu 的组合见[选择客机系统](guide/guest-systems.md)。
+Cage 的 Linux 桌面版面向 Debian 12、Ubuntu 22.04/24.04 的 x86_64 电脑，使用 GTK 3 与 WebKitGTK 显示工作台。项目、终端、浏览器、编辑器和内置代理沿用其他平台的操作方式。选择本机时，Cage 创建一台持久的 Debian 13 虚拟机，所有本机项目共用这个环境与其中的 Linux 工具链；主机发行版不需要与它相同。见[Debian 环境](guide/guest-systems.md)。
 
 同一个桌面应用也可以从侧栏 SSH 连接已部署 Cage 的服务器。使用远程工作台只需本机图形依赖，本机模式另需 KVM 和虚拟机工具。云服务器的无 KVM 容器部署见[云端使用指南](guide/cloud.md)和[部署说明](../deploy/cloud/README.md)。
 
-Ubuntu 22.04 的桌面包采用兼容该系统的构建基线，已在隔离容器验证真实窗口、浏览器启动、重装与卸载数据保留。完整 KVM 客机安装、物理桌面输入法和 Claude 登录尚未实测，不能把容器验证视为这些操作通过。系统匹配、续装与各路线范围见[客机系统指南](guide/guest-systems.md)。
+Ubuntu 22.04 的桌面包采用兼容该系统的构建基线，已在隔离容器验证真实窗口、浏览器启动、重装与卸载数据保留。完整 KVM 环境安装、物理桌面输入法和 Claude 登录尚未实测，不能把容器验证视为这些操作通过。
 
 ## 安装前准备
 
@@ -34,13 +34,13 @@ Cage 日常以普通用户运行。不要用 `sudo cage-desktop` 启动工作台
 sudo apt install ./Cage-<版本>-linux-amd64.deb
 ```
 
-安装器随附 Cage 后台、工作台和 Mihomo 代理核心。APT 安装 WebKitGTK 等图形依赖。只连接 SSH 主机时可直接打开应用。要使用本机环境，请再运行 `sudo apt install qemu-system-x86 qemu-utils ovmf openssh-client iproute2 git` 并确认 KVM 可用。首次启动本机环境时会下载 Linux 镜像与客机工具。
+安装器随附 Cage 后台、工作台和 Mihomo 代理核心。APT 安装 WebKitGTK 等图形依赖。只连接 SSH 主机时可直接打开应用。要使用本机环境，请再运行 `sudo apt install qemu-system-x86 qemu-utils ovmf openssh-client iproute2 git` 并确认 KVM 可用。首次启动本机环境时会下载 Debian 镜像与环境工具。
 
 安装和启动 Cage 不要求启用主机 Git 裸仓库保护，也不因这项设置要求升级 Git。Cage 不修改主机的全局 Git 配置。
 
 作为手机远程主机时，Cage 通过系统的 `systemd-inhibit` 和 logind 申请保持系统运行，屏幕仍可熄灭。完整安装包依赖 systemd；服务或用户权限不满足时，“设置 → 远程连接”会显示防休眠失败原因，不会自动改动系统电源策略。
 
-从应用菜单打开 **Cage**，也可运行 `cage-desktop`。系统包名和后台命令为 `claude-cage`，避免与发行版自带的同名 Wayland 程序冲突。导入自己的代理、选择节点，再按[开始使用](getting-started.md#2-导入并选择代理)打开项目。项目路径例如 `/home/alice/Projects/demo`，项目共享只限明确选择的目录，下载使用独立的暂存目录；项目中的修改和删除会同步到主机。已授权项目中的 Git 元数据可读写，客机提交直接更新主机仓库；共享范围仍限于授权目录。
+从应用菜单打开 **Cage**，也可运行 `cage-desktop`。系统包名和后台命令为 `claude-cage`，避免与发行版自带的同名 Wayland 程序冲突。导入自己的代理、选择节点，再按[开始使用](getting-started.md#2-导入并选择代理)打开项目。项目路径例如 `/home/alice/Projects/demo`，项目共享只限明确选择的目录，下载使用独立的暂存目录；项目中的修改和删除会同步到主机。已授权项目中的 Git 元数据可读写，环境内的提交直接更新主机仓库；共享范围仍限于授权目录。
 
 Linux 使用 Ctrl 快捷键：`Ctrl+O` 打开项目，`Ctrl+T` 新建网页，`Ctrl+L` 定位地址栏，`Ctrl+W` 关闭标签，`Ctrl+Shift+Enter` 新建终端。终端用 `Ctrl+Shift+C/V` 复制粘贴，`Ctrl+C` 中断命令。
 

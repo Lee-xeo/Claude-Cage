@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Ubuntu installs or migrates its workbench launcher in the service setup.
-if ! cage_is_ubuntu && [[ ! -x /usr/bin/chromium ]]; then
+if [[ ! -x /usr/bin/chromium ]]; then
   echo 'Missing chromium; run cage setup first.' >&2
   exit 1
 fi
@@ -44,7 +43,7 @@ cat "$HOME/.config/claude-cage/browser-password" | sudo -u cage-browser sh -c 'u
 sudo systemctl stop cage-browser || true
 # Existing images may predate the explicit locale dependency. The scoped
 # maintenance channel can install it while business networking stays closed.
-if ! cage_is_ubuntu && ! dpkg-query -W -f='${Status}' chromium-l10n 2>/dev/null | grep -qx 'install ok installed'; then
+if ! dpkg-query -W -f='${Status}' chromium-l10n 2>/dev/null | grep -qx 'install ok installed'; then
   # APT can reuse an empty Packages file after an InRelease cache hit. Clear
   # empty package indexes under APT's lists lock so they are fetched again.
   sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get \

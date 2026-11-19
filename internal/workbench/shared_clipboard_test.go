@@ -19,7 +19,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/clipboardfiles"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
 func TestLinuxClipboardCommandFitsWindowsProcessLimit(t *testing.T) {
@@ -88,25 +87,6 @@ func TestClipboardFileReleaseSupportsLegacyAgents(t *testing.T) {
 	s.releaseClipboardFiles(id)
 	if len(s.clipboardFileSelection(id).Paths) != 0 {
 		t.Fatal("legacy selection reference remained")
-	}
-}
-
-func TestClipboardCopyRejectsMissingRevisionAndInvalidPhaseBeforeGuestAccess(t *testing.T) {
-	s := testServer(t)
-	s.macosGuest = &guestos.MacOSProfile{Instance: "mac", User: "guestdev"}
-	for _, body := range []string{
-		`{"phase":"unknown"}`,
-		`{"phase":"read","session":"gui-a"}`,
-		`{"phase":"read","session":"gui-a","revision":-1}`,
-		`{"phase":"read","session":"","revision":1}`,
-	} {
-		response := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/clipboard/copy", strings.NewReader(body))
-		request.Header.Set("Content-Type", "application/json")
-		s.clipboardCopy(response, request)
-		if response.Code != http.StatusBadRequest {
-			t.Fatalf("invalid copy request reached the guest: %d", response.Code)
-		}
 	}
 }
 

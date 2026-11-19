@@ -15,8 +15,16 @@ func TestCLIStartupDialogs(t *testing.T) {
 		{"New MCP server found in this project: other Use this MCP server", ""},
 		{"Do you want to use this API key?", ""},
 	} {
-		if got := cliStartupDialog(cliStartupText([]byte(tc.text)), "/work/project"); got != tc.want {
+		if got := cliStartupDialog(cliStartupText([]byte(tc.text)), "/work/project", "cage"); got != tc.want {
 			t.Errorf("dialog %q: %q, want %q", tc.text, got, tc.want)
 		}
+	}
+}
+
+func TestChannelStartupOnlyAcceptsThisConnection(t *testing.T) {
+	current := "1a53911b-5ee6-4f97-8e82-b905c714ab07"
+	text := cliStartupText([]byte("WARNING: Loading development channels\nChannels: server:" + current + "\n❯ 1. I am using this for local development"))
+	if cliStartupDialog(text, "", current) != "channel" || cliStartupDialog(text, "", "cage") != "" {
+		t.Fatal("did not bind startup dialog to the actual channel")
 	}
 }

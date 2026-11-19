@@ -1,3 +1,5 @@
+import { DesktopList } from "./account-desktops";
+import { HostPluginsNav, HostPluginsSidebar, PluginPagesNav } from "./host-plugins";
 import { shortcut } from "./platform.mjs";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -56,9 +58,6 @@ export function WorkspaceSidebar({
   runtimeLabel,
   network,
   onHome,
-  browserAvailable = true,
-  editorAvailable = true,
-  projectsAvailable = true,
   onOpenProject,
   onProjectSelect,
   onSelect,
@@ -72,10 +71,12 @@ export function WorkspaceSidebar({
   onBrowser,
   onTailscale,
   tailscaleOpen,
+  plugins,
   onClaudeAccounts,
   claudeAccountsOpen,
   onClaudeWeb,
   onClaudeDesktop,
+  accountDesktops,
   desktopOpen,
   onEditor,
   onSettings,
@@ -96,6 +97,8 @@ export function WorkspaceSidebar({
       setCollapsed((previous) => ({ ...previous, [activeWorkspace]: false }));
   }, [active, activeWorkspace]);
   if (ssh?.expanded) return null;
+  if (plugins?.open) return <HostPluginsSidebar model={plugins.model} page={plugins.page} onPage={plugins.onPage}
+    onBack={plugins.onBack} onConfirm={plugins.onConfirm} />;
   const healthy = ready && network.mode === "open";
   return (
     <aside className="workspace-sidebar" aria-label="项目与终端">
@@ -126,7 +129,7 @@ export function WorkspaceSidebar({
           <button
             className="sidebar-link"
             onClick={onBrowser}
-            disabled={!ready || busy || !browserAvailable}
+            disabled={!ready || busy}
             aria-label="打开浏览器"
             title="打开浏览器"
           >
@@ -136,7 +139,7 @@ export function WorkspaceSidebar({
           <button
             className="icon-button sidebar-claude-shortcut"
             onClick={onClaudeWeb}
-            disabled={!ready || busy || !browserAvailable}
+            disabled={!ready || busy}
             aria-label="claude.ai"
             title="打开 claude.ai"
           >
@@ -144,8 +147,10 @@ export function WorkspaceSidebar({
           </button>
         </div>
         <button className={`sidebar-link ${tailscaleOpen ? "selected" : ""}`} aria-current={tailscaleOpen ? "page" : undefined} onClick={onTailscale} aria-label="打开 Tailscale"><Network size={17} />Tailscale</button>
+        {plugins?.pages?.length > 0 && <PluginPagesNav pages={plugins.pages} selected={plugins.pageOpen} onOpen={plugins.onView} />}
+        {plugins && <HostPluginsNav onOpen={plugins.onOpen} />}
         {ssh && <button className="sidebar-link ssh-navigation" onClick={ssh.open} aria-label="SSH 主机"><Server size={17} />SSH</button>}
-        <button className={`sidebar-link ${desktopOpen ? "selected" : ""}`} onClick={onClaudeDesktop} disabled={!running || busy} title="安装或打开 Claude Desktop"><Monitor size={17} />Claude Desktop</button>
+        {accountDesktops ? <DesktopList model={accountDesktops} disabled={!running || busy} selected={desktopOpen} onDefault={onClaudeDesktop}/> : <button className={`sidebar-link ${desktopOpen?"selected":""}`} onClick={onClaudeDesktop} disabled={!running||busy}><Monitor size={17}/>Claude Desktop</button>}
         <button className={`sidebar-link ${claudeAccountsOpen ? "selected" : ""}`} onClick={onClaudeAccounts}
           aria-current={claudeAccountsOpen ? "page" : undefined}>
           <UsersRound size={17} />Claude 账号管理
@@ -170,8 +175,8 @@ export function WorkspaceSidebar({
               className="icon-button"
               onClick={() => onOpenProject()}
               aria-label="添加项目"
-              title={projectsAvailable ? "添加项目" : "当前环境尚未支持外部项目，文件保存在隔离工作目录中"}
-              disabled={busy || !projectsAvailable}
+              title="添加项目"
+              disabled={busy}
             >
               <Plus size={15} />
             </button>
@@ -236,7 +241,7 @@ export function WorkspaceSidebar({
                   className="icon-button"
                   aria-label={`打开 ${project} 的编辑器`}
                   title="在 code-server 中打开项目目录"
-                  disabled={!ready || busy || !editorAvailable}
+                  disabled={!ready || busy}
                   onClick={() => onEditor(path)}
                 >
                   <ExternalLink size={15} />
@@ -261,7 +266,7 @@ export function WorkspaceSidebar({
               </div>
               {terminalMenuAt(path)}
               {expanded && folders.length > 1 && <div className="sidebar-project-folders" aria-label={`${project} 的文件夹`}>
-                {folders.map((folder, index) => <button key={folder} title={folder} disabled={!ready || busy || !editorAvailable} onClick={() => onEditor(folder)} aria-label={`打开文件夹 ${projectName(folder)} 的编辑器`}><Folder size={13} /><span>{projectName(folder)}</span>{index === 0 && <small>默认</small>}</button>)}
+                {folders.map((folder, index) => <button key={folder} title={folder} disabled={!ready || busy} onClick={() => onEditor(folder)} aria-label={`打开文件夹 ${projectName(folder)} 的编辑器`}><Folder size={13} /><span>{projectName(folder)}</span>{index === 0 && <small>默认</small>}</button>)}
               </div>}
               <div
                 className={`project-children ${expanded ? "expanded" : ""}`}
@@ -320,7 +325,7 @@ export function WorkspaceSidebar({
           );
         })}
         {!projects.length && (
-          <p className="sidebar-empty">{projectsAvailable ? "打开本地文件夹开始工作" : "使用 PowerShell 管理隔离工作目录中的文件"}</p>
+          <p className="sidebar-empty">打开本地文件夹开始工作</p>
         )}
       </div>
       <div className="sidebar-bottom">

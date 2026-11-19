@@ -89,16 +89,6 @@ func (s *Server) browserExtensionUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
-	if s.macosGuest != nil || s.windowsGuest != nil {
-		data, err := s.nativeBrowserClient().uploadExtension(r.Context(), r.Body, r.ContentLength)
-		if err != nil {
-			requestError(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(data)
-		return
-	}
 	response, err := s.browserClient().file(r.Context(), token, http.MethodPost, "/extensions-upload", r.Body, r.ContentLength)
 	if err != nil {
 		http.Error(w, "扩展上传中断，请重试", http.StatusBadGateway)

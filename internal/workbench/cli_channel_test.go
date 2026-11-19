@@ -239,6 +239,19 @@ func TestDiscoveryRunningStateUpdatesCatalogAndClearsMissingHistory(t *testing.T
 	}
 }
 
+func installClaudeTestHelpers(t *testing.T, bin string) {
+	t.Helper()
+	for source, dest := range map[string]string{"claude-account.py": "cage-claude-account", "client_runtime.py": "client_runtime.py"} {
+		body, err := os.ReadFile(filepath.Join("../cage", source))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bin, dest), body, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func sharedCLIWorkbench(t *testing.T) (*Server, string, *atomic.Bool) {
 	t.Helper()
 	binary, flags := os.Getenv("CAGE_TEST_CLAUDE_CLI"), os.Getenv("CAGE_TEST_CHANNEL_FEATURES")
@@ -265,6 +278,7 @@ func sharedCLIWorkbench(t *testing.T) (*Server, string, *atomic.Bool) {
 	if err := os.Mkdir(bin, 0700); err != nil {
 		t.Fatal(err)
 	}
+	installClaudeTestHelpers(t, bin)
 	actual, _ := filepath.EvalSymlinks(binary)
 	personal, _ := os.UserHomeDir()
 	quote := func(value string) string { b, _ := json.Marshal(value); return string(b) }

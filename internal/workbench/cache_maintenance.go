@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
 //go:embed cache_maintenance.py
@@ -173,37 +171,14 @@ func (s *Server) cacheMaintenanceAction(care *cacheMaintenance, action string, w
 }
 
 func (s *Server) runCacheMaintenance(ctx context.Context, request map[string]any) ([]byte, error) {
-	if s.windowsGuest == nil {
-		input, err := json.Marshal(request)
-		if err != nil {
-			return nil, err
-		}
-		script, err := s.linuxTemplate(cacheMaintenanceScript)
-		if err != nil {
-			return nil, err
-		}
-		python := []string{"sudo", "-n", "/usr/bin/python3", "-I", "-c", script}
-		if s.macosGuest != nil {
-			python = []string{macCLIInstall + "/bin/python3", "-I", "-c", cacheMaintenanceScript}
-		}
-		return s.guest(ctx, "exec "+shellescape.QuoteCommand(python)+" <<'MAINTENANCE_INPUT'\n"+string(input)+"\nMAINTENANCE_INPUT\n")
-	}
-	request["profile"] = windowsCLIProfileID(s.profile)
-	data, err := json.Marshal(request)
+	input, err := json.Marshal(request)
 	if err != nil {
 		return nil, err
 	}
-	cmd, err := guestos.WindowsRelayCommand(ctx, s.profile, "cache-maintenance")
+	script, err := s.linuxTemplate(cacheMaintenanceScript)
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stdin = bytes.NewReader(append(data, '\n'))
-	cmd.Stderr = io.Discard
-	cmd.WaitDelay = 2 * time.Second
-	var output bytes.Buffer
-	cmd.Stdout = &boundedWindowsStatusWriter{buffer: &output, remaining: 64 << 10}
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-	return output.Bytes(), nil
+	python := []string{"sudo", "-n", "/usr/bin/python3", "-I", "-c", script}
+	return s.guest(ctx, "exec "+shellescape.QuoteCommand(python)+" <<'MAINTENANCE_INPUT'\n"+string(input)+"\nMAINTENANCE_INPUT\n")
 }

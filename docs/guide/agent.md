@@ -1,6 +1,6 @@
 ---
 title: 让 Agent 配置 Cage
-description: 给外部 Agent 的完整入口：下载校验、安装、配置代理与客机、任务跟踪、故障定位和恢复。
+description: 给外部 Agent 的完整入口：下载校验、安装、配置代理与环境、任务跟踪、故障定位和恢复。
 group: 开始使用
 order: 5
 keywords: Agent CLI JSON 自动化 配置 接口 安装 诊断 修复 capabilities doctor llms
@@ -49,14 +49,14 @@ Windows 可用 PowerShell 下载脚本后执行 `node .\agent-bootstrap.mjs plan
 | 平台 | 安装与验证 |
 | --- | --- |
 | macOS | 只读挂载 DMG，检查应用签名与 Gatekeeper 结果，按[安装指南](installation.md)放入应用程序目录。更新前保存任务并停止旧环境；保留可恢复的旧应用，安装失败时回滚应用文件。不要移除隔离属性或关闭系统校验来继续安装。 |
-| Windows | 检查下载包的签名状态；在用户授权的安装上下文运行安装器。`/S` 支持静默安装；已有自定义安装目录以安装记录为准。系统安全提示、Hyper-V 启用与重启可能需要用户操作。 |
+| Windows | 检查下载包的签名状态；在用户授权的安装上下文运行安装器。`/S` 支持静默安装；已有自定义安装目录以安装记录为准。系统安全提示、启用“Windows 虚拟机监控程序平台”与重启可能需要用户操作。 |
 | Linux | 在用户授权的权限上下文执行 `sudo apt-get install -- /absolute/path/Cage-版本-linux-amd64.deb`，由包管理器检查依赖。公共命令名是 `claude-cage`。 |
 
 安装、更新与卸载只处理应用文件。保留 `.claude-cage`、用户指定的数据目录、共享项目与持久虚拟机磁盘。已有账户重新出现创建界面时，首先核对 `config_path` 与原数据位置；不要创建替代账户或初始化旧数据目录。下载成功与应用已安装是两个状态；安装后验证真实 CLI 文件和 `agent capabilities`，再开始配置。
 
 ## 第一次配置的完整顺序
 
-先明确用户希望使用哪类客机，以及哪个目录可以共享。Agent 可以探测主机条件、根据报告提出选择，不能替用户接受许可证、降低出口规则或授权未指定的主机目录。
+先明确哪个目录可以共享。Agent 可以探测主机条件、根据报告提出选择，不能替用户接受许可证、降低出口规则或授权未指定的主机目录。
 
 ```sh
 cage agent capabilities
@@ -95,7 +95,7 @@ cage agent call proxy.import --input /private/path/subscription.json --wait 2m
 cage agent call proxy.status
 ```
 
-`host_download:true` 明确允许主机联网下载这份订阅，仅用于订阅获取；客机不会因此获得直连回退。已有 Cage 代理时，可省略它让订阅经过现有代理。不要自动从本机浏览器、代理软件或其他 Agent 的凭据文件提取订阅。
+`host_download:true` 明确允许主机联网下载这份订阅，仅用于订阅获取；环境不会因此获得直连回退。已有 Cage 代理时，可省略它让订阅经过现有代理。不要自动从本机浏览器、代理软件或其他 Agent 的凭据文件提取订阅。
 
 从本地 YAML 文件导入时，CLI 仍接收 JSON，YAML 原文放入 `content` 字段。可用 Node.js 读取私有文件并直接通过管道传入，避免将节点内容拼到命令行参数中：
 
@@ -126,7 +126,11 @@ cage agent call proxy.status
 
 链式代理使用 `proxy.route`，输入 `{"node_ids":["入口ID","最终出口ID"]}`，顺序为入口到出口。`proxy.select` 总是把路由替换为所选的单个节点：已有链会被清除，所选节点即使原本在链中也可以。节点无效、配置验证或核心启动失败时保留原路由；路由保存后的网络检查仍可能失败，应以 `proxy.status` 返回的当前路由为准。要保留或重建多跳链，请重新调用 `proxy.route`。更新订阅使用 `proxy.refresh` 和已有来源 `id`；`proxy.import` 每次创建来源，不能盲目重试。
 
-`proxy.import` 成功表示节点格式和核心配置通过校验。应用节点后，用 `settings.get` 读取完整设置，再将设置对象作为 `settings.probe` 的输入，通过所选代理发起真实 HTTPS 请求，核对返回的出口 IP 和位置。报告时分别说明导入校验、实际连通性与出口验证结果；主机上其他代理客户端可用或核心进程正在运行，都不能代替实际出口验证。客机启动后，仍需按下文核对 `network.check` 和当前网络授权，确认终端与浏览器等路径通过检查。
+仅切换节点或代理链（包括跨国家切换）会保留运行中的环境和终端。旧网络连接和检查授权会被撤销，完整检查通过后才恢复联网。首次启用内置代理、修改代理端口或环境设置仍可能需要重启环境。
+
+若操作提示“代理节点已保存，外网尚未恢复”，先用 `proxy.status` 确认当前节点，再运行 `network.check`。检查会同步已保存且允许热切换的代理配置，不需要重开 App 或手动结束后台进程。若明确提示环境设置变化需要重启，先保存终端中的工作，执行 `environment.stop`，完成后再执行 `environment.start --wait 8m`；只退出重开 App 或重启工作台服务不能代替停止并启动环境。
+
+`proxy.import` 成功表示节点格式和核心配置通过校验。应用节点后，用 `settings.get` 读取完整设置，再将设置对象作为 `settings.probe` 的输入，通过所选代理发起真实 HTTPS 请求，核对返回的出口 IP 和位置。报告时分别说明导入校验、实际连通性与出口验证结果；主机上其他代理客户端可用或核心进程正在运行，都不能代替实际出口验证。环境启动后，仍需按下文核对 `network.check` 和当前网络授权，确认终端与浏览器等路径通过检查。
 
 VLESS + TCP + REALITY 节点若在语法校验通过后报 `REALITY authentication failed`，先对照原客户端与服务端参数，再按[网络指南的 REALITY 排查步骤](network.md#vless-reality-握手失败)检查 `reality-opts.support-x25519mlkem768`。按节点要求只调整这一项，重新导入、应用并重复相同的 HTTPS 与出口验证；不要批量改写所有 REALITY 节点、关闭证书校验或绕过出口规则。节点地址、UUID、公钥、short-id 和原始日志仍应留在私有排查材料中。
 
@@ -134,13 +138,12 @@ VLESS + TCP + REALITY 节点若在语法校验通过后报 `REALITY authenticati
 
 ```sh
 cage agent call guest.options
-cage agent call guest.match
 cage agent call storage.get
 cage agent call resources.get
 cage agent call settings.get
 ```
 
-根据实际可用性选择系统。`guest.match` 给出匹配主机版本的干净镜像方案；将返回的 `key` 作为 `clone_key`，将 `plan.host.system` 作为 `guest_system` 传给 `environment.start`。镜像下载量、磁盘、主机权限和系统授权条件见[客机系统指南](guest-systems.md)。它不复制主机账户和个人文件。已有客机应继续原安装，保留原系统与介质信息。
+本机环境固定为 Debian 13。`guest.options` 返回可用系统和可续装的安装状态；下载量、磁盘和主机条件见[Debian 环境](guest-systems.md)。Cage 不复制主机账户和个人文件。已有环境应继续原安装。
 
 首次需要换存储位置时，在安装前用 `storage.set`，输入 `directory`、`previous`、`migrate`；后两项分别来自 `storage.get` 的 `directory` 和 `has_environment`。已有环境的迁移会停止任务并保留备份，应先保存工作。资源配置用 `resources.set` 的 `allocation` 对象；修改保存后再以 `{}` 调用应用资源，会重启环境。容器资源由服务器部署管理。
 
@@ -157,9 +160,9 @@ cage agent call settings.patch --input /private/path/settings-apply.json --wait 
 cage agent call environment.start --input /private/path/guest-choice.json --wait 30m
 ```
 
-已有环境的 `environment.start` 可以不带输入。首次选择的 JSON 字段为 `guest_system`、`clone_key` 或需要的 `media`、`sha256`：Windows 的 `media` 是本机 ISO 的绝对路径，必须同时提供它的 `sha256`；macOS 的 `media` 是本机 `.ipsw` 的绝对路径，`sha256` 可选，提供后 Cage 在安装前按它校验镜像，不一致时拒绝安装。只在用户明确接受对应条款时传 `editor_terms:true`。可用系统以 `guest.options` 为准。安装成功且 `guest.options.activate:true` 时调用 `guest.activate`，随后重新调用 `service.start` 并读取状态。激活会让旧后台退出；请求中断时先核对安装状态再决定下一步。
+已有环境的 `environment.start` 可以不带输入。首次创建时传入 `{"guest_system":"debian-13"}`，可用系统以 `guest.options` 为准。传入 `macos` 或 `windows-11`、或数据目录里留有它们的安装记录时，请求会被拒绝并说明原因，原有数据保持不变；`status` 的 `abandoned_guests` 列出数据目录里仍留有哪类旧系统的数据。请求中断时先核对安装状态再决定下一步。
 
-系统首次设置、macOS 权限、Windows 登录或重启需要用户完成时，报告具体需要做的事和恢复查询命令。不要用无限重试掩盖等待用户操作。安装进度在作业的 `setup_progress` 中；`prepared`、安装完成、运行和联网分别检查。
+需要用户完成的步骤出现时，报告具体需要做的事和恢复查询命令。不要用无限重试掩盖等待用户操作。安装进度在作业的 `setup_progress` 中；`prepared`、安装完成、运行和联网分别检查。
 
 ```sh
 cage agent call status
@@ -169,11 +172,13 @@ cage agent call network.check --wait 5m
 
 以 `status.ready`、`vm_running` 以及 `safety` 中当前配置对应的网络检查与授权共同判断可用性；`proxy.status.network_open` 可辅助检查外网是否已放行。网络暂停时保持用户的暂停意图，只有用户要求恢复联网才运行 `network.check`。完成首次引导使用 `initialization.set` 的 `{"action":"complete"}`，后台会再次核对环境与网络状态。
 
-打开项目使用 `project.open`：`{"workspace":"用户授权的绝对路径","add":true,"activate":true}`。它会让客机访问这个目录，改动会影响主机文件。返回 `approval` 表示等待系统授权；Agent 可以调用相同的 `/api/macos/project-approval` 查看、操作该窗口。Claude 的服务登录仍在 Cage 内的官方工具中完成；本接口不会导入主机 Claude 凭据。
+换网络或睡眠唤醒后，后台会在需要时重新绑定物理网卡，并重新检查出口。恢复任务失败后保留待恢复状态，至少等待 15 秒再试；停止环境后不再排队恢复，手动暂停期间不会自动放行外网。最近一次保存的检查报告不能代替当前配置和当前运行实例的有效授权。
+
+打开项目使用 `project.open`：`{"workspace":"用户授权的绝对路径","add":true,"activate":true}`。它会让环境访问这个目录，改动会影响主机文件。Claude 的服务登录仍在 Cage 内的官方工具中完成；本接口不会导入主机 Claude 凭据。
 
 移除已添加项目使用 `project.remove`，传入 `{"workspace":"项目列表中的路径"}`。关闭该目录的终端、运行中会话和编辑器后可解除共享，原文件与会话历史保留。移除当前项目后切换到剩余项目；移除最后一个项目后没有当前项目。
 
-Linux 环境默认缓存项目文件的名称与属性，主机上的改动最多 20 秒后可见。刚在主机上改过文件、需要环境立即看到时调用 `project.refresh`，无需参数；macOS 和 Windows 环境始终直接读取，调用会返回 409。
+环境默认缓存项目文件的名称与属性，主机上的改动最多 20 秒后可见。刚在主机上改过文件、需要环境立即看到时调用 `project.refresh`，无需参数。
 
 ## JSON 结果和异步任务
 
@@ -215,17 +220,17 @@ cage agent job 012345abcdef --wait 30m
 | `account_locked` | 用户在 Cage 解锁，或通过私有输入调用 `account.unlock`。 |
 | `request_rejected`、`invalid_input` | 读取本构建能力与错误说明，修正字段或节点/来源 ID；不要重复原请求。 |
 | `state_conflict`、`service_busy` | 读取当前任务和系统状态；有在途任务时等待原任务完成。 |
-| `unsupported_operation` | 检查当前平台和客机的能力，使用对应版本指南。 |
+| `unsupported_operation` | 检查当前平台的能力，使用对应版本指南。 |
 | `job_failed` | 保留 `data.error` 与脱敏的任务日志，检查当前配置、来源可用性、空间与主机条件。 |
 | `outcome_unknown`、`job_not_found` | 读取实际副作用；代理导入、安装和迁移都不能盲目重新提交。 |
 | 外网未放行或检查失败 | 检查所选代理、链路、出口规则、时间和位置；保持失败时关闭外网。用户授权后可切换节点或重检，不自动改为直连或降低规则。 |
-| `user_action_required`、项目 `approval`、首次系统设置未完成 | 使用同一原生桥或客机授权窗口接口继续；系统要求生物认证、管理员确认时，完成验证后查询原状态。 |
+| `user_action_required` | 使用同一原生桥继续；系统要求生物认证、管理员确认时，完成验证后查询原状态。 |
 
 ```sh
 cage agent diagnostics --output /absolute/path/new-cage-diagnostics.zip
 ```
 
-诊断导出在后台不可用时也能收集主机日志；可连接时尝试补充客机信息。使用新的输出文件名，已有文件会保留。诊断包经过现有脱敏流程，分享前仍由用户决定。不要把原始配置、订阅地址、密钥、账户文件或虚拟机磁盘作为诊断附件自动上传。
+诊断导出在后台不可用时也能收集主机日志；可连接时尝试补充环境信息。使用新的输出文件名，已有文件会保留。诊断包经过现有脱敏流程，分享前仍由用户决定。不要把原始配置、订阅地址、密钥、账户文件或虚拟机磁盘作为诊断附件自动上传。
 
 更新组件用 `environment.update`，更新工具用 `environment.tools`，均可通过作业接口跟踪。`environment.stop` 会终止环境内活动任务，保留磁盘和登录资料。应用升级、跨版本回滚及卸载仍遵循[维护与数据指南](maintenance.md)，以安装器和系统包管理器为入口。
 
@@ -233,7 +238,7 @@ cage agent diagnostics --output /absolute/path/new-cage-diagnostics.zip
 
 ## 交付给用户的结果
 
-完成后用几句话说明：实际安装的版本和路径、使用的配置与客机、代理是否应用、环境是否运行、网络检查是否通过、项目是否连接。列出需要用户完成的授权和登录，以及尚未验证的范围。仅完成下载、模拟请求或单平台编译时，分别报告，不写成完整安装或三平台实测成功。
+完成后用几句话说明：实际安装的版本和路径、使用的配置、代理是否应用、环境是否运行、网络检查是否通过、项目是否连接。列出需要用户完成的授权和登录，以及尚未验证的范围。仅完成下载、模拟请求或单平台编译时，分别报告，不写成完整安装或三平台实测成功。
 
 ## 用户与 Agent 的操作空间
 
@@ -274,10 +279,9 @@ cage agent call settings.get --scope selected --connection 当前连接代次
 | Tailscale 与 SSH 公钥 | tailscale.get，以及 install/connect/login/disconnect/logout/add-key/remove-key；公钥字段为 key。 |
 | 浏览器首页 | browser.preferences.get/set；set 立即更新浏览器，失败保留旧值，长度限制与界面一致。settings.patch 单独修改首页时复用同一保存流程。 |
 | Cookie、权限、扩展、收藏 | browser.cookies/settings/extensions；favorites.get/change。Cookie 的 mode、scope、id、cookieKey 与界面相同。 |
-| 客机首次设置、登录与授权窗口 | request 访问 /api/macos/first-setup、/api/macos/login、当前构建提供的 /api/macos/maintenance、/api/macos/project-approval；会话、截图和键鼠动作与界面一致。 |
 | SSH 主机与部署、指纹核对、连接与切换 | desktop 范围 client.hosts、client.hosts.create、client.candidate/commit/cancel/disconnect/local-stop；更新/删除主机使用 PUT/DELETE /api/client/hosts/主机ID。保留同一连接代次、候选、指纹和本机任务去留规则。 |
 | 已归档会话、名称、固定、账户切换 | request 访问 /api/cli/sessions 和 /api/cli/sessions/会话ID/{metadata,account,archive,restore,purge,open}。 |
-| 文件选择、主题导入导出、App 更新 | native.submit 调现有 chooseFolder、chooseGuestMedia、importTheme、exportTheme、appUpdate 等原生 action。系统选择器和签名检查照常执行。 |
+| 文件选择、主题导入导出、App 更新 | native.submit 调现有 chooseFolder、importTheme、exportTheme、appUpdate 等原生 action。系统选择器和签名检查照常执行。 |
 
 ### 通用请求与文件
 

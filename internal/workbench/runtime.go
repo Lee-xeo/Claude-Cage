@@ -42,9 +42,6 @@ func (s *Server) workspaceLocked() string {
 func (s *Server) workspace() string      { s.mu.Lock(); defer s.mu.Unlock(); return s.workspaceLocked() }
 func (s *Server) environmentDir() string { return environmentWorkspace(s.profile) }
 func (s *Server) sshTarget() string {
-	if s.macosGuest != nil {
-		return "cage-macos"
-	}
 	if containerenv.Configured(s.profile) {
 		return "cage-container"
 	}
@@ -52,9 +49,6 @@ func (s *Server) sshTarget() string {
 }
 
 func (s *Server) environmentPrepared() bool {
-	if s.windowsGuest != nil {
-		return true
-	}
 	if containerenv.Configured(s.profile) {
 		environment, err := containerenv.Load(s.profile)
 		if err != nil {
@@ -75,12 +69,6 @@ func (s *Server) sshCommandWithForwarding(ctx context.Context, args ...string) *
 	return s.sshCommandOptions(ctx, true, args...)
 }
 func (s *Server) sshCommandOptions(ctx context.Context, maintenance bool, args ...string) *exec.Cmd {
-	if s.windowsGuest != nil {
-		return &exec.Cmd{Err: errors.New("Windows 客机不支持 Linux SSH 控制脚本")}
-	}
-	if s.macosGuest != nil {
-		return s.macOSSSHCommand(ctx, args...)
-	}
 	cfg := filepath.Join(s.instanceDir(), "ssh.config")
 	base := []string{"-q", "-e", "none", "-F", cfg, "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "PermitLocalCommand=no", "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no", "-o", "ProxyCommand=none", "-o", "ProxyJump=none", "-o", "ConnectTimeout=3", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2", "-o", "ForwardAgent=no", "-o", "IdentityAgent=none", "-o", "ForwardX11=no", "-o", "ClearAllForwardings=yes", "-o", "ControlPath=none"}
 	if maintenance {
@@ -101,9 +89,6 @@ func (s *Server) guest(ctx context.Context, script string) ([]byte, error) {
 }
 
 func (s *Server) guestControl(ctx context.Context, script, diagnosticSource string) ([]byte, error) {
-	if s.windowsGuest != nil {
-		return nil, errors.New("Windows 客机不支持 Linux 控制脚本")
-	}
 	// SSH enters the user's default shell. Run control scripts in Bash so
 	// zsh initialization cannot change their redirection or error behavior.
 	command := "exec /bin/bash --noprofile --norc -c " + shellescape.Quote(script)
@@ -139,12 +124,6 @@ func (s *Server) attach() error {
 	if err := s.requireStorageReady(); err != nil {
 		return err
 	}
-	if s.windowsGuest != nil {
-		return s.attachWindowsGuest()
-	}
-	if s.macosGuest != nil {
-		return s.attachMacOSGuest()
-	}
 	if err := s.requireCurrentLinuxTransferMount(); err != nil {
 		return err
 	}
@@ -179,7 +158,10 @@ func (s *Server) attach() error {
 	} else if !s.vmRunning() {
 		return errors.New("环境尚未启动")
 	}
-	b, err := s.guest(ctx, guestConnectionSnapshot)
+	s.mu.Lock()
+	reuseLogin := s.preferences.ReuseClaudeLogin
+	s.mu.Unlock()
+	b, err := s.guest(ctx, linuxLoginPreferences(reuseLogin)+"\n"+guestConnectionSnapshot)
 	if err != nil {
 		return errors.New("环境尚未准备好")
 	}
@@ -218,6 +200,7 @@ func (s *Server) attach() error {
 	s.ready = true
 	s.mu.Unlock()
 	s.restoreProjectShares()
+	s.ensureHostTools()
 	s.desktopViews.background(s.changeDesktopVisibility)
 	s.browserViews.background(s.changeBrowserVisibility)
 	return nil
@@ -235,7 +218,7 @@ func (s *Server) monitor(ctx context.Context) {
 				ready := s.ready
 				token := s.credentials.Token
 				s.mu.Unlock()
-				if !ready || s.macosGuest != nil || s.windowsGuest != nil {
+				if !ready {
 					_ = s.attach()
 				} else {
 					ctx, cancel := s.controlContext()
@@ -245,13 +228,11 @@ func (s *Server) monitor(ctx context.Context) {
 						s.mu.Lock()
 						s.ready = false
 						s.mu.Unlock()
+					} else {
+						s.ensureHostTools()
 					}
 				}
 				timing.stage("environment_health")
-				if s.macosGuest != nil {
-					s.monitorNetworkTick()
-					timing.stage("network_tick")
-				}
 			} else {
 				timing.result = "job_running"
 			}
@@ -331,17 +312,10 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 	s.desktopViews.reset()
 	s.browserViews.reset()
 	s.controlSession.close()
-	s.nativeControl.close()
 	s.desktopStatus.invalidate()
 	defer s.desktopStatus.invalidate()
 	if err := s.requireStorageReady(); err != nil {
 		return err
-	}
-	if s.macosGuest != nil {
-		return s.startMacOSGuest()
-	}
-	if s.windowsGuest != nil {
-		return s.startWindowsGuest()
 	}
 	if err := s.requireCurrentLinuxTransferMount(); err != nil {
 		return err
@@ -515,12 +489,6 @@ func (s *Server) stopEnvironment() (returned error) {
 			returned = managedproxy.Stop(s.profile)
 		}
 	}()
-	if s.windowsGuest != nil {
-		return s.stopWindowsGuest()
-	}
-	if s.macosGuest != nil {
-		return s.stopMacOSGuest()
-	}
 	s.setMessage("正在停止 Cage 环境…")
 	if (explicitStop || s.jobs.snapshot().Kind == "storage") && cage.InstanceJobID(filepath.Join(s.profile, "state"), "base-building") != "" {
 		if err := s.runCage("stop", "--keep-proxy", "base-building"); err != nil {
@@ -537,13 +505,13 @@ func (s *Server) stopEnvironment() (returned error) {
 	s.credentials = guestCredentials{}
 	s.guestManifest = nil
 	s.guestUpdateRequired = false
-	s.macComponentsChecked = false
 	s.guestUpdateError = ""
 	s.safety.Error = ""
 	s.mu.Unlock()
 	s.terminals.closeAll()
 	s.mobileCLI.stopAll()
 	s.closeProjectShares()
+	s.closeHostTools()
 	if _, err := os.Stat(filepath.Join(s.instanceDir(), "lima.yaml")); !containerenv.Configured(s.profile) && os.IsNotExist(err) {
 		return nil
 	}
@@ -568,11 +536,6 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 		resumeVersion = execution.pauseVersion
 	}
 	wasReady := vmAlive(s.profile, s.environmentDir())
-	if s.windowsGuest != nil {
-		wasReady = s.windowsState.Running
-	} else if s.macosGuest != nil {
-		wasReady = macOSInstanceRunning(s.instanceDir(), s.macosGuest.Backend)
-	}
 	s.mu.Unlock()
 	changed := old != v.Config || oldPrefs.AutoTimezone != v.Preferences.AutoTimezone || oldPrefs.AutoLanguage != v.Preferences.AutoLanguage
 	if changed && validate && old.RequireManagedProxy(s.profile) == nil {
@@ -598,14 +561,6 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 		}
 	}
 	if changed {
-		if s.windowsGuest != nil && wasReady && (old.Timezone != v.Config.Timezone || old.Locale != v.Config.Locale) {
-			if err := s.closeProxyGate("正在应用 Windows 系统设置，外网等待重新检查"); err != nil {
-				return err
-			}
-			if err := s.applyWindowsGuestSettings(s.operationContext(), v.Config); err != nil {
-				return err
-			}
-		}
 		if err := s.resumeNetworkIntentAt(resumeVersion); err != nil {
 			return err
 		}
@@ -626,6 +581,17 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 			return err
 		}
 	}
+	loginPrefsCommitted := false
+	if !changed && oldPrefs.ReuseClaudeLogin != v.Preferences.ReuseClaudeLogin && s.vmRunning() {
+		if err := s.syncLoginPreferences(s.operationContext(), v.Preferences.ReuseClaudeLogin); err != nil {
+			return err
+		}
+		defer func() {
+			if !loginPrefsCommitted {
+				_ = s.syncLoginPreferences(s.operationContext(), oldPrefs.ReuseClaudeLogin)
+			}
+		}()
+	}
 	if v.Config.RequireManagedProxy(s.profile) == nil {
 		err = s.saveExitPolicyConfig(v.Config)
 	} else {
@@ -638,6 +604,7 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 		_ = writePrivate(s.configPath, old)
 		return err
 	}
+	loginPrefsCommitted = true
 	s.mu.Lock()
 	s.preferences = v.Preferences
 	token, ready := s.credentials.Token, s.ready
@@ -663,25 +630,24 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 	return nil
 }
 
-// Interface recovery uses the ordinary cancellable job queue. Location changes
-// remain governed by the saved exit policy and never replace its baseline.
-func (s *Server) monitorNetworkTick() {
-	timing := s.startMonitorTiming()
-	defer s.recordMonitorTiming("network", timing)
+func (s *Server) networkMonitorBlockedReason() string {
 	if s.storageRecoveryStatus().Required {
-		timing.result = "storage_recovery_pending"
+		return "storage_recovery_pending"
+	}
+	return ""
+}
+
+// Only this phase needs the lifecycle lock. Full safety observation runs in its
+// own loop, including while project operations hold the lifecycle lock.
+func (s *Server) monitorNetworkTick(observed proxyInterfaceObservation, timing *monitorTiming) {
+	if reason := s.networkMonitorBlockedReason(); reason != "" {
+		timing.result = reason
 		return
 	}
-	if s.macSetupPending() {
-		timing.result = "setup_pending"
-		return
-	}
-	s.monitorProxyInterface()
-	timing.stage("physical_interface")
+	s.applyProxyInterfaceObservation(observed)
+	timing.stage("physical_interface_apply")
 	s.checkProxyHealth()
 	timing.stage("proxy_health")
-	s.monitorSafety()
-	timing.stage("safety")
 	s.recoverNetwork()
 	timing.stage("recovery")
 	s.refreshProxySubscriptions()
@@ -689,50 +655,76 @@ func (s *Server) monitorNetworkTick() {
 }
 
 func (s *Server) monitorNetwork(ctx context.Context) {
-	s.runNetworkMonitor(ctx, s.monitorNetworkTick)
+	runNetworkMonitor(ctx, func(skipped *int) { s.runNetworkMonitorTick(ctx, skipped) })
 }
 
-// Keep scheduling and lock ownership independent of the network probes so
-// concurrency tests can exercise the real loop without external I/O.
-func (s *Server) runNetworkMonitor(ctx context.Context, tick func()) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+func runNetworkMonitor(ctx context.Context, tick func(*int)) {
 	skipped := 0
 	for ctx.Err() == nil {
-		s.mu.Lock()
-		// Publish ownership with acquisition and give project requests
-		// waiting on this round a chance before the next tick takes the lock.
-		yielded := s.projectOperationWaiters > 0
-		acquired := !yielded && s.op.TryLock()
-		if acquired {
-			s.networkMonitorDone = make(chan struct{})
+		tick(&skipped)
+		// Start the interval after the round finishes so a slow probe never
+		// causes another round to start immediately.
+		timer := time.NewTimer(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
 		}
-		s.mu.Unlock()
-		if acquired {
-			skipped = 0
-			tick()
+	}
+}
+
+func (s *Server) runNetworkMonitorTick(ctx context.Context, skipped *int) {
+	timing := s.startMonitorTiming()
+	defer s.recordMonitorTiming("network", timing)
+	if reason := s.networkMonitorBlockedReason(); reason != "" {
+		*skipped = 0
+		timing.result = reason
+		return
+	}
+	observed := s.observeProxyInterface(ctx)
+	timing.stage("physical_interface")
+	if ctx.Err() != nil {
+		timing.result = "cancelled"
+		return
+	}
+	s.withNetworkMonitorLock(timing, skipped, func() {
+		if ctx.Err() != nil {
+			timing.result = "cancelled"
+			return
+		}
+		s.monitorNetworkTick(observed, timing)
+	})
+}
+
+func (s *Server) withNetworkMonitorLock(timing *monitorTiming, skipped *int, tick func()) {
+	s.mu.Lock()
+	// Publish ownership with acquisition so project requests can distinguish
+	// the monitor from a lifecycle operation and wait only for the former.
+	yielded := s.projectOperationWaiters > 0
+	acquired := !yielded && s.op.TryLock()
+	if acquired {
+		s.networkMonitorDone = make(chan struct{})
+	}
+	s.mu.Unlock()
+	switch {
+	case acquired:
+		*skipped = 0
+		defer func() {
 			s.mu.Lock()
 			s.op.Unlock()
 			close(s.networkMonitorDone)
 			s.networkMonitorDone = nil
 			s.mu.Unlock()
-		} else if yielded {
-			skipped = 0
-			timing := s.startMonitorTiming()
-			timing.result = "project_operations_waiting"
-			s.recordMonitorTiming("network", timing)
-		} else {
-			skipped++
-			timing := s.startMonitorTiming()
-			timing.result = "operation_lock_busy"
-			timing.stages = append(timing.stages, fmt.Sprintf("consecutive_lock_skips=%d", skipped))
-			s.recordMonitorTiming("network", timing)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
+		}()
+		tick()
+	case yielded:
+		*skipped = 0
+		timing.result = "project_operations_waiting"
+	default:
+		*skipped += 1
+		timing.result = "operation_lock_busy"
+		timing.stages = append(timing.stages, fmt.Sprintf("consecutive_lock_skips=%d", *skipped))
 	}
 }
 
@@ -764,13 +756,5 @@ func vmAlive(profile, workspace string) bool {
 	return processExists(record.PID) && cage.ProcessStartMatches(record.PID, record.Started)
 }
 func (s *Server) vmRunning() bool {
-	if s.windowsGuest != nil {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		return s.windowsState.Running
-	}
-	if s.macosGuest != nil {
-		return macOSInstanceRunning(s.instanceDir(), s.macosGuest.Backend)
-	}
 	return vmAlive(s.profile, s.environmentDir())
 }

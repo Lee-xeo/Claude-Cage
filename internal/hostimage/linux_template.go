@@ -7,6 +7,24 @@ import (
 	"path/filepath"
 )
 
+// AbandonedSystemError reports an environment created from a Linux system this
+// version no longer runs. Its files are left exactly as they are.
+type AbandonedSystemError struct{ System string }
+
+func (e *AbandonedSystemError) Error() string {
+	return "此环境使用的 Ubuntu 客机已不再支持，现在只提供 Debian 环境；原有数据仍保留，未被改动。"
+}
+
+// AbandonedEnvironment names the no longer supported Linux system that the
+// environment in state was created from, or "" when there is none. It only
+// reads the saved image choice.
+func AbandonedEnvironment(state string) string {
+	if plan, err := Load(filepath.Join(state, "guest-media")); err == nil && AbandonedLinux(plan.Host.System) {
+		return plan.Host.System
+	}
+	return ""
+}
+
 func linuxTemplateData(plan Plan) ([]byte, error) {
 	// These supported cloud images need no distribution-specific template
 	// settings. Keep one pinned local image, with no network image fallback.
@@ -84,6 +102,9 @@ func LinuxTemplate(state string) (string, error) {
 	path := filepath.Join(state, "guest-media", "host-system.yaml")
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
+		if system := AbandonedEnvironment(state); system != "" {
+			return "", &AbandonedSystemError{System: system}
+		}
 		if _, recordErr := os.Lstat(filepath.Join(state, "guest-media", sourceRecord)); !errors.Is(recordErr, os.ErrNotExist) {
 			return "", errors.New("所选 Linux 系统的安装模板缺失，请恢复原环境资料；不会改用其他系统")
 		}
@@ -96,6 +117,9 @@ func LinuxTemplate(state string) (string, error) {
 		return "", errors.New("本机系统安装模板无效")
 	}
 	plan, err := Load(filepath.Join(state, "guest-media"))
+	if err == nil && AbandonedLinux(plan.Host.System) {
+		return "", &AbandonedSystemError{System: plan.Host.System}
+	}
 	if err != nil || !IsLinux(plan.Host.System) {
 		return "", errors.New("所选 Linux 系统来源记录无效，请恢复原环境资料")
 	}

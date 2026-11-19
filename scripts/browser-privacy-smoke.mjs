@@ -76,6 +76,15 @@ try {
   await cdp(normal, 'Network.setCookies', { cookies: Array.from({ length: 57 }, (_, i) => ({ name: 'paged-' + i, value: String(i), domain: 'localhost', path: '/' })) });
   cookies = await list(normal, { query: 'paged-', page: 1 });
   assert.equal(cookies.total, 57); assert.equal(cookies.cookies.length, 7);
+  assert.equal(cookies.selectableKeys.length, 57);
+  // Exceed the old 64 KiB request limit without creating thousands of cookies.
+  await api('/cookies', { id: normal, mode: 'delete-selected', scope: 'site', query: 'paged-', cookieKeys: Array(1100).fill(cookies.selectableKeys[0]) });
+  cookies = await list(normal, { query: 'paged-', page: 1 });
+  assert.equal(cookies.total, 56);
+  await api('/cookies', { id: normal, mode: 'delete-selected', scope: 'site', query: 'paged-', cookieKeys: cookies.selectableKeys });
+  assert.equal((await list(normal, { query: 'paged-' })).total, 0);
+  assert.ok((await list(normal)).cookies.some(cookie => cookie.name === 'same'));
+  checks.push('large batch payloads pass the HTTP controller; all search pages delete while other cookies remain');
   await api('/cookies', { id: normal, mode: 'clear', scope: 'site', query: 'paged-' });
   cookies = await list(normal);
   assert.equal(cookies.total, 1); assert.equal(cookies.cookies[0].name, 'unrelated');

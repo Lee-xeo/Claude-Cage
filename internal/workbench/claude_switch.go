@@ -34,7 +34,7 @@ func validSwitchPolicy(policy string) bool {
 func switchCandidates(list claudeAccountList, record *mobileRecord) []claudeSwitchOption {
 	options := []claudeSwitchOption{}
 	source := list.find(record.Account.ID)
-	if source == nil || source.HandoffGroup == "" || source.guestID() != record.Account.GuestID || claudeIdentityHash(source.Email, source.Organization) != record.Account.Subject {
+	if source == nil || source.HandoffGroup == "" || !validClaudeGuestID(record.Account.GuestID) || claudeIdentityHash(source.Email, source.Organization) != record.Account.Subject {
 		return options
 	}
 	for _, a := range list.Accounts {
@@ -215,7 +215,7 @@ func (s *Server) switchClaudeAccount(ctx context.Context, id string, input claud
 		if probeErr != nil || status.subject() != selection.Subject {
 			return errors.New("无法确认目标账号登录，请先检查账号状态")
 		}
-		sourceStatus, sourceErr := s.probeClaude(ctx, record.Account.GuestID)
+		sourceStatus, sourceErr := s.probeCodeLogin(ctx, record.Account.GuestID, record.Account.ID)
 		if sourceErr != nil || sourceStatus.subject() != record.Account.Subject {
 			return errors.New("原账号身份已改变，请先检查原会话登录")
 		}
@@ -249,9 +249,6 @@ func (s *Server) switchClaudeAccount(ctx context.Context, id string, input claud
 			return fail(errors.New("原会话连接尚未就绪，请先打开原会话"))
 		}
 		query := map[string]any{"cli_id": sw.Source.CLIID, "config": sw.Source.Config, "connection": sw.Connection, "workspace": record.GuestWorkspace, "target_cli_id": sw.TargetID, "switch_id": sw.ID}
-		if err := s.windowsConversationInput(record, query); err != nil {
-			return fail(err)
-		}
 		err = s.runCLIChannel(ctx, "account-switch", query, &result)
 		if err != nil {
 			return fail(err)
@@ -259,7 +256,7 @@ func (s *Server) switchClaudeAccount(ctx context.Context, id string, input claud
 		if result.Error != "" {
 			return fail(errors.New(result.Error))
 		}
-		if !strings.HasPrefix(result.Transcript, "/") && !(s.windowsGuest != nil && windowsCLIAbsolutePath(result.Transcript)) {
+		if !strings.HasPrefix(result.Transcript, "/") {
 			return fail(errors.New("原会话历史未确认，未启动目标账号"))
 		}
 		if old := s.terminals.get(record.TerminalID); old != nil {
@@ -284,9 +281,6 @@ func (s *Server) switchClaudeAccount(ctx context.Context, id string, input claud
 			Running bool `json:"running"`
 		}
 		query := map[string]any{"cli_id": record.CLIID, "config": record.GuestConfig, "account": record.Account.GuestID}
-		if err := s.windowsConversationInput(record, query); err != nil {
-			return fail(err)
-		}
 		if err := s.runCLIChannel(ctx, "active", query, &state); err != nil {
 			return fail(err)
 		}
@@ -294,7 +288,7 @@ func (s *Server) switchClaudeAccount(ctx context.Context, id string, input claud
 			sw.Phase = "starting"
 			return s.saveClaudeSwitch(record)
 		}
-		status, err := s.probeClaude(ctx, record.Account.GuestID)
+		status, err := s.probeCodeLogin(ctx, record.Account.GuestID, record.Account.ID)
 		if err != nil || status.subject() != record.Account.Subject {
 			return fail(errors.New("目标账号身份无法确认，保留待恢复历史"))
 		}
@@ -350,9 +344,6 @@ func (s *Server) cancelClaudeSwitch(ctx context.Context, id, requestID string) e
 		Error string `json:"error"`
 	}
 	query := map[string]any{"cli_id": sw.Source.CLIID, "connection": sw.Connection, "switch_id": sw.ID}
-	if err := s.windowsConversationInput(record, query); err != nil {
-		return err
-	}
 	if err := s.runCLIChannel(ctx, "account-switch-cancel", query, &response); err != nil {
 		return err
 	}
@@ -386,6 +377,7 @@ func (s *Server) monitorClaudeAccount(terminal *terminalSession, id string) {
 		defer s.activities.Done()
 		defer cancel()
 		var lastUsageCheck time.Time
+		var observation codeLoginObservation
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -404,15 +396,21 @@ func (s *Server) monitorClaudeAccount(terminal *terminalSession, id string) {
 			// terminal. Cancel an in-flight attempt if its access epoch ends.
 			attempt, finish := context.WithCancel(context.WithValue(ctx, accountEpochKey{}, epoch))
 			stop := context.AfterFunc(epoch, finish)
-			s.maybeSwitchClaudeAccount(attempt, id, &lastUsageCheck)
+			s.maybeSwitchClaudeAccount(attempt, id, &lastUsageCheck, &observation)
 			stop()
 			finish()
 		}
 	}()
 }
 
-func (s *Server) maybeSwitchClaudeAccount(ctx context.Context, id string, lastUsageCheck *time.Time) {
-	view, err := s.terminalConversationView(ctx, id)
+func (s *Server) maybeSwitchClaudeAccount(ctx context.Context, id string, lastUsageCheck *time.Time, observation *codeLoginObservation) {
+	if observation != nil {
+		observation.current = codeLoginHint{}
+	}
+	view, err := s.readTerminalConversation(ctx, id, observation)
+	if err == nil && observation != nil && s.observeCodeLogin(ctx, view, observation) {
+		return
+	}
 	if err != nil || view.AccountFailure != "rate_limit" || view.SwitchPolicy != "allow" || view.AccountSwitch != nil && view.AccountSwitch.Phase != "completed" {
 		return
 	}

@@ -41,7 +41,7 @@ func TestTerminalLoginLinkUsesGuestPrivateBrowser(t *testing.T) {
 	s.browserControl = localBrowserClient(t, s.lifetimeContext(), guest)
 	defer s.browserControl.close()
 	w := request(s, "POST", "/api/terminals/"+terminal.id+"/login-link", s.origin, `{"url":"`+address+`"}`, true)
-	if w.Code != 200 || w.Body.String() != "{\"id\":\"tab\"}\n" {
+	if w.Code != 200 || w.Body.String() != "{\"id\":\"tab\",\"incognito\":true}\n" {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 	close(terminal.done)

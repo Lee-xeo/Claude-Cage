@@ -2,7 +2,6 @@ package limaembed
 
 import (
 	"crypto/sha256"
-	_ "embed"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -17,23 +16,6 @@ type Share struct {
 	// Dir holds templates/ and the bundled guest agents.
 	Dir         string
 	guestAgents map[string]string
-}
-
-// Cage owns this pin independently of Lima's periodically regenerated templates.
-//
-//go:embed host-images/ubuntu-22.04.yaml
-var ubuntu2204Image []byte
-
-// ReadImageTemplate returns the pinned images bundled with this application.
-func ReadImageTemplate(system string) ([]byte, error) {
-	switch system {
-	case "ubuntu-22.04":
-		return ubuntu2204Image, nil
-	case "debian-12", "debian-13", "ubuntu-24.04":
-		return fs.ReadFile(assets, "assets/templates/_images/"+system+".yaml")
-	default:
-		return nil, fmt.Errorf("unsupported host image template %q", system)
-	}
 }
 
 // Templates is where Lima reads templates from (LIMA_TEMPLATES_PATH).

@@ -135,10 +135,10 @@ export async function createWorkbench({
         state.account.unlocked = true;
         state.account.require_authentication = false;
       } else if (action === "profile") {
-        if (state.failAccountSave) return route.fulfill({ status: 400, body: "资料未能保存，请重试" });
+        if (state.failAccountSave) return route.fulfill({ status: 400, contentType: "text/plain; charset=utf-8", body: "资料未能保存，请重试" });
         Object.assign(state.account, { username: body.username.trim(), avatar: body.avatar });
       } else if (action === "password") {
-        if (body.old_password !== state.accountPassword) return route.fulfill({ status: 400, body: "密码不正确" });
+        if (body.old_password !== state.accountPassword) return route.fulfill({ status: 400, contentType: "text/plain; charset=utf-8", body: "密码不正确" });
         if (body.password?.length < 8 || body.password !== body.confirm_password) return route.fulfill({ status: 400, body: "新密码无效" });
         state.accountPassword = body.password;
       } else if (action === "lock") { state.account.unlocked = false; state.account.require_authentication = true; }

@@ -7,13 +7,6 @@ noVNC (MPL-2.0, including the modifications in internal/cage/novnc-patch.py),
 and the separately executed Mihomo core (GPL-3.0).
 Their license texts and source notices are distributed in Contents/Resources/licenses.
 Mihomo's corresponding source is distributed alongside the macOS release.
-The macOS guest also includes Cage-modified SSHFS (GNU GPL version 2), with
-statically linked GLib and GNU gettext libintl (LGPL-2.1-or-later), and PCRE2
-(BSD-3-Clause WITH PCRE2-exception, and SLJIT under BSD-2-Clause). Their license
-texts are in Contents/Resources/licenses/sshfs.
-Their complete corresponding source, patches, build recipes and static relink
-materials are in the cage-macos-guest-VERSION-source.tar.gz release asset,
-also retained in Contents/Resources/guest-os/sources inside the macOS App.
 PDF metadata processing additionally uses pdfcpu, hhrutter/tiff and
 xdg-go/stringprep. Their license texts are included in THIRD_PARTY_LICENSES.
 The root MIT license does not replace these third-party license terms.

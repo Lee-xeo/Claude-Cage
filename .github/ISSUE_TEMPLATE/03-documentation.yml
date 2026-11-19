@@ -34,4 +34,4 @@ body:
     id: environment
     attributes:
       label: 相关系统与补充材料
-      description: 如涉及安装或操作步骤，请注明主机、客机系统及版本；可附截图或参考链接，上传前请移除敏感信息。
+      description: 如涉及安装或操作步骤，请注明主机系统及版本；可附截图或参考链接，上传前请移除敏感信息。

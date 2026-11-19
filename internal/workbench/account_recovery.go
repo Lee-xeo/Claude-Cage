@@ -73,8 +73,6 @@ func (a *localAccount) resetPassword(code, password string) (string, error) {
 	if err := validAccountPassword(password); err != nil {
 		return "", err
 	}
-	a.macSync.Lock()
-	defer a.macSync.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if time.Now().Before(a.nextAttempt) {
@@ -97,7 +95,7 @@ func (a *localAccount) resetPassword(code, password string) (string, error) {
 		return "", errors.New("恢复密钥不正确或已失效，请核对保存的最新密钥")
 	}
 	defer clear(key)
-	record, err := a.passwordRecord(key, password, true)
+	record, err := a.passwordRecord(key, password)
 	if err != nil {
 		return "", err
 	}

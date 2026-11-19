@@ -7,7 +7,7 @@ import React, {
   useState,
 } from "react";
 import {
-  Camera,
+  Pencil,
   Check,
   ChevronDown,
   Eye,
@@ -21,6 +21,8 @@ import { api, native, nativeAvailable, writeClipboard } from "./api";
 import { getClientContext, isRemoteClient } from "./client-context.mjs";
 import logo from "./logo.png";
 import "./account.css";
+import { Modal } from "./modal";
+import { TokenUsagePanel } from "./token-usage.jsx";
 
 const AccountContext = createContext(null);
 export const useAccount = () => useContext(AccountContext);
@@ -149,37 +151,6 @@ export function AccountAvatar({ account, large = false }) {
       {account?.avatar ? <img src={account.avatar} alt="" /> : initial}
     </span>
   );
-}
-
-export function MacOSAccountGate({ children }) {
-  const { account, act } = useAccount();
-  const [name, setName] = useState(account?.macos_guest_user || account?.username || "");
-  const [password, setPassword] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  if (!account?.macos_account_host || account.macos_credentials_ready) return children;
-  async function submit(event) {
-    event.preventDefault();
-    if (busy) return;
-    if (password !== confirmation) { setError("两次密码不一致"); return; }
-    setBusy(true); setError("");
-    try { await act("prepare-macos", { username:name, password, confirm_password:confirmation }); setPassword(""); setConfirmation(""); }
-    catch (e) { setError(e.message); }
-    finally { setBusy(false); }
-  }
-  return <main className="account-gate"><div className="account-brand"><img src={logo} alt="" />Cage</div><section className="account-entry">
-    <h1>设置 Cage 与 macOS 共用账密</h1>
-    <p className="account-entry-intro">{account.trusted_local ? "先设置 Cage 用户名和密码，再继续客机安装。已有账户、文件和登录状态会保留。" : "输入当前 Cage 密码，确认用于 macOS 客机。已有客机保留用户名和用户目录。"}</p>
-    <form onSubmit={submit}><fieldset disabled={busy}>
-      <label className="account-field">用户名<input required value={name} onChange={event => setName(event.target.value)} maxLength={31} pattern="[a-z][a-z0-9_]{0,30}" readOnly={Boolean(account.macos_guest_user)} autoComplete="username" /></label>
-      <p className="field-help">小写字母开头，1–31 个小写字母、数字或下划线。密码使用 8–256 个英文键盘可输入的字符。</p>
-      <PasswordField label={account.trusted_local ? "设置密码" : "当前 Cage 密码"} value={password} onChange={setPassword} autoComplete={account.trusted_local ? "new-password" : "current-password"} />
-      <PasswordField label="确认密码" value={confirmation} onChange={setConfirmation} autoComplete={account.trusted_local ? "new-password" : "current-password"} />
-      {error && <p role="alert" className="account-error">{error}</p>}
-      <button className="primary account-submit" disabled={busy}>{busy ? "正在保存…" : "保存账密并继续"}</button>
-    </fieldset></form>
-  </section></main>;
 }
 
 function PasswordField({
@@ -320,7 +291,7 @@ export function AccountGate({ children }) {
         </h1>
         <p className="account-entry-intro">
           {creating
-            ? isRemoteClient() ? "在云端创建账户，保护这台主机上的工作与登录状态。" : "先注册用户名和密码，再选择客机系统并安装环境。macOS 客机会使用同一套账密。"
+            ? isRemoteClient() ? "在云端创建账户，保护这台主机上的工作与登录状态。" : "先注册用户名和密码，再选择客机系统并安装环境。"
             : account
               ? account.trusted_local ? "本机工作区" : "输入密码，继续你的工作。"
               : isRemoteClient() ? "正在读取云端账户…" : "正在读取本机账户…"}
@@ -340,20 +311,18 @@ export function AccountGate({ children }) {
           <form onSubmit={submit}>
             <fieldset disabled={busy}>
               {creating && (
-                <><label className="account-field">
+                <label className="account-field">
                   用户名
                   <input
                     autoFocus
                     autoComplete="username"
-                    maxLength={account.macos_account_host ? 31 : 40}
-                    pattern={account.macos_account_host ? "[a-z][a-z0-9_]{0,30}" : undefined}
+                    maxLength={40}
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder={account.macos_account_host ? "例如：shihao" : "你希望怎样被称呼"}
+                    placeholder="你希望怎样被称呼"
                   />
                 </label>
-                {account.macos_account_host && <p className="field-help">与 macOS 客机共用：小写字母开头，1–31 个小写字母、数字或下划线。</p>}</>
               )}
               <PasswordField
                 label={creating ? "设置密码" : "账户密码"}
@@ -369,7 +338,6 @@ export function AccountGate({ children }) {
                   autoComplete="new-password"
                 />
               )}
-              {creating && account.macos_account_host && <p className="field-help">密码使用 8–256 个英文键盘可输入的字母、数字、空格或符号。安装中断后继续使用这套账密。</p>}
               {(error || connectionError) && (
                 <p className="account-error" role="alert">
                   {error || connectionError}
@@ -635,7 +603,7 @@ export function AccountMenu({ onSettings, onConfirm, onStatus, busy }) {
   );
 }
 
-export function AccountSettings({ busy: environmentBusy, onDirty }) {
+export function AccountSettings({ busy: environmentBusy, onDirty, onConfirm }) {
   const { account, act, refresh } = useAccount();
   const [name, setName] = useState(account.username),
     [avatar, setAvatar] = useState(account.avatar || "");
@@ -647,6 +615,14 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
     [message, setMessage] = useState("");
   const [feedbackTarget, setFeedbackTarget] = useState("profile");
   const [recoveryDirty, setRecoveryDirty] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const closePassword = async () => {
+    if (busy) return;
+    if ((oldPassword || password || confirmation) && !(await onConfirm({ title: "放弃尚未保存的密码修改？", body: "当前密码保持不变。", confirm: "放弃修改" }))) return;
+    setPasswordOpen(false);
+    setOldPassword(""); setPassword(""); setConfirmation("");
+    if (feedbackTarget === "password") { setError(""); setMessage(""); }
+  };
   const file = useRef();
   const changed =
     name !== account.username || avatar !== (account.avatar || "");
@@ -691,6 +667,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
         await refresh();
         setPassword(""); setConfirmation("");
         setMessage("已设置密码，下次打开 Cage 时使用密码登录。");
+        setPasswordOpen(false);
         return;
       }
       const value = await act(
@@ -704,10 +681,11 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
           : { username: name, avatar },
       );
       if (changingPassword) {
+        setPasswordOpen(false);
         setOldPassword("");
         setPassword("");
         setConfirmation("");
-        setMessage(value.macos_password_pending ? "Cage 密码已修改。客机密码待同步，下次启动时自动重试；同步完成前客机可能仍需原密码。" : "密码已修改，应用登录状态保持不变");
+        setMessage("密码已修改，应用登录状态保持不变");
       } else {
         setName(value.username);
         setAvatar(value.avatar || "");
@@ -734,104 +712,50 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
       )}
     </>
   );
-  if (account.macos_account_host && account.guest_system === "macos" && !account.macos_credentials_ready) return <MacOSAccountGate />;
   return (
     <div className="account-settings">
-      <div className="section-title">
-        <h3>账户</h3>
-        <p>给工作空间一点你的样子。</p>
-      </div>
-      <form onSubmit={(event) => save(event)}>
+      <form className="account-profile" onSubmit={(event) => save(event)}>
         <fieldset disabled={busy || environmentBusy}>
-          <div className="account-profile-heading">
+          <h3 className="account-page-title">账户</h3>
+          <button type="button" className="account-avatar-edit" aria-label="更换头像"
+            onClick={() => file.current.click()}>
             <AccountAvatar account={{ username: name, avatar }} large />
-            <div>
-              <button
-                type="button"
-                className="quiet-button"
-                onClick={() => file.current.click()}
-              >
-                <Camera size={16} />
-                更换头像
-              </button>
-              {avatar && (
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={() => setAvatar("")}
-                >
-                  恢复默认
-                </button>
-              )}
-              <p className="field-help">
-                PNG 或 JPEG，最多 2 MB，自动居中裁切。
-              </p>
-            </div>
+            <span className="account-avatar-overlay" aria-hidden="true"><Pencil size={24} /></span>
+          </button>
+          <input ref={file} type="file" accept="image/png,image/jpeg" hidden
+            onChange={upload} aria-label="选择头像图片" />
+          <input className="account-profile-name" aria-label="用户名" value={name} maxLength={40}
+            autoComplete="username" onChange={(e) => setName(e.target.value)} required />
+          <div className="account-profile-actions">
+            <button type="button" className="quiet-button" onClick={() => {
+              setFeedbackTarget("password"); setError(""); setMessage(""); setPasswordOpen(true);
+            }}><LockKeyhole size={15} />{account.trusted_local ? "设置密码" : "修改密码"}</button>
+            {avatar && <button type="button" className="text-button" onClick={() => setAvatar("")}>恢复默认头像</button>}
+            {changed && <button className="primary" disabled={!name.trim() || busy}><Check size={16} />保存资料</button>}
           </div>
-          <input
-            ref={file}
-            type="file"
-            accept="image/png,image/jpeg"
-            hidden
-            onChange={upload}
-            aria-label="选择头像图片"
-          />
-          <label className="account-field">
-            用户名
-            <input
-              value={name}
-              maxLength={40}
-              autoComplete="username"
-              onChange={(e) => setName(e.target.value)}
-              required
-              readOnly={account.macos_username_bound}
-            />
-          </label>
-          {account.macos_username_bound && <p className="field-help">用户名已用于 macOS 客机，保留该名称以继续使用原账户和文件。</p>}
-          <button
-            className="primary"
-            disabled={!changed || !name.trim() || busy}
-          >
-            <Check size={16} />
-            保存资料
-          </button>
         </fieldset>
       </form>
-      {feedbackTarget === "profile" && feedback}
-      <div className="account-section-divider" />
-      <form onSubmit={(event) => save(event, true)}>
-        <fieldset disabled={busy || environmentBusy}>
-          <h4>账户密码</h4>
-          <p className="field-help">
-            修改密码不会清除 Claude 的登录状态。{account.macos_credentials_ready ? "Cage 与 macOS 客机共用密码；客机关闭时会在下次启动后同步。" : "忘记密码时，可在登录页使用已保存的恢复密钥重置。"}
-          </p>
-          {!account.trusted_local && <PasswordField
-            label="当前密码"
-            value={oldPassword}
-            onChange={setOldPassword}
-          />}
-          <PasswordField
-            label="新密码"
-            value={password}
-            onChange={setPassword}
-            autoComplete="new-password"
-          />
-          <PasswordField
-            label="确认新密码"
-            value={confirmation}
-            onChange={setConfirmation}
-            autoComplete="new-password"
-          />
-          <button
-            className="quiet-button"
-            disabled={busy || (!account.trusted_local && !oldPassword) || !password || !confirmation}
-          >
-            {account.trusted_local ? "设置密码并关闭免账号登录" : "修改密码"}
-          </button>
-        </fieldset>
-      </form>
-
-      {feedbackTarget === "password" && feedback}
+      {(feedbackTarget === "profile" || !passwordOpen) && feedback}
+      <TokenUsagePanel onConfirm={onConfirm} />
+      {passwordOpen && <Modal title={account.trusted_local ? "设置账户密码" : "修改密码"} onClose={closePassword}>
+        <form className="account-password-dialog" onSubmit={(event) => save(event, true)}>
+          <fieldset disabled={busy || environmentBusy}>
+            <p className="field-help">
+              修改密码不会清除 Claude 的登录状态。忘记密码时，可在登录页使用已保存的恢复密钥重置。
+            </p>
+            {!account.trusted_local && <PasswordField label="当前密码" value={oldPassword} onChange={setOldPassword} />}
+            <PasswordField label="新密码" value={password} onChange={setPassword} autoComplete="new-password" />
+            <PasswordField label="确认新密码" value={confirmation} onChange={setConfirmation} autoComplete="new-password" />
+            {feedbackTarget === "password" && feedback}
+            <div className="account-password-actions">
+              <button type="button" className="quiet-button" onClick={closePassword}>取消</button>
+              <button className="primary" disabled={busy || (!account.trusted_local && !oldPassword) || !password || !confirmation}>
+                {busy ? "正在保存…" : account.trusted_local ? "设置密码并关闭免账号登录" : "保存密码"}
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      </Modal>}
       {!account.trusted_local && <AccountRecoverySettings disabled={busy || environmentBusy} onDirty={setRecoveryDirty} />}
       {localDesktop() && !account.trusted_local && <TrustedDeviceSettings />}
       {!account.trusted_local && <AccountDeviceSettings />}

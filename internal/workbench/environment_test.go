@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 	"io"
 	"net/http"
 	"os"
@@ -20,7 +19,7 @@ func TestEnvironmentUpgradeSeparatesPrivateLegacyWorkspaceFromVMIdentity(t *test
 	}
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	for _, system := range []string{"linux", "macos", "windows"} {
+	for _, system := range []string{"linux"} {
 		t.Run(system, func(t *testing.T) {
 			s := testServer(t)
 			s.profile = filepath.Join(home, ".claude-cage", system)
@@ -32,11 +31,6 @@ func TestEnvironmentUpgradeSeparatesPrivateLegacyWorkspaceFromVMIdentity(t *test
 				}
 			}
 			s.preferences.Workspace = selected
-			if system == "macos" {
-				s.macosGuest = &guestos.MacOSProfile{Instance: "mac", User: "guest"}
-			} else if system == "windows" {
-				s.windowsGuest = &guestos.WindowsProfile{}
-			}
 			if err := writePrivate(filepath.Join(s.profile, "environment.json"), map[string]string{"directory": legacy}); err != nil {
 				t.Fatal(err)
 			}

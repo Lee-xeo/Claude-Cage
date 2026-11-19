@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sylvinus/agent-vm/internal/hostbridge"
 )
 
 func validTailnetAuthURL(raw string) bool {
@@ -24,7 +27,7 @@ func (s *Server) tailnet(w http.ResponseWriter, r *http.Request) {
 		if !readJSON(w, r, &input) {
 			return
 		}
-		s.launch(w, "tailscale-install", s.installTailnet)
+		s.launch(w, "tailscale-install", s.installTailnetNow)
 		return
 	}
 	switch action {
@@ -50,35 +53,50 @@ func (s *Server) tailnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	ready, token := s.ready, s.credentials.Token
+	ready := s.ready
 	busy := s.jobs.snapshot().Running
 	s.mu.Unlock()
 	if !ready || busy {
 		http.Error(w, "请先启动 Cage 环境，并等待当前操作完成", 409)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	body, _ := json.Marshal(struct {
-		Action string `json:"action"`
-		Key    string `json:"key,omitempty"`
-		Host   string `json:"host,omitempty"`
-		Port   int    `json:"port,omitempty"`
-	}{action, input.Key, input.Host, input.Port})
-	data, err := s.guestAPI(ctx, token, http.MethodPost, "/tailnet", body)
-	if err != nil {
-		http.Error(w, "Tailscale 操作未完成。请更新环境组件后重试；原设备身份和 SSH 公钥会保留。", 502)
+	// Not installed: the panel offers to install it.
+	if s.tailnetTool == nil && !s.tailnetPluginInstalled() {
+		jsonReply(w, map[string]any{"installed": false, "enabled": false, "backend": "NotInstalled", "ips": []string{}, "peers": []string{}, "keys": []string{}})
 		return
 	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	arguments, _ := json.Marshal(struct {
+		Key  string `json:"key,omitempty"`
+		Host string `json:"host,omitempty"`
+		Port int    `json:"port,omitempty"`
+	}{input.Key, input.Host, input.Port})
+	called, err := s.callTailnet(ctx, tailnetTools[action], arguments)
+	var refused *hostbridge.RefusedError
+	switch {
+	case errors.As(err, &refused):
+		http.Error(w, "这次 Tailscale 操作没有获得允许", http.StatusForbidden)
+		return
+	case err != nil || called == nil:
+		http.Error(w, "Tailscale 操作未完成。请在「MCP 插件」里确认 Tailscale 已启用并重新加载；原设备身份和 SSH 公钥会保留。", 502)
+		return
+	}
+	text := ""
+	if len(called.Content) > 0 {
+		if content, ok := called.Content[0].(*mcp.TextContent); ok {
+			text = content.Text
+		}
+	}
+	// What the action itself reports, such as a key that is not one.
+	if called.IsError {
+		http.Error(w, text, 502)
+		return
+	}
+	data := []byte(text)
 	var result map[string]json.RawMessage
 	if json.Unmarshal(data, &result) != nil {
 		http.Error(w, "Tailscale 组件返回了无效状态", 502)
-		return
-	}
-	if b := result["tailnet_error"]; len(b) > 0 {
-		var reason string
-		_ = json.Unmarshal(b, &reason)
-		http.Error(w, reason, 502)
 		return
 	}
 	var authURL string
@@ -90,5 +108,3 @@ func (s *Server) tailnet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(data)
 }
-
-var errTailnetNativeInstall = errors.New("请在设置中更新环境组件，Tailscale 随客机组件一同安装")

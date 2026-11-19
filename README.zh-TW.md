@@ -22,7 +22,7 @@
 
 作為一個只是想和 Claude 對話與合作的正常使用者，受夠了折騰各種 VPS，指紋瀏覽器，環境檢測，面對封號的擔驚受怕和財產損失。我們提出 **Claude Cage** 專案：**一個開箱即用的桌面程式，配置好自己的網路代理，集中管理隔離環境、時區語言和環境檢查。**
 
-Claude Cage 讓你在熟悉的系統裡與 Claude 一起工作：Mac 上使用 macOS 虛擬機器，Windows 上使用 Windows 虛擬機器，也可以選擇輕量的 Linux 環境。終端、瀏覽器、編輯器和官方 Claude Desktop 集中在同一個工作臺，專案按需共享，網路獨立管理；還能連接自己的伺服器，或用手機接續電腦上的工作。主要功能包括：
+Claude Cage 在一個小型的 Debian 13 環境裡執行官方 Claude Code 和 Claude Desktop，macOS、Windows 和 Linux 上都是同一個環境。終端、瀏覽器、編輯器和官方 Claude Desktop 集中在同一個工作臺，專案按需共享，網路獨立管理；還能連接自己的伺服器，或用手機接續電腦上的工作。主要功能包括：
 
 - 和主機隔離的網路設定，Cage 自己接管和代理內部的所有網路流量
 - 和主機隔離的指紋設定，包括時區、語言等，支援自動與代理 IP 同步
@@ -44,7 +44,7 @@ Claude Cage 讓你在熟悉的系統裡與 Claude 一起工作：Mac 上使用 m
 ## 你可以用它做什麼
 
 - **在一個視窗裡完成工作。** 用終端執行 Claude Code，用編輯器檢視改動，用 Cage 瀏覽器預覽服務和完成登入。
-- **用熟悉的系統開發。** 選擇 macOS、Windows 或 Linux 客機，使用對應平台的工具；也可自動匹配本機系統版本，建立乾淨的獨立環境。 [選擇客機系統](docs/guide/guest-systems.md)
+- **三個平台，同一個環境。** macOS、Windows 和 Linux 上的 Cage 都使用同一個 Debian 13 環境，工具與操作方式一致。 [Debian 環境](docs/guide/guest-systems.md)
 - **控制共享範圍。** 只共享預設工作區和明確開啟的專案資料夾；主機的 Claude 登入、瀏覽器配置和 SSH 金鑰不會自動匯入。
 - **看清網路狀態。** 內建代理管理支援匯入訂閱、選擇節點和檢查出口。關鍵檢查未透過時，環境保持離線；代理不可用時沒有直連回退。
 - **下次繼續使用。** 工具、檔案和登入狀態儲存在虛擬磁碟裡，關閉視窗可以保留後臺任務。
@@ -52,6 +52,7 @@ Claude Cage 讓你在熟悉的系統裡與 Claude 一起工作：Mac 上使用 m
 - **用手機接續工作。** Android / iPhone 透過 QR Code 或配對碼連接電腦，接續同一份 Claude Code 對話、傳送訊息和處理工具審批，也可操作遠端瀏覽器和電腦上的 Claude Desktop。
 - **在雲端執行環境。** 透過 SSH 連接部署在符合條件的 Linux x86_64 VPS 上的 Cage，無需 KVM；資料與網路出口位於伺服器。
 - **透過私網連接。** 在 Cage 內登入 Tailscale，讓本機與環境透過 SSH 雙向連接。 [Tailscale / SSH](docs/guide/tailscale.md)
+- **讓 Claude 使用電腦上的工具（實驗性）。** 預設關閉。開啟後，環境裡的 Claude 可以在已共享的專案目錄中執行電腦上的命令，每次呼叫都需在系統對話框中確認。 [外掛](docs/plugins.md)
 
 ## 快速開始
 
@@ -71,7 +72,7 @@ Cage 支援 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 2. macOS：開啟安裝包，將 **Cage** 拖入 **Applications（應用程式）**，再從“應用程式”啟動。Windows：[安裝說明](docs/windows.md#安装并开始工作) · Linux：[安裝說明](docs/linux.md#安装并开始工作)。
 3. 按應用內引導配置自己的代理，啟動環境後開啟專案。
 
-安裝包隨附工作臺和代理核心，無需先安裝 Go、Node.js、Docker 或 Clash。首次建立環境時選擇客機系統與儲存位置，再準備對應的官方系統映像和開發工具。Cage 不提供作業系統授權、代理服務或 Claude 帳戶。
+安裝包隨附工作臺和代理核心，無需先安裝 Go、Node.js、Docker 或 Clash。首次建立環境時選擇儲存位置，Cage 會下載 Debian 13 映像和開發工具。Cage 不提供代理服務或 Claude 帳戶。
 
 原始碼與安裝包公開，版本說明和校驗檔案見 [Releases](https://github.com/Lee-xeo/Claude-Cage/releases)。
 
@@ -87,7 +88,7 @@ macOS 和已簽章 Windows 版本支援透過所選代理更新；Windows 未簽
 
 ### 2. 啟動環境
 
-首次選擇客機系統或「自動匹配本機系統版本」，再選擇儲存位置。點擊「啟動 Cage 環境」，按引導完成安裝與授權；進度和錯誤可在「操作詳情」查看。以後啟動沿用原環境。
+首次啟動時選擇儲存位置。點擊「啟動 Cage 環境」，按引導完成安裝；進度和錯誤可在「操作詳情」查看。以後啟動沿用原環境。
 
 ### 3. 開啟專案，執行 Claude
 
@@ -96,7 +97,7 @@ macOS 和已簽章 Windows 版本支援透過所選代理更新；Windows 未簽
 ## 使用前瞭解這些邊界
 
 - 共享專案中的修改和刪除會直接影響 本機 上的檔案。請使用版本控制或備份；專案內的 `.git` 可讀寫，可直接在 Cage 中暫存、提交與切換分支。
-- 所有專案共用一個 Cage 環境，也共用其中的工具、賬戶與 macOS / Windows / Debian / Ubuntu 22.04 檔案系統。專案之間沒有獨立隔離。
+- 所有專案共用一個 Cage 環境，也共用其中的工具、賬戶與 Debian 檔案系統。專案之間沒有獨立隔離。
 - 預設公網出站支援 IPv4 TCP，DNS 透過同一代理；公網 UDP、IPv6、ICMP 及主機和區域網路直連受限。主動啟用 Tailscale 後，可依私網權限連接裝置。
 - 網路檢查展示當前配置和取樣證據，無法保證賬戶不會受到平臺限制，也不能代替完整的虛擬化安全審計。
 
@@ -108,7 +109,7 @@ macOS 和已簽章 Windows 版本支援透過所選代理更新；Windows 未簽
 
 | 你要做什麼 | 從這裡開始 |
 |---|---|
-| macOS / Windows / Debian / Ubuntu 22.04 | [選擇客機系統](https://claude-cage.com/docs/guest-systems/) |
+| Debian 13 環境的要求、空間與資料保留 | [Debian 環境](https://claude-cage.com/docs/guest-systems/) |
 | 第一次安裝、配置代理、開啟專案 | [開始使用](docs/getting-started.md) |
 | 處理下載、啟動、聯網和登入問題 | [常見問題與恢復](docs/troubleshooting.md) |
 | 瞭解按鍵、外觀、資料儲存和退出行為 | [日常使用](docs/getting-started.md#日常使用) |

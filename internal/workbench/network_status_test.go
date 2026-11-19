@@ -62,6 +62,8 @@ func TestNetworkStatusImmediatelyAfterManualGrant(t *testing.T) {
 				s.finishSafetyObservation(t.Context(), client, openBeforeFailure, "", issue, true)
 			}
 			s.publishGate(openBeforeFailure) // A delayed poll must not clear the current failure.
+			s.proxyNetworkLost = true
+			s.proxyNetworkRetry = time.Now().Add(time.Minute)
 			checkStatus(cage.GateClosed, issue)
 
 			checking, err := client.BeginCheck(t.Context())
@@ -81,6 +83,9 @@ func TestNetworkStatusImmediatelyAfterManualGrant(t *testing.T) {
 			}
 			s.publishGate(opened)
 			checkStatus(cage.GateOpen, tc.locationError)
+			if s.proxyNetworkLost || !s.proxyNetworkRetry.IsZero() {
+				t.Fatal("fresh grant retained the obsolete interface recovery")
+			}
 		})
 	}
 }

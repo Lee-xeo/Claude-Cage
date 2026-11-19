@@ -81,17 +81,6 @@ try {
     $resources = Join-Path $app 'resources'
     New-Item -ItemType Directory -Path $resources -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $resources 'runtime') -Force | Out-Null
-    $guestSetup = New-Item -ItemType Directory -Path (Join-Path $resources 'guest-os')
-    Copy-Item -LiteralPath 'scripts/guest-os/new-windows-test-vm.ps1' -Destination (Join-Path $guestSetup.FullName 'new-windows-guest.ps1')
-    Copy-Item -LiteralPath 'scripts/guest-os/windows-host-image.ps1' -Destination $guestSetup.FullName
-    foreach ($file in @('windows-guest-media.ps1', 'install-guest-powershell.cmd', 'setup-windows-guest.ps1', 'complete-windows-guest.ps1', 'install-windows-host-manager.ps1', 'install-windows-workbench-components.ps1', 'initialize-windows-workbench-user.ps1', 'windows-host-enrollment.ps1', 'maintain-windows-workbench.ps1', 'update-windows-workbench-components.ps1', 'publish-windows-component-manifest.ps1', 'windows-workbench-packages.ps1')) {
-        Copy-Item -LiteralPath (Join-Path 'scripts/guest-os' $file) -Destination $guestSetup.FullName
-    }
-    $bridgeSetup = New-Item -ItemType Directory -Path (Join-Path $guestSetup.FullName 'guest-clipboard-windows')
-    foreach ($file in @('install.ps1', 'install-network.ps1')) {
-        Copy-Item -LiteralPath (Join-Path 'scripts/guest-os/guest-clipboard-windows' $file) -Destination $bridgeSetup.FullName
-    }
-    & (Join-Path $PSScriptRoot 'guest-os/build-windows-workbench-payload.ps1') -Destination (Join-Path $guestSetup.FullName 'payload')
     $tailnetAssets = Join-Path $repository 'internal/tailnetassets/assets'
     New-Item -ItemType Directory -Path $tailnetAssets -Force | Out-Null
     foreach ($tailnetArch in @('amd64','arm64')) {

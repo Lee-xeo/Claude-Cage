@@ -68,6 +68,8 @@ if (args is ["--start-update"])
         }
     }, () => Environment.Exit(0), () => {});
     updater.Handle("install");
+    while (updater.Handle("status").GetValueOrDefault("phase") as string is not ("ready" or "failed")) await Task.Delay(50);
+    if (updater.Handle("status").GetValueOrDefault("phase") as string == "ready") updater.Handle("complete");
     await failed.Task.WaitAsync(TimeSpan.FromMinutes(3));
     return 1;
 }

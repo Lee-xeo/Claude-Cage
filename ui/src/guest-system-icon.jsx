@@ -1,6 +1,6 @@
 import React from "react";
 
-const labels = { macos: "macOS", "windows-11": "Windows", "debian-12": "Debian", "debian-13": "Linux", "ubuntu-22.04": "Ubuntu", "ubuntu-24.04": "Ubuntu" };
+const labels = { macos: "macOS", "windows-11": "Windows", "debian-12": "Debian", "debian-13": "Linux" };
 
 export function GuestSystemIcon({ system }) {
   const label = labels[system];

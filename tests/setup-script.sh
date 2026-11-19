@@ -67,7 +67,6 @@ chromium_install="$(
   INSTALL_CHROMIUM=1 CLAUDE_CAGE=1
   sudo() { :; }
   apt_get() { printf 'install: %s\n' "$*"; }
-  cage_is_ubuntu() { return 1; }
   cage_cache_chromium() { printf 'cache: %s\n' "$*"; }
   eval "$chromium_block"
 )"

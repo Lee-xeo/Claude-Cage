@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
 func initializationRequest(s *Server, action string, trusted bool) *httptest.ResponseRecorder {
@@ -72,15 +71,6 @@ func TestInitializationPersistsBeforeDiskCreationAndDoesNotResetExisting(t *test
 	if read().Required {
 		t.Fatal("existing Linux installation forced to reinstall")
 	}
-	s.windowsGuest = &guestos.WindowsProfile{}
-	if next, err := s.initializationState(); err != nil || next.Required {
-		t.Fatalf("existing Windows installation: %+v %v", next, err)
-	}
-	s.windowsGuest = nil
-	s.macosGuest = &guestos.MacOSProfile{}
-	if next, err := s.initializationState(); err != nil || next.Required {
-		t.Fatalf("existing Mac installation: %+v %v", next, err)
-	}
 }
 
 func TestInitializationCompletionRequiresReadyGuestAndCurrentNetworkEvidence(t *testing.T) {
@@ -94,8 +84,10 @@ func TestInitializationCompletionRequiresReadyGuestAndCurrentNetworkEvidence(t *
 	if w := initializationRequest(s, "complete", true); w.Code == 200 {
 		t.Fatal("unready guest accepted")
 	}
-	s.windowsGuest = &guestos.WindowsProfile{}
-	s.windowsState.Running = true
+	marker := filepath.Join(s.instanceDir(), "cage-running.json")
+	if err := writePrivate(marker, map[string]int{"pid": os.Getpid()}); err != nil {
+		t.Fatal(err)
+	}
 	s.ready = true
 	if w := initializationRequest(s, "complete", true); w.Code == 200 {
 		t.Fatal("missing network report accepted")
@@ -119,11 +111,17 @@ func TestInitializationCompletionRequiresReadyGuestAndCurrentNetworkEvidence(t *
 		t.Fatal("stale configuration accepted")
 	}
 	s.safety.Gate.Configuration = cfg.Fingerprint()
+	// A concurrent health read must not make the final button fail. It also
+	// must not bypass the readiness/report checks above once the lock is free.
+	s.op.Lock()
+	time.AfterFunc(50*time.Millisecond, s.op.Unlock)
 	if w := initializationRequest(s, "complete", true); w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	s.ready = false
-	s.windowsState.Running = false
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
 	if view, err := s.initializationState(); err != nil || view.Required {
 		t.Fatalf("completed stopped environment lost initialization: %+v %v", view, err)
 	}

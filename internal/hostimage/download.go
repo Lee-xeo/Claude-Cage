@@ -65,7 +65,7 @@ func (r *progressReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func verify(ctx context.Context, path string, plan Plan, output io.Writer, transport http.RoundTripper) (string, error) {
+func verify(ctx context.Context, path string, plan Plan, output io.Writer) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -99,17 +99,6 @@ func verify(ctx context.Context, path string, plan Plan, output io.Writer, trans
 	if plan.Digest != "" && actual != plan.Digest {
 		return "", errors.New("系统镜像摘要不匹配，请重新选择或重新下载")
 	}
-	if plan.Format == "ipsw" {
-		version, build, err := macImageIdentity(path)
-		if err != nil || version != plan.Version || build != plan.Build {
-			return "", errors.New("恢复镜像内容与已选择的 macOS 版本不一致")
-		}
-	}
-	if plan.Format == "pkgdmg" {
-		if err := verifyIntelPackage(ctx, path, plan, transport); err != nil {
-			return "", err
-		}
-	}
 	return actual, nil
 }
 
@@ -119,12 +108,15 @@ func Prepare(ctx context.Context, cache string, plan Plan, output io.Writer, tra
 	if err := plan.Validate(); err != nil {
 		return Plan{}, err
 	}
+	if abandonedSystem(plan.Host.System) {
+		return Plan{}, errors.New("Cage 已不再支持安装此系统的客机，原有安装材料未被改动")
+	}
 	if output == nil {
 		output = io.Discard
 	}
 	if plan.Path != "" {
 		fmt.Fprintln(output, "正在校验系统镜像…")
-		digest, err := verify(ctx, plan.Path, plan, output, transport)
+		digest, err := verify(ctx, plan.Path, plan, output)
 		if err != nil {
 			return Plan{}, err
 		}
@@ -206,7 +198,7 @@ func Prepare(ctx context.Context, cache string, plan Plan, output io.Writer, tra
 	if err = file.Close(); err != nil {
 		return Plan{}, err
 	}
-	digest, err := verify(ctx, filepath.Join(cache, partial), plan, output, transport)
+	digest, err := verify(ctx, filepath.Join(cache, partial), plan, output)
 	if err != nil {
 		// Preserve the failed download for diagnosis. A new attempt can resume
 		// into a new partial file, without reusing corrupt bytes.

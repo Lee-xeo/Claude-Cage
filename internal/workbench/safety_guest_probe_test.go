@@ -85,10 +85,10 @@ subprocess.run = linux_command
 	if err := json.Unmarshal(output, &v); err != nil {
 		t.Fatal(err)
 	}
-	if issue, _ := hostReachIssue(v, true, true); issue != "" {
+	if issue, _ := hostReachIssue(v, true); issue != "" {
 		t.Fatalf("host evidence: %s: %s", issue, output)
 	}
-	if issue, _ := dnsBypassIssue(v, true); issue != "" {
+	if issue, _ := dnsBypassIssue(v); issue != "" {
 		t.Fatalf("DNS evidence: %s: %s", issue, output)
 	}
 	if v.IPv6GlobalAddresses == nil || *v.IPv6GlobalAddresses != 0 {
@@ -98,28 +98,24 @@ subprocess.run = linux_command
 
 func TestHostReachAndDNSBypassIssues(t *testing.T) {
 	var v guestObservation
-	if issue, _ := hostReachIssue(v, false, false); issue != "" {
-		t.Fatalf("empty observation reported host reach: %s", issue)
+	if issue, confirmed := hostReachIssue(v, false); issue == "" || confirmed {
+		t.Fatalf("missing host reach evidence must be unknown, not passed or failed: %q %t", issue, confirmed)
 	}
-	// Windows and macOS probes do not report the Linux-only fields; they add no demands there.
-	if issue, _ := dnsBypassIssue(v, false); issue != "" {
-		t.Fatalf("non-Linux observation demanded Linux evidence: %s", issue)
-	}
-	if issue, confirmed := dnsBypassIssue(v, true); issue == "" || confirmed {
-		t.Fatalf("missing Linux DNS evidence must be unknown, not passed or failed: %q %t", issue, confirmed)
+	if issue, confirmed := dnsBypassIssue(v); issue == "" || confirmed {
+		t.Fatalf("missing DNS evidence must be unknown, not passed or failed: %q %t", issue, confirmed)
 	}
 	v.DNSUDPAttempted = true
 	v.DNSTCPConnected, v.DoTConnected = boolp(false), boolp(false)
 	v.Resolvers = resolverObservation{Count: intp(2), Confined: boolp(true)}
-	if issue, _ := dnsBypassIssue(v, true); issue != "" {
+	if issue, _ := dnsBypassIssue(v); issue != "" {
 		t.Fatalf("confined resolvers rejected: %s", issue)
 	}
 	v.Resolvers.Confined = boolp(false)
-	if issue, confirmed := dnsBypassIssue(v, true); !confirmed || !strings.Contains(issue, "解析器") {
+	if issue, confirmed := dnsBypassIssue(v); !confirmed || !strings.Contains(issue, "解析器") {
 		t.Fatalf("resolver outside the environment not confirmed: %q %t", issue, confirmed)
 	}
 	v.Resolvers = resolverObservation{Count: intp(-1)}
-	if issue, confirmed := dnsBypassIssue(v, true); issue == "" || confirmed {
+	if issue, confirmed := dnsBypassIssue(v); issue == "" || confirmed {
 		t.Fatalf("unreadable resolver configuration must stay unknown: %q %t", issue, confirmed)
 	}
 	for name, mutate := range map[string]func(*guestObservation){
@@ -128,16 +124,14 @@ func TestHostReachAndDNSBypassIssues(t *testing.T) {
 	} {
 		w := guestObservation{DNSUDPAttempted: true, Resolvers: resolverObservation{Count: intp(1), Confined: boolp(true)}}
 		mutate(&w)
-		for _, linux := range []bool{true, false} {
-			if issue, confirmed := dnsBypassIssue(w, linux); !confirmed || issue == "" {
-				t.Errorf("%s reached (linux=%t) not confirmed: %q", name, linux, issue)
-			}
+		if issue, confirmed := dnsBypassIssue(w); !confirmed || issue == "" {
+			t.Errorf("%s reached but not confirmed: %q", name, issue)
 		}
 	}
-	if issue, _ := hostReachIssue(guestObservation{LinkLocalConnected: boolp(true)}, true, false); !strings.Contains(issue, "169.254.169.254") {
+	if issue, _ := hostReachIssue(guestObservation{LinkLocalConnected: boolp(true)}, false); !strings.Contains(issue, "169.254.169.254") {
 		t.Fatalf("link-local reach not reported: %q", issue)
 	}
-	if issue, _ := hostReachIssue(guestObservation{ProxyEndpointConnected: boolp(true)}, true, true); !strings.Contains(issue, "代理端口") {
+	if issue, _ := hostReachIssue(guestObservation{ProxyEndpointConnected: boolp(true)}, true); !strings.Contains(issue, "代理端口") {
 		t.Fatalf("proxy endpoint reach not reported: %q", issue)
 	}
 }
@@ -153,8 +147,8 @@ func TestLinuxProbeObservationDecodes(t *testing.T) {
 	if err := json.Unmarshal([]byte(data), &v); err != nil {
 		t.Fatal(err)
 	}
-	hostIssue, _ := hostReachIssue(v, true, true)
-	if issue, _ := dnsBypassIssue(v, true); issue != "" || hostIssue != "" || v.Resolvers.Confined == nil || !*v.Resolvers.Confined || v.IPv6GlobalAddresses == nil || *v.IPv6GlobalAddresses != 0 {
+	hostIssue, _ := hostReachIssue(v, true)
+	if issue, _ := dnsBypassIssue(v); issue != "" || hostIssue != "" || v.Resolvers.Confined == nil || !*v.Resolvers.Confined || v.IPv6GlobalAddresses == nil || *v.IPv6GlobalAddresses != 0 {
 		t.Fatalf("probe output misread: %+v (%s)", v, issue)
 	}
 }

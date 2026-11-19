@@ -35,12 +35,10 @@ func (s *Server) initializationState() (initializationView, error) {
 		if json.Unmarshal(data, &record) != nil || record.Version != 1 {
 			return initializationView{}, errors.New("初始化记录无法读取，请保留现有数据并导出诊断包")
 		}
-		pending, err := guestos.LoadInstallation(s.profile)
-		if err != nil {
+		if _, err := guestos.LoadInstallation(s.profile); err != nil {
 			return initializationView{}, err
 		}
-		unboundMac := pending != nil && pending.System == guestos.MacOS && s.macosGuest == nil
-		return initializationView{Required: !record.Completed || s.macSetupPending() || unboundMac, Started: record.Started || unboundMac, Tracked: true, Prepared: s.environmentPrepared()}, nil
+		return initializationView{Required: !record.Completed, Started: record.Started, Tracked: true, Prepared: s.environmentPrepared()}, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return initializationView{}, err
@@ -51,16 +49,10 @@ func (s *Server) initializationState() (initializationView, error) {
 	if err != nil {
 		return initializationView{}, err
 	}
-	if s.macosGuest != nil || s.windowsGuest != nil {
-		return initializationView{Required: s.macSetupPending()}, nil
-	}
 	return initializationView{Required: pending != nil || !s.environmentPrepared(), Started: pending != nil}, nil
 }
 
 func (s *Server) finishInitialization() error {
-	if s.macSetupPending() {
-		return errors.New("请先完成客机的系统权限确认")
-	}
 	s.mu.Lock()
 	ready, gate := s.ready, s.safety.Gate
 	s.mu.Unlock()
@@ -100,7 +92,13 @@ func (s *Server) initialization(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &input) {
 		return
 	}
-	if !s.op.TryLock() {
+	locked := false
+	if input.Action == "complete" {
+		locked = s.lockCompletion(r.Context())
+	} else {
+		locked = s.op.TryLock()
+	}
+	if !locked {
 		http.Error(w, "环境操作仍在进行，请等待完成后继续", http.StatusConflict)
 		return
 	}

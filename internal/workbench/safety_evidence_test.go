@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
 func TestLinuxDNSRequiresTCPObservations(t *testing.T) {
@@ -14,7 +13,7 @@ func TestLinuxDNSRequiresTCPObservations(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"dns_udp_attempted":true,"resolvers":{"count":1,"confined":true}}`), &observation); err != nil {
 		t.Fatal(err)
 	}
-	issue, confirmed := dnsBypassIssue(observation, true)
+	issue, confirmed := dnsBypassIssue(observation)
 	if issue == "" {
 		t.Fatalf("missing TCP/53 and DoT results accepted: issue=%q confirmed=%t", issue, confirmed)
 	}
@@ -49,7 +48,7 @@ func TestLinuxBoundaryRequiresEveryObservation(t *testing.T) {
 				}
 				switch field {
 				case "link_local_connected", "proxy_endpoint_connected":
-					if issue, confirmed := hostReachIssue(v, true, true); issue == "" || confirmed {
+					if issue, confirmed := hostReachIssue(v, true); issue == "" || confirmed {
 						t.Fatalf("missing host evidence accepted: %q %t", issue, confirmed)
 					}
 				case "ipv6_global_addresses":
@@ -57,7 +56,7 @@ func TestLinuxBoundaryRequiresEveryObservation(t *testing.T) {
 						t.Fatal("missing IPv6 evidence accepted despite denial counter")
 					}
 				default:
-					if issue, confirmed := dnsBypassIssue(v, true); issue == "" || confirmed {
+					if issue, confirmed := dnsBypassIssue(v); issue == "" || confirmed {
 						t.Fatalf("missing DNS evidence accepted: %q %t", issue, confirmed)
 					}
 				}
@@ -70,11 +69,11 @@ func TestLinuxBoundaryRequiresEveryObservation(t *testing.T) {
 		if err := json.Unmarshal([]byte(data), &v); err != nil {
 			t.Fatal(err)
 		}
-		if issue, confirmed := dnsBypassIssue(v, true); issue == "" || confirmed {
+		if issue, confirmed := dnsBypassIssue(v); issue == "" || confirmed {
 			t.Fatalf("partial resolver evidence accepted: %s", data)
 		}
 	}
-	if issue, _ := hostReachIssue(guestObservation{LinkLocalConnected: boolp(false)}, true, false); issue != "" {
+	if issue, _ := hostReachIssue(guestObservation{LinkLocalConnected: boolp(false)}, false); issue != "" {
 		t.Fatalf("unconfigured proxy demanded: %s", issue)
 	}
 }
@@ -98,30 +97,5 @@ func TestIPv6DenialCannotReplaceLinuxAddressEvidence(t *testing.T) {
 	v.IPv6Connected = true
 	if s.ipv6PolicyVerified(v, before, after, true) {
 		t.Fatal("live IPv6 connection accepted")
-	}
-}
-
-func TestNativeGuestsDoNotRequireLinuxEvidence(t *testing.T) {
-	cfg := cage.DefaultConfig()
-	v := guestObservation{TZ: cfg.Timezone, SystemTimezone: cfg.Timezone, LocaleValid: true,
-		ProcessLocale: "en-US", SystemLocale: "en-US", SystemLanguage: "en-US"}
-	for _, s := range []*Server{{windowsGuest: &guestos.WindowsProfile{}}, {macosGuest: &guestos.MacOSProfile{}}} {
-		if !s.guestSettingsOK(v, cfg) {
-			t.Fatal("native settings require Linux time observations")
-		}
-		if issue, _ := dnsBypassIssue(v, false); issue != "" {
-			t.Fatal(issue)
-		}
-		if issue, _ := hostReachIssue(v, false, true); issue != "" {
-			t.Fatal(issue)
-		}
-		after := cage.GateStatus{PolicyVerified: true}
-		if s.macosGuest != nil {
-			v.IPv6UnscopedAbsent = true
-			v.IPv6Unbound.Result = "no-route"
-		}
-		if !s.ipv6PolicyVerified(v, cage.GateStatus{}, after, true) {
-			t.Fatal("native IPv6 check requires Linux address observation")
-		}
 	}
 }

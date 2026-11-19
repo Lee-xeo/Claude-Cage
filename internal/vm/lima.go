@@ -246,12 +246,6 @@ func fromLima(inst *limatype.Instance) *Instance {
 // exprs are the yq expressions of s, as limactl's edit flags make them.
 func exprs(s Settings) ([]string, error) {
 	var e []string
-	if s.macOSInstaller != nil {
-		e = append(e, fmt.Sprintf(".vmOpts.qemu.macOS.installer = %t", *s.macOSInstaller))
-	}
-	if s.macOSTimezone != "" {
-		e = append(e, ".timezone = "+strconv.Quote(s.macOSTimezone))
-	}
 	if s.CPUs > 0 {
 		e = append(e, fmt.Sprintf(".cpus = %d", s.CPUs))
 	}
@@ -272,7 +266,9 @@ func exprs(s Settings) ([]string, error) {
 		// default 127.0.0.1 leaves the listeners on 0.0.0.0 forwarded.
 		// Last, after the VM's own rules, which win (Lima takes the first
 		// rule that matches); one made earlier is replaced, not repeated.
-		e = append(e, fmt.Sprintf(`.portForwards = ((.portForwards // []) | map(select(((.guestPortRange // []) | join("-")) != "%d-%d"))) + [{"guestIP": "0.0.0.0", "guestIPMustBeZero": false, "guestPortRange": [%d, %d], "proto": "any", "ignore": true}]`, ephemeralPorts[0], ephemeralPorts[1], ephemeralPorts[0], ephemeralPorts[1]))
+		for _, ports := range [][2]int{ephemeralPorts, hostToolsPort} {
+			e = append(e, fmt.Sprintf(`.portForwards = ((.portForwards // []) | map(select(((.guestPortRange // []) | join("-")) != "%d-%d"))) + [{"guestIP": "0.0.0.0", "guestIPMustBeZero": false, "guestPortRange": [%d, %d], "proto": "any", "ignore": true}]`, ports[0], ports[1], ports[0], ports[1]))
+		}
 	}
 	if s.MountType != nil {
 		if *s.MountType == "" {
@@ -356,15 +352,7 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 			}
 			tz, _ := json.Marshal(cfg.Timezone)
 			e = append(e, ".propagateProxyEnv = false", `.env = {"http_proxy":"","https_proxy":"","ftp_proxy":"","no_proxy":"","HTTP_PROXY":"","HTTPS_PROXY":"","FTP_PROXY":"","NO_PROXY":"","ALL_PROXY":"","all_proxy":""}`, ".timezone = "+string(tz))
-			if tmpl.Config.OS != nil && *tmpl.Config.OS == limatype.DARWIN {
-				uid := 501
-				if tmpl.Config.User.UID != nil && *tmpl.Config.User.UID >= 501 && *tmpl.Config.User.UID <= 599 {
-					uid = int(*tmpl.Config.User.UID)
-				}
-				e = append(e, `.user.name = "cageprovision"`, `.user.home = "/Users/cageprovision"`, `.user.comment = "Cage Provisioning"`, fmt.Sprintf(".user.uid = %d", uid), `.video.display = "offscreen"`)
-			} else {
-				e = append(e, `.user.name = `+strconv.Quote(profile.WorkUser()), `.user.home = `+strconv.Quote(profile.WorkHomePath()), `.user.comment = ""`, ".user.uid = 1000")
-			}
+			e = append(e, `.user.name = `+strconv.Quote(profile.WorkUser()), `.user.home = `+strconv.Quote(profile.WorkHomePath()), `.user.comment = ""`, ".user.uid = 1000")
 		}
 		data, err := json.Marshal(identity)
 		if err != nil {
@@ -539,22 +527,6 @@ func sharesKept(want []Mount, got []limatype.Mount) error {
 var logMu sync.Mutex
 
 // withLog runs fn with Lima's logrus output going to log.
-// The installer runs with a bounded guest memory so the host keeps its page
-// cache for the disk images; 8 GiB is twice Apple's minimum.
-const macOSInstallerMemoryGiB = 8
-
-func macOSInstallerActive(config *limatype.LimaYAML) bool {
-	if config == nil || config.OS == nil || *config.OS != limatype.DARWIN {
-		return false
-	}
-	var options struct {
-		MacOS struct {
-			Installer bool `yaml:"installer"`
-		} `yaml:"macOS"`
-	}
-	return limayaml.Convert(config.VMOpts["qemu"], &options, "vmOpts.qemu") == nil && options.MacOS.Installer
-}
-
 // Until the guest's SSH server is up, the hostagent reports every refused
 // forwarding attempt. They remain in ha.stderr.log but are not progress.
 type quietBootLog struct{ io.Writer }
@@ -599,26 +571,6 @@ func (l *Lima) Start(ctx context.Context, name string, log io.Writer) error {
 			return loadErr
 		}
 		settings.MemoryGiB, settings.CPUs, err = allocation.Limits()
-		if *inst.Config.OS == limatype.DARWIN && err == nil {
-			cfg, loadErr := cage.Load(configPath)
-			if loadErr != nil {
-				return loadErr
-			}
-			settings.macOSTimezone = cfg.Timezone
-			requirements, requirementErr := ReadMacOSResourceRequirements(inst.Dir)
-			if requirementErr != nil {
-				return requirementErr
-			}
-			settings.MemoryGiB, settings.CPUs, err = requirements.Limits(allocation)
-			if err == nil {
-				err = saveMacOSResourceRequirements(inst.Dir, requirements)
-			}
-			// Apple's installer is I/O bound. A large guest only competes with
-			// the host page cache; the user's allocation applies after install.
-			if err == nil && macOSInstallerActive(inst.Config) && settings.MemoryGiB > macOSInstallerMemoryGiB {
-				settings.MemoryGiB = macOSInstallerMemoryGiB
-			}
-		}
 		if err != nil {
 			return err
 		}
@@ -636,9 +588,8 @@ func (l *Lima) Start(ctx context.Context, name string, log io.Writer) error {
 		return err
 	}
 	var guestAgent string
-	// Lima always needs the Darwin helper for first boot. Windows and FreeBSD
-	// have no guest agent, and Linux plain mode works without one.
-	if *inst.Config.OS == limatype.DARWIN || (*inst.Config.OS == limatype.LINUX && !*inst.Config.Plain) {
+	// Linux plain mode works without a guest agent.
+	if *inst.Config.OS == limatype.LINUX && !*inst.Config.Plain {
 		guestAgent, err = share.GuestAgent(*inst.Config.OS, *inst.Config.Arch)
 		if err != nil {
 			return err

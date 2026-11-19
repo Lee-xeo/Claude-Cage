@@ -19,7 +19,6 @@ import (
 	"github.com/sylvinus/agent-vm/internal/cli"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/hostproxy"
@@ -43,7 +42,6 @@ cage container-configure --json  Configure a Linux container from JSON stdin
 cage init          Create a private profile; add and select nodes in Cage settings
 cage check         Verify proxy transport (no VM required)
 cage guest-os --json  Check host prerequisites for a same-system guest
-                     On Windows, add --vm-id GUID to inspect one Hyper-V VM
 cage proxy-start   Start Cage's bundled proxy core with the applied node
 cage proxy-stop    Stop Cage's core and close external networking
 cage setup         Build the isolated base VM through the specified proxy
@@ -95,14 +93,6 @@ func run() int {
 	cli.Command = "claude-cage"
 	cli.UpdateHint = "update Cage from the app, or with the installer or package that installed it"
 	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "host-download" {
-		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer cancel()
-		if err := hostDownload(ctx, args[1:], os.Stdout); err != nil {
-			return fail(err)
-		}
-		return 0
-	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		fmt.Print(help)
 		return 0
@@ -124,14 +114,7 @@ func run() int {
 		}
 		return 0
 	}
-	if len(args) == 1 && (args[0] == "verify-macos-guest" || args[0] == "verify-macos-trial") {
-		if !macGuestLoginAvailable() {
-			return fail(fmt.Errorf("this helper was built without the virtual Mac login view"))
-		}
-		return 0
-	}
-	macGuestCommand := len(args) >= 2 && args[0] == "guest-os" && args[1] == "macos"
-	if args[0] == "guest-os" && !macGuestCommand {
+	if args[0] == "guest-os" {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		if err := writeGuestOSInspection(ctx, args[1:], os.Stdout); err != nil {
@@ -148,18 +131,8 @@ func run() int {
 			return fail(err)
 		}
 		defer os.RemoveAll(dir)
-		share, err := limaembed.WriteShare(dir)
-		if err != nil {
+		if _, err := limaembed.WriteShare(dir); err != nil {
 			return fail(err)
-		}
-		if runtime.GOOS == "darwin" {
-			arch := "aarch64"
-			if runtime.GOARCH == "amd64" {
-				arch = "x86_64"
-			}
-			if _, err := share.GuestAgent("Darwin", arch); err != nil {
-				return fail(err)
-			}
 		}
 		return 0
 	}
@@ -177,15 +150,6 @@ func run() int {
 	}
 	store := diagnostics.New(filepath.Dir(path))
 	diagnostics.SetDefault(store)
-	if args[0] == "windows-network-host" {
-		if len(args) != 1 {
-			return fail(fmt.Errorf("windows-network-host takes its bound configuration from the profile"))
-		}
-		if err := workbench.ServeWindowsPacketNetwork(path); err != nil {
-			return fail(err)
-		}
-		return 0
-	}
 	if args[0] == "container-runtime" {
 		if len(args) != 2 {
 			return fail(fmt.Errorf("container-runtime prepare|start|stop|inspect"))
@@ -509,7 +473,7 @@ func run() int {
 	os.Unsetenv("CAGE_LIMA_CACHE_DIR")
 	os.Unsetenv("CAGE_LOGICAL_LIMA_HOME")
 	if !containerenv.Configured(profile) {
-		if err = guestos.RecoverWindowsStorage(context.Background(), profile); err != nil {
+		if err = cage.RecoverStorage(context.Background(), profile, nil); err != nil {
 			return fail(err)
 		}
 		lease, location, err := cage.AcquireStorageUse(profile)
@@ -541,14 +505,6 @@ func run() int {
 	// Guest traffic keeps the isolated hostagent hooks in limaembed.Run.
 	http.DefaultTransport = hostproxy.NewTransport()
 	if limaembed.Run(args) {
-		return 0
-	}
-	if macGuestCommand {
-		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer cancel()
-		if err := runMacGuest(ctx, profile, state, args[2:]); err != nil {
-			return fail(err)
-		}
 		return 0
 	}
 	if args[0] == "proxy-start" || args[0] == "proxy-stop" {

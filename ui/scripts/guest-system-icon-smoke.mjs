@@ -36,20 +36,4 @@ try {
       console.log(`PASS 客机 ${label}，客户端 ${host}`);
     } finally { await browser.close(); }
   }
-  const fixture = await createWorkbench({
-    url,
-    beforeNavigate: async (page, state) => {
-      state.status.local_vm_storage = true;
-      await page.route("**/api/environment/guest-systems", route => route.fulfill({ json: { fresh: true, system: "macos", available: true } }));
-    },
-  });
-  try {
-    const { page } = fixture;
-    await page.getByRole("img", { name: "客户机系统：Linux" }).waitFor();
-    await page.getByRole("combobox", { name: "客户机系统" }).click();
-    await page.getByRole("option", { name: "macOS", exact: true }).click();
-    await page.getByRole("img", { name: "客户机系统：macOS" }).waitFor();
-    assert.deepEqual(fixture.errors, []);
-    console.log("PASS 首次安装选择时图标随客机系统变化");
-  } finally { await fixture.browser.close(); }
 } finally { await vite.close(); }

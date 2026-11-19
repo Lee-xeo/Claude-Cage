@@ -22,9 +22,16 @@ import (
 )
 
 type Preferences struct {
-	TransferAllowUnclean  bool   `json:"transfer_allow_unclean"`
-	BalancedDisplay       bool   `json:"balanced_display"`
-	ProjectFileCache      bool   `json:"project_file_cache"`
+	ReuseClaudeLogin     bool `json:"reuse_claude_login"`
+	TransferAllowUnclean bool `json:"transfer_allow_unclean"`
+	BalancedDisplay      bool `json:"balanced_display"`
+	ProjectFileCache     bool `json:"project_file_cache"`
+	// HostTools lets Claude in the environment run commands on this computer.
+	HostTools bool `json:"host_tools,omitempty"`
+	// HostPluginsOff names the plugins the user turned off, separated by
+	// commas; "commands" is the built-in one. One string keeps preferences
+	// comparable.
+	HostPluginsOff        string `json:"host_plugins_off,omitempty"`
 	MobileRelay           string `json:"mobile_relay,omitempty"`
 	Workspace             string `json:"workspace"`
 	BrowserHomeURL        string `json:"browser_home_url"`

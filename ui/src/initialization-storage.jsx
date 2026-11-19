@@ -22,7 +22,7 @@ export function InitializationStorage({ value, onChange, disabled }) {
   }
   return <section className="initialization-storage" aria-label="环境存储目录">
     <label htmlFor="initialization-directory">存储目录</label>
-    <p>系统镜像、下载缓存和虚拟磁盘保存在这里。已填入默认目录，也可以选择其他本地磁盘上的专用空文件夹。</p>
+    <p>系统镜像、下载缓存和虚拟磁盘保存在这里。已填入默认目录，不需要更换磁盘时可直接保留；也可以选择其他本地磁盘上的专用空文件夹。</p>
     <p>这是 Cage 的环境数据目录。更新、重装或卸载应用会保留这里的数据；请勿手动删除。</p>
     <div className="initialization-directory-control">
       <input id="initialization-directory" value={value?.directory || ""} disabled={locked} spellCheck={false} placeholder={value ? "请输入存储目录的完整路径" : "正在读取默认目录…"} onChange={event => onChange({ ...value, directory: event.target.value })} />

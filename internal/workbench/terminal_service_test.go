@@ -316,3 +316,23 @@ func TestTerminalQueuedInputKeepsAdmissionOrder(t *testing.T) {
 		previous = index
 	}
 }
+
+func TestTerminalSplitLoginInput(t *testing.T) {
+	for _, kind := range []string{"shell", "claude"} {
+		session := terminalSession{kind: kind, inputs: make(chan string, 8)}
+		for _, input := range []string{"ordinary", "\r", "/lo", "gi", "n"} {
+			if err := session.enqueueInput(t.Context(), input); err != nil {
+				t.Fatal(err)
+			}
+			if !session.loginRequested.IsZero() {
+				t.Fatalf("%s detected login before it was submitted", kind)
+			}
+		}
+		if err := session.enqueueInput(t.Context(), "\r"); err != nil {
+			t.Fatal(err)
+		}
+		if session.loginRequested.IsZero() != (kind == "shell") {
+			t.Fatalf("unexpected login detection for %s", kind)
+		}
+	}
+}

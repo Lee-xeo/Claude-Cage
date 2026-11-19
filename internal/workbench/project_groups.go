@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 )
 
@@ -94,51 +92,13 @@ func (s *Server) projectAdditionalDirectories(workspace string) ([]string, error
 		if _, err := s.projectWorkspace(folder); err != nil {
 			return nil, err
 		}
-		directory := s.cliWorkspace(folder)
-		if s.windowsGuest != nil {
-			binding, err := s.windowsProjectForHost(folder)
-			if err != nil {
-				return nil, err
-			}
-			directory = binding.Path
-		}
+		directory := guestPath(folder)
 		directories = append(directories, directory)
 	}
 	return directories, nil
 }
 
-// Saving and opening share the macOS approval flow. Approval never persists a
-// partial group; the caller retries the complete request after GUI approval.
-func (s *Server) projectConnectionError(w http.ResponseWriter, err error, folder string) {
-	if errors.Is(err, errMacOSProjectApproval) {
-		if canonical, pathErr := validateWorkspace(folder, s.profile); pathErr == nil {
-			folder = canonical
-		}
-		folders, _ := s.projectFolders(folder)
-		s.mu.Lock()
-		for _, member := range folders {
-			if share := s.projectShares[member]; share != nil && share.approval != "" {
-				folder = member
-				break
-			}
-		}
-		share := s.projectShares[folder]
-		grant := ""
-		if share != nil {
-			grant = share.approval
-		}
-		s.mu.Unlock()
-		if grant != "" {
-			ctx, cancel := context.WithTimeout(s.operationContext(), 5*time.Second)
-			_, openErr := s.guestControl(ctx, "/usr/bin/open -a /Applications/CageProjectAccess.app", "macos-project-approval")
-			cancel()
-			if openErr == nil {
-				jsonReply(w, map[string]string{"workspace": folder, "approval": grant})
-				return
-			}
-			err = &projectShareError{Recovery: "project-approval", Message: "未能显示项目授权窗口，请重试"}
-		}
-	}
+func (s *Server) projectConnectionError(w http.ResponseWriter, err error) {
 	var failure *projectShareError
 	if errors.As(err, &failure) && failure.Recovery != "" {
 		w.Header().Set("X-Cage-Recovery", failure.Recovery)
@@ -244,16 +204,15 @@ func (s *Server) saveProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Failed creation must not leave new, invisible directory transports alive.
-	// Keep a pending macOS approval until the same save request is retried.
 	s.mu.Lock()
 	initialShares := make(map[string]*projectShare, len(folders))
 	for _, folder := range folders {
 		initialShares[folder] = s.projectShares[folder]
 	}
 	s.mu.Unlock()
-	committed, approving := false, false
+	committed := false
 	defer func() {
-		if committed || approving {
+		if committed {
 			return
 		}
 		var created []string
@@ -268,8 +227,7 @@ func (s *Server) saveProject(w http.ResponseWriter, r *http.Request) {
 	}()
 	for _, folder := range folders {
 		if err := s.ensureProjectShare(folder); err != nil {
-			approving = errors.Is(err, errMacOSProjectApproval)
-			s.projectConnectionError(w, err, folder)
+			s.projectConnectionError(w, err)
 			return
 		}
 	}

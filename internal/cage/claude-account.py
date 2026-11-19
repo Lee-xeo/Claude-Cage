@@ -122,28 +122,54 @@ def subject(summary):
     return hashlib.sha256(f"{email}\n{organization}".encode()).hexdigest()
 
 
-def recover_login(binary, target, source_id, expected):
+def recover_login(binary, target, source_id, expected, *, archive=False):
     """Recover a missing file-backed login without moving an account's history."""
-    if target.name == DEFAULT or source_id == DEFAULT or source_id == target.name:
+    if target.name == DEFAULT or (source_id == DEFAULT and not archive) or source_id == target.name:
         raise ValueError("recovery requires distinct private profiles")
     source = profile(source_id)
     env = cli_environment(target)
-    current = identity(binary, env, Path.home())
-    if subject(current) == expected:
-        return current
-    if subject(current) is not None:
-        return {"logged_in": False}
+    # auth status itself initializes .claude.json in an empty profile. A new
+    # archive needs to publish its verified identity before the CLI first runs.
+    if not archive or any(config_directory(target).iterdir()):
+        current = identity(binary, env, Path.home())
+        if subject(current) == expected:
+            return current
+        if archive or subject(current) is not None:
+            return {"logged_in": False}
     authenticated = identity(binary, cli_environment(source), Path.home())
     if not expected or subject(authenticated) != expected:
         return {"logged_in": False}
     credential = config_directory(source) / ".credentials.json"
     destination = config_directory(target) / ".credentials.json"
-    for path in (source, target, config_directory(source), config_directory(target), credential):
+    paths = [target, config_directory(target), credential]
+    if source_id != DEFAULT:
+        paths += [source, config_directory(source)]
+    elif config_directory(source).is_symlink() or os.name != "nt" and config_directory(source).stat().st_uid != os.getuid():
+        raise ValueError("unexpected default login directory")
+    for path in paths:
         info = path.lstat()
-        if path.is_symlink() or (os.name != "nt" and (info.st_uid != os.getuid() or info.st_mode & 0o077)):
+        if path.is_symlink() or getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT or (os.name != "nt" and (info.st_uid != os.getuid() or info.st_mode & 0o077)):
             raise ValueError("unexpected login file permissions")
     if not credential.is_file():
         raise ValueError("file-backed login required")
+    if archive:
+        # The controller allocated this fresh directory and publishes its ID
+        # only after verification. O_EXCL protects concurrent file creation.
+        if source.name == DEFAULT:
+            source_directory = cli_environment(source).get("CLAUDE_CONFIG_DIR")
+            if source_directory and Path(source_directory).resolve() != config_directory(source).resolve():
+                raise ValueError("default subscription uses a different directory")
+        metadata = (Path.home() if source.name == DEFAULT else config_directory(source)) / ".claude.json"
+        if metadata.is_symlink():
+            raise ValueError("unexpected login metadata")
+        account = json_file(metadata).get("oauthAccount")
+        if isinstance(account, dict):
+            with (config_directory(target) / ".claude.json").open("x") as output:
+                json.dump({"oauthAccount": account}, output)
+        with credential.open("rb") as stream, destination.open("xb") as output:
+            shutil.copyfileobj(stream, output)
+        recovered = identity(binary, env, Path.home())
+        return recovered if subject(recovered) == expected else {"logged_in": False}
     # Publish opaque bytes only inside the guest. The hard link is atomic and
     # refuses to overwrite a credential created by a concurrent original login.
     with tempfile.NamedTemporaryFile(dir=destination.parent) as temporary:
@@ -679,6 +705,12 @@ def main(args, *, mobile_settings_fd=None, verify_mobile=None):
     binary = os.environ.get("CAGE_CLI_BINARY") if os.name == "nt" else shutil.which("claude", path=env["PATH"])
     if not binary:
         raise ValueError("Claude is not installed")
+    if mode == "archive-login":
+        # Only authentication follows a user who signs into a different account.
+        if len(rest) != 2 or base.name == DEFAULT or base.name == rest[0]:
+            raise ValueError("invalid account archive")
+        print(json.dumps(recover_login(binary, base, *rest, archive=True)))
+        return 0
     if mode == "recover-login":
         if len(rest) != 2:
             raise ValueError("recovery requires source and expected identity")
@@ -703,9 +735,12 @@ def main(args, *, mobile_settings_fd=None, verify_mobile=None):
             summary["quota"] = quota
         print(json.dumps(summary))
         return 0
+    owner = _controller_context.get("CAGE_LOGIN_OWNER", "")
+    owner_args = ["--account-id", owner] if re.fullmatch("[0-9a-f]{24}", owner) else []
+    scoped = _controller_context.get("CAGE_ACCOUNT_BROWSER")
     if mode == "login":
         if os.name != "nt":
-            env["BROWSER"] = _runtime["launcher"](OPEN, executable=True, arguments=["--login-id", account_id])
+            env["BROWSER"] = _runtime["launcher"](scoped or OPEN, executable=True, arguments=[*owner_args, "--login-id", account_id])
         # Set the handler before spawning so SSH/window closure also disposes
         # the ephemeral browser and its cookies.
         def interrupted(_signum, _frame):
@@ -718,9 +753,12 @@ def main(args, *, mobile_settings_fd=None, verify_mobile=None):
             return subprocess.call([_runtime["path"](binary), "auth", "login", *([] if os.name == "nt" else ["--claudeai"])], cwd=Path.home(), env=env)
         finally:
             if os.name != "nt":
-                subprocess.run([OPEN, "--login-id", account_id, "--finish-login"], env=os.environ, timeout=8, check=False,
+                finish = [scoped or OPEN, *owner_args, "--login-id", account_id, "--finish-login"]
+                subprocess.run(finish, env=os.environ, timeout=8, check=False,
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if mode == "run":
+        if os.name != "nt" and (owner_args or scoped or sys.platform == "darwin"):
+            env["BROWSER"] = _runtime["launcher"](scoped or OPEN, executable=True, arguments=owner_args, login_config=config_directory(base))
         shared_profile_resources(base)
         if not settings_flags(rest) and not has_status_line(base):
             rest = ["--settings", json.dumps({"statusLine": {"type": "command", "command": _runtime["command_text"](__file__, ["statusline", account_id])}}), *rest]
@@ -749,18 +787,35 @@ def main(args, *, mobile_settings_fd=None, verify_mobile=None):
 
 def macos_open(args):
     login = _controller_context.get("CAGE_CLAUDE_LOGIN", "")
-    if len(args) == 3 and args[0] == "--login-id":
-        login, args = args[1], args[2:]
-    if len(args) != 1 or not re.fullmatch("[0-9a-f]{24}", login):
+    account = ""
+    while len(args) >= 3:
+        flag, value, *args = args
+        if not re.fullmatch("[a-f0-9]{24}", value):
+            return 2
+        if flag == "--login-id":
+            login = value
+        elif flag == "--account-id":
+            account = value
+        else:
+            return 2
+    if len(args) != 1:
         return 2
     finish = args[0] == "--finish-login"
-    data = {"action": "login-finish" if finish else "login-open", "login": login}
     if not finish:
         from urllib.parse import urlsplit
         url = urlsplit(args[0])
-        if len(args[0]) > 8192 or url.scheme != "https" or url.username or url.password or url.hostname not in (
-                "claude.ai", "claude.com", "console.anthropic.com", "platform.claude.com", "platform.anthropic.com"):
+        if len(args[0]) > 8192 or url.scheme != "https" or url.username or url.password or url.port not in (None,443):
             return 2
+        if url.hostname not in ("claude.ai", "claude.com", "console.anthropic.com", "platform.claude.com", "platform.anthropic.com"):
+            if not login:
+                os.execv("/usr/bin/open", ["open", args[0]])
+            return 2
+        if not login:
+            login = hashlib.sha256(args[0].encode()).hexdigest()[:24]
+    if not re.fullmatch("[0-9a-f]{24}", login):
+        return 2
+    data = {"action": "login-finish" if finish else "login-open", "login": login, "account": account}
+    if not finish:
         data["url"] = args[0]
     address = Path.home() / "Library/Application Support/Cage/Login/open.sock"
     owner = address.lstat()

@@ -45,6 +45,24 @@ class ChannelTests(unittest.TestCase):
         path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
         return path
 
+    def test_codex_receipt_belongs_to_one_terminal(self):
+        factory = channel.client_runtime()["CodexMailbox"]
+        mailbox, other = factory(), factory()
+        send = {"name": "send_to_codex", "arguments": {"message": "Review the test."}}
+        with self.assertRaises(ValueError):
+            mailbox.call({"name": "send_to_codex", "arguments": {"message": "Review", "threadId": self.session}})
+        receipt = mailbox.call(send)
+        self.assertEqual(receipt["status"], "pending")
+        self.assertNotIn("message", receipt)
+        fetch = {"name": "codex_result", "arguments": {"request_id": receipt["id"]}}
+        with self.assertRaises(ValueError):
+            other.call(fetch)
+        with self.assertRaises(ValueError):
+            mailbox.call(send)
+        self.assertEqual(mailbox.exchange({"action":"codex-read"}), {"id":receipt["id"],"message":"Review the test."})
+        mailbox.exchange({"action":"codex-done","id":receipt["id"],"status":"completed","answer":"Done."})
+        self.assertEqual(mailbox.call(fetch)["answer"], "Done.")
+
     def test_channel_body_preserves_markup(self):
         request = str(uuid.uuid4())
         body = "show </channel> literally\n<channel cage_request=\"other\">example</channel>"
@@ -68,6 +86,16 @@ class ChannelTests(unittest.TestCase):
             result=channel.prepare_account_switch(request)
             self.assertEqual(Path(result["transcript"]).read_bytes(),original)
             self.assertEqual(channel.prepare_account_switch(request),result)
+        target_config = self.home / ".claude"
+        target_log = self.history(target, self.project, [{"type": "system"}])
+        channel.save(self.root / str(uuid.uuid4()) / "state.json", {
+            "cli_id": target, "config": str(target_config), "resume_transcript": result["transcript"],
+        })
+        pending = channel.view(target_config, target)
+        self.assertFalse(pending["native_history"])
+        self.assertEqual(pending["turns"][0]["prompt"], "perform task")
+        target_log.write_bytes(original)
+        self.assertTrue(channel.view(target_config, target)["native_history"])
         receipt=channel.read_json(Path(result["transcript"]).with_name("receipt.json"))
         self.assertEqual(receipt["requests"],{"accepted":"digest"})
         self.assertEqual(path.read_bytes(),original)

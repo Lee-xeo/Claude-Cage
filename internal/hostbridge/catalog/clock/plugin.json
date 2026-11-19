@@ -1,0 +1,7 @@
+{
+  "name": "clock",
+  "version": "0.1.0",
+  "description": "Tells the current time on this computer.",
+  "permissions": [],
+  "command": ["python3", "server.py"]
+}

@@ -25,7 +25,6 @@ import (
 // Guest business traffic continues through EgressGate without any grant here.
 var maintenanceOrigins = map[string]bool{
 	"deb.debian.org": true, "security.debian.org": true,
-	"archive.ubuntu.com": true, "security.ubuntu.com": true, "ports.ubuntu.com": true,
 	"github.com": true, "objects.githubusercontent.com": true, "release-assets.githubusercontent.com": true,
 	"registry.npmjs.org": true, "downloads.claude.ai": true, "deb.nodesource.com": true,
 }

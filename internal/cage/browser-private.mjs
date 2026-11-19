@@ -8,7 +8,7 @@ export class PrivateBrowser {
   }
 
   tab(raw) {
-    return { ...raw, incognito: Boolean(this.context && raw.browserContextId === this.context) };
+    return { ...raw, incognito: Boolean(raw.incognito || this.context && raw.browserContextId === this.context) };
   }
 
   async open(url, activate) {

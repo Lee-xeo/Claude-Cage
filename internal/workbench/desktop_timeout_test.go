@@ -10,7 +10,7 @@ import (
 // Status and handoff wait on a Hyper-V probe that can outlast the ordinary
 // launcher timeout (#140). Other requests keep the short timeout.
 func TestControllerVMRequestsOutlastWindowsProbe(t *testing.T) {
-	if controllerVMRequestTimeout <= windowsVMProbeTimeout || controllerReleaseRequestTimeout <= 2*windowsVMProbeTimeout || localBootstrapTimeout <= controllerVMRequestTimeout {
+	if controllerVMRequestTimeout <= vmProbeTimeout || controllerReleaseRequestTimeout <= 2*vmProbeTimeout || localBootstrapTimeout <= controllerVMRequestTimeout {
 		t.Fatal("controller budgets do not cover the Windows VM probe")
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

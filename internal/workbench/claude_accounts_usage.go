@@ -29,7 +29,7 @@ type claudeUsageTarget struct {
 // Only opening a visible account panel starts a batch. It uses one worker,
 // leaving one slot available for an explicit refresh. Reading panel snapshots
 // can keep an existing batch alive but never starts another one.
-func (s *Server) startClaudePanelUsage(list claudeAccountList, detected *claudeDetected) {
+func (s *Server) startClaudePanelUsage(list claudeAccountList) {
 	if s.usageAvailability() != nil {
 		return
 	}
@@ -45,9 +45,6 @@ func (s *Server) startClaudePanelUsage(list claudeAccountList, detected *claudeD
 		return
 	}
 	var targets []claudeUsageTarget
-	if detected != nil && claudeUsageDue(detected.UsageCheckedAt) {
-		targets = append(targets, claudeUsageTarget{guest: "default", subject: detected.Identity})
-	}
 	for _, a := range list.Accounts {
 		if a.Status != "ready" || a.Email == "" || !claudeUsageDue(a.UsageCheckedAt) {
 			continue
@@ -280,7 +277,6 @@ func (s *Server) checkClaudeUsage(parent context.Context, target claudeUsageTarg
 }
 
 // Under the manager lock, resolve only the original guest source and identity.
-// A discovered default identity has no disk record until the user joins it.
 func (s *Server) usageOwner(list claudeAccountList, target claudeUsageTarget) *claudeAccount {
 	if a := list.bySubject(target.subject); a != nil {
 		if a.guestID() == target.guest && (target.id == "" || target.id == a.ID) {
@@ -288,9 +284,5 @@ func (s *Server) usageOwner(list claudeAccountList, target claudeUsageTarget) *c
 		}
 		return nil
 	}
-	m := &s.claudeAccounts
-	if target.id != "" || target.guest != "default" || m.defaultReading.subject() != target.subject {
-		return nil
-	}
-	return m.detectedUsage[target.subject]
+	return nil
 }

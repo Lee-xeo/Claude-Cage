@@ -342,7 +342,7 @@ test('macOS verification checks all owned archives without requiring other-platf
   // Stop at the first macOS-specific validation. Hash verification above it
   // remains the actual shipped shell entry, including missing/duplicate checks.
   writeFileSync(join(directory, 'codesign'), '#!/bin/sh\nprintf reached > "$CAGE_TEST_NATIVE_MARKER"\nexit 42\n', { mode: 0o700 });
-  const owned = ['Cage-0.2.0-macos-arm64.dmg', 'mihomo-v1.19.33-source.tar.gz', 'cage-macos-guest-0.2.0-source.tar.gz'];
+  const owned = ['Cage-0.2.0-macos-arm64.dmg', 'mihomo-v1.19.33-source.tar.gz'];
   for (const name of owned) writeFileSync(join(directory, name), name);
   const valid = owned.map(name => `${createHash('sha256').update(name).digest('hex')}  ${name}\n`).join('');
   const extra = `${hash}  qemu-windows-full-source.zip\n${hash}  Cage-0.2.0-windows-amd64-setup.exe\n`;
@@ -354,8 +354,8 @@ test('macOS verification checks all owned archives without requiring other-platf
   try {
     assert.equal(run(valid + extra).status, 42, 'unrelated release assets blocked macOS checksum verification');
     assert.ok(existsSync(nativeReached));
-    const missingGuest = valid.split('\n').filter(line => !line.includes(owned[2])).join('\n');
-    for (const invalid of [extra, valid + valid, missingGuest, valid.replace(/^[a-f0-9]{64}/, '0'.repeat(64))]) {
+    const missingSource = valid.split('\n').filter(line => !line.includes(owned[1])).join('\n');
+    for (const invalid of [extra, valid + valid, missingSource, valid.replace(/^[a-f0-9]{64}/, '0'.repeat(64))]) {
       assert.notEqual(run(invalid).status, 42);
       assert.ok(!existsSync(nativeReached), 'invalid macOS checksum reached native signature verification');
     }

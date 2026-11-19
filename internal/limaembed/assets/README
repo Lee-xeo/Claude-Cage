@@ -1,3 +1,2 @@
 The Makefile places Lima's templates and the gzipped Linux guest agent here.
-Apple Silicon builds also place the macOS guest agent in Darwin/. Other builds
-exclude that directory. See ../share.go for extraction and guest selection.
+See ../share.go for extraction and guest selection.

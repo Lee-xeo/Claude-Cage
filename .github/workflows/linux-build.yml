@@ -97,6 +97,7 @@ jobs:
           runuser -u cage -- go test ./internal/... ./cmd/...
           runuser -u cage -- go vet ./internal/managedproxy ./internal/workbench ./cmd/cage
           runuser -u cage -- uv run --no-project --python 3.11 internal/cage/desktop-downloads.test.py
+          runuser -u cage -- uv run --no-project --python 3.11 internal/cage/desktop-history.test.py
           runuser -u cage -- uv run --no-project --python 3.11 internal/cage/display-governor.test.py
           runuser -u cage -- uv run --no-project --python 3.11 internal/workbench/cache_maintenance_test.py
       - name: Install, render native workbench, reinstall and remove
@@ -137,22 +138,6 @@ jobs:
           retention-days: 14
       # KVM and physical desktop acceptance remain separate real-machine checks.
 
-  ubuntu-browser:
-    strategy:
-      matrix:
-        runner: [ubuntu-22.04, ubuntu-24.04]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref }}
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Ubuntu Chromium stable, extensions and noVNC
-        run: bash scripts/test-ubuntu-guest.sh
   package-compatibility:
     needs: debian
     runs-on: ubuntu-22.04

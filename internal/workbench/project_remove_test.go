@@ -1,40 +1,31 @@
 package workbench
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
 func removeProjectRequest(t *testing.T, s *Server, path string, want int) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"workspace": path})
-	response := windowsBrowserRequestForTest(s, "POST", "/api/projects/remove", body)
+	response := desktopRequestForTest(s, "POST", "/api/projects/remove", body)
 	if response.Code != want {
 		t.Fatalf("remove status=%d want=%d body=%s", response.Code, want, response.Body.String())
 	}
 }
 
-func TestProjectRemovalPersistsRevocationAcrossGuests(t *testing.T) {
-	for _, system := range []string{"linux", "macos", "windows"} {
+func TestProjectRemovalPersistsRevocation(t *testing.T) {
+	for _, system := range []string{"linux"} {
 		t.Run(system, func(t *testing.T) {
 			s := testServer(t)
-			if system == "macos" {
-				s.macosGuest = &guestos.MacOSProfile{Instance: "mac", User: "guestdev"}
-			}
-			if system == "windows" {
-				s.windowsGuest = &guestos.WindowsProfile{}
-			}
 			root, _ := filepath.EvalSymlinks(t.TempDir())
 			other, _ := filepath.EvalSymlinks(t.TempDir())
 			file := filepath.Join(root, "keep.txt")
@@ -254,35 +245,4 @@ func TestAgentProjectRemovalUsesSharedOwner(t *testing.T) {
 	if err != nil || slices.Contains(paths, path) {
 		t.Fatal("agent removal did not revoke grant", err)
 	}
-}
-
-func TestProjectRemovalRejectsRestoredMacOSEditor(t *testing.T) {
-	s := testServer(t)
-	root, _ := filepath.EvalSymlinks(t.TempDir())
-	s.macosGuest = &guestos.MacOSProfile{Instance: "mac", User: "guestdev"}
-	s.ready = true
-	s.preferences.ClaudeTerminalCommand = "custom-shell"
-	if err := s.rememberSharedProject(root); err != nil {
-		t.Fatal(err)
-	}
-	client := fixtureWindowsBrowserClient(t)
-	start := client.start
-	client.start = func(ctx context.Context) (*exec.Cmd, error) {
-		command, err := start(ctx)
-		if err == nil {
-			command.Env = append(command.Env, "CAGE_BROWSER_EDITOR_WORKSPACE="+filepath.Base(macOSProjectPath(s.macosGuest.User, root)))
-		}
-		return command, err
-	}
-	s.windowsBrowserControl = client
-	body, err := s.browserAction(t.Context(), "tabs", nil)
-	var state struct {
-		Tabs []struct {
-			Workspace string `json:"workspace"`
-		} `json:"tabs"`
-	}
-	if err != nil || json.Unmarshal(body, &state) != nil || len(state.Tabs) != 1 || state.Tabs[0].Workspace != root {
-		t.Fatal("restored editor lost host workspace", string(body), err)
-	}
-	removeProjectRequest(t, s, root, 409)
 }

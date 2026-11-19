@@ -303,16 +303,11 @@ if [[ "$INSTALL_CHROMIUM" == "1" ]]; then
   # Disposable browser contexts use the application locale's language defaults.
   # Debian ships the non-English locale resources in this separate package.
   chromium_binary=/usr/bin/chromium
-  if [[ "${CLAUDE_CAGE:-}" == 1 ]] && cage_is_ubuntu; then
-    cage_install_chromium
-    chromium_binary=/usr/local/lib/workbench-browser/chromium
-  else
-    chromium_packages=(chromium chromium-l10n fonts-liberation fonts-dejavu-core xvfb xauth)
-    if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
-      cage_cache_chromium --no-install-recommends "${chromium_packages[@]}"
-    fi
-    apt_get install -y --no-install-recommends "${chromium_packages[@]}"
+  chromium_packages=(chromium chromium-l10n fonts-liberation fonts-dejavu-core xvfb xauth)
+  if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
+    cage_cache_chromium --no-install-recommends "${chromium_packages[@]}"
   fi
+  apt_get install -y --no-install-recommends "${chromium_packages[@]}"
   sudo mkdir -p /opt/google/chrome
   for alias in /usr/bin/google-chrome /usr/bin/google-chrome-stable /opt/google/chrome/chrome; do
     if [[ ! -e $alias && ! -L $alias ]]; then

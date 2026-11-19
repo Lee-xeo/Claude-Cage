@@ -10,15 +10,11 @@ import (
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"github.com/sylvinus/agent-vm/internal/vm"
 )
 
 func (s *Server) linuxTemplate(script string) (string, error) {
-	if s.macosGuest != nil || s.windowsGuest != nil {
-		return script, nil
-	}
 	p, err := guestprofile.Load(s.profile)
 	if err != nil {
 		return "", err
@@ -69,9 +65,6 @@ func (s *Server) guestProfileOptions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) hasGuestEnvironment(ctx context.Context) (bool, error) {
-	if s.macosGuest != nil || s.windowsGuest != nil {
-		return true, nil
-	}
 	if containerenv.Configured(s.profile) {
 		environment, err := containerenv.Load(s.profile)
 		if err != nil {
@@ -86,19 +79,12 @@ func (s *Server) hasGuestEnvironment(ctx context.Context) (bool, error) {
 
 // Called inside the installation operation lock, before any disk is created.
 // Legacy environments retain their accounts and settings on ordinary upgrades.
-func (s *Server) prepareGuestProfile(options *guestprofile.Options, system string) error {
-	platform := "linux"
-	switch system {
-	case guestos.MacOS:
-		platform = "darwin"
-	case guestos.Windows11:
-		platform = "windows"
-	}
+func (s *Server) prepareGuestProfile(options *guestprofile.Options) error {
 	if options != nil {
 		if err := options.Validate(); err != nil {
 			return err
 		}
-		if err := options.ValidatePlatform(platform); err != nil {
+		if err := options.ValidatePlatform("linux"); err != nil {
 			return err
 		}
 		if options.GPUBackend == "virgl" && (runtime.GOOS != "linux" || containerenv.Configured(s.profile)) {
@@ -110,7 +96,7 @@ func (s *Server) prepareGuestProfile(options *guestprofile.Options, system strin
 		return err
 	}
 	if p != nil {
-		if err := p.Options.ValidatePlatform(platform); err != nil {
+		if err := p.Options.ValidatePlatform("linux"); err != nil {
 			return fmt.Errorf("已保存的配置与所选系统不兼容，请继续安装原系统或创建独立环境：%w", err)
 		}
 		if options != nil && !options.Matches(p.Options) {

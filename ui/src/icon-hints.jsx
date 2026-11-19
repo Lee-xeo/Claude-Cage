@@ -83,12 +83,18 @@ export function IconHints() {
     function up() { clearTimeout(touchTimer); }
     function move(event) { if (event.pointerType === "touch") clearTimeout(touchTimer); }
     function click(event) {
-      if (longPressed?.contains(event.target)) { event.preventDefault(); event.stopImmediatePropagation(); }
+      const wasLongPress = longPressed?.contains(event.target);
+      if (wasLongPress) { event.preventDefault(); event.stopImmediatePropagation(); }
       longPressed = null;
+      if (!wasLongPress) dismiss();
     }
     function contextMenu(event) { if (longPressed?.contains(event.target)) event.preventDefault(); }
-    function key(event) { if (event.key === "Escape") { hovering = null; focused = null; hide(); } }
-    function dismiss() { clearTimeout(touchTimer); hide(); }
+    function key(event) { if (event.key === "Escape") dismiss(); }
+    function dismiss() { clearTimeout(touchTimer); hovering = null; focused = null; hide(); }
+    function visibility() { if (document.hidden) dismiss(); }
+    // Removing a React subtree need not dispatch pointerout or focusout.
+    const observer = new MutationObserver(() => { if (current && !current.isConnected) dismiss(); });
+    observer.observe(document.body, { childList: true, subtree: true });
     document.addEventListener("pointerover", over, true);
     document.addEventListener("pointerout", out, true);
     document.addEventListener("focusin", focus, true);
@@ -101,8 +107,11 @@ export function IconHints() {
     document.addEventListener("click", click, true);
     document.addEventListener("contextmenu", contextMenu, true);
     document.addEventListener("scroll", dismiss, true);
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("blur", dismiss);
     window.addEventListener("resize", dismiss);
     return () => {
+      observer.disconnect();
       dismiss();
       document.removeEventListener("pointerover", over, true);
       document.removeEventListener("pointerout", out, true);
@@ -116,6 +125,8 @@ export function IconHints() {
       document.removeEventListener("click", click, true);
       document.removeEventListener("contextmenu", contextMenu, true);
       document.removeEventListener("scroll", dismiss, true);
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("blur", dismiss);
       window.removeEventListener("resize", dismiss);
       hint.remove();
     };

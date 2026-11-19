@@ -3,6 +3,7 @@ package cage
 import (
 	"context"
 	"encoding/json"
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"os"
 	"path/filepath"
@@ -62,6 +63,9 @@ func TestProxyRevisionRevokesOldReportAtSameEndpoint(t *testing.T) {
 
 func TestProxyRevisionControlUpdatesHostRunningRecord(t *testing.T) {
 	profile := t.TempDir()
+	if _, err := guestprofile.Create(profile, guestprofile.Options{}); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(profile, "config.json")
 	state := filepath.Join(profile, "state")
 	instance := filepath.Join(state, "lima", "qa")
@@ -123,6 +127,96 @@ func TestProxyRevisionControlUpdatesHostRunningRecord(t *testing.T) {
 	}
 	if err = cfg.CheckRunning(state); err == nil {
 		t.Fatal("old configuration still matches running record")
+	}
+	// Recover a node which was saved and started before a previous controller
+	// failed to synchronize its gate. A fresh check must use the new generation.
+	next.ProxyRevision = "saved-before-check"
+	next.ExitPolicy = ExitPolicy{Mode: "static", IP: "8.8.8.8", CountryCode: "HK"}
+	p.Revision = next.ProxyRevision
+	if err := p.Save(profile); err != nil {
+		t.Fatal(err)
+	}
+	write(next)
+	checking, err := client.BeginCheck(context.Background())
+	if err != nil || checking.Configuration != next.Fingerprint() || checking.RunID != status.RunID {
+		t.Fatal("check did not adopt the saved node without restarting", checking, err)
+	}
+	if _, err := client.Grant(context.Background(), fixtureSafetyReport(g)); err != nil {
+		t.Fatal(err)
+	}
+	// Cross the watchdog interval: a successful check must remain authorized.
+	time.Sleep(1200 * time.Millisecond)
+	if got := g.Status(); got.Mode != GateOpen || got.RunID != status.RunID {
+		t.Fatal("watchdog revoked the synchronized node", got.Mode)
+	}
+	if err := next.CheckRunning(state); err != nil {
+		t.Fatal("check did not update the running record", err)
+	}
+	changedProfile := *next.GuestProfile
+	changedProfile.Hostname = "changed-host"
+	data, _ := json.Marshal(changedProfile)
+	profilePath := filepath.Join(profile, guestprofile.Filename)
+	if err := os.WriteFile(profilePath, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.BeginCheck(context.Background()); err == nil || g.Status().Mode != GateClosed {
+		t.Fatal("check accepted changed guest settings without restarting")
+	}
+	data, _ = json.Marshal(next.GuestProfile)
+	if err := os.WriteFile(profilePath, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	next.DNSURL = "https://8.8.8.8/dns-query"
+	write(next)
+	if _, err := client.BeginCheck(context.Background()); err == nil || g.Status().Mode != GateClosed {
+		t.Fatal("check accepted a transport change without restarting")
+	}
+}
+
+func TestProxyRevisionComparesGuestProfileContent(t *testing.T) {
+	for _, change := range []string{"equal", "hostname", "removed"} {
+		t.Run(change, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.ProxyRevision = "first"
+			profile, err := guestprofile.Create(t.TempDir(), guestprofile.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.GuestProfile = profile
+			cfg.ExitPolicy = ExitPolicy{Mode: "static", IP: "1.1.1.1", CountryCode: "JP"}
+			g, err := NewEgressGate(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer g.Close("done")
+			old := fixtureGrant(t, g)
+			next := cfg
+			next.ProxyRevision = "second"
+			next.ExitPolicy = ExitPolicy{Mode: "static", IP: "8.8.8.8", CountryCode: "HK"}
+			clone := *profile
+			next.GuestProfile = &clone
+			if change == "hostname" {
+				next.GuestProfile.Hostname = "changed-host"
+			} else if change == "removed" {
+				next.GuestProfile = nil
+			}
+			err = g.SyncProxyRevision(next)
+			if change != "equal" {
+				if err == nil {
+					t.Fatal("changed guest settings were accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("equal guest settings required a restart", err)
+			}
+			if got := g.Status(); got.Mode != GateClosed || got.Report != nil || got.Configuration != next.Fingerprint() || got.RunID != old.RunID {
+				t.Fatal("node switch reused authorization or replaced the running gate")
+			}
+			if err := g.Renew(old.ID); err == nil {
+				t.Fatal("old report renewed after node switch")
+			}
+		})
 	}
 }
 

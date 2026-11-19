@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"reflect"
 	"sync"
 	"time"
 
@@ -38,21 +39,20 @@ type GateCounters struct {
 }
 
 type GateStatus struct {
-	IPv6LinkProbeCheck string        `json:"ipv6_link_probe_check,omitempty"`
-	Epoch              uint64        `json:"epoch"`
-	PolicyVerified     bool          `json:"policy_verified"`
-	Policy             string        `json:"policy"`
-	RunID              string        `json:"run_id"`
-	CheckID            string        `json:"check_id,omitempty"`
-	CheckStartedAt     time.Time     `json:"check_started_at,omitempty"`
-	Configuration      string        `json:"configuration"`
-	Mode               string        `json:"mode"`
-	Fault              bool          `json:"fault"`
-	Until              time.Time     `json:"until"`
-	Reason             string        `json:"reason,omitempty"`
-	Counters           GateCounters  `json:"counters"`
-	Connections        int           `json:"connections"`
-	Report             *SafetyReport `json:"report,omitempty"`
+	Epoch          uint64        `json:"epoch"`
+	PolicyVerified bool          `json:"policy_verified"`
+	Policy         string        `json:"policy"`
+	RunID          string        `json:"run_id"`
+	CheckID        string        `json:"check_id,omitempty"`
+	CheckStartedAt time.Time     `json:"check_started_at,omitempty"`
+	Configuration  string        `json:"configuration"`
+	Mode           string        `json:"mode"`
+	Fault          bool          `json:"fault"`
+	Until          time.Time     `json:"until"`
+	Reason         string        `json:"reason,omitempty"`
+	Counters       GateCounters  `json:"counters"`
+	Connections    int           `json:"connections"`
+	Report         *SafetyReport `json:"report,omitempty"`
 }
 
 // EgressGate is owned by the hostagent, not by the guest or browser UI.
@@ -123,7 +123,7 @@ func (g *EgressGate) SyncProxyRevision(cfg Config) error {
 		before.ExitPolicy, after.ExitPolicy = ExitPolicy{}, ExitPolicy{}
 	}
 	before.ProxyRevision, after.ProxyRevision = "", ""
-	if before != after || cfg.ProxyRevision == "" {
+	if !reflect.DeepEqual(before, after) || cfg.ProxyRevision == "" {
 		g.mu.Unlock()
 		return errors.New("出口地址或环境设置变化需要重启环境")
 	}
@@ -228,7 +228,6 @@ func (g *EgressGate) BeginCheck() error {
 	g.mu.Lock()
 	connections := g.transitionLocked(GateChecking, false, "关键检查进行中")
 	g.state.CheckID = hex.EncodeToString(id[:])
-	g.state.IPv6LinkProbeCheck = ""
 	g.state.CheckStartedAt = time.Now()
 	g.probeRequests = 0
 	g.armLocked(3 * time.Minute)

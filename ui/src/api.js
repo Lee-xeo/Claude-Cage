@@ -5,10 +5,16 @@ import { installAgentNativeConsumer } from "./agent-native.js";
 let sessionRenewal;
 class WorkbenchUnreachable extends Error {}
 async function responseError(response, path, method = "GET") {
+  const body = await response.text();
   const error = new Error(
-    httpErrorMessage(path, response.status, await response.text(), response.headers.get("Content-Type") || "", method),
+    httpErrorMessage(path, response.status, body, response.headers.get("Content-Type") || "", method),
   );
   error.status = response.status;
+  // Plugin page calls answer with a JSON-RPC error code and message.
+  try {
+    const value = JSON.parse(body);
+    if (Number.isInteger(value?.code)) { error.code = value.code; error.detail = typeof value.message === "string" ? value.message : ""; }
+  } catch { /* Most errors are plain text. */ }
   error.recovery = response.headers.get("X-Cage-Recovery") || "";
   return error;
 }

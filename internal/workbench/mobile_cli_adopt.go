@@ -51,6 +51,10 @@ func (s *Server) promoteMobileConversation(ctx context.Context, id string) error
 		command := "exec /bin/bash -c " + shellescape.Quote("exec 3>&1 1>&2; exec /bin/bash -lc "+shellescape.Quote(body))
 		check, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
+		command, err = s.routeAccountCommand(check, selection.ID, command)
+		if err != nil {
+			return err
+		}
 		cmd := s.sshCommand(check, "-T", s.sshTarget(), "--", command)
 		cmd.Stderr = io.Discard
 		cmd.WaitDelay = 2 * time.Second

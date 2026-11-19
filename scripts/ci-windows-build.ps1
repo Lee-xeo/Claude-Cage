@@ -47,15 +47,8 @@ try {
     Enter-CiPhase 'Checkout identity and script tests'
     $actual = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $actual -ne $env:CAGE_BUILD_REF) { throw 'Checkout differs from the requested commit.' }
-    $windowsPowerShell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell/v1.0/powershell.exe'
     # These tests read only the checkout. Run them before the long build so
     # a broken script fails in the first minute instead of after packaging.
-    $scriptTests = @('windows-workbench-packages.tests.ps1', 'claude-desktop-windows.tests.ps1', 'windows-claude-cli.tests.ps1',
-        'windows-host-enrollment.tests.ps1', 'windows-iso-setup.tests.ps1', 'windows-host-image.tests.ps1', 'new-windows-test-vm.tests.ps1')
-    if (-not $Release) { $scriptTests += @('install-guest-powershell.tests.ps1', 'windows-evaluation.tests.ps1') }
-    foreach ($test in $scriptTests) {
-        Invoke-BuildTool $windowsPowerShell @('-NoProfile', '-NonInteractive', '-File', "scripts/guest-os/$test")
-    }
     Invoke-BuildTool 'node' @('scripts/check-version.mjs')
     Invoke-BuildTool 'uv' @('run', '--no-project', '--python', '3.13', 'internal/workbench/cache_maintenance_test.py')
     Invoke-BuildTool 'node' @('--test', 'internal/cage/browser-clipboard.test.mjs', 'scripts/windows-native-bridge.test.mjs', 'scripts/fetch-build-artifact.test.mjs')
@@ -104,13 +97,7 @@ try {
     }
     Enter-CiPhase $(if ($Release) { 'Build and sign the application' } else { 'Build the application' })
     & (Join-Path $PSScriptRoot 'build-windows.ps1') -Release:$Release
-    Enter-CiPhase 'Go, PowerShell media and desktop shell tests'
-    Invoke-BuildTool 'go' @('test', './internal/guestos', '-run', '^TestWindows(HostEnrollment|UserToolACL)', '-count=1')
-    Invoke-BuildTool 'go' @('test', './internal/hostproxy', './internal/guestos', './cmd/cage', '-run', '^Test(ParallelPackage|DownloadLockCancellationAndReuse|WindowsPackageDownloadUsesBundledHostDownloader|HostDownloadParentExitCancels)', '-count=1')
-    if (-not $Release) {
-        Invoke-BuildTool $windowsPowerShell @('-NoProfile', '-NonInteractive', '-File', 'scripts/guest-os/windows-powershell-media.smoke.ps1',
-            '-GuestToolsDirectory', "$repository/_output/windows-amd64/app/resources/guest-os")
-    }
+    Enter-CiPhase 'Go and desktop shell tests'
     Invoke-BuildTool 'dotnet' @('run', '--project', 'desktop/windows.tests/Cage.Windows.Tests.csproj')
     # RUNNER_TEMP and the checkout share D: on hosted runners. Use a
     # unique system-drive directory, outside user data, for the other side.

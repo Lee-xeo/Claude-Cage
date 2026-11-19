@@ -93,9 +93,6 @@ type Settings struct {
 
 	// noEphemeralPorts: see ephemeralPorts.
 	noEphemeralPorts bool
-	// Refresh the cloud-init timezone on cold starts of an existing virtual Mac.
-	macOSTimezone  string
-	macOSInstaller *bool
 }
 
 // ephemeralPorts is the guest kernel's range for the ports a program gets
@@ -104,6 +101,12 @@ type Settings struct {
 // servers...), and each would land on the host's loopback with a
 // notification.
 var ephemeralPorts = [2]int{32768, 60999}
+
+// hostToolsPort is where programs in the guest reach the tools served by the
+// host, over a forward made from the host. Never forwarded back: that would
+// only open the same port on the host's loopback, leading through the guest
+// to where it started.
+var hostToolsPort = [2]int{18962, 18962}
 
 // ShellOpts is a command run in a running VM.
 type ShellOpts struct {

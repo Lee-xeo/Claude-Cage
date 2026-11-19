@@ -32,11 +32,9 @@ body:
   - type: textarea
     id: environment
     attributes:
-      label: 主机与客机系统
-      description: 填写主机、客机的系统名称、版本和架构；尚未安装时说明计划使用的系统。
-      placeholder: |
-        主机：
-        客机：
+      label: 主机系统
+      description: 填写运行 Cage 的电脑的系统名称、版本和架构；尚未安装时说明计划使用的系统。
+      placeholder: macOS 26.4 arm64 / Windows 11 24H2 x64 / Ubuntu 24.04 x86_64
     validations:
       required: true
   - type: textarea

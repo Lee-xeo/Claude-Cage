@@ -10,9 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
 func TestExitProbeTimeoutKeepsExistingLeaseWithoutRenewing(t *testing.T) {
@@ -51,69 +49,6 @@ func TestExitProbeTimeoutKeepsExistingLeaseWithoutRenewing(t *testing.T) {
 	})
 	if gate.Status().Mode != cage.GateClosed || s.recovery.RunID == "" {
 		t.Fatal("expired lease did not remain closed and schedule recovery")
-	}
-}
-
-func TestWindowsFastPacketReconnectSchedulesFreshCheck(t *testing.T) {
-	for _, tc := range []struct {
-		name, reason          string
-		windows, paused, want bool
-	}{
-		{"Windows packet reconnect", windowsPacketDisconnectedReason, true, false, true},
-		{"user pause", windowsPacketDisconnectedReason, true, true, false},
-		{"policy refusal", "当前出口不符合已保存的地区约束", true, false, false},
-		{"other guest", windowsPacketDisconnectedReason, false, false, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			s, gate := grantedToolUpdateServer(t)
-			s.setJobForTest(Job{})
-			if tc.windows {
-				instance := s.instanceDir()
-				s.windowsGuest = &guestos.WindowsProfile{VMID: uuid.New(), InstanceDirectory: instance}
-			}
-			s.ready, s.networkPaused = true, tc.paused
-			s.safety.VerifiedAt = time.Now().Add(-time.Minute)
-			gate.Close(tc.reason)
-			before := gate.Status()
-			s.monitorSafetyWithProbe(func(context.Context, cage.Config) (string, error) {
-				t.Fatal("closed gate ran a monitor probe instead of scheduling a fresh check")
-				return "", nil
-			})
-			if (s.recovery.RunID != "") != tc.want || gate.Status().Mode != cage.GateClosed {
-				t.Fatalf("recovery=%+v gate=%s want scheduled=%t", s.recovery, gate.Status().Mode, tc.want)
-			}
-			if tc.want && (s.recovery.RunID != before.RunID || s.recovery.Epoch != before.Epoch || s.recovery.Configuration != before.Configuration) {
-				t.Fatal("recovery was not bound to the observed closed connection")
-			}
-		})
-	}
-}
-
-func TestMacOSNetworkTickDispatchesRecoveryOnlyAfterSetup(t *testing.T) {
-	for _, tc := range []struct {
-		name, setupID string
-		wantJob       bool
-	}{
-		{"installed guest", "", true},
-		{"setup pending", "pending", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			s := testServer(t)
-			s.macosGuest = &guestos.MacOSProfile{Instance: "mac", SetupID: tc.setupID}
-			s.ready = true
-			s.safety.VerifiedAt = time.Now()
-			s.recovery = networkRecovery{RunID: "isolated-retry", Next: time.Now().Add(-time.Second)}
-			// Inspect scheduling without starting a guest or executing a network check.
-			s.op.Lock()
-			s.monitorNetworkTick()
-			job := s.jobs.snapshot()
-			s.jobs.cancelRunning()
-			s.op.Unlock()
-			s.jobs.close()
-			if (job.Running && job.Kind == "network-recovery") != tc.wantJob {
-				t.Fatalf("recovery job = %+v, want queued = %t", job, tc.wantJob)
-			}
-		})
 	}
 }
 

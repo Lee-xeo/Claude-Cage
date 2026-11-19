@@ -7,7 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/containerenv"
@@ -21,34 +21,35 @@ var (
 type browserInputError struct{ error }
 
 type browserInput struct {
-	Incognito      bool    `json:"incognito,omitempty"`
-	Enabled        *bool   `json:"enabled,omitempty"`
-	CookieKey      string  `json:"cookieKey,omitempty"`
-	Scope          string  `json:"scope,omitempty"`
-	Query          string  `json:"query,omitempty"`
-	Page           int     `json:"page,omitempty"`
-	Left           string  `json:"left,omitempty"`
-	Right          string  `json:"right,omitempty"`
-	ID             string  `json:"id"`
-	URL            string  `json:"url"`
-	X              int     `json:"x,omitempty"`
-	Y              int     `json:"y,omitempty"`
-	DeltaX         int     `json:"deltaX,omitempty"`
-	DeltaY         int     `json:"deltaY,omitempty"`
-	Width          int     `json:"width,omitempty"`
-	Height         int     `json:"height,omitempty"`
-	Scale          float64 `json:"scale,omitempty"`
-	Workspace      string  `json:"workspace,omitempty"`
-	ProjectID      string  `json:"project_id,omitempty"`
-	ProjectGrant   string  `json:"grant,omitempty"`
-	Text           string  `json:"text,omitempty"`
-	Mode           string  `json:"mode,omitempty"`
-	Target         string  `json:"target,omitempty"`
-	Session        string  `json:"session,omitempty"`
-	Context        string  `json:"context,omitempty"`
-	Sequence       int     `json:"sequence"`
-	SelectionStart int     `json:"selectionStart,omitempty"`
-	SelectionEnd   int     `json:"selectionEnd,omitempty"`
+	Incognito      bool     `json:"incognito,omitempty"`
+	Enabled        *bool    `json:"enabled,omitempty"`
+	CookieKey      string   `json:"cookieKey,omitempty"`
+	CookieKeys     []string `json:"cookieKeys,omitempty"`
+	Scope          string   `json:"scope,omitempty"`
+	Query          string   `json:"query,omitempty"`
+	Page           int      `json:"page,omitempty"`
+	Left           string   `json:"left,omitempty"`
+	Right          string   `json:"right,omitempty"`
+	ID             string   `json:"id"`
+	URL            string   `json:"url"`
+	X              int      `json:"x,omitempty"`
+	Y              int      `json:"y,omitempty"`
+	DeltaX         int      `json:"deltaX,omitempty"`
+	DeltaY         int      `json:"deltaY,omitempty"`
+	Width          int      `json:"width,omitempty"`
+	Height         int      `json:"height,omitempty"`
+	Scale          float64  `json:"scale,omitempty"`
+	Workspace      string   `json:"workspace,omitempty"`
+	ProjectID      string   `json:"project_id,omitempty"`
+	ProjectGrant   string   `json:"grant,omitempty"`
+	Text           string   `json:"text,omitempty"`
+	Mode           string   `json:"mode,omitempty"`
+	Target         string   `json:"target,omitempty"`
+	Session        string   `json:"session,omitempty"`
+	Context        string   `json:"context,omitempty"`
+	Sequence       int      `json:"sequence"`
+	SelectionStart int      `json:"selectionStart,omitempty"`
+	SelectionEnd   int      `json:"selectionEnd,omitempty"`
 }
 
 func (s *Server) browserClient() *browserClient {
@@ -83,9 +84,6 @@ func (s *Server) browserClient() *browserClient {
 }
 
 func (s *Server) guestAPI(ctx context.Context, token, method, path string, body []byte) ([]byte, error) {
-	if s.macosGuest != nil || s.windowsGuest != nil {
-		return s.nativeBrowserAPI(ctx, method, path, body)
-	}
 	return s.browserClient().request(ctx, token, method, path, body)
 }
 
@@ -106,16 +104,21 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 	var body []byte
 	if input != nil {
 		method = http.MethodPost
-		if action == "download-retry" && (s.macosGuest != nil || s.windowsGuest != nil) {
-			if handled, err := s.retryNativeDownload(input.ID); handled {
-				return []byte(`{"ok":true}`), err
-			}
-		}
 		if action == "cookies" && (input.ID == "" ||
-			(input.Mode != "list" && input.Mode != "details" && input.Mode != "delete" && input.Mode != "clear") ||
+			(input.Mode != "list" && input.Mode != "details" && input.Mode != "delete" && input.Mode != "delete-selected" && input.Mode != "clear") ||
 			(input.Scope != "site" && input.Scope != "all") || len(input.Query) > 800 || input.Page < 0 ||
 			((input.Mode == "delete" || input.Mode == "details") && len(input.CookieKey) != 64)) {
 			return nil, browserInputError{errors.New("Cookie 操作或目标标签无效")}
+		}
+		if action == "cookies" && input.Mode == "delete-selected" {
+			if len(input.CookieKeys) == 0 {
+				return nil, browserInputError{errors.New("请选择要删除的 Cookie")}
+			}
+			for _, key := range input.CookieKeys {
+				if len(key) != 64 || strings.Trim(key, "0123456789abcdef") != "" {
+					return nil, browserInputError{errors.New("所选 Cookie 无效")}
+				}
+			}
 		}
 		if (action == "copy-context" || action == "copy" || action == "cut") && (input.ID == "" || !validInputToken(input.Context)) {
 			return nil, browserInputError{errors.New("复制操作或目标标签无效")}
@@ -124,9 +127,8 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 			return nil, browserInputError{errors.New("画面像素密度无效")}
 		}
 		if action == "wheel" {
-			// Only the Linux guest's controller scrolls a page by a distance.
-			// The native displays take it inside their own display stream.
-			if s.macosGuest != nil || s.windowsGuest != nil || !validWheel(input) {
+			// The guest's controller scrolls a page by a distance.
+			if !validWheel(input) {
 				return nil, browserInputError{errors.New("滚动位置或距离无效")}
 			}
 			body, _ := json.Marshal(map[string]int{"x": input.X, "y": input.Y, "deltaX": input.DeltaX, "deltaY": input.DeltaY})
@@ -171,20 +173,6 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 				return nil, browserInputError{err}
 			}
 			input.Workspace = guestPath(workspace)
-			if s.macosGuest != nil {
-				if isClientMountPath(workspace) {
-					return nil, browserInputError{errors.New("请先打开并授权本机项目")}
-				}
-				input.Workspace = filepath.Base(macOSProjectPath(s.macosGuest.User, workspace))
-			} else if s.windowsGuest != nil {
-				project, err := s.windowsProjectForHost(workspace)
-				if err != nil {
-					return nil, browserInputError{err}
-				}
-				input.Workspace = project.Path
-				input.ProjectID = project.ID
-				input.ProjectGrant = project.Grant
-			}
 		}
 		body, _ = json.Marshal(input)
 	}
@@ -229,9 +217,6 @@ func (s *Server) subscribeBrowser(ctx context.Context) (io.ReadCloser, error) {
 	s.mu.Unlock()
 	if !ready {
 		return nil, errBrowserNotReady
-	}
-	if s.macosGuest != nil || s.windowsGuest != nil {
-		return s.subscribeNativeBrowser(ctx), nil
 	}
 	return s.browserClient().events(ctx, token)
 }

@@ -10,8 +10,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { PhoneBrowser } from "./browser-phone.mjs";
 import { webAddress } from "./browser-phone-network.mjs";
-import { pathToFileURL } from "node:url";
-import { playwrightPhonePipe } from "../../scripts/guest-os/windows-phone-browser.mjs";
 
 test("phone navigation accepts public web URLs", () => {
   for (const url of ["file:///tmp/file", "chrome://settings", "http://2130706433", "http://10.0.0.1",
@@ -73,7 +71,6 @@ test("real phone Chromium routes, resizes, types, and keeps paired profiles sepa
     site.on("upgrade", (request, socket) => { seen.push(request.url); socket.destroy(); });
     await once(site, "listening");
     t.after(() => site.close());
-    const chromium = process.env.CAGE_TEST_PHONE_PLAYWRIGHT ? (await import(pathToFileURL(process.env.CAGE_TEST_PHONE_PLAYWRIGHT))).chromium : null;
     const browser = new PhoneBrowser({
       directory, binary: process.env.CAGE_TEST_CHROMIUM, language: "ja-JP",
       connect: async (name, port) => {
@@ -82,7 +79,6 @@ test("real phone Chromium routes, resizes, types, and keeps paired profiles sepa
         await once(socket, "connect");
         return socket;
       },
-      ...(chromium ? { pipeFactory: (binary, args) => playwrightPhonePipe(chromium, binary, args) } : {}),
     });
     t.after(() => browser.dispose());
     let id = randomUUID();

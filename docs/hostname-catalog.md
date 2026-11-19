@@ -40,8 +40,8 @@ The Windows `DESKTOP-` shape is documented by
 A motherboard model does not determine a machine's hostname. A sampled name is
 not a claim about its SMBIOS, CPU, operating system, or actual physical hardware.
 The generator is shared by Linux containers and Lima guests; it does not select
-an operating-system-specific hardware profile. Native Windows Setup continues
-to generate its own name. Existing persisted hostnames remain valid and stable.
+an operating-system-specific hardware profile. Existing persisted hostnames
+remain valid and stable.
 
 All data is embedded. Creation performs no network requests, inspects no host
 hardware, and installs no drivers. Malformed embedded catalog data is an error.

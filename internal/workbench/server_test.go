@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
@@ -92,7 +91,8 @@ func TestHostManagementBoundary(t *testing.T) {
 	if w.Header().Get("Access-Control-Allow-Origin") != "" {
 		t.Fatal("CORS unexpectedly enabled")
 	}
-	if !strings.Contains(w.Header().Get("Content-Security-Policy"), "frame-src 'none'") {
+	// Frames only for plugins' own pages, which are served sandboxed.
+	if !strings.Contains(w.Header().Get("Content-Security-Policy"), "frame-src "+s.origin+"/plugin-views/;") {
 		t.Fatal("guest frames allowed")
 	}
 }
@@ -221,14 +221,6 @@ func TestDisplayPreferenceAppliesAtNextLaunch(t *testing.T) {
 	w = request(s, "GET", "/api/vnc-credentials", "", "", true)
 	if json.Unmarshal(w.Body.Bytes(), &active) != nil || !active.Dynamic {
 		t.Fatal("viewer was not told that the display follows its screen")
-	}
-	// A Windows guest's browser takes each viewer's density with its size.
-	s.credentials.DynamicScale = false
-	s.windowsGuest = &guestos.WindowsProfile{}
-	w = windowsBrowserRequestForTest(s, http.MethodGet, "/api/vnc-credentials", nil)
-	s.windowsGuest = nil
-	if json.Unmarshal(w.Body.Bytes(), &active) != nil || !active.Dynamic {
-		t.Fatalf("a Windows guest viewer was not told that the browser follows its screen: %d %s", w.Code, w.Body)
 	}
 	// A client that omits the new preference must preserve the user's choice.
 	settings := request(s, "GET", "/api/settings", "", "", true)

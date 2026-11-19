@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createWorkbench } from "./workbench-fixture.mjs";
+import { createWorkbench, chooseInline } from "./workbench-fixture.mjs";
 
 // Drives the shared workbench with an isolated account registry. No real credentials or VM.
 const { browser, page, state, errors } = await createWorkbench();
@@ -17,7 +17,11 @@ let usageUnavailable = "";
 let defaultLogin = null;
 let detectionError = "";
 let lastLoginNotice = "";
-const joins = [];
+const scheduleUpdates = () => usageRequests.filter(request => request.action === "update" && request.enabled !== undefined);
+const profileCard = (label) => {
+  const profile = profiles.find(p => p.label === label || p.email === label);
+  return page.getByRole("article", { name: profile?.number ? `#${String(profile.number).padStart(2, "0")} ${label}` : label, exact: true });
+};
 const now = Math.floor(Date.now() / 1000);
 const openAccounts = async () => {
   await page.getByRole("button", { name: "Claude 账号管理", exact: true }).click();
@@ -30,7 +34,7 @@ async function checkLongAccountList() {
   const total = 40;
   for (let number = profiles.length + 1; number <= total; number++) {
     profiles.push({
-      id: "profile-" + number, label: "测试账号 " + number, enabled: true, status: "ready",
+      number, id: "profile-" + number, label: "测试账号 " + number, enabled: true, status: "ready",
       email: `user.${number}@example.test`, plan: "Pro",
       quota: { observed_at: now, five_hour: { used_percentage: 28, resets_at: now + 6000 },
         seven_day: { used_percentage: 64, resets_at: now + 200000 } },
@@ -38,11 +42,11 @@ async function checkLongAccountList() {
   }
   await openAccounts();
   const list = page.getByRole("region", { name: "账号列表", exact: true });
-  const last = list.getByRole("article", { name: "测试账号 " + total, exact: true });
+  const last = profileCard("测试账号 " + total);
   await last.waitFor({ state: "attached" });
   assert.equal(await list.getByRole("article").count(), total);
   const header = page.getByRole("heading", { name: "Claude 账号管理", exact: true });
-  const add = page.getByRole("button", { name: "登录新账号", exact: true });
+  const add = page.getByRole("button", { name: "添加账号", exact: true });
   const headerY = (await header.boundingBox()).y;
   const addY = (await add.boundingBox()).y;
   assert.ok(headerY >= 0 && addY >= 0);
@@ -100,7 +104,7 @@ async function checkLocalCountdown() {
   profiles[0].quota = { observed_at: seconds, five_hour: { used_percentage: 28, observed_at: seconds - 900, resets_at: seconds + 5 },
     seven_day: { used_percentage: 64, observed_at: seconds, resets_at: seconds + 7200 } };
   await openAccounts();
-  const row = page.getByRole("article", { name: "工作", exact: true });
+  const row = profileCard("工作");
   await row.getByText("5秒后", { exact: true }).waitFor();
   await row.getByText("最近更新 刚刚", { exact: true }).waitFor();
   await page.getByText("正在请求账号用量…").waitFor({ state: "hidden" });
@@ -117,11 +121,11 @@ async function checkLocalCountdown() {
   assert.equal(await history.locator("time").getAttribute("datetime"), new Date((seconds - 900) * 1000).toISOString());
   await row.getByText("64%", { exact: true }).waitFor();
   assert.equal(accountRequests, requestsBefore, "countdown ticks and expiry must not poll the account API");
-  const joinedBefore = joins.length;
+  const updatesBefore = scheduleUpdates().length;
   defaultLogin = { identity: "fresh-session", email: "new@example.test", plan: "Pro" };
   await page.clock.runFor(8000);
-  await page.getByRole("article", { name: defaultLogin.email }).getByRole("button", { name: "加入调度" }).waitFor();
-  assert.equal(joins.length, joinedBefore, "discovering a new default identity during polling cannot enroll it");
+  await page.getByRole("article").filter({hasText:defaultLogin.email}).getByRole("checkbox", {name:"参与自动分配", checked:false}).waitFor();
+  assert.equal(scheduleUpdates().length, updatesBefore, "discovering a new default identity during polling cannot enroll it");
   assert.equal(usageRequests.filter((r) => r.action === "usage_panel").length, wavesBefore, "12-second panel polling cannot start another usage query");
   assert.ok(usageRequests.some((r) => !r.action && r.visible), "a visible panel keeps the existing queue alive via GET");
   await page.clock.runFor(47_000);
@@ -136,7 +140,7 @@ async function checkUsagePanel() {
   const before = waves();
   panelWorker = true;
   await openAccounts();
-  const row = page.getByRole("article", { name: profile.label, exact: true });
+  const row = profileCard(profile.label);
   await page.getByText("正在查询账号用量…", { exact: true }).waitFor();
   profile.usage_checking = true;
   await row.getByText("正在查询额度…").waitFor();
@@ -165,7 +169,7 @@ async function checkUsagePanel() {
   await openAccounts();
   await page.getByText(usageUnavailable).waitFor();
   assert.equal(await row.getByRole("button", { name: "检查状态" }).isEnabled(), false);
-  assert.equal(await page.getByRole("button", { name: "登录新账号", exact: true }).isEnabled(), true);
+  assert.equal(await page.getByRole("button", { name: "添加账号", exact: true }).isEnabled(), true);
   await back.click();
   usageUnavailable = "";
   profile.usage_status = "not_applicable";
@@ -190,13 +194,10 @@ try {
     accountRequests++;
     const body = route.request().postDataJSON();
     usageRequests.push({ ...body, visible: new URL(route.request().url()).searchParams.get("panel") === "visible" });
-    if (body) assert.ok(["join", "update", "refresh", "cancel", "refresh_default", "usage_panel"].includes(body.action));
-    if (body?.action === "join") {
-      joins.push(body);
-      if (!defaultLogin || body.identity !== defaultLogin.identity)
-        return route.fulfill({ status: 409, contentType: "text/plain; charset=utf-8", body: "普通终端登录已改变，请确认当前身份" });
-      profiles.push({ id: "default-" + defaultLogin.identity, source: "default", label: defaultLogin.email,
-        email: defaultLogin.email, plan: defaultLogin.plan, enabled: true, status: "ready" });
+    if (body) assert.ok(["update", "refresh", "cancel", "usage_panel"].includes(body.action));
+    if (defaultLogin && !detectionError && !offlineUsage && !profiles.some(a => a.identity === defaultLogin.identity)) {
+      profiles.push({ ...defaultLogin, number: profiles.length + 1, id: "default-" + defaultLogin.identity,
+        source: "default", label: defaultLogin.email, enabled: false, status: "ready" });
     }
     if (body?.action === "cancel") {
       const index = profiles.findIndex((profile) => profile.id === body.id);
@@ -208,25 +209,23 @@ try {
     if (body?.action === "refresh" && failRefresh)
       return route.fulfill({ status: 503, contentType: "text/plain; charset=utf-8", body: "暂时无法检查登录" });
     if (body?.action === "refresh" && heldRefresh) await heldRefresh.promise;
-    if (body?.action === "refresh_default") {
-      assert.equal(body.identity, defaultLogin?.identity);
-      Object.assign(defaultLogin, { usage_status: "unavailable", usage_checked_at: now });
-    }
+    const refreshed = body?.action === "refresh" && profiles.find(a => a.id === body.id);
+    if (refreshed?.source === "default") Object.assign(refreshed, { usage_status: "unavailable", usage_checked_at: now });
     return route.fulfill({ json: { accounts: profiles, detection_status: offlineUsage ? "offline" : detectionError ? "unavailable" : defaultLogin ? "ready" : "signed_out",
-      detected: !detectionError && defaultLogin && !profiles.some((p) => p.email === defaultLogin.email) ? defaultLogin : undefined,
       detection_error: detectionError, login_notice: lastLoginNotice, usage_panel_running: panelWorker,
       usage_unavailable_reason: usageUnavailable } });
   });
   await page.route("**/api/terminals", async (route) => {
     const body = route.request().postDataJSON();
-    if (!body) return route.fulfill({ json: state.terminals });
+    if (!body) return route.fulfill({ json: state.terminals.filter(t => !t.background_login || !t.closed) });
     starts.push(body);
-    if (body.kind === "claude" && profiles.length && !profiles[assignedProfile].enabled)
+    const automatic = body.claude_account_id === "auto";
+    const selected = automatic ? profiles[assignedProfile] : profiles.find(a => a.id === body.claude_account_id);
+    if (body.kind === "claude" && automatic && profiles.length && !selected?.enabled)
       return route.fulfill({ status: 409, contentType: "text/plain; charset=utf-8", body: "没有可用 Claude 账号" });
     const terminal = { id: String(starts.length), title: "终端 " + starts.length, kind: body.kind,
-      workspace: body.workspace, claude_account_id: body.kind === "claude-login" ? body.claude_account_id || "one"
-        : body.kind === "claude" ? profiles[assignedProfile]?.id : undefined,
-      claude_account_source: body.kind === "claude-login" ? "managed" : profiles[assignedProfile]?.source };
+      workspace: body.workspace || state.settings.workspace, background_login: body.background_login,
+      claude_account_id: selected?.id, claude_account_source: selected?.source };
     state.terminals.push(terminal);
     return route.fulfill({ json: terminal });
   });
@@ -235,12 +234,19 @@ try {
   await page.getByRole("button", { name: /^在 .* 新建终端$/ }).waitFor();
   assert.equal(usageRequests.filter((r) => r.action === "usage_panel").length, 0, "launching the workbench must not query subscription usage");
   const plus = page.getByRole("button", { name: /^在 .* 新建终端$/ });
-  const launchClaude = async () => {
+  const launchClaude = async (account = "auto", handoff = false) => {
     await plus.click();
     await page.getByRole("menuitem", { name: /Claude 终端$/ }).press("Enter");
+    await chooseInline(page.getByRole("combobox", {name:"启动账号"}), account);
+    const checkbox = page.getByRole("checkbox", {name:"额度用尽后自动接续"});
+    assert.equal(await checkbox.isChecked(), false);
+    if (handoff) {
+      await checkbox.check();
+      await page.getByText(/目前没有同组备用账号/).waitFor();
+    }
+    await page.getByRole("button", {name:"创建 Claude Code 终端"}).click();
   };
   const back = () => page.getByRole("button", { name: "工作台", exact: true }).click();
-  const profileCard = (label) => page.getByRole("article", { name: label, exact: true });
   const rename = async (before, label) => {
     const row = profileCard(before);
     await row.getByRole("button", { name: "修改 " + before + " 的备注" }).click();
@@ -259,25 +265,27 @@ try {
   assert.equal(profiles.length, 1);
   await draft.getByRole("button", { name: "撤销添加" }).click();
   await confirmation.getByRole("button", { name: "撤销添加", exact: true }).click();
-  await page.getByText("尚无已加入调度的账号。").waitFor();
+  await page.getByText("尚未添加账号").waitFor();
   await page.getByText(/普通终端尚未登录 Claude 订阅/).waitFor();
   await back();
   await launchClaude();
   await page.getByRole("tab", { name: "终端 1", exact: true }).waitFor();
-  assert.deepEqual(starts[0], { workspace: state.settings.workspace, kind: "claude" });
+  assert.deepEqual(starts[0], { workspace: state.settings.workspace, kind: "claude", claude_account_id: "auto", auto_handoff: false });
 
   await openAccounts();
   assert.equal(await page.getByRole("textbox", { name: "账号名称" }).count(), 0);
-  await page.getByRole("button", { name: "登录新账号", exact: true }).click();
-  await page.getByRole("tab", { name: "终端 2 · 新账号登录", exact: true }).waitFor();
-  assert.deepEqual(starts[1], { workspace: state.settings.workspace, kind: "claude-login" });
+  await page.getByRole("button", { name: "添加账号", exact: true }).click();
+  await page.getByRole("button", {name: "开始授权"}).click();
+  await page.getByText("正在等待 Claude 授权…").waitFor();
+  assert.equal(await page.getByRole("tab", {name:/新账号登录/}).count(), 0);
+  assert.deepEqual(starts[1], { kind: "claude-login", background_login: true, login_proxy_node: "" });
   assert.equal(profiles.length, 0, "opening a login terminal must not create a pool account");
   state.terminals[1].closed = true;
   const email = "example@test.invalid";
-  profiles.push({ id: "one", status: "ready", label: email, email, plan: "Pro", enabled: true, source: "managed",
+  profiles.push({ number: 1, id: "one", status: "ready", label: email, email, plan: "Pro", enabled: false, source: "managed",
     quota: { observed_at: now, five_hour: { used_percentage: 0, observed_at: now - 3600, resets_at: now + 3600 },
       seven_day: { used_percentage: 100, observed_at: now - 7200, resets_at: now - 80 } } });
-  lastLoginNotice = "已加入 " + email;
+  lastLoginNotice = "已归档 " + email;
   await openAccounts();
   await page.getByText(lastLoginNotice).waitFor();
   await rename(email, "工作");
@@ -286,8 +294,7 @@ try {
   await card.getByText("历史读数", { exact: true }).waitFor();
   await card.getByText("等待更新", { exact: true }).waitFor();
   assert.equal(await card.getByRole("button", { name: "撤销添加" }).count(), 0);
-  await card.getByRole("checkbox", { name: "参与自动分配" }).click();
-  await card.getByRole("checkbox", { checked: false }).waitFor();
+  await card.getByRole("checkbox", { name: "参与自动分配", checked: false }).waitFor();
   failRefresh = true;
   await card.getByRole("button", { name: "检查状态" }).click();
   await page.getByRole("alert").filter({ hasText: "暂时无法检查登录" }).waitFor();
@@ -321,22 +328,18 @@ try {
   await back();
   await launchClaude();
   await page.getByText("没有可用 Claude 账号", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("tab", { name: /^终端 / }).count(), 2);
-  await openAccounts();
-  await card.getByRole("checkbox", { name: "参与自动分配" }).click();
-  await card.getByRole("checkbox", { checked: true }).waitFor();
-  await back();
-  await launchClaude();
+  assert.equal(await page.getByRole("tab", { name: /^终端 / }).count(), 1);
+  await launchClaude("one", true);
   await page.getByRole("tab", { name: "终端 4 · 工作", exact: true }).waitFor();
   await page.getByText("Claude · 工作", { exact: true }).waitFor();
-  assert.deepEqual(starts.at(-1), { workspace: state.settings.workspace, kind: "claude" });
+  assert.deepEqual(starts.at(-1), { workspace: state.settings.workspace, kind: "claude", claude_account_id:"one", auto_handoff:true });
 
   const identityA = { identity: "a-in-org", email: "a@example.test", organization: "Org", plan: "Pro" };
   defaultLogin = identityA;
   await openAccounts();
-  assert.equal(await card.getByRole("button", { name: "重新登录" }).isEnabled(), false);
+  assert.equal(await card.getByRole("button", { name: "重新授权 Code" }).isEnabled(), false);
   const detectedA = profileCard(identityA.email);
-  await detectedA.getByText(/已发现，未加入/).waitFor();
+  await detectedA.getByText("仅手动选择").waitFor();
   const clawd = await readFile(new URL("../src/claude-account-crab.svg", import.meta.url), "utf8");
   assert.ok(await detectedA.locator("img").evaluate(async (img, source) => {
     await img.decode();
@@ -348,22 +351,24 @@ try {
     const rendered = data ? data[1] ? atob(data[2]) : decodeURIComponent(data[2]) : await (await fetch(img.currentSrc)).text();
     return img.naturalWidth > 0 && JSON.stringify(shape(rendered)) === JSON.stringify(shape(source));
   }, clawd), "the detected account renders the same Clawd artwork as managed accounts");
-  assert.equal(await detectedA.getByRole("checkbox").count(), 0);
+  await detectedA.getByRole("checkbox", {checked:false}).waitFor();
   await page.setViewportSize({ width: 375, height: 700 });
   const panelList = page.getByRole("region", { name: "账号列表", exact: true });
   assert.ok(await panelList.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), "detected identities fit on a narrow screen");
   await page.setViewportSize({ width: 1280, height: 850 });
-  assert.equal(profiles.length, 1, "detected identity is not in the pool");
+  assert.equal(profiles.length, 2, "the verified identity is archived once");
   await detectedA.getByRole("button", { name: "检查状态" }).click();
   await detectedA.getByText("本次未返回额度").waitFor();
   assert.equal(await detectedA.getByText(/^最近更新 /).locator("time").getAttribute("datetime"), new Date(now * 1000).toISOString(),
     "accounts without readings fall back to the latest query time");
   assert.equal(await detectedA.getByText("暂无读数", { exact: true }).count(), 2);
-  assert.deepEqual(usageRequests.filter((r) => r.action === "refresh_default").at(-1), { action: "refresh_default", identity: identityA.identity, visible: false });
-  await detectedA.getByRole("button", { name: "加入调度" }).click();
-  await detectedA.getByText("普通终端账号", { exact: true }).waitFor();
-  assert.deepEqual(joins.at(-1), { action: "join", identity: identityA.identity });
-  assert.equal(await detectedA.getByRole("button", { name: /登录/ }).count(), 0);
+  assert.deepEqual(usageRequests.filter((r) => r.action === "refresh").at(-1), { action: "refresh", id: "default-" + identityA.identity, visible: false });
+  await detectedA.getByRole("checkbox", {name:"参与自动分配"}).click();
+  await detectedA.getByRole("checkbox", {checked:true}).waitFor();
+  assert.equal(scheduleUpdates().at(-1).id, "default-" + identityA.identity);
+  await card.getByRole("checkbox", {name:"参与自动分配"}).click();
+  await card.getByRole("checkbox", {checked:true}).waitFor();
+  assert.equal(await detectedA.getByRole("button", { name: /授权 Code/ }).count(), 0);
   await rename(identityA.email, "个人");
   await profileCard("个人").waitFor();
   await rename("个人", "");
@@ -378,17 +383,16 @@ try {
   profiles[1].quota = null;
   await openAccounts();
   const nextIdentity = profileCard(defaultLogin.email);
-  await nextIdentity.getByText(/未加入/).waitFor();
+  await nextIdentity.getByText("仅手动选择").waitFor();
   await profileCard("个人").getByText(/请重新打开工作会话确认身份/).waitFor();
-  assert.equal(await nextIdentity.getByRole("checkbox").count(), 0);
+  await nextIdentity.getByRole("checkbox", {checked:false}).waitFor();
   assert.equal(profiles[1].email, identityA.email);
   // Identity changes again while this stale B card remains visible.
   defaultLogin = { identity: "c-in-org", email: "c@example.test", plan: "Pro" };
-  await nextIdentity.getByRole("button", { name: "加入调度" }).click();
-  await page.getByRole("alert").filter({ hasText: "普通终端登录已改变" }).waitFor();
-  await profileCard(defaultLogin.email).getByText(/未加入/).waitFor();
-  assert.equal(joins.at(-1).identity, "b-in-org");
-  assert.equal(profiles.length, 2);
+  await nextIdentity.getByRole("checkbox", {name:"参与自动分配"}).click();
+  await page.getByRole("article").filter({hasText:defaultLogin.email}).getByRole("checkbox", {checked:false}).waitFor();
+  assert.equal(scheduleUpdates().at(-1).id, "default-b-in-org");
+  assert.equal(profiles.length, 4);
   await back();
   // Re-authenticating A independently updates its registry entry, not the source of an existing terminal.
   Object.assign(profiles[1], { source: "managed", status: "ready" });
@@ -414,15 +418,19 @@ try {
   await openAccounts();
   await card.getByRole("checkbox", { name: "参与自动分配" }).click();
   await card.getByRole("checkbox", { checked: false }).waitFor();
-  await card.getByRole("button", { name: "重新登录" }).click();
-  await page.getByRole("tab", { name: "终端 6 · 工作", exact: true }).waitFor();
-  assert.deepEqual(starts.at(-1), { workspace: state.settings.workspace, kind: "claude-login", claude_account_id: "one" });
+  await card.getByRole("button", { name: "重新授权 Code" }).click();
+  await page.getByText("正在等待 Claude 授权…").waitFor();
+  assert.equal(await page.getByRole("tab", { name: /终端 6/ }).count(), 0);
+  assert.deepEqual(starts.at(-1), { kind: "claude-login", claude_account_id: "one", background_login:true });
+  state.terminals.at(-1).closed = true;
+  await page.getByText("正在等待 Claude 授权…").waitFor({state:"hidden"});
+  await back();
   assert.ok(!state.requests.some((r) => r.path.startsWith("/claude-desktop") && r.method === "POST"));
   await checkUsagePanel();
   await checkLongAccountList();
   await checkLocalCountdown();
   assert.deepEqual(errors, []);
-  console.log("Claude account UI: independent login, explicit default enrollment, identity change, quota, terminal affinity, accessible scrolling and countdown passed.");
+  console.log("Claude account UI: background authorization, automatic account recognition, manual selection and quota handoff, identity change, quota, terminal affinity, accessible scrolling and countdown passed.");
 } finally {
   await browser.close();
 }

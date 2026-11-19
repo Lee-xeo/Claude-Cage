@@ -7,7 +7,6 @@ export function operationName(path = "", method = "GET") {
   if (path.startsWith("/environment/resources")) return reading ? "读取资源配置" : "应用资源配置";
   if (path === "/environment/initialization") return reading ? "读取初始化进度" : "保存初始化状态";
   if (path.startsWith("/environment/versions")) return "读取环境组件版本";
-  if (path.startsWith("/environment/macos-screen-sharing")) return "客机屏幕共享";
   if (path === "/environment/cache/inventory") return "盘点当前环境缓存";
   if (path === "/environment/cache/clean") return "清理所选缓存";
   if (path === "/environment/cache/restore") return "恢复缓存";
@@ -15,6 +14,8 @@ export function operationName(path = "", method = "GET") {
   if (path.startsWith("/input/files") || path.startsWith("/browser/files")) return "传递文件";
   if (path.startsWith("/tailscale")) return reading ? "读取 Tailscale 状态" : "操作 Tailscale";
   if (path.startsWith("/browser")) return "操作浏览器";
+  if (path === "/proxy/local-configs") return "查找本机代理配置";
+  if (path === "/proxy/import-local") return "导入本机代理配置";
   if (path.startsWith("/proxy")) return reading ? "读取代理设置" : "应用代理设置";
   if (path.startsWith("/safety")) return "检查联网条件";
   if (path.startsWith("/settings/probe")) return "验证代理出口";
@@ -24,6 +25,7 @@ export function operationName(path = "", method = "GET") {
   if (path.startsWith("/projects")) return "连接项目目录";
   if (path.startsWith("/account")) return "处理账户操作";
   if (path.startsWith("/claude-desktop")) return "操作 Claude Desktop";
+  if (path === "/token-usage") return reading ? "读取本地用量统计" : "更新本地用量统计";
   if (path.startsWith("/terminals")) return "连接终端";
   if (path === "/start") return "启动环境";
   if (path === "/stop") return "停止环境";

@@ -4,7 +4,6 @@ import { FolderMinus, FolderOpen, LoaderCircle, PencilLine, Plus } from "lucide-
 import { api, native, nativeAvailable } from "./api";
 import { SafetyMessage } from "./safety-message";
 import { Modal } from "./views";
-import { MacOSProjectApproval } from "./macos-project-approval";
 import { ProjectRecovery } from "./project-recovery";
 import { projectGroups, projectName, rememberClientProjectName } from "./workspace-state.mjs";
 import { getClientContext, isRemoteClient } from "./client-context.mjs";
@@ -28,7 +27,6 @@ export function ProjectDialog({
   const [folders, setFolders] = useState([]);
   const [error, setError] = useState("");
   const [recovery, setRecovery] = useState("");
-  const [pending, setPending] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [removeTarget, setRemoveTarget] = useState("");
   const [removed, setRemoved] = useState([]);
@@ -138,16 +136,11 @@ export function ProjectDialog({
       const saved = await api("/projects/save", {
         workspace: editing, name: name.trim() || projectName(draftFolders[0]), folders: draftFolders,
       });
-      if (saved.approval) {
-        setPending({ workspace: saved.workspace, grant: saved.approval });
-        return;
-      }
       workspace = saved.workspace;
       setEditing(saved.workspace);
     }
     const result = await api("/projects/open", { workspace, add: false, activate });
-    if (result.approval) setPending({ workspace: result.workspace, grant: result.approval });
-    else await onOpened(result.workspace);
+    await onOpened(result.workspace);
   };
   const open = async (event) => {
     event?.preventDefault();
@@ -164,9 +157,6 @@ export function ProjectDialog({
       setSubmitting(false);
     }
   };
-  if (pending) return <MacOSProjectApproval pending={pending} onClose={onClose} onSettings={onSettings} onCheck={async () => {
-    await performOpen();
-  }} />;
   return (
     <Modal
       title={adding ? editing ? "编辑项目" : "创建项目" : activate ? "打开项目" : "选择工作项目"}
@@ -243,7 +233,7 @@ export function ProjectDialog({
           <button type="button" className="quiet-button project-picker-add" onClick={add} disabled={busy || Boolean(removeTarget) || !status.ready}><Plus size={16} />{remote ? "添加云端项目…" : "添加本机项目…"}</button>
         </>}
         {!sharing && adding && <>
-          {projects.length > 0 && <button type="button" className="quiet-button project-picker-add" disabled={busy} onClick={() => { setAdding(false); setEditing(""); setFolders([]); setPending(null); setPath(groups.find(group => group.folders.includes(status.workspace))?.workspace || projects[0]); setError(""); }}>返回已有项目</button>}
+          {projects.length > 0 && <button type="button" className="quiet-button project-picker-add" disabled={busy} onClick={() => { setAdding(false); setEditing(""); setFolders([]); setPath(groups.find(group => group.folders.includes(status.workspace))?.workspace || projects[0]); setError(""); }}>返回已有项目</button>}
           <label htmlFor="project-name">项目名称</label>
           <input id="project-name" autoFocus value={name} maxLength={100} onChange={event => setName(event.target.value)} placeholder="例如：课程系统" disabled={busy} />
           <label>源文件夹</label>
@@ -295,7 +285,7 @@ export function ProjectDialog({
           <div className="error-message" role="alert">
             <SafetyMessage message={error} />
             {recovery && <ProjectRecovery recovery={recovery} disabled={busy} onRetry={() => void open()}
-              onSettings={onSettings} onSessionClosed={() => void open()} />}
+              onSettings={onSettings} />}
           </div>
         )}
       </form>

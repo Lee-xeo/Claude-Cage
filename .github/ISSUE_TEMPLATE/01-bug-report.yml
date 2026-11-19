@@ -59,31 +59,11 @@ body:
       placeholder: macOS 26.4 arm64 / Windows 11 24H2（26100.x）x64 / Ubuntu 24.04 x86_64
     validations:
       required: true
-  - type: dropdown
-    id: guest-system
-    attributes:
-      label: 客机系统
-      description: 客机是 Cage 内运行的系统。尚未安装或无法启动时，选择安装时所选的系统。
-      options:
-        - macOS
-        - Windows
-        - Linux
-        - 不涉及或不确定
-    validations:
-      required: true
-  - type: input
-    id: guest-os
-    attributes:
-      label: 客机版本与架构
-      description: 填写系统名称、版本及架构；尚未安装或无法启动时，注明当前阶段。
-      placeholder: Ubuntu 24.04 arm64 / Windows 11 x64 / macOS 26.4 arm64；未安装，停在……
-    validations:
-      required: true
   - type: textarea
     id: steps
     attributes:
       label: 复现步骤
-      description: 从打开 Cage 开始按顺序说明，包含相关设置和必要前提。偶发问题请说明已知触发条件与出现频率。
+      description: 从打开 Cage 开始按顺序说明，包含相关设置和必要前提；环境尚未装好或无法启动时，注明停在哪一步。偶发问题请说明已知触发条件与出现频率。
       placeholder: |
         1. 打开 Cage，选择……
         2. 设置……

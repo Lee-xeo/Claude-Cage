@@ -64,42 +64,15 @@ func TestLegacyInstallationOmitsSource(t *testing.T) {
 	}
 }
 
-func TestWindowsCloneCleanupTracksRetainedCredential(t *testing.T) {
-	profile := t.TempDir()
-	source := hostimage.Plan{
-		Host:    hostimage.Identity{System: Windows11, Version: "25H2", Edition: "Professional", Language: "zh-CN", Arch: "amd64"},
-		Version: "25H2", Build: "26200.8", Format: "esd", Path: filepath.Join(profile, "system.esd"),
-	}
-	install := Installation{Version: 1, ID: uuid.New(), System: Windows11, EditorTerms: true, Source: source}
-	if err := SaveInstallation(profile, install); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(profile, "windows-setup-"+strings.ReplaceAll(install.ID.String(), "-", "")+".dpapi")
-	if err := os.WriteFile(path, []byte("encrypted-fixture"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	pending, err := WindowsCloneCleanupPending(profile)
-	if err != nil || !pending {
-		t.Fatalf("retained credential bypassed cleanup: %v %v", pending, err)
-	}
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
-	pending, err = WindowsCloneCleanupPending(profile)
-	if err != nil || pending {
-		t.Fatalf("completed cleanup still blocks activation: %v %v", pending, err)
-	}
-}
-
 func TestLinuxCloneKeepsItsChoiceAfterBaseInstallation(t *testing.T) {
 	for _, name := range []string{"base-building", "base"} {
 		t.Run(name, func(t *testing.T) {
 			profile := t.TempDir()
 			install := Installation{
-				Version: 1, ID: uuid.New(), System: "ubuntu-22.04",
+				Version: 1, ID: uuid.New(), System: "debian-12",
 				Source: hostimage.Plan{
-					Host:    hostimage.Identity{System: "ubuntu-22.04", Version: "22.04", Arch: "amd64"},
-					Version: "22.04", Format: "qcow2", Path: filepath.Join(profile, "ubuntu.img"),
+					Host:    hostimage.Identity{System: "debian-12", Version: "12", Arch: "amd64"},
+					Version: "12", Format: "qcow2", Path: filepath.Join(profile, "debian.img"),
 					Digest: "sha256:" + strings.Repeat("a", 64),
 				},
 			}
@@ -133,5 +106,67 @@ func TestLinuxCloneKeepsItsChoiceAfterBaseInstallation(t *testing.T) {
 				t.Fatal("finishing the installation affected its disk", err)
 			}
 		})
+	}
+}
+
+// Ubuntu installations recorded by earlier versions stay readable. One that
+// created nothing can be withdrawn; none can be finished.
+func TestUbuntuInstallationRecordsStayReadable(t *testing.T) {
+	plan := func(profile, system string) hostimage.Plan {
+		version := strings.TrimPrefix(system, "ubuntu-")
+		return hostimage.Plan{
+			Host:    hostimage.Identity{System: system, Version: version, Arch: "amd64"},
+			Version: version, Format: "qcow2", Path: filepath.Join(profile, "ubuntu.img"),
+			Digest: "sha256:" + strings.Repeat("a", 64),
+		}
+	}
+	for name, install := range map[string]func(string) Installation{
+		"catalog": func(profile string) Installation {
+			return Installation{Version: 1, ID: uuid.New(), System: Ubuntu2204, Source: plan(profile, Ubuntu2204), SourceKind: LinuxImageSource}
+		},
+		"host 22.04": func(profile string) Installation {
+			return Installation{Version: 1, ID: uuid.New(), System: Ubuntu2204, Source: plan(profile, Ubuntu2204)}
+		},
+		"host 24.04": func(profile string) Installation {
+			return Installation{Version: 1, ID: uuid.New(), System: "ubuntu-24.04", Source: plan(profile, "ubuntu-24.04")}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			profile := t.TempDir()
+			record := install(profile)
+			if err := SaveInstallation(profile, record); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := LoadInstallation(profile)
+			if err != nil || loaded == nil || *loaded != record {
+				t.Fatalf("record became unreadable: %+v %v", loaded, err)
+			}
+			if err := FinishLinuxInstallation(profile, record.ID); err == nil {
+				t.Fatal("finished an Ubuntu installation")
+			}
+			disk := filepath.Join(profile, "state", "lima", "base")
+			if err := os.MkdirAll(disk, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := ClearUnstartedInstallation(profile, record.ID); err == nil {
+				t.Fatal("withdrew a record that already has a disk")
+			}
+			if _, err := os.Stat(disk); err != nil {
+				t.Fatal("refusal affected the disk", err)
+			}
+			if err := os.Remove(disk); err != nil {
+				t.Fatal(err)
+			}
+			if err := ClearUnstartedInstallation(profile, record.ID); err != nil {
+				t.Fatal(err)
+			}
+			if loaded, err := LoadInstallation(profile); err != nil || loaded != nil {
+				t.Fatal("unstarted record was not withdrawn", err)
+			}
+		})
+	}
+	missing := Installation{Version: 1, ID: uuid.New(), System: Ubuntu2204}
+	if err := missing.Validate(); err == nil {
+		t.Fatal("accepted an Ubuntu record without its source")
 	}
 }

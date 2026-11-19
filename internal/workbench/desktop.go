@@ -39,11 +39,11 @@ var errControllerUnavailable = errors.New("control service is unavailable")
 const (
 	// Ordinary launcher requests only read controller memory.
 	controllerRequestTimeout = 5 * time.Second
-	// Status and handoff probe the VM synchronously. A bound Windows guest is
-	// queried through Hyper-V, so their budget must outlast that probe.
-	controllerVMRequestTimeout = windowsVMProbeTimeout + 5*time.Second
+	// Status and handoff probe the VM synchronously, so their budget must
+	// outlast that probe.
+	controllerVMRequestTimeout = vmProbeTimeout + 5*time.Second
 	// Release probes once for its decision and once more before handing off.
-	controllerReleaseRequestTimeout = 2*windowsVMProbeTimeout + 5*time.Second
+	controllerReleaseRequestTimeout = 2*vmProbeTimeout + 5*time.Second
 	// Connecting may start a controller and then wait for its first status.
 	localBootstrapTimeout = controllerVMRequestTimeout + 12*time.Second
 )

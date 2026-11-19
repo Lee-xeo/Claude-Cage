@@ -40,11 +40,6 @@ const diagnostics = [
   },
 ];
 
-export async function bindDetectedMacOSExit(ip, onConfirm) {
-  if (!(await onConfirm({ title: "绑定固定出口？", body: `客机终端、浏览器和代理均测得 ${ip}。保存后请重启客机并重新检测。`, confirm: "绑定固定出口" }))) return null;
-  return api("/macos/exit-policy", { ip });
-}
-
 export function SafetyPanel({
   status,
   onClose,
@@ -135,10 +130,6 @@ export function SafetyPanel({
       }
     >
       <div className="modal-body safety-body">
-        {safety.macos_exit_candidate?.ip && <button disabled={busy} onClick={async () => {
-          try { if (await bindDetectedMacOSExit(safety.macos_exit_candidate.ip, onConfirm)) setNotice("固定出口已提交，请在保存完成后重启客机并重新检测。"); }
-          catch (e) { setError(e.message); }
-        }}>绑定检测到的固定出口 {safety.macos_exit_candidate.ip}</button>}
         <div className={`safety-summary ${network.mode}`}>
           {online ? (
             <ShieldCheck size={27} />

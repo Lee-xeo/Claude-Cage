@@ -13,7 +13,7 @@ import {
 export function installRemoteInput(
   transport,
   container,
-  { mode, guestPlatform = () => "linux", systemClipboard = () => true, onStatus, onFallback, isActive,
+  { mode, systemClipboard = () => true, onStatus, onFallback, isActive,
     insertText, insertComposition, caretRect, surface, inputLabel = "Cage 网页输入", tabId: getTargetId = () => "", pasteContent, preparePaste, setCopyContext, copyText },
 ) {
   const listeners = [],
@@ -30,6 +30,9 @@ export function installRemoteInput(
     compositionTarget = "",
     compositionSession = "",
     compositionSequence = 0,
+    previewContext = "",
+    preedit = "",
+    preview,
     caretState,
     caretTimer,
     caretWait = caretPollFast,
@@ -59,11 +62,8 @@ export function installRemoteInput(
     isActive() &&
     (nativeOwned || container.contains(document.activeElement) ||
       document.activeElement === target);
-  const macGuest = () => ["darwin", "macos"].includes(guestPlatform());
-  const windowsGuest = () => ["windows", "windows-11"].includes(guestPlatform());
   const sharedClipboard = () => systemClipboard() && window.cageSharedClipboardActive;
   const shortcutModifier = () => {
-    if (macGuest()) return physical.has("MetaRight") ? [0xffec, "MetaRight"] : [0xffeb, "MetaLeft"];
     return physical.has("ControlRight") ? [0xffe4, "ControlRight"] : [0xffe3, "ControlLeft"];
   };
   const cancelCopy = () => {
@@ -134,7 +134,25 @@ export function installRemoteInput(
     target.style.left = `${Math.max(0, Math.min(x, window.innerWidth - 1))}px`;
     target.style.top = `${Math.max(0, Math.min(y, window.innerHeight - 24))}px`;
   };
-  const syncCaret = async (cursorOnly = false) => {
+  const showPreedit = () => {
+    const visible = composing && preedit && previewContext && previewContext === caretState?.context &&
+      !caretState.password && caretState.target === compositionTarget &&
+      compositionTarget === getTargetId() && isActive();
+    if (!visible) { if (preview) preview.hidden = true; return; }
+    if (!preview) {
+      preview = document.createElement("span");
+      preview.className = "remote-preedit";
+      preview.setAttribute("aria-hidden", "true");
+      container.append(preview);
+    }
+    preview.textContent = preedit;
+    preview.style.left = target.style.left;
+    preview.style.top = target.style.top;
+    preview.style.fontSize = `${parseFloat(target.style.height) * 0.75}px`;
+    preview.style.lineHeight = target.style.height;
+    preview.hidden = false;
+  };
+  const syncCaret = async () => {
     if (!caretRect || caretPending || disposed || !isActive()) return;
     caretPending = true;
     const id = getTargetId();
@@ -146,9 +164,8 @@ export function installRemoteInput(
         const canvas = surface?.() || container.querySelector("canvas");
         canvas?.style?.setProperty("cursor", value.cursor, "important");
       }
-      if (cursorOnly) return;
       caretState = value?.available ? { ...value, target: id, time: Date.now() } : null;
-      if (!value?.available) { deactivateNative(true); return; }
+      if (!value?.available) { showPreedit(); deactivateNative(true); return; }
       if (!value.rect || value.rect[3] <= 0) return;
       const canvas = surface?.() || container.querySelector("canvas");
       const width = value.width || canvas?.width, imageHeight = value.height || canvas?.height;
@@ -160,6 +177,7 @@ export function installRemoteInput(
       const x = bounds.left + (value.rect[0] / width) * bounds.width;
       const y = bounds.top + (value.rect[1] / imageHeight) * bounds.height;
       position(x, y);
+      showPreedit();
       updateNative({ x, y, height });
     } catch {} finally { caretPending = false; }
   };
@@ -181,28 +199,6 @@ export function installRemoteInput(
   };
   const bounds = container.getBoundingClientRect();
   position(bounds.left + 12, bounds.top + 12);
-  let lastHoverProbe = -Infinity;
-  let hoverTimer;
-  let hovered = false;
-  const probeHover = () => {
-    if (!windowsGuest() || !hovered || !isActive() || disposed || document.visibilityState === "hidden" ||
-        (!document.hasFocus() && !nativeOwned)) return;
-    if (caretPending) { hoverTimer = setTimeout(probeHover, caretPollFast); return; }
-    lastHoverProbe = Date.now();
-    void syncCaret(true);
-  };
-  listeners.push(() => clearTimeout(hoverTimer));
-  on(container, "pointerleave", () => { hovered = false; clearTimeout(hoverTimer); });
-  on(container, "pointermove", () => {
-    if (!windowsGuest() || !isActive() || disposed || document.visibilityState === "hidden" ||
-        (!document.hasFocus() && !nativeOwned)) return;
-    acted();
-    hovered = true;
-    clearTimeout(hoverTimer);
-    // Hover may follow a toolbar click. Update shape without acquiring IME
-    // ownership or moving focus into the remote application.
-    hoverTimer = setTimeout(probeHover, Math.max(0, caretPollFast - (Date.now() - lastHoverProbe)));
-  });
   on(
     container,
     "pointerdown",
@@ -235,13 +231,25 @@ export function installRemoteInput(
         (!isActive() && value.mode !== "cancel")) return;
     // Reserve the shared RFB input queue in this event handler. Deferring this
     // call to another promise would let the next Enter overtake the commit.
-    insertComposition(targetId, { session: compositionSession, sequence: compositionSequence++, ...value }).catch((error) => {
+    const session = compositionSession;
+    insertComposition(targetId, { session, sequence: compositionSequence++, ...value }).then(result => {
+      // Wait for the guest to validate the focused field before showing any
+      // local text. A cached caret can still describe the previous field.
+      if (value.mode === "begin" && composing && session === compositionSession &&
+          result?.available && result.preedit_supported === false && !result.password) {
+        previewContext = result.context;
+        showPreedit();
+      }
+    }).catch((error) => {
         if (!disposed && value.mode !== "cancel")
           say(error.message || "输入法组合文字未能同步");
     });
   };
   const resetComposition = () => {
     composing = false;
+    preedit = "";
+    previewContext = "";
+    showPreedit();
     compositionTarget = "";
     compositionSession = "";
     target.value = "";
@@ -277,6 +285,8 @@ export function installRemoteInput(
       return;
     }
     if (composing || event.isComposing) {
+      preedit = target.value;
+      showPreedit();
       if (compositionSession && ["insertCompositionText", "insertFromComposition"].includes(event.inputType)) {
         queueComposition({
           mode: "update",
@@ -329,6 +339,8 @@ export function installRemoteInput(
     if (!isActive() || nativeTarget !== getTargetId()) { deactivateNative(); return; }
     if (value.kind === "compositionstart") startComposition();
     else if (value.kind === "compositionupdate" && composing) {
+      preedit = value.text || "";
+      showPreedit();
       queueComposition({ mode: "update", text: value.text, selectionStart: value.selectionStart, selectionEnd: value.selectionEnd });
     } else if (value.kind === "compositionend") endComposition(value.text || "");
     else if (value.kind === "input") commit(value.text);
@@ -537,7 +549,7 @@ export function installRemoteInput(
         return;
       }
       const code = getKeycode(event),
-        mapping = mode() === "mac" && !macGuest(),
+        mapping = mode() === "mac",
         malformedCommandLetter =
           event.metaKey &&
           /^Key[A-Z]$/.test(code) &&
@@ -582,7 +594,7 @@ export function installRemoteInput(
         return;
       }
       const clipboard =
-        (event.metaKey || (!macGuest() && event.ctrlKey)) &&
+        (event.metaKey || event.ctrlKey) &&
         !event.altKey &&
         ((!event.shiftKey && ["c", "x"].includes(key)) || key === "v");
       if (clipboard) {
@@ -603,7 +615,7 @@ export function installRemoteInput(
         return;
       }
       if (
-        (mapping || macGuest()) &&
+        mapping &&
         event.metaKey &&
         !["Meta", "Shift", "Control", "Alt", "CapsLock"].includes(event.key)
       ) {
@@ -626,7 +638,7 @@ export function installRemoteInput(
           transport.sendKey(sym, code, true);
           transport.sendKey(sym, code, false);
           if (event.shiftKey && !held("Shift")) transport.sendKey(...shift, false);
-          if (!held(macGuest() ? "Meta" : "Control")) transport.sendKey(...modifier, false);
+          if (!held("Control")) transport.sendKey(...modifier, false);
           event.preventDefault();
           event.stopImmediatePropagation();
           handled.add(code);
@@ -646,12 +658,6 @@ export function installRemoteInput(
           event.key.length === 1 && /[^a-zA-Z0-9 ]/.test(event.key)) {
         // Let the host input method choose punctuation (e.g. ? -> ？).
         // The resulting input event carries the actual character to insert.
-        event.stopImmediatePropagation();
-      } else if (macGuest()) {
-        // noVNC's host-Mac modifier conversion targets non-Mac guests.
-        const sym = getKeysym(event);
-        if (sym !== null) { transport.sendKey(sym, code, true); remote.set(code, sym); }
-        event.preventDefault();
         event.stopImmediatePropagation();
       }
     },
@@ -745,6 +751,7 @@ export function installRemoteInput(
       listeners.forEach((remove) => remove());
       transport.setKeyboardTarget(null);
       target.remove();
+      preview?.remove();
     },
   };
 }

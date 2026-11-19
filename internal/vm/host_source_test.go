@@ -21,7 +21,7 @@ func TestHostLinuxImageHasNoFallbackOrHostMounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(cage.ConfigEnv, config)
-	plan := hostimage.Plan{Host: hostimage.Identity{System: "ubuntu-22.04", Version: "22.04", Arch: "amd64"}, Version: "22.04", Format: "qcow2", Path: filepath.Join(directory, "ubuntu.img"), Digest: "sha256:" + strings.Repeat("a", 64)}
+	plan := hostimage.Plan{Host: hostimage.Identity{System: "debian-12", Version: "12", Arch: "amd64"}, Version: "12", Format: "qcow2", Path: filepath.Join(directory, "debian.img"), Digest: "sha256:" + strings.Repeat("a", 64)}
 	if err := hostimage.WriteLinuxTemplate(directory, plan); err != nil {
 		t.Fatal(err)
 	}

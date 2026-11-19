@@ -260,3 +260,49 @@ func TestClaudeDraftCancellationRespectsAdmissionsAndBoundIdentities(t *testing.
 		t.Fatal("cancellation removed a previously bound identity")
 	}
 }
+
+func TestClaudeAccountNumbersSurviveLegacyReorderAndRemoval(t *testing.T) {
+	s := testServer(t)
+	a, b, c := strings.Repeat("a", 24), strings.Repeat("b", 24), strings.Repeat("c", 24)
+	original := claudeAccountList{Accounts: []claudeAccount{{ID: a}, {ID: b}}}
+	if err := writePrivate(filepath.Join(s.profile, "claude-accounts.json"), original); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.loadClaudeAccounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.find(a).Number != 1 || list.find(b).Number != 2 {
+		t.Fatal("legacy numbers did not follow the saved order")
+	}
+	list.Accounts[0], list.Accounts[1] = list.Accounts[1], list.Accounts[0]
+	if err := s.saveClaudeAccounts(list); err != nil {
+		t.Fatal(err)
+	}
+	list, err = s.loadClaudeAccounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.Accounts[0].Number != 2 || list.Accounts[1].Number != 1 {
+		t.Fatal("reorder changed an account number")
+	}
+	list.Accounts = list.Accounts[1:]
+	if err := s.saveClaudeAccounts(list); err != nil {
+		t.Fatal(err)
+	}
+	list, err = s.loadClaudeAccounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	list.Accounts = append(list.Accounts, claudeAccount{ID: c})
+	if err := s.saveClaudeAccounts(list); err != nil {
+		t.Fatal(err)
+	}
+	list, err = s.loadClaudeAccounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.find(c).Number != 3 || list.find(a).Number != 1 {
+		t.Fatal("new account reused a retired number")
+	}
+}

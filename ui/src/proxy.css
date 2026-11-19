@@ -160,6 +160,11 @@
   border-radius: 10px;
   overflow: hidden;
 }
+.initialization .proxy-node-list {
+  max-height: min(24rem, 50dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .proxy-node {
   display: flex;
   align-items: center;

@@ -1,8 +1,6 @@
 package workbench
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -58,20 +56,6 @@ type RemoteEntry struct {
 }
 
 func (s *Server) remoteManifest(w http.ResponseWriter, r *http.Request) {
-	if s.windowsGuest != nil && s.windowsGuest.Remote() {
-		s.mu.Lock()
-		available := s.windowsCapabilitiesLocked()["available"].(map[string]bool)
-		s.mu.Unlock()
-		jsonReply(w, RemoteEntry{APIProtocol: remoteAPIProtocol, InstanceID: s.instanceID, Version: version.Version,
-			Platform: runtime.GOOS, Runtime: "windows-remote", Origin: s.origin,
-			Capabilities: map[string]bool{"projects_browse": false, "terminal": available["terminal"], "browser": available["browser"], "desktop": false, "audio": false}})
-		return
-	}
-	if s.macosGuest != nil {
-		jsonReply(w, RemoteEntry{APIProtocol: remoteAPIProtocol, InstanceID: s.instanceID, Version: version.Version, Platform: runtime.GOOS,
-			Runtime: "lima", Origin: s.origin, Capabilities: map[string]bool{"terminal": true, "projects_browse": true}})
-		return
-	}
 	kind := "lima"
 	if _, err := os.Stat(filepath.Join(s.profile, "container.json")); err == nil {
 		kind = "container"
@@ -116,28 +100,5 @@ func ServerEntry(configPath string) (RemoteEntry, error) {
 		return RemoteEntry{}, errors.New("云端入口无效")
 	}
 	result.Ticket = u.Fragment
-	if result.Platform == "windows" && result.Runtime == "windows-remote" {
-		result.RemoteView = remoteViewProof(c.record.Token)
-	}
 	return result, nil
-}
-
-// This proof is returned only by the authenticated SSH entry command, never by
-// the public manifest. It grants native remote viewing, not local launcher trust
-// or account unlock. The connector keeps it in its private upstream cookie jar.
-func remoteViewProof(token string) string {
-	digest := sha256.Sum256([]byte("windows remote view\x00" + token))
-	return hex.EncodeToString(digest[:])
-}
-
-func (s *Server) hasRemoteWindowsView(r *http.Request) bool {
-	if s.windowsGuest == nil || !s.windowsGuest.Remote() {
-		return false
-	}
-	u, err := url.Parse(s.origin)
-	if err != nil {
-		return false
-	}
-	c, err := r.Cookie("cage_remote_view_" + u.Port())
-	return err == nil && equalSecret(c.Value, remoteViewProof(s.token))
 }

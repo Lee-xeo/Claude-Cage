@@ -137,7 +137,7 @@ func TestClaudeUsageUnregisteredDefaultRequiresTheDisplayedIdentity(t *testing.T
 	body := `{"action":"refresh_default","identity":"` + a.subject() + `"}`
 	w := request(s, "POST", "/api/claude-accounts", s.origin, body, true)
 	var v claudePanel
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &v) != nil || len(v.Accounts) != 0 || v.Detected == nil || v.Detected.Quota == nil || v.Detected.Quota.FiveHour.UsedPercentage != 58 || v.Detected.UsageStatus != "partial" {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &v) != nil || len(v.Accounts) != 1 || v.Accounts[0].Quota == nil || v.Accounts[0].Quota.FiveHour.UsedPercentage != 58 || v.Accounts[0].UsageStatus != "partial" {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	current = claudeGuestSnapshot{LoggedIn: true, Email: "b@example.org"}
@@ -145,7 +145,7 @@ func TestClaudeUsageUnregisteredDefaultRequiresTheDisplayedIdentity(t *testing.T
 		t.Fatal("stale A triggered usage for B", w.Code, calls)
 	}
 	v, _, err := s.claudePanelView(context.Background())
-	if err != nil || v.Detected == nil || v.Detected.Quota != nil || v.Detected.UsageStatus != "" {
+	if err != nil || len(v.Accounts) != 2 || v.Accounts[1].Quota != nil || v.Accounts[1].UsageStatus != "" {
 		t.Fatal("B inherited A's readings", v, err)
 	}
 	current = a
@@ -299,10 +299,10 @@ func TestClaudeUsageKeepsExpiredHistoricalWindowsForBothSources(t *testing.T) {
 		s.activities.Wait()
 	}
 	view, _, err := s.claudePanelView(context.Background())
-	if err != nil || view.Detected == nil {
+	if err != nil || len(view.Accounts) != 2 {
 		t.Fatal(view, err)
 	}
-	for _, q := range []*claudeQuota{view.Accounts[0].Quota, view.Detected.Quota} {
+	for _, q := range []*claudeQuota{view.Accounts[0].Quota, view.Accounts[1].Quota} {
 		if q == nil || q.FiveHour == nil || q.SevenDay == nil || q.FiveHour.UsedPercentage != 100 || q.FiveHour.ObservedAt != history.ObservedAt || q.SevenDay.ObservedAt != history.ObservedAt {
 			t.Fatal("missing read discarded or retimestamped historical quota", q)
 		}

@@ -10,7 +10,7 @@ import (
 )
 
 func TestBrowserLanguagePackageMigration(t *testing.T) {
-	start := strings.Index(guestStart, "if ! cage_is_ubuntu && ! dpkg-query")
+	start := strings.Index(guestStart, "if ! dpkg-query")
 	if start < 0 {
 		t.Fatal("existing guests have no language package migration")
 	}
@@ -18,9 +18,9 @@ func TestBrowserLanguagePackageMigration(t *testing.T) {
 	if end < 0 {
 		t.Fatal("unterminated migration")
 	}
-	script := "set -euo pipefail\ncage_is_ubuntu() { [ \"$MODE\" = ubuntu ]; }\n" + guestStart[start:start+end+4] + "\nprintf continued\n"
+	script := "set -euo pipefail\n" + guestStart[start:start+end+4] + "\nprintf continued\n"
 	script = strings.ReplaceAll(script, "/var/lib/apt/lists", `"$FIXTURE/lists"`)
-	for _, mode := range []string{"installed", "ubuntu", "missing", "update-failure", "install-failure"} {
+	for _, mode := range []string{"installed", "missing", "update-failure", "install-failure"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			lists := filepath.Join(dir, "lists")
@@ -82,7 +82,7 @@ esac
 				t.Fatalf("migration %s: %v %s", mode, err, out)
 			}
 			requests, _ := os.ReadFile(filepath.Join(dir, "requests"))
-			if (mode == "installed" || mode == "ubuntu") && len(requests) != 0 {
+			if mode == "installed" && len(requests) != 0 {
 				t.Fatal("installed language package triggered network access")
 			}
 			if mode == "update-failure" && strings.Contains(string(requests), "install") {

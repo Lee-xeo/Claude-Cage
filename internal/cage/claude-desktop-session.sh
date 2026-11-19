@@ -95,8 +95,23 @@ test -S "$XDG_RUNTIME_DIR/files.sock"
 export GTK_USE_PORTAL=1
 # Openbox is not auto-detected as a libsecret desktop by Electron. Select the
 # unlocked keyring explicitly so OAuth tokens survive application restarts.
-/usr/local/bin/cage-input-session /usr/bin/python3 -I /usr/local/bin/client_runtime.py claude-desktop "${scale_args[@]}" --password-store=gnome-libsecret --xdg-portal-required-version=3 &
+# Desktop emits the active identity from its native account provider after
+# the renderer confirms the login. Keep the filtered stream in the unit's
+# private, ephemeral runtime directory; no callback or cookie is inspected.
+history_args=()
+if [[ -s "$XDG_RUNTIME_DIR/account-scope" ]]; then
+  read -r _ _ code subject < "$XDG_RUNTIME_DIR/account-scope"
+  if [[ $code =~ ^[a-f0-9]{24}$ ]]; then
+    export CLAUDE_CONFIG_DIR="$HOME/.local/share/cage/claude-accounts/$code/config"
+    mkdir -p "$CLAUDE_CONFIG_DIR"
+    if [[ $subject =~ ^[a-f0-9]{64}$ ]]; then
+      history_args=("$CLAUDE_CONFIG_DIR" "$subject")
+    fi
+  fi
+fi
+DESKTOP_LOG_LEVEL=debug CLAUDE_ENABLE_LOGGING=1 DEBUG='*current-account*' /usr/local/bin/cage-input-session /usr/bin/python3 -I /usr/local/bin/client_runtime.py claude-desktop "${scale_args[@]}" --password-store=gnome-libsecret --xdg-portal-required-version=3 > >(/usr/bin/python3 -I /usr/local/lib/desktop-identity.py "$XDG_RUNTIME_DIR/account.json" "${history_args[@]}") &
 app_pid=$!
+printf '%s\n' "$app_pid" > "$XDG_RUNTIME_DIR/app-pid"
 # The service becomes ready only after the application has opened a window.
 for i in $(seq 1 200); do
   kill -0 "$app_pid"
