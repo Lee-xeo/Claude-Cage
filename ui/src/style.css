@@ -280,6 +280,12 @@ button.primary:hover:not(:disabled) {
   background: var(--accent);
   border-color: var(--accent);
 }
+button.primary.danger,
+button.primary.danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
 button.large {
   padding: 12px 19px;
   min-height: 44px;
@@ -733,6 +739,9 @@ button.large {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.status-feedback.error {
+  color: var(--danger);
 }
 .safety-checklist-link {
   margin-inline-start: 12px;

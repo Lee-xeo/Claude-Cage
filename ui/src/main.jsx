@@ -121,6 +121,7 @@ function App() {
     [projectDialog, setProjectDialog] = useState(null),
     [rename, setRename] = useState(null),
     [toast, setToast] = useState(""),
+    [toastTone, setToastTone] = useState(""),
     [projectRefreshing, setProjectRefreshing] = useState(false),
     [fatal, setFatal] = useState(""),
     [connectionError, setConnectionError] = useState(""),
@@ -296,7 +297,8 @@ function App() {
   useEffect(() => {
     if (finishedLogins) claudeProfiles.load();
   }, [finishedLogins, claudeProfiles.load]);
-  const notify = (text) => setToast(text);
+  // A plugin page may mark its notice as an error, shown in the error color.
+  const notify = (text, tone) => { setToast(text); setToastTone(tone === "error" ? "error" : ""); };
   const accountDesktops = useAccountDesktops(
     () => {setManagementPage(""); setHome(false); setDesktopOpen(true);},
     () => {setDesktopOpen(false); setHome(true);}, notify, (...args) => confirm(...args), desktopOpen && running && status?.account_desktops_supported && !managementPage, status?.desktop_catalog_revision);
@@ -1391,7 +1393,7 @@ function App() {
                   {dialog.secondary}
                 </button>
               )}
-              <button className="primary" disabled={dialog.pending} onClick={() => finishDialog(true)}>
+              <button className={dialog.danger ? "primary danger" : "primary"} disabled={dialog.pending} onClick={() => finishDialog(true)}>
                 {dialog.pending ? dialog.pendingLabel : dialog.confirm}
               </button>
             </>
@@ -1947,7 +1949,7 @@ function App() {
             <span className="status-spacer" />
             <AudioControls audio={audio} />
             <EnvironmentClock timezone={settings.timezone} clock12Hour={settings.clock_12_hour} />
-            <span className="status-feedback" role="status">
+            <span className={`status-feedback${toast && toastTone ? ` ${toastTone}` : ""}`} role="status">
               <SafetyMessage message={toast ||
                 (busy
                   ? status.job.message

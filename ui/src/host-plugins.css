@@ -396,3 +396,14 @@
 .plugin-grant-projects code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .plugin-grant-projects button { flex: none; padding: 3px 10px; font-size: 0.8571rem; }
 p.plugin-grants-empty { margin-top: 10px; }
+
+/* Market sections and categories */
+.plugin-purpose.category { border-color: transparent; background: var(--hover); color: var(--ink); }
+.plugin-categories { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 4px; }
+.plugin-categories button { min-height: 30px; padding: 3px 14px; border-radius: 15px; font-size: 0.8929rem; color: var(--muted); }
+.plugin-categories button[aria-pressed="true"] { border-color: var(--accent); background: var(--selected); color: var(--strong); }
+
+/* Allowing commands for an open project */
+.plugin-grant-add { display: flex; gap: 8px; align-items: center; margin-top: 12px; min-width: 0; }
+.plugin-grant-add select { flex: 1; min-width: 0; height: 32px; }
+.plugin-grant-add button { flex: none; padding: 3px 12px; font-size: 0.8571rem; }

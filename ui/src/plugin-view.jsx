@@ -48,10 +48,11 @@ export function PluginView({ plugin, view, onConfirm, onOpenUrl, onNotify }) {
           throw new ProtocolError(error.code || ERRORS.failed, error.detail || error.message);
         }
       },
-      confirm: ({ title, message, confirmLabel }) => actions.current.onConfirm({ title, body: message, confirm: confirmLabel || "确定" }),
+      confirm: ({ title, message, confirmLabel, danger }) =>
+        actions.current.onConfirm({ title, body: message, confirm: confirmLabel || "确定", danger: danger === true }),
       openUrl: url => actions.current.onOpenUrl(url),
       copy: text => writeClipboard(text),
-      notify: message => actions.current.onNotify(message),
+      notify: (message, tone) => actions.current.onNotify(message, tone),
       loadState: () => loadState(key),
       saveState: state => saveState(key, state),
       theme: currentTheme,

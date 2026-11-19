@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Blocks, Check, ChevronDown, ChevronRight, CircleAlert, Clock, Copy, Download, Folder, FolderOpen, Globe2,
-  Keyboard, Link2, LoaderCircle, Monitor, PanelLeft, RefreshCw, Search, Settings, ShieldCheck, SquareTerminal, Store, Trash2, TriangleAlert, Wrench,
+  Keyboard, LoaderCircle, Monitor, PanelLeft, RefreshCw, Search, Settings, ShieldCheck, SquareTerminal, Store, Trash2, TriangleAlert, Wrench,
 } from "lucide-react";
 import { api, writeClipboard } from "./api";
 import { runtimeURL } from "./client-context.mjs";
@@ -30,8 +30,9 @@ const permissionText = list => list?.length ? list.map(name => permissions[name]
 const unsupportedLabel = item => item.problem ? "需要更新 Cage" : "不支持此系统";
 
 // contributions lists what a plugin adds to the app beyond its tools: pages in
-// the sidebar and the links it handles. Every MCP plugin has a server, so
-// servers alone are not shown here; they appear as tools.
+// the sidebar. Every MCP plugin has a server, so servers alone are not shown
+// here; they appear as tools. Link handlers are not in effect yet, so they are
+// not promised either.
 const urlHost = pattern => pattern.replace(/^[a-z]+:\/\//, "").replace(/\/.*$/, "").replace(/:\*$/, "");
 function contributions(item) {
   const contributes = item?.contributes || {};
@@ -41,28 +42,31 @@ function contributions(item) {
     list.push({ key: `view:${view.id}`, icon: PanelLeft, title: `页面「${view.title || view.id}」`,
       text: `在侧栏添加一个页面。页面在隔离的框架中运行，只能使用这个插件自己的工具。${hosts.length ? `它可以在内置浏览器中打开：${hosts.join("、")}。` : "它不能打开网页。"}` });
   }
-  for (const handler of contributes.uri_handlers || []) {
-    list.push({ key: `uri:${handler.scheme}`, icon: Link2, title: `处理 ${handler.scheme}: 链接`,
-      text: `在内置浏览器中打开以 ${handler.scheme}: 开头的链接时，交给这个插件处理。` });
-  }
   return list;
 }
 const contributionText = item => contributions(item).map(entry => entry.title).join("；");
 
 // purposes are what a plugin is for: abilities for Claude, from its MCP
-// servers, and changes to the app, from its pages and link handlers. A
-// plugin without contributions is a first-version one: one MCP server.
+// servers, and changes to the app, from its pages. A plugin without
+// contributions is a first-version one: one MCP server.
 export function purposes(item) {
   const contributes = item?.contributes;
   if (!contributes) return ["Claude 工具"];
   const list = [];
   if (contributes.mcp_servers?.length) list.push("Claude 工具");
-  if (contributes.views?.length || contributes.uri_handlers?.length) list.push("界面扩展");
+  if (contributes.views?.length) list.push("界面扩展");
   return list;
 }
+// categoryNames are the market's sections. The app lists only those it
+// knows, in the order the market gives, so new ones can come later.
+const categoryNames = { desktop: "桌面控制", developer: "开发", system: "系统与状态", network: "网络", files: "文件", productivity: "效率", example: "示例" };
+const categoriesOf = item => (item?.categories || []).filter(name => categoryNames[name]);
 function PurposeTags({ item }) {
-  const list = purposes(item);
-  return list.length ? <span className="plugin-purposes">{list.map(label => <span key={label} className="plugin-purpose">{label}</span>)}</span> : null;
+  const list = purposes(item), categories = categoriesOf(item);
+  return list.length || categories.length ? <span className="plugin-purposes">
+    {categories.map(name => <span key={`category:${name}`} className="plugin-purpose category">{categoryNames[name]}</span>)}
+    {list.map(label => <span key={label} className="plugin-purpose">{label}</span>)}
+  </span> : null;
 }
 const size = bytes => !bytes ? "" : bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
@@ -290,7 +294,8 @@ const matches = (entry, query) => {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   const item = entry.plugin || entry.offer;
-  return [entry.name, pluginTitle(item), pluginText(item)].some(text => text.toLowerCase().includes(needle));
+  const categories = categoriesOf(entry.offer || entry.listing || item).map(name => categoryNames[name]);
+  return [entry.name, pluginTitle(item), pluginText(item), ...categories].some(text => text.toLowerCase().includes(needle));
 };
 
 export function HostPluginsSidebar({ visible, model, page, onPage, onBack, onConfirm }) {
@@ -400,11 +405,18 @@ function MarketCard({ entry, view, busy, onOpen, onInstall }) {
 function Market({ model, onConfirm, onPage }) {
   const { view, busy, market } = model;
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("");
   const { installed, available } = pluginEntries(model);
-  const updates = installed.filter(entry => entry.offer && matches(entry, query));
-  const offers = available.filter(entry => matches(entry, query));
+  const listed = [...installed.filter(entry => entry.listing), ...available];
+  // Only sections that have something in them are offered.
+  const sections = (market.categories || Object.keys(categoryNames)).filter(name => categoryNames[name]
+    && listed.some(entry => categoriesOf(entry.offer || entry.listing).includes(name)));
+  const chosen = sections.includes(category) ? category : "";
+  const shown = entry => matches(entry, query) && (!chosen || categoriesOf(entry.offer || entry.listing).includes(chosen));
+  const updates = installed.filter(entry => entry.offer && shown(entry));
+  const offers = available.filter(shown);
   // Installed plugins stay in the market, marked as such, as in VS Code.
-  const current = installed.filter(entry => entry.listing && !entry.offer && matches(entry, query));
+  const current = installed.filter(entry => entry.listing && !entry.offer && shown(entry));
   const card = entry => <MarketCard key={entry.name} entry={entry} view={view} busy={busy}
     onOpen={() => onPage({ kind: "plugin", name: entry.name })} onInstall={() => installPlugin(model, entry, onConfirm)} />;
   const fetched = market.fetched ? new Date(market.fetched) : null;
@@ -426,6 +438,10 @@ function Market({ model, onConfirm, onPage }) {
         </div>
         {fetched && !Number.isNaN(fetched.getTime()) && <small className="plugin-market-fetched">更新于 {fetched.toLocaleString()}</small>}
       </header>
+      {sections.length > 0 && <div className="plugin-categories" role="group" aria-label="按分类查看">
+        <button type="button" aria-pressed={!chosen} onClick={() => setCategory("")}>全部</button>
+        {sections.map(name => <button key={name} type="button" aria-pressed={chosen === name} onClick={() => setCategory(name)}>{categoryNames[name]}</button>)}
+      </div>}
       {market.error && <div className="plugin-banner problem" role="alert"><TriangleAlert size={17} /><div><strong>暂时无法读取社区插件</strong><p>{market.error}</p></div>
         <button type="button" onClick={() => model.loadMarket(true)}>重试</button></div>}
       {updates.length > 0 && <section className="plugin-market-section">
@@ -437,7 +453,7 @@ function Market({ model, onConfirm, onPage }) {
         {offers.length ? <div className="plugin-card-grid">{offers.map(card)}</div>
           : market.loading ? <p className="plugin-loading" role="status"><LoaderCircle size={16} className="spin" />正在读取插件市场…</p>
           : market.error && !query ? null
-          : <div className="plugin-empty compact"><Store size={22} /><p>{query ? "没有匹配的插件。" : current.length ? "市场里的插件都已安装。" : "没有可安装的新插件。"}</p></div>}
+          : <div className="plugin-empty compact"><Store size={22} /><p>{query ? "没有匹配的插件。" : chosen ? "这个分类下没有可安装的新插件。" : current.length ? "市场里的插件都已安装。" : "没有可安装的新插件。"}</p></div>}
       </section>
       {current.length > 0 && <section className="plugin-market-section">
         <h3>已安装<em>{current.length}</em></h3>
@@ -463,23 +479,37 @@ function CopyField({ value, label }) {
 
 // Grants shows whether the plugin's tools are asked about on each call or
 // allowed for good. The same grant covers calls from Claude and from the
-// plugin's own pages. Commands are allowed per project, only from the
-// confirmation window, so here they can only be taken back.
+// plugin's own pages. Commands are allowed per open project, in the
+// confirmation window or here; Windows's window offers only allow and deny.
 function Grants({ model, plugin, onConfirm }) {
   const { busy, change } = model;
+  const [choice, setChoice] = useState("");
   const key = `always:${plugin.name}`;
   if (plugin.built_in && plugin.name === "commands") {
     const projects = plugin.always_projects || [];
+    const open = (model.view?.folders || []).filter(folder => !projects.includes(folder));
+    const project = open.includes(choice) ? choice : open[0] || "";
     const revoke = async project => {
       if (!project && !await onConfirm({ title: "撤销全部项目的授权？", body: "之后在任何项目中运行命令都会重新询问。", confirm: "全部撤销" })) return;
       await change({ plugin: plugin.name, always: false, ...(project ? { project } : {}) }, key);
     };
+    const allow = async () => {
+      if (!project || !await onConfirm({ title: "在这个项目中始终允许运行命令？", confirm: "始终允许",
+        body: `之后 Claude 在 ${project} 中运行命令时不再询问。命令以你的系统账户权限在这台电脑上运行，可以随时在这里撤销。` })) return;
+      await change({ plugin: plugin.name, always: true, project }, key);
+    };
     return (
       <section className="plugin-grants" aria-label="授权">
         <div className="plugin-grants-head">
-          <div><strong>授权</strong><p>在确认窗口中选择“始终允许”的项目会列在这里，在这些项目中运行命令不再询问。</p></div>
+          <div><strong>授权</strong><p>在确认窗口中选择“始终允许”，或在下方选择已打开的项目，在这些项目中运行命令就不再询问。</p></div>
           {projects.length > 1 && <button type="button" disabled={Boolean(busy)} onClick={() => revoke("")}>全部撤销</button>}
         </div>
+        {open.length > 0 && <div className="plugin-grant-add">
+          <select value={project} disabled={Boolean(busy)} onChange={event => setChoice(event.target.value)} aria-label="选择项目">
+            {open.map(folder => <option key={folder} value={folder}>{folder}</option>)}
+          </select>
+          <button type="button" disabled={Boolean(busy)} onClick={allow}>始终允许</button>
+        </div>}
         {projects.length ? <ul className="plugin-grant-projects">
           {projects.map(project => <li key={project}>
             <Folder size={15} aria-hidden="true" /><code title={project}>{project}</code>
