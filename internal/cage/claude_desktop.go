@@ -54,7 +54,7 @@ func ClaudeDesktopInstallScript() string {
 // services are deliberately not enabled at boot: the user opens the app.
 func ClaudeDesktopProvisionScript() string {
 	return "set -euo pipefail\n" + clientRuntimeScript() + sharedClipboardScript() + nativeInputScript() + fileInputScript() + displayGovernorScript() +
-		"sudo install -d -m 0755 /etc/claude-cage\n" +
+		"sudo install -d -m 0755 /etc/workbench\n" +
 		"sudo tee /usr/local/lib/desktop-history.py >/dev/null <<'DESKTOP_HISTORY'\n" + desktopHistory + "\nDESKTOP_HISTORY\n" +
 		"sudo tee /usr/local/libexec/claude-desktop-session >/dev/null <<'CAGE_CLAUDE_SESSION'\n" + claudeDesktopSession + "\nCAGE_CLAUDE_SESSION\n" +
 		"sudo tee /usr/local/libexec/claude-desktop-open >/dev/null <<'CAGE_CLAUDE_OPEN'\n" + claudeDesktopOpen + "\nCAGE_CLAUDE_OPEN\n" +
@@ -65,15 +65,15 @@ sudo chmod 0440 /etc/sudoers.d/claude-desktop-open
 sudo python3 - <<'CAGE_DESKTOP_DOWNLOAD_CONFIG'
 import json, os
 from pathlib import Path
-source = Path('/etc/claude-cage/browser-control.json')
+source = Path('/etc/workbench/browser-control.json')
 if source.exists():
     with source.open() as config:
         workspace = json.load(config)['workspace']
-    destination = Path('/etc/claude-cage/desktop-downloads.json')
+    destination = Path('/etc/workbench/desktop-downloads.json')
     destination.write_text(json.dumps({'workspace': workspace}))
     os.chmod(destination, 0o644)
 CAGE_DESKTOP_DOWNLOAD_CONFIG
-sudo tee /etc/claude-cage/desktop-openbox.xml >/dev/null <<'CAGE_CLAUDE_WINDOWS'
+sudo tee /etc/workbench/desktop-openbox.xml >/dev/null <<'CAGE_CLAUDE_WINDOWS'
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
 <focus><focusNew>yes</focusNew><followMouse>no</followMouse></focus>
@@ -95,7 +95,7 @@ NotifyAccess=all
 User=cage
 WorkingDirectory=/home/cage
 Environment=HOME=/home/cage
-EnvironmentFile=/etc/claude-cage/environment
+EnvironmentFile=/etc/workbench/environment
 RuntimeDirectory=desktop-session
 RuntimeDirectoryMode=0700
 ExecStart=/usr/local/libexec/service-log /usr/local/libexec/claude-desktop-session

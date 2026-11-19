@@ -80,7 +80,7 @@ export async function createPrivacyController({ preferences, headless = true } =
     assert.ok(source.includes(marker));
     assert.ok(source.includes('spawn(browserBinary, flags'), 'Update the isolated browser launch adapter');
     const adapted = source.replaceAll('/home/cage-browser', directory)
-      .replace('/etc/claude-cage/browser-control.json', join(directory, 'control.json'))
+      .replace('/etc/workbench/browser-control.json', join(directory, 'control.json'))
       .replace('/usr/local/lib/cage-split', join(directory, 'extension'))
       .replace('spawn(browserBinary, flags', `spawn(${JSON.stringify(browserPath)}, [...flags, "--use-mock-keychain", "--password-store=basic"]`)
       .replace('"--start-fullscreen",', headless ? '"--headless=new", "--disable-background-networking",' : '"--start-fullscreen", "--disable-background-networking",')

@@ -34,6 +34,12 @@ legacy_directories='
 /usr/local/lib/cage-claude-bin
 /usr/local/lib/cage-phone-desktop
 '
+# Login shells load the current profile script, installed above, which zsh
+# now also names; drop only the exact line earlier versions appended.
+if [ -f /etc/zsh/zshenv ] && grep -qx '\. /etc/profile\.d/claude-cage\.sh' /etc/zsh/zshenv; then
+  sudo sed -i '/^\. \/etc\/profile\.d\/claude-cage\.sh$/d' /etc/zsh/zshenv
+fi
+sudo rm -f /etc/profile.d/claude-cage.sh
 # The browser account's services were restarted with the current programs and
 # rules; the work account keeps its own administrator rights.
 for former in /etc/sudoers.d/cage-claude-desktop /etc/sudoers.d/cage-download /etc/sudoers.d/cage-editor /etc/sudoers.d/cage-input /etc/sudoers.d/cage-phone-desktop; do

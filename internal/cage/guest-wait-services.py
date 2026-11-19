@@ -5,7 +5,7 @@ import urllib.request
 from pathlib import Path
 
 
-def wait(config_path='/etc/claude-cage/browser-control.json', endpoints=None, timeout=60):
+def wait(config_path='/etc/workbench/browser-control.json', endpoints=None, timeout=60):
     token = json.loads(Path(config_path).read_text())['token']
     endpoints = endpoints or (
         ('http://127.0.0.1:18080/healthz', False),

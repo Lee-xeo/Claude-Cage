@@ -623,7 +623,7 @@ func run() int {
 		}
 		fmt.Println("Cage local services are ready. Open Cage or run cage desktop to complete the required network checks. External networking stays closed until the workbench approves this VM; no local access password is required.")
 		if args[0] == "login" {
-			return cli.Main([]string{"run", "--tty", "bash", "-lc", "source /etc/profile.d/claude-cage.sh; exec claude auth login"}, cli.Stdio())
+			return cli.Main([]string{"run", "--tty", "bash", "-lc", "for f in /etc/profile.d/workbench.sh /etc/profile.d/claude-cage.sh; do if [ -r \"$f\" ]; then . \"$f\"; break; fi; done; exec claude auth login"}, cli.Stdio())
 		}
 		return 0
 	}
@@ -637,7 +637,7 @@ func run() int {
 		return 0
 	}
 	if args[0] == "access" {
-		args = []string{"run", "bash", "-c", `printf 'Editor password: '; sed -n 's/^password: //p' "$HOME/.config/claude-cage/code-server.yaml"; printf 'Browser password: '; cat "$HOME/.config/claude-cage/browser-password"; printf '\n'`}
+		args = []string{"run", "bash", "-c", `d="$HOME/.config/workbench"; test -d "$d" || d="$HOME/.config/claude-cage"; printf 'Editor password: '; sed -n 's/^password: //p' "$d/code-server.yaml"; printf 'Browser password: '; cat "$d/browser-password"; printf '\n'`}
 	}
 	allowed := map[string]bool{"setup": true, "run": true, "shell": true, "claude": true, "stop": true, "list": true, "doctor": true, "info": true, "name": true}
 	if !allowed[args[0]] {

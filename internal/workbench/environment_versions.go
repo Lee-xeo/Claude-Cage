@@ -16,7 +16,8 @@ import (
 
 var errGuestUpdateRequired = errors.New("环境组件需要更新，请先保存浏览器和编辑器中的修改。工作台终端与磁盘保留，编辑器内终端可能结束。")
 
-const guestConnectionSnapshot = `sudo cat /etc/claude-cage/browser-control.json; printf '\n'; cat "$HOME/.config/claude-cage/browser-password"; printf '\n'; if sudo test -f /etc/claude-cage/components.json; then sudo cat /etc/claude-cage/components.json; else printf 'null'; fi`
+// Environments not yet updated keep these files under their former names.
+const guestConnectionSnapshot = `sudo cat /etc/workbench/browser-control.json 2>/dev/null || sudo cat /etc/claude-cage/browser-control.json; printf '\n'; cat "$HOME/.config/workbench/browser-password" 2>/dev/null || cat "$HOME/.config/claude-cage/browser-password"; printf '\n'; if sudo test -f /etc/workbench/components.json; then sudo cat /etc/workbench/components.json; elif sudo test -f /etc/claude-cage/components.json; then sudo cat /etc/claude-cage/components.json; else printf 'null'; fi`
 
 func parseGuestConnection(data []byte) (guestCredentials, *cage.GuestManifest, error) {
 	lines := strings.SplitN(strings.TrimSpace(string(data)), "\n", 3)
@@ -46,9 +47,10 @@ type toolVersion struct {
 const guestVersionSnapshot = `python3 - <<'CAGE_VERSIONS'
 import json,subprocess,os,re
 from pathlib import Path
-p=Path('/etc/claude-cage/components.json')
-try: manifest=json.loads(p.read_text())
-except (OSError,ValueError): manifest=None
+manifest=None
+for p in (Path('/etc/workbench/components.json'), Path('/etc/claude-cage/components.json')):
+ try: manifest=json.loads(p.read_text()); break
+ except (OSError,ValueError): pass
 versions={}
 env={**os.environ,'DISABLE_AUTOUPDATER':'1','PATH':str(Path.home()/'.local/bin')+':'+os.environ.get('PATH','')}
 code_server_version=re.compile(r'^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.+-]+)?(?:\s|$)')

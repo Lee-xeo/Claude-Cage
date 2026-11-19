@@ -9,9 +9,9 @@ import (
 // shared between the browser user and the account desktop's private HOME.
 func linuxLoginPreferences(reuse bool) string {
 	if reuse {
-		return "if ! test -f /etc/claude-cage/login-browser-mode; then sudo install -m 0644 /dev/null /etc/claude-cage/login-browser-mode || exit 1; fi"
+		return "if ! test -f /etc/workbench/login-browser-mode; then sudo install -m 0644 /dev/null /etc/workbench/login-browser-mode || exit 1; fi"
 	}
-	return "if test -f /etc/claude-cage/login-browser-mode; then sudo unlink /etc/claude-cage/login-browser-mode || exit 1; fi"
+	return "if test -f /etc/workbench/login-browser-mode; then sudo unlink /etc/workbench/login-browser-mode || exit 1; fi"
 }
 
 func (s *Server) syncLoginPreferences(ctx context.Context, reuse bool) error {

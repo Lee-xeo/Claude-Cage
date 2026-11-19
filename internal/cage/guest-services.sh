@@ -8,7 +8,7 @@ if ! command -v ip >/dev/null || ! test -x /usr/sbin/iptables || ! command -v Xt
 fi
 sudo install -d -m 0755 /usr/local/share
 cage_novnc_root=/usr/share/novnc
-sudo install -d -m 0755 /etc/claude-cage /usr/local/lib
+sudo install -d -m 0755 /etc/workbench /usr/local/lib
 # New website passwords belong to the host vault. Keep existing browser data.
 cage_browser_policy_dir=/etc/chromium/policies/managed
 sudo install -d -m 0755 "$cage_browser_policy_dir"
@@ -25,8 +25,8 @@ sudo -H -u cage-browser xdg-mime default tailnet-login.desktop x-scheme-handler/
 sudo tee /usr/local/libexec/editor-start >/dev/null <<'SCRIPT'
 #!/bin/sh
 set -eu
-workspace=$(cat /home/cage/.config/claude-cage/editor-workspace)
-exec /usr/bin/code-server --bind-addr 127.0.0.1:18080 --config /home/cage/.config/claude-cage/code-server.yaml --disable-telemetry --disable-update-check --disable-workspace-trust --disable-proxy "$workspace"
+workspace=$(cat /home/cage/.config/workbench/editor-workspace)
+exec /usr/bin/code-server --bind-addr 127.0.0.1:18080 --config /home/cage/.config/workbench/code-server.yaml --disable-telemetry --disable-update-check --disable-workspace-trust --disable-proxy "$workspace"
 SCRIPT
 sudo chmod 0755 /usr/local/libexec/editor-start
 sudo tee /etc/systemd/system/code-editor.service >/dev/null <<'UNIT'
@@ -36,7 +36,7 @@ Description=Code editor
 User=cage
 WorkingDirectory=/home/cage
 Environment=HOME=/home/cage
-EnvironmentFile=/etc/claude-cage/environment
+EnvironmentFile=/etc/workbench/environment
 ExecStart=/usr/local/libexec/service-log /usr/local/libexec/editor-start
 LogNamespace=services
 Restart=on-failure
@@ -45,17 +45,17 @@ TimeoutStopSec=15
 UNIT
 printf 'cage-browser ALL=(root) NOPASSWD: /usr/bin/systemctl restart code-editor.service\n' | sudo tee /etc/sudoers.d/editor-restart >/dev/null
 sudo chmod 0440 /etc/sudoers.d/editor-restart
-sudo tee /etc/profile.d/claude-cage.sh >/dev/null <<'SCRIPT'
-if [ -f /etc/claude-cage/environment ]; then
+sudo tee /etc/profile.d/workbench.sh >/dev/null <<'SCRIPT'
+if [ -f /etc/workbench/environment ]; then
   set -a
-  . /etc/claude-cage/environment
+  . /etc/workbench/environment
   set +a
 fi
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY FTP_PROXY NO_PROXY http_proxy https_proxy all_proxy ftp_proxy no_proxy
 export BROWSER=/usr/local/bin/xdg-open
 SCRIPT
-if ! grep -q '/etc/profile.d/claude-cage.sh' /etc/zsh/zshenv; then
-  echo '. /etc/profile.d/claude-cage.sh' | sudo tee -a /etc/zsh/zshenv >/dev/null
+if ! grep -q '/etc/profile.d/workbench.sh' /etc/zsh/zshenv; then
+  echo '. /etc/profile.d/workbench.sh' | sudo tee -a /etc/zsh/zshenv >/dev/null
 fi
 sudo tee /etc/systemd/system/browser-display.service >/dev/null <<'UNIT'
 [Unit]
@@ -68,7 +68,7 @@ ExecStart=/usr/local/libexec/service-log /usr/bin/Xtigervnc :77 -geometry 2880x1
 LogNamespace=services
 Restart=on-failure
 UNIT
-sudo tee /etc/claude-cage/openbox.xml >/dev/null <<'WINDOW_CONFIG'
+sudo tee /etc/workbench/openbox.xml >/dev/null <<'WINDOW_CONFIG'
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
 <focus><focusNew>yes</focusNew><followMouse>no</followMouse></focus>
@@ -85,7 +85,7 @@ After=browser-display.service
 [Service]
 User=cage-browser
 Environment=DISPLAY=:77
-ExecStart=/usr/local/libexec/service-log /usr/bin/openbox --config-file /etc/claude-cage/openbox.xml
+ExecStart=/usr/local/libexec/service-log /usr/bin/openbox --config-file /etc/workbench/openbox.xml
 LogNamespace=services
 Restart=on-failure
 UNIT
@@ -97,8 +97,8 @@ After=browser-display.service browser-window-manager.service
 [Service]
 User=cage-browser
 Environment=DISPLAY=:77
-EnvironmentFile=/etc/claude-cage/environment
-EnvironmentFile=-/etc/claude-cage/browser.env
+EnvironmentFile=/etc/workbench/environment
+EnvironmentFile=-/etc/workbench/browser.env
 ExecStart=/usr/local/libexec/service-log /usr/local/libexec/input-session /usr/bin/node /usr/local/lib/browser-agent.mjs
 LogNamespace=services
 # Let the controller close Chromium and flush its tabs and profile before

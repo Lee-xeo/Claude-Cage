@@ -4,6 +4,42 @@
 # in the cleanup that follows the start of the current services. Every step is
 # idempotent.
 
+# Settings and credentials of earlier versions: the browser control token,
+# display and sign-in preferences, the editor and viewer passwords. Each file
+# is copied to the current directory only when that has no file of the same
+# name, compared with its source, and only then put in place. This happens once:
+# a marker records it, so later changes in the current directory (a preference
+# turned off by removing its file) are never undone from the former one. The
+# former directories stay as they are. A failed copy stops the update before
+# anything else changes; the next attempt starts again.
+legacy_copy=$(cat <<'LEGACY_COPY'
+import filecmp, os, shutil, stat, sys
+former, current, mode = sys.argv[1], sys.argv[2], int(sys.argv[3], 8)
+marker = os.path.join(current, '.settings-copied')
+if not os.path.isdir(former) or os.path.islink(former) or os.path.exists(marker):
+    sys.exit(0)
+if not os.path.isdir(current):
+    os.makedirs(current, mode)
+    os.chmod(current, mode)
+for name in sorted(os.listdir(former)):
+    source, target = os.path.join(former, name), os.path.join(current, name)
+    info = os.lstat(source)
+    # The component manifest is written anew once the update completes.
+    if name == 'components.json' or os.path.lexists(target) or not stat.S_ISREG(info.st_mode):
+        continue
+    staged = os.path.join(current, '.' + name + '.copy')
+    shutil.copy2(source, staged)
+    os.chown(staged, info.st_uid, info.st_gid)
+    if not filecmp.cmp(source, staged, shallow=False):
+        os.unlink(staged)
+        sys.exit('Copying ' + name + ' did not verify; earlier settings are unchanged.')
+    os.replace(staged, target)
+with open(marker, 'w'):
+    pass
+LEGACY_COPY
+)
+sudo python3 -I -c "$legacy_copy" /etc/claude-cage /etc/workbench 755
+python3 -I -c "$legacy_copy" "$HOME/.config/claude-cage" "$HOME/.config/workbench" 700
 # Services of the browser, editor and audio output restart under their current
 # names below. Stop the former units first: they hold the same displays, ports
 # and sockets. Their programs keep running only where something still uses them.

@@ -30,16 +30,16 @@ sudo tee /etc/fonts/conf.d/71-english-cjk-fallback.conf >/dev/null <<'FONTCONFIG
   </match>
 </fontconfig>
 FONTCONFIG
-mkdir -p "$HOME/.config/claude-cage"
-chmod 700 "$HOME/.config/claude-cage"
-if [ ! -s "$HOME/.config/claude-cage/code-server.yaml" ]; then
-  (umask 077; printf 'auth: password\npassword: %s\ncert: false\n' "$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')" > "$HOME/.config/claude-cage/code-server.yaml")
+mkdir -p "$HOME/.config/workbench"
+chmod 700 "$HOME/.config/workbench"
+if [ ! -s "$HOME/.config/workbench/code-server.yaml" ]; then
+  (umask 077; printf 'auth: password\npassword: %s\ncert: false\n' "$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')" > "$HOME/.config/workbench/code-server.yaml")
 fi
-if [ ! -s "$HOME/.config/claude-cage/browser-password" ]; then
-  (umask 077; od -An -N4 -tx1 /dev/urandom | tr -d ' \n' > "$HOME/.config/claude-cage/browser-password")
+if [ ! -s "$HOME/.config/workbench/browser-password" ]; then
+  (umask 077; od -An -N4 -tx1 /dev/urandom | tr -d ' \n' > "$HOME/.config/workbench/browser-password")
 fi
 sudo install -d -o cage-browser -g cage-browser -m 0700 /home/cage-browser/.vnc
-cat "$HOME/.config/claude-cage/browser-password" | sudo -u cage-browser sh -c 'umask 077; tigervncpasswd -f > "$HOME/.vnc/passwd"'
+cat "$HOME/.config/workbench/browser-password" | sudo -u cage-browser sh -c 'umask 077; tigervncpasswd -f > "$HOME/.vnc/passwd"'
 sudo systemctl stop browser-session || true
 # Existing images may predate the explicit locale dependency. The scoped
 # maintenance channel can install it while business networking stays closed.
@@ -55,17 +55,17 @@ fi
 sudo env CAGE_DISPLAY_SCALE="${CAGE_DISPLAY_SCALE:-2}" CAGE_WORKSPACE="$PWD" CAGE_USER_HOME="$HOME" python3 - <<'PYCONTROL'
 import json, os, secrets, grp
 from pathlib import Path
-p=Path('/etc/claude-cage/browser-control.json')
+p=Path('/etc/workbench/browser-control.json')
 d=json.loads(p.read_text()) if p.exists() else {'token':secrets.token_hex(32)}
 scale = 1.5 if os.environ['CAGE_DISPLAY_SCALE'] == '1.5' else 2
 d['display_scale'] = scale
 # With a settings manager each viewer chooses the density of its own screen.
 d['dynamic_scale'] = os.path.exists('/usr/bin/xsettingsd')
-scale_file = Path('/etc/claude-cage/display-scale')
+scale_file = Path('/etc/workbench/display-scale')
 scale_file.write_text(str(scale) + '\n')
 scale_file.chmod(0o644)
 d['workspace']=os.environ['CAGE_WORKSPACE']
-yaml=Path(os.environ['CAGE_USER_HOME']) / '.config/claude-cage/code-server.yaml'
+yaml=Path(os.environ['CAGE_USER_HOME']) / '.config/workbench/code-server.yaml'
 d['editorPassword']=next(line.split(':',1)[1].strip() for line in yaml.read_text().splitlines() if line.startswith('password:'))
 p.write_text(json.dumps(d))
 p.chmod(0o640)
@@ -94,10 +94,10 @@ from pathlib import Path
 p = Path.home() / '.local/share/code-server/User/settings.json'
 if not p.exists():
     p.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile('/etc/claude-cage/editor-theme.json', p)
+    shutil.copyfile('/etc/workbench/editor-theme.json', p)
 PYEDITOR
 # Systemd owns the editor independently of the SSH session and restarts crashes.
-(umask 077; printf '%s' "$PWD" > "$HOME/.config/claude-cage/editor-workspace")
+(umask 077; printf '%s' "$PWD" > "$HOME/.config/workbench/editor-workspace")
 if ! systemctl is-active --quiet code-editor.service; then
   sudo /usr/local/libexec/editor-migrate
   sudo systemctl start code-editor.service

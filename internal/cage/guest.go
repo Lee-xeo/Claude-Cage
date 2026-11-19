@@ -358,12 +358,12 @@ func (c Config) StartScript() string {
 func (c Config) SetupScript() string { return c.GuestProfile.Linux(GuestSetup) }
 
 func componentStartScript() string {
-	return APTBootstrapScript + "\n" + guestMigrationScript + "\n" + claudeAccountScript() + browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet code-editor.service; then sudo systemctl stop code-editor.service; fi\n" + guestStart + "\n" + guestLegacyCleanup
+	return APTBootstrapScript + "\n" + guestMigrationScript + "\n" + claudeAccountScript() + browserServices() + "\nsudo tee /etc/workbench/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet code-editor.service; then sudo systemctl stop code-editor.service; fi\n" + guestStart + "\n" + guestLegacyCleanup
 }
 
 func markGuestStart(body string) string {
 	manifest, _ := json.Marshal(RequiredGuestManifest())
-	return "set -euo pipefail\nsudo rm -f /etc/claude-cage/components.json\n(\n" + body + "\n)\nsudo python3 - <<'CAGE_COMPONENT_MANIFEST'\nfrom pathlib import Path\nimport os,tempfile\np=Path('/etc/claude-cage/components.json')\nfd,name=tempfile.mkstemp(prefix='.components-',dir=p.parent)\nwith os.fdopen(fd,'w') as f:\n f.write(" + fmt.Sprintf("%q", string(manifest)) + ")\n f.flush();os.fsync(f.fileno())\nos.chmod(name,0o644)\nos.replace(name,p)\nCAGE_COMPONENT_MANIFEST\n"
+	return "set -euo pipefail\nsudo rm -f /etc/workbench/components.json\n(\n" + body + "\n)\nsudo python3 - <<'CAGE_COMPONENT_MANIFEST'\nfrom pathlib import Path\nimport os,tempfile\np=Path('/etc/workbench/components.json')\nfd,name=tempfile.mkstemp(prefix='.components-',dir=p.parent)\nwith os.fdopen(fd,'w') as f:\n f.write(" + fmt.Sprintf("%q", string(manifest)) + ")\n f.flush();os.fsync(f.fileno())\nos.chmod(name,0o644)\nos.replace(name,p)\nCAGE_COMPONENT_MANIFEST\n"
 }
 
 type GuestManifest struct {

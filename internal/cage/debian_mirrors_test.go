@@ -54,7 +54,11 @@ exit 0
 				os.WriteFile(filepath.Join(dir, name), []byte(body), 0755)
 			}
 			script := strings.ReplaceAll(DebianMirrorsScript, "/etc/apt/mirrors", mirrors)
-			script = strings.ReplaceAll(script, "/etc/claude-cage/debian-mirror", preference)
+			script = strings.ReplaceAll(script, "/etc/workbench/debian-mirror", preference)
+			// The former location is read only when the current one is absent;
+			// keep it inside the fixture so the machine running the test never
+			// supplies a preference.
+			script = strings.ReplaceAll(script, "/etc/claude-cage/debian-mirror", filepath.Join(dir, "former-preference"))
 			script = strings.ReplaceAll(script, "/usr/lib/apt/apt-helper", filepath.Join(dir, "apt-helper"))
 			suite := "trixie"
 			if mode == "bookworm" {

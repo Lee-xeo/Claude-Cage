@@ -6,9 +6,16 @@
 sudo env APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" sh -s -e -- "${debian_mirror_choice:-}" <<'CAGE_DEBIAN_MIRRORS'
 set -eu
 preference=auto
-if [ -f /etc/claude-cage/debian-mirror ]; then
-  preference=$(cat /etc/claude-cage/debian-mirror)
-fi
+# The user's own preference. Before an earlier installation's settings are
+# copied to the current directory, it is still found under its former name.
+source=/etc/workbench/debian-mirror
+for file in /etc/workbench/debian-mirror /etc/claude-cage/debian-mirror; do
+  if [ -f "$file" ]; then
+    preference=$(cat "$file")
+    source=$file
+    break
+  fi
+done
 # The host's choice wins over the saved file and is kept for later
 # maintenance runs, which do not repeat the measurement.
 if [ -n "${1:-}" ]; then
@@ -17,13 +24,14 @@ if [ -n "${1:-}" ]; then
     *) echo 'Invalid Debian mirror choice: use auto, official, nju or ustc.' >&2; exit 1;;
   esac
   preference=$1
-  mkdir -p "$(dirname /etc/claude-cage/debian-mirror)"
-  printf '%s\n' "$preference" > /etc/claude-cage/debian-mirror
+  source=/etc/workbench/debian-mirror
+  mkdir -p "$(dirname /etc/workbench/debian-mirror)"
+  printf '%s\n' "$preference" > /etc/workbench/debian-mirror
 fi
 case "$preference" in
   auto|official|nju) domestic="https://mirrors.nju.edu.cn https://mirrors.ustc.edu.cn";;
   ustc) domestic="https://mirrors.ustc.edu.cn https://mirrors.nju.edu.cn";;
-  *) echo 'Invalid /etc/claude-cage/debian-mirror: use auto, official, nju or ustc.' >&2; exit 1;;
+  *) echo "Invalid $source: use auto, official, nju or ustc." >&2; exit 1;;
 esac
 for repository in debian debian-security; do
   list="/etc/apt/mirrors/$repository.list"
