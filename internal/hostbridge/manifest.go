@@ -142,6 +142,14 @@ func (m *Manifest) check() error {
 			return fmt.Errorf("unknown permission %q", permission)
 		}
 	}
+	if len(m.Categories) > 3 {
+		return fmt.Errorf("at most three categories")
+	}
+	for i, category := range m.Categories {
+		if !validID(category) || slices.Contains(m.Categories[:i], category) {
+			return fmt.Errorf("category %q must be lowercase letters, digits and hyphens, and named once", category)
+		}
+	}
 	if m.Icon != "" && !validIcon(m.Icon) {
 		return fmt.Errorf("icon must be a PNG or SVG file inside the plugin")
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -95,6 +96,17 @@ func TestManifestSecondFormat(t *testing.T) {
 	for _, extra := range []string{`"kind":"guest"`, `"engines":{"cage":">=0.1.0"}`, `"activationEvents":["onStartupFinished"]`} {
 		if _, err := parseManifest([]byte(`{"name":"clock","version":"1","description":"A plugin.","permissions":[],"command":["x"],` + extra + `}`)); err == nil {
 			t.Errorf("first format accepted %s", extra)
+		}
+	}
+	// Categories are checked for form; ones not known here are kept but not
+	// shown, so the market can add sections later.
+	categorized, err := parseManifest([]byte(`{"name":"clock","version":"1","description":"Tells the time.","permissions":[],"categories":["example","later-section"],"command":["x"]}`))
+	if err != nil || len(categorized.Categories) != 2 || !slices.Equal(ShownCategories(categorized.Categories), []string{"example"}) {
+		t.Errorf("categories %q: %v", categorized.Categories, err)
+	}
+	for _, categories := range []string{`["a","b","c","d"]`, `["Desktop"]`, `["system","system"]`, `[""]`} {
+		if _, err := parseManifest([]byte(`{"name":"clock","version":"1","description":"Tells the time.","permissions":[],"categories":` + categories + `,"command":["x"]}`)); err == nil {
+			t.Errorf("categories %s accepted", categories)
 		}
 	}
 	// A page alone, with nothing to call, is a plugin too.

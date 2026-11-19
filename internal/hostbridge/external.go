@@ -40,7 +40,11 @@ type Manifest struct {
 	Platforms []string `json:"platforms,omitempty"`
 	// Permissions declares what the plugin does on the computer, for the
 	// user to read before enabling it. See KnownPermissions.
-	Permissions      []string `json:"permissions"`
+	Permissions []string `json:"permissions"`
+	// Categories place the plugin in the market's sections, at most three of
+	// KnownCategories. Ones this application does not know are kept but not
+	// shown, so the list can grow without breaking older applications.
+	Categories       []string `json:"categories,omitempty"`
 	ActivationEvents []string `json:"activationEvents,omitempty"`
 	// Command is the first format's single MCP server. After parsing, read
 	// Contributes.MCPServers instead: it holds this one too.
@@ -87,6 +91,21 @@ func IconType(name string) string {
 
 // KnownPermissions are the values a manifest may declare.
 var KnownPermissions = []string{"files", "commands", "screen", "input", "network"}
+
+// KnownCategories are the market's sections, in the order they are shown.
+var KnownCategories = []string{"desktop", "developer", "system", "network", "files", "productivity", "example"}
+
+// ShownCategories are those of categories this application knows, in their
+// given order.
+func ShownCategories(categories []string) []string {
+	var shown []string
+	for _, category := range categories {
+		if slices.Contains(KnownCategories, category) && !slices.Contains(shown, category) {
+			shown = append(shown, category)
+		}
+	}
+	return shown
+}
 
 var pluginName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 

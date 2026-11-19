@@ -27,6 +27,8 @@ type hostPluginView struct {
 	Version     string   `json:"version,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Permissions []string `json:"permissions"`
+	// Categories are the plugin's market sections this application knows.
+	Categories []string `json:"categories,omitempty"`
 	// Kind is host or guest: where the plugin's programs run.
 	Kind        string               `json:"kind,omitempty"`
 	Contributes *hostContributesView `json:"contributes,omitempty"`
@@ -167,6 +169,7 @@ func (s *Server) hostToolsView() hostToolsView {
 		}
 		unavailable := manifest.Unavailable(version.Version, true)
 		plugin := hostPluginView{Name: manifest.Name, DisplayName: manifest.DisplayName, Version: manifest.Version, Description: manifest.Description,
+			Categories:  hostbridge.ShownCategories(manifest.Categories),
 			Permissions: manifest.Permissions, Kind: manifest.Kind, Contributes: hostContributes(manifest.Contributes),
 			Supported: manifest.Supported() && unavailable == "", Icon: manifest.Icon != "", Enabled: !slices.Contains(off, entry.Name())}
 		// A page of a plugin on this computer has nothing to call while the
@@ -460,6 +463,7 @@ type hostMarketEntryView struct {
 	Version     string               `json:"version"`
 	Description string               `json:"description,omitempty"`
 	Permissions []string             `json:"permissions"`
+	Categories  []string             `json:"categories,omitempty"`
 	Kind        string               `json:"kind,omitempty"`
 	Contributes *hostContributesView `json:"contributes,omitempty"`
 	// Problem is why the plugin cannot be used with this application.
@@ -517,11 +521,13 @@ func (s *Server) hostPluginIcon(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getHostMarket(w http.ResponseWriter, r *http.Request) {
 	entries, fetched, err := s.hostMarketEntries(r.Context(), r.URL.Query().Get("refresh") == "1")
 	view := struct {
-		Source  string                `json:"source"`
-		Fetched string                `json:"fetched"`
-		Error   string                `json:"error,omitempty"`
-		Entries []hostMarketEntryView `json:"entries"`
-	}{Source: "https://github.com/Lee-xeo/cage-plugins", Entries: []hostMarketEntryView{}}
+		Source  string `json:"source"`
+		Fetched string `json:"fetched"`
+		Error   string `json:"error,omitempty"`
+		// Categories are the market's sections, in the order to show them.
+		Categories []string              `json:"categories"`
+		Entries    []hostMarketEntryView `json:"entries"`
+	}{Source: "https://github.com/Lee-xeo/cage-plugins", Categories: hostbridge.KnownCategories, Entries: []hostMarketEntryView{}}
 	if !fetched.IsZero() {
 		view.Fetched = fetched.UTC().Format(time.RFC3339)
 	}
@@ -532,7 +538,7 @@ func (s *Server) getHostMarket(w http.ResponseWriter, r *http.Request) {
 	for _, entry := range entries {
 		unavailable := hostbridge.Manifest{Kind: entry.Kind, Engines: entry.Engines, Contributes: entry.Contributes}.Unavailable(version.Version, true)
 		item := hostMarketEntryView{Name: entry.Name, DisplayName: entry.DisplayName, Version: entry.Version, Description: entry.Description,
-			Permissions: entry.Permissions, Kind: entry.Kind, Contributes: hostContributes(entry.Contributes), Problem: hostPluginUnavailable(unavailable),
+			Permissions: entry.Permissions, Categories: hostbridge.ShownCategories(entry.Categories), Kind: entry.Kind, Contributes: hostContributes(entry.Contributes), Problem: hostPluginUnavailable(unavailable),
 			Supported: entry.Supported() && unavailable == "", Bytes: entry.Bytes, Icon: entry.Icon != ""}
 		if manifest, err := hostbridge.LoadManifest(filepath.Join(s.hostPluginDir(), entry.Name)); err == nil {
 			item.InstalledVersion = manifest.Version

@@ -24,6 +24,7 @@ const tailnetPluginManifest = `{
   "engines": { "cage": ">=0.1.8" },
   "kind": "guest",
   "permissions": ["network"],
+  "categories": ["network"],
   "contributes": {
     "mcpServers": [
       { "id": "node", "command": ["/usr/local/bin/tailnet", "mcp"] }

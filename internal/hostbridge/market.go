@@ -45,6 +45,7 @@ type MarketEntry struct {
 	Description string   `json:"description"`
 	Platforms   []string `json:"platforms,omitempty"`
 	Permissions []string `json:"permissions"`
+	Categories  []string `json:"categories,omitempty"`
 	// Kind, Engines and Contributes repeat the plugin's manifest. Kind is
 	// host when the list leaves it out.
 	Kind        string       `json:"kind,omitempty"`
