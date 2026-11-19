@@ -104,6 +104,11 @@ export function TailscalePanel({ status, onOpenLogin, onOpenBrowser, onInstall, 
       </div>
       {(error || loginError && !connected) && <p className="error-message" role="alert">{error || loginError}</p>}
       {ready && state?.health?.length > 0 && <div className="tailscale-health" role="status"><strong>网络需要留意</strong>{state.health.map((message, i) => <p key={i}>{message}</p>)}</div>}
+      {ready && state?.renamed_from && <div className="tailscale-health" role="status">
+        <strong>设备已改名</strong>
+        <p>这台设备在 Tailscale 中的名称已从 {state.renamed_from} 改为 {state.hostname || state.name?.split(".")[0] || "新名称"}。如果你在 Tailscale 管理后台手动改过名称，以管理后台为准。</p>
+        <button className="quiet-button" disabled={busy} onClick={() => act("acknowledge-rename")}>知道了</button>
+      </div>}
       {connected && <section className="tailscale-self" aria-label="当前 Cage 设备">
         <DeviceIcon os={state.os} />
         <div><strong>{state.hostname || state.name?.split(".")[0] || "Cage"} <span className="tailscale-badge">当前环境</span></strong><span className="tailscale-address">{address || "正在分配地址…"}{state.os ? ` · ${state.os}` : ""}</span></div>

@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,6 +34,10 @@ const version = "1.104.5"
 type settings struct {
 	Enabled bool     `json:"enabled"`
 	Keys    []string `json:"keys"`
+	// Name is the device name last given to the network; RenamedFrom, until
+	// the user has seen it, the one it had before.
+	Name        string `json:"name,omitempty"`
+	RenamedFrom string `json:"renamed_from,omitempty"`
 }
 type request struct {
 	Action string `json:"action"`
@@ -70,6 +75,8 @@ type state struct {
 	Error     string         `json:"error,omitempty"`
 	ProxyURL  string         `json:"proxy_url,omitempty"`
 	Forwards  []forwardState `json:"forwards"`
+	// RenamedFrom is the device's former name, once, after it was renamed.
+	RenamedFrom string `json:"renamed_from,omitempty"`
 }
 type node struct {
 	mu          sync.Mutex
@@ -83,9 +90,124 @@ type node struct {
 	forwards    map[string]*tailnetForward
 }
 
+// dataDir is the node's folder, with its identity and keys. Earlier
+// versions kept it under another name: it is copied over once and checked
+// file by file, and the old folder stays where it is. While the copy cannot
+// be made, the old folder goes on being used.
 func dataDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "cage-tailnet")
+	current := filepath.Join(home, ".config", "tailnet")
+	former := filepath.Join(home, ".config", "cage-tailnet")
+	if _, err := os.Stat(current); err == nil {
+		return current
+	}
+	if info, err := os.Stat(former); err != nil || !info.IsDir() {
+		return current
+	}
+	if err := copyStateDir(former, current); err != nil {
+		return former
+	}
+	return current
+}
+
+// copyStateDir copies the folder from to to, by way of a temporary folder
+// beside to that is checked against from before it takes to's name. Another
+// process that got there first wins; its copy is used.
+func copyStateDir(from, to string) error {
+	if err := os.MkdirAll(filepath.Dir(to), 0700); err != nil {
+		return err
+	}
+	staging, err := os.MkdirTemp(filepath.Dir(to), filepath.Base(to)+".copy-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(staging)
+	files := 0
+	err = filepath.WalkDir(from, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(from, path)
+		if err != nil || relative == "." {
+			return err
+		}
+		target := filepath.Join(staging, relative)
+		info, err := entry.Info()
+		switch {
+		case err != nil:
+			return err
+		case entry.IsDir():
+			return os.Mkdir(target, info.Mode().Perm()|0700)
+		case !info.Mode().IsRegular():
+			return fmt.Errorf("%s is not a regular file", path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files++
+		return os.WriteFile(target, data, info.Mode().Perm())
+	})
+	if err != nil {
+		return err
+	}
+	// Every file read back equal before the copy is used.
+	checked := 0
+	err = filepath.WalkDir(from, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		relative, _ := filepath.Rel(from, path)
+		original, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		copied, err := os.ReadFile(filepath.Join(staging, relative))
+		if err != nil || !bytes.Equal(original, copied) {
+			return fmt.Errorf("the copy of %s differs", relative)
+		}
+		checked++
+		return nil
+	})
+	if err != nil || checked != files {
+		return fmt.Errorf("the copy could not be checked: %v", err)
+	}
+	if err := protectStateDir(staging); err != nil {
+		return err
+	}
+	if err := os.Rename(staging, to); err != nil {
+		if _, exists := os.Stat(to); exists == nil {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// deviceName is the name the device has on the network: this system's
+// name, without the parts that only said how it was set up.
+func deviceName() string {
+	hostname, _ := os.Hostname()
+	return deviceNameFrom(hostname)
+}
+
+func deviceNameFrom(hostname string) string {
+	var parts []string
+	for _, part := range strings.Split(strings.ToLower(hostname), "-") {
+		if part != "" && part != "cage" && part != "lima" {
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return "debian"
+	}
+	return strings.Join(parts, "-")
+}
+
+// formerDeviceName is the name earlier versions gave the device.
+func formerDeviceName() string {
+	hostname, _ := os.Hostname()
+	return "cage-" + strings.TrimPrefix(hostname, "cage-")
 }
 func newNode(dir string) (*node, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -116,9 +238,25 @@ func (n *node) start() error {
 	if n.server != nil {
 		return nil
 	}
-	hostname, _ := os.Hostname()
-	hostname = "cage-" + strings.TrimPrefix(hostname, "cage-")
-	s := &tsnet.Server{Dir: n.dir, Hostname: hostname, UserLogf: func(string, ...any) {}}
+	name := deviceName()
+	if name != n.config.Name {
+		// A device that has been on the network under an earlier name is
+		// renamed; the user is told once.
+		previous := n.config.Name
+		if previous == "" {
+			if _, err := os.Stat(filepath.Join(n.dir, "tailscaled.state")); err == nil {
+				previous = formerDeviceName()
+			}
+		}
+		if previous != "" && previous != name {
+			n.config.RenamedFrom = previous
+		}
+		n.config.Name = name
+		if err := n.save(); err != nil {
+			return err
+		}
+	}
+	s := &tsnet.Server{Dir: n.dir, Hostname: name, UserLogf: func(string, ...any) {}}
 	return n.startServer(s)
 }
 
@@ -175,7 +313,8 @@ func (n *node) stop() {
 }
 func (n *node) snapshot(ctx context.Context) (state, error) {
 	username := currentUser()
-	out := state{Installed: true, Version: version, Enabled: n.config.Enabled, Backend: "Stopped", IPs: []string{}, Peers: []peer{}, Keys: n.config.Keys, User: username, SSHPort: 22}
+	out := state{Installed: true, Version: version, Enabled: n.config.Enabled, Backend: "Stopped", IPs: []string{}, Peers: []peer{}, Keys: n.config.Keys, User: username, SSHPort: 22,
+		RenamedFrom: n.config.RenamedFrom}
 	if out.Keys == nil {
 		out.Keys = []string{}
 	}
@@ -322,6 +461,11 @@ func (n *node) run(ctx context.Context, r request) (state, error) {
 		}
 	case "remove-key":
 		n.config.Keys = slices.DeleteFunc(n.config.Keys, func(k string) bool { return k == r.Key })
+		if err := n.save(); err != nil {
+			return state{}, err
+		}
+	case "acknowledge-rename":
+		n.config.RenamedFrom = ""
 		if err := n.save(); err != nil {
 			return state{}, err
 		}
@@ -474,8 +618,19 @@ func (n *node) writeSSHConfig(peers []peer) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if !strings.Contains(string(existing), include) {
-		return os.WriteFile(path, append([]byte(include+"\n"), existing...), 0600)
+	// An include of the folder's former name goes; the folder itself stays.
+	var kept []string
+	for _, line := range strings.SplitAfter(string(existing), "\n") {
+		if line != "" && !(strings.HasPrefix(line, "Include \"") && strings.HasSuffix(strings.TrimSpace(line), "/cage-tailnet/ssh_config\"")) {
+			kept = append(kept, line)
+		}
+	}
+	rest := strings.Join(kept, "")
+	if !strings.Contains(rest, include) {
+		rest = include + "\n" + rest
+	}
+	if rest != string(existing) {
+		return os.WriteFile(path, []byte(rest), 0600)
 	}
 	return nil
 }
