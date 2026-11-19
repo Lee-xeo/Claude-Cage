@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | 给 Claude 的能力 | 提供工具，让环境里的 Claude 多一项本事 | `contributes.mcpServers` |
 | 定制 Cage | 在 Cage 里加一个自己的页面 | `contributes.views` |
+| 处理链接 | 在环境里打开某种协议的链接时，交给插件处理 | `contributes.uriHandlers` |
 
 工具由标准的 [MCP](https://modelcontextprotocol.io) 服务提供，通过标准输入输出通信，用任何语言都能写。页面是普通的 HTML，运行在沙箱里。
 
@@ -143,6 +144,17 @@ my-plugin/
 
 清单里的文件路径不超过 200 个字符。
 
+`contributes.uriHandlers[]`：
+
+| 字段 | 必需 | 说明 |
+| --- | --- | --- |
+| `scheme` | 是 | 协议名，小写字母开头，可含小写字母、数字和 `+`、`.`、`-`，不超过 40 个字符。不能是 `http`、`https`、`file`、`mailto`、`data`、`javascript`、`about`、`chrome`、`ws`、`wss`、`ftp`、`blob`，也不能是环境自己处理的 `claude` 和 `tailscale`。同一个协议只交给一个插件，按插件目录名排序在前的那个处理 |
+| `server` | 是 | 处理链接的 MCP 服务的 `id` |
+| `tool` | 是 | 调用的工具，参数为 `{"url": 链接全文}`。可以是只给页面的工具 |
+| `reveal` | 否 | 处理完后打开的页面 `id` |
+
+在环境里打开这个协议的链接时，例如在内置浏览器里点击，或在终端里运行 `xdg-open`，应用会调用插件的这个工具。调用与页面调用使用同一份授权，确认窗口里注明来源为打开的链接。需要应用的工作台窗口开着：链接经工作台转交给插件。
+
 `openUrls` 的写法：
 
 - 协议为 `https://` 加明确的主机名，或 `http://127.0.0.1`、`http://localhost`。`https://localhost` 不合法。
@@ -167,6 +179,18 @@ my-plugin/
 ```
 
 旧格式里不能写 `engines`、`kind`（`host` 除外）和 `activationEvents`，可以写 `categories`。
+
+### 启动时机 `activationEvents`
+
+不写 `activationEvents` 的插件随插件加载一起启动。写了的插件按其中的事件启动：
+
+| 事件 | 何时启动 |
+| --- | --- |
+| `onStartupFinished` | 随插件加载一起启动，和不写一样 |
+| `onView:<页面 id>` | 打开这个页面时 |
+| `onUri:<协议>` | 打开这个协议的链接时 |
+
+列表里没有 `onStartupFinished` 的插件在用到前不运行，它的工具也不提供给 Claude；启动后才出现在 Claude 的工具列表里。插件的页面调用工具、或者有它处理的链接被打开时，尚未启动的插件也会先启动。插件页上这类插件显示为「用到时启动」。只能用于第二版清单。
 
 ### 工具的命名和说明
 
@@ -282,7 +306,6 @@ MCP 服务可以脱离 Cage 单独测试：它只是一个读标准输入、写�
 
 规范里已经预留、应用还没有实现的部分：
 
-- `contributes.uriHandlers`（处理自定义协议的链接）和 `activationEvents`：字段名已预留，清单里可以写，但不生效，格式也还没有定下来，现在请不要使用。
 - 一个插件多个 MCP 服务。
 - MCP 服务主动发出的通知不会转给页面，页面需要自己定时调用工具取最新状态。
 

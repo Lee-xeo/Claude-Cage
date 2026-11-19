@@ -166,3 +166,34 @@ func TestClaudeDesktopScriptsParse(t *testing.T) {
 		})
 	}
 }
+
+// A link of a scheme a plugin handles goes to the browser service, which
+// tells the workbench; any other goes to the desktop's file handling as
+// before.
+func TestPluginLinkGoesToTheWorkbench(t *testing.T) {
+	bin := t.TempDir()
+	list := filepath.Join(bin, "plugin-links")
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("plugin-links", "demo\n")
+	// The browser request: the path asked for, then the link on stdin.
+	write("node", "#!/bin/sh\nshift 3\nprintf '%s ' \"$1\"\ncat\n")
+	write("files", "#!/bin/sh\nprintf 'files %s' \"$*\"\n")
+	write("id", "#!/bin/sh\nprintf cage-browser\n")
+	script := strings.NewReplacer("/usr/local/lib/plugin-links", list, "/usr/bin/node", filepath.Join(bin, "node"),
+		"/usr/local/bin/cage-desktop-files", filepath.Join(bin, "files")).Replace(guestOpen)
+	for link, want := range map[string]string{
+		"Demo:open?id=1": "/plugin-link Demo:open?id=1",
+		"other:thing":    "files --open other:thing",
+		"/home/x/a.txt":  "files --open /home/x/a.txt",
+	} {
+		cmd := exec.Command("sh", "-c", script, "open", link)
+		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin")
+		if out, err := cmd.CombinedOutput(); err != nil || string(out) != want {
+			t.Errorf("%s: %q %v, want %q", link, out, err, want)
+		}
+	}
+}

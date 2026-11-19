@@ -251,8 +251,8 @@ func TestPluginProgramIsRunAgainAfterItExits(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer plugin.Close()
-	_, _ = plugin.call(ctx, "repeat_text", json.RawMessage(`{"text":"die"}`), false)
-	result, err := plugin.call(ctx, "repeat_text", json.RawMessage(`{"text":"ok"}`), false)
+	_, _ = plugin.call(ctx, "repeat_text", json.RawMessage(`{"text":"die"}`), fromModel)
+	result, err := plugin.call(ctx, "repeat_text", json.RawMessage(`{"text":"ok"}`), fromModel)
 	if err != nil || result.IsError {
 		t.Fatalf("after the program exited: %v %+v", err, result)
 	}
@@ -316,8 +316,58 @@ func TestCatalogPluginInstallsAndLoads(t *testing.T) {
 		t.Fatalf("plugins %d, failures %v", len(plugins), failures)
 	}
 	defer plugins[0].Close()
-	result, err := plugins[0].call(ctx, "current_time", nil, false)
+	result, err := plugins[0].call(ctx, "current_time", nil, fromModel)
 	if err != nil || result.IsError || len(result.Content) == 0 {
 		t.Fatalf("call: %v %+v", err, result)
+	}
+}
+
+// A plugin that starts on demand is loaded without running, starts when a
+// link of its scheme is opened, and then offers its tools like any other.
+// The link reaches its tool through the same approval, marked as a link.
+func TestOnDemandPluginStartsForItsLinks(t *testing.T) {
+	root := t.TempDir()
+	dir := writePlugin(t, root, "linker", "plain")
+	manifest := `{"name":"linker","version":"1.0.0","description":"d","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"host",
+		"activationEvents":["onUri:demo"],
+		"contributes":{"mcpServers":[{"id":"main","command":["run.sh"]}],"uriHandlers":[{"scheme":"demo","server":"main","tool":"repeat_text"}]}}`
+	if err := os.WriteFile(filepath.Join(dir, ManifestFile), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	var asked []ToolRequest
+	approve := func(_ context.Context, request ToolRequest) error { asked = append(asked, request); return nil }
+	plugins, failures := LoadPlugins(ctx, root, LoadOptions{Approve: approve})
+	if len(plugins) != 1 || len(failures) != 0 {
+		t.Fatalf("plugins %d, failures %v", len(plugins), failures)
+	}
+	plugin := plugins[0]
+	defer plugin.Close()
+	if !plugin.Waiting() || len(plugin.Tools()) != 0 {
+		t.Fatalf("started before its event: waiting=%t tools=%v", plugin.Waiting(), plugin.Tools())
+	}
+	if _, _, err := plugin.OpenLink(ctx, "other:x", time.Minute); !errors.Is(err, ErrNoHandler) {
+		t.Fatalf("a link of another scheme: %v", err)
+	}
+	result, handler, err := plugin.OpenLink(ctx, "Demo:open?id=1", time.Minute)
+	// The test tool wants other arguments; that it answered is what counts.
+	if err != nil || result == nil || handler.Tool != "repeat_text" {
+		t.Fatalf("open link: %+v %+v %v", result, handler, err)
+	}
+	if plugin.Waiting() || !slices.Equal(plugin.Tools(), []string{"repeat_text"}) {
+		t.Fatalf("after its event: waiting=%t tools=%v", plugin.Waiting(), plugin.Tools())
+	}
+	if len(asked) != 1 || !asked[0].FromLink || asked[0].FromView || !strings.Contains(asked[0].Arguments, `"Demo:open?id=1"`) {
+		t.Fatalf("approval asked %+v", asked)
+	}
+	// Started later, it is held to the tool names the others already use.
+	clashing, _ := LoadPlugins(ctx, root, LoadOptions{Taken: []string{"repeat_text"}, Approve: approve})
+	if len(clashing) != 1 {
+		t.Fatalf("loaded %d", len(clashing))
+	}
+	defer clashing[0].Close()
+	if err := clashing[0].Activate(ctx); err == nil || !strings.Contains(err.Error(), "already in use") {
+		t.Fatalf("a clashing tool name was accepted: %v", err)
 	}
 }

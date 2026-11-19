@@ -895,6 +895,16 @@ function App() {
     stream.addEventListener("clipboard", (event) => {
       remote.current?.receiveCopy?.(JSON.parse(event.data));
     });
+    // A link opened in the environment that a plugin handles. Every window
+    // passes it on; the app hands it to the plugin once, and this window shows
+    // the page the plugin names for it.
+    stream.addEventListener("plugin-link", (event) => {
+      let link;
+      try { link = JSON.parse(event.data); } catch { return; }
+      void api("/host-tools/link", { id: link.id, url: link.url }).then(result => {
+        if (result?.plugin && result.view) openPluginView({ key: `${result.plugin}/${result.view}` });
+      }).catch(error => notify(error.message, "error"));
+    });
     stream.onopen = () => { browserStreamReady.current = true; };
     stream.onerror = () => { browserStreamReady.current = false; };
     stream.onmessage = (event) => {

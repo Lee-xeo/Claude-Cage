@@ -42,8 +42,10 @@ type hostPluginView struct {
 	Always         bool     `json:"always"`
 	AlwaysProjects []string `json:"always_projects,omitempty"`
 	// Enabled is false for a plugin the user turned off.
-	Enabled bool                  `json:"enabled"`
-	Loaded  bool                  `json:"loaded"`
+	Enabled bool `json:"enabled"`
+	Loaded  bool `json:"loaded"`
+	// Waiting says the plugin starts on demand and has not started yet.
+	Waiting bool                  `json:"waiting,omitempty"`
 	Tools   []hostbridge.ToolInfo `json:"tools,omitempty"`
 	// Problem is why the plugin's folder cannot be used.
 	Problem string `json:"problem,omitempty"`
@@ -68,6 +70,8 @@ type hostViewView struct {
 
 type hostSchemeView struct {
 	Scheme string `json:"scheme"`
+	// Reveal is the page opened once the link is handled.
+	Reveal string `json:"reveal,omitempty"`
 }
 
 type hostServerView struct {
@@ -87,7 +91,7 @@ func hostContributes(c *hostbridge.Contributes) *hostContributesView {
 		view.Views = append(view.Views, hostViewView{ID: page.ID, Title: page.Title, Icon: page.Icon != "", OpenURLs: urls})
 	}
 	for _, handler := range c.URIHandlers {
-		view.URIHandlers = append(view.URIHandlers, hostSchemeView{Scheme: handler.Scheme})
+		view.URIHandlers = append(view.URIHandlers, hostSchemeView{Scheme: handler.Scheme, Reveal: handler.Reveal})
 	}
 	for _, server := range c.MCPServers {
 		view.MCPServers = append(view.MCPServers, hostServerView{ID: server.ID})
@@ -143,10 +147,12 @@ func (s *Server) hostToolsView() hostToolsView {
 		view.Folders = []string{}
 	}
 	loaded := map[string][]hostbridge.ToolInfo{}
+	waiting := map[string]bool{}
 	if tools != nil {
 		view.Problems = tools.problems
 		for _, plugin := range tools.plugins {
 			loaded[plugin.Manifest.Name] = plugin.ToolList()
+			waiting[plugin.Manifest.Name] = plugin.Waiting()
 		}
 	}
 	view.Plugins = []hostPluginView{{Name: hostCommandsPlugin, BuiltIn: true, Supported: true, Enabled: !slices.Contains(off, hostCommandsPlugin),
@@ -190,7 +196,7 @@ func (s *Server) hostToolsView() hostToolsView {
 		} else if unavailable != "" {
 			plugin.Problem = hostPluginUnavailable(unavailable)
 		} else if list, ok := loaded[manifest.Name]; ok {
-			plugin.Loaded, plugin.Tools = true, list
+			plugin.Loaded, plugin.Tools, plugin.Waiting = true, list, waiting[manifest.Name]
 		}
 		view.Plugins = append(view.Plugins, plugin)
 	}

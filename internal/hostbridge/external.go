@@ -130,6 +130,8 @@ type ToolRequest struct {
 	Arguments string
 	// FromView says the plugin's own page made the call, not the model.
 	FromView bool
+	// FromLink says the call hands the plugin a link the user opened.
+	FromLink bool
 }
 
 // RefusedError is a call the user, or the rules, did not let through.
@@ -156,6 +158,110 @@ type External struct {
 	mu      sync.Mutex
 	session *mcp.ClientSession
 	tools   []*mcp.Tool
+	// activated is set once the program has started and its tools were
+	// accepted; names holds it to the tool names the other plugins use.
+	activated bool
+	names     *toolNames
+}
+
+// toolNames are the tool names in use among the loaded plugins, shared so a
+// plugin that starts later is held to the same rule as one started at once.
+type toolNames struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (n *toolNames) claim(plugin string, tools []string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, tool := range tools {
+		if slices.Contains(n.names, tool) {
+			return fmt.Errorf("plugin %s: tool name %s is already in use", plugin, tool)
+		}
+	}
+	n.names = append(n.names, tools...)
+	return nil
+}
+
+// OnDemand says the plugin starts at one of its activation events rather
+// than when it is loaded: it lists some and not onStartupFinished.
+func (m Manifest) OnDemand() bool {
+	return len(m.ActivationEvents) > 0 && !slices.Contains(m.ActivationEvents, "onStartupFinished")
+}
+
+// Waiting says the plugin starts on demand and has not started yet.
+func (e *External) Waiting() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return !e.activated
+}
+
+// Activate starts a plugin that starts on demand, once; for any other it
+// does nothing. Its tools are then offered like those of the others.
+func (e *External) Activate(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.activated {
+		return nil
+	}
+	if err := e.startLocked(ctx); err != nil {
+		return err
+	}
+	var offered []string
+	for _, tool := range e.tools {
+		if toolFor(tool, forModel) {
+			offered = append(offered, tool.Name)
+		}
+	}
+	if e.names != nil {
+		if err := e.names.claim(e.Manifest.Name, offered); err != nil {
+			_ = e.session.Close()
+			e.session, e.tools = nil, nil
+			return err
+		}
+	}
+	e.activated = true
+	return nil
+}
+
+// LinkHandler is the handler the plugin declares for link's scheme.
+func (m Manifest) LinkHandler(link string) (URIHandler, bool) {
+	scheme, _, found := strings.Cut(link, ":")
+	if !found || m.Contributes == nil {
+		return URIHandler{}, false
+	}
+	scheme = strings.ToLower(scheme)
+	for _, handler := range m.Contributes.URIHandlers {
+		if handler.Scheme == scheme {
+			return handler, true
+		}
+	}
+	return URIHandler{}, false
+}
+
+// ErrNoHandler is a link no plugin handles.
+var ErrNoHandler = errors.New("no plugin handles links of this kind")
+
+// OpenLink hands link to the tool the plugin names for its scheme, as
+// {"url": link}, starting the plugin first if it has not started. The call
+// goes through the same approval as one from the plugin's page.
+func (e *External) OpenLink(ctx context.Context, link string, wait time.Duration) (*mcp.CallToolResult, URIHandler, error) {
+	handler, ok := e.Manifest.LinkHandler(link)
+	if !ok {
+		return nil, handler, ErrNoHandler
+	}
+	if err := e.Activate(ctx); err != nil {
+		return nil, handler, err
+	}
+	e.mu.Lock()
+	known := slices.ContainsFunc(e.tools, func(tool *mcp.Tool) bool { return tool.Name == handler.Tool })
+	e.mu.Unlock()
+	if !known {
+		return nil, handler, fmt.Errorf("plugin %s has no tool %s for its links", e.Manifest.Name, handler.Tool)
+	}
+	arguments, _ := json.Marshal(map[string]string{"url": link})
+	result, err := e.callWithin(ctx, handler.Tool, arguments, fromLink, wait)
+	return result, handler, err
 }
 
 // Start runs the program and reads its tools. It fails, leaving nothing
@@ -163,7 +269,11 @@ type External struct {
 func (e *External) Start(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.startLocked(ctx)
+	if err := e.startLocked(ctx); err != nil {
+		return err
+	}
+	e.activated = true
+	return nil
 }
 
 func (e *External) startLocked(ctx context.Context) error {
@@ -275,7 +385,7 @@ func (e *External) Register(server *mcp.Server) {
 			continue
 		}
 		server.AddTool(tool, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			result, err := e.call(ctx, tool.Name, request.Params.Arguments, false)
+			result, err := e.call(ctx, tool.Name, request.Params.Arguments, fromModel)
 			if err != nil {
 				refused := &mcp.CallToolResult{}
 				refused.SetError(err)
@@ -309,19 +419,30 @@ var ErrCallTimedOut = errors.New("the tool did not answer in time")
 // the call is let through, or it fails with ErrCallTimedOut; the time the
 // user takes to decide does not count.
 func (e *External) CallFromView(ctx context.Context, name string, arguments json.RawMessage, wait time.Duration) (*mcp.CallToolResult, error) {
+	// A plugin that starts on demand starts for its page.
+	if err := e.Activate(ctx); err != nil {
+		return nil, err
+	}
 	if !slices.ContainsFunc(e.PageTools(), func(tool *mcp.Tool) bool { return tool.Name == name }) {
 		return nil, &RefusedError{fmt.Errorf("plugin %s, tool %s: %w", e.Manifest.Name, name, ErrNotForPage)}
 	}
-	return e.callWithin(ctx, name, arguments, true, wait)
+	return e.callWithin(ctx, name, arguments, fromPage, wait)
 }
 
-func (e *External) call(ctx context.Context, name string, arguments json.RawMessage, fromView bool) (*mcp.CallToolResult, error) {
-	return e.callWithin(ctx, name, arguments, fromView, 0)
+// Who a call comes from.
+const (
+	fromModel = iota
+	fromPage
+	fromLink
+)
+
+func (e *External) call(ctx context.Context, name string, arguments json.RawMessage, from int) (*mcp.CallToolResult, error) {
+	return e.callWithin(ctx, name, arguments, from, 0)
 }
 
-func (e *External) callWithin(ctx context.Context, name string, arguments json.RawMessage, fromView bool, wait time.Duration) (*mcp.CallToolResult, error) {
+func (e *External) callWithin(ctx context.Context, name string, arguments json.RawMessage, from int, wait time.Duration) (*mcp.CallToolResult, error) {
 	if e.Approve != nil {
-		if err := e.Approve(ctx, ToolRequest{Plugin: e.Manifest.Name, Tool: name, Arguments: string(arguments), FromView: fromView}); err != nil {
+		if err := e.Approve(ctx, ToolRequest{Plugin: e.Manifest.Name, Tool: name, Arguments: string(arguments), FromView: from == fromPage, FromLink: from == fromLink}); err != nil {
 			return nil, &RefusedError{err}
 		}
 	}
@@ -432,7 +553,7 @@ func LoadPlugins(ctx context.Context, dir string, options LoadOptions) ([]*Exter
 	}
 	var loaded []*External
 	var failures []error
-	names := slices.Clone(taken)
+	names := &toolNames{names: slices.Clone(taken)}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -458,27 +579,17 @@ func LoadPlugins(ctx context.Context, dir string, options LoadOptions) ([]*Exter
 		if options.GuestOnly && manifest.Kind != KindGuest {
 			continue
 		}
-		plugin := &External{Manifest: manifest, Dir: path, Approve: approve}
+		plugin := &External{Manifest: manifest, Dir: path, Approve: approve, names: names}
 		if manifest.Kind == KindGuest {
 			plugin.Spawn = func(ctx context.Context) (*exec.Cmd, error) { return options.Guest(ctx, manifest, path) }
 		}
-		if err := plugin.Start(ctx); err != nil {
-			failures = append(failures, err)
-			continue
-		}
-		clash := ""
-		for _, tool := range plugin.Tools() {
-			if slices.Contains(names, tool) {
-				clash = tool
-				break
+		// One that starts on demand is loaded now and started at its event.
+		if !manifest.OnDemand() {
+			if err := plugin.Activate(ctx); err != nil {
+				failures = append(failures, err)
+				continue
 			}
 		}
-		if clash != "" {
-			plugin.Close()
-			failures = append(failures, fmt.Errorf("plugin %s: tool name %s is already in use", manifest.Name, clash))
-			continue
-		}
-		names = append(names, plugin.Tools()...)
 		loaded = append(loaded, plugin)
 	}
 	return loaded, failures

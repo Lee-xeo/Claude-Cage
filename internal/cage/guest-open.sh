@@ -51,9 +51,16 @@ case "${1:-}" in
     fi
     ;;
   *)
-    # File operations belong to the desktop session, never the browser control
-    # token. The host resolves them only within Cage project directories.
-    exec /usr/local/bin/cage-desktop-files --open "${1:-}"
+    # Links of a scheme a plugin handles go to the workbench, which hands them
+    # to the plugin. The workbench keeps the list of those schemes.
+    scheme=$(printf '%s' "${1:-}" | sed -n 's/^\([A-Za-z][A-Za-z0-9+.-]*\):.*/\1/p' | tr 'A-Z' 'a-z')
+    if [ -n "$scheme" ] && grep -qxF "$scheme" /usr/local/lib/plugin-links 2>/dev/null; then
+      set -- /plugin-link "$1"
+    else
+      # File operations belong to the desktop session, never the browser control
+      # token. The host resolves them only within Cage project directories.
+      exec /usr/local/bin/cage-desktop-files --open "${1:-}"
+    fi
     ;;
 esac
 # sudo records its arguments in the system journal. Send the URL on stdin.

@@ -167,6 +167,7 @@ func (s *Server) startHostTools(serving bool) error {
 		}
 	}
 	tools := &hostTools{cancel: cancel, done: make(chan struct{}), plugins: external, jobs: jobs, problems: problems, serving: serving}
+	go s.syncPluginLinks(external)
 	if !serving {
 		// Nothing is served and nothing forwarded; done only marks the end.
 		close(tools.done)

@@ -154,6 +154,7 @@ func (s *Server) servePluginView(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	s.activateForView(plugin, id)
 	root := filepath.Join(s.hostViewProfile(), "plugins", plugin)
 	// Inside the folder of the page's entry, and no part of the way there a
 	// link out of it.

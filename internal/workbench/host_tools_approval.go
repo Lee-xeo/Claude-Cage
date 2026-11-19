@@ -55,6 +55,9 @@ func (a *hostApprovals) approveTool(ctx context.Context, request hostbridge.Tool
 	if request.FromView {
 		title, source = "允许插件页面使用它的工具？", "\n来源　插件自己的页面"
 	}
+	if request.FromLink {
+		title, source = "允许插件处理你打开的链接？", "\n来源　你在环境中打开的链接"
+	}
 	return a.decide(ctx, hostGrantPlugin+request.Plugin, a.permissions[request.Plugin], request.Arguments, len(request.Arguments),
 		title,
 		"插件「"+request.Plugin+"」\n工具　"+request.Tool+source+"\n\n"+request.Arguments+

@@ -21,14 +21,14 @@ const tailscaleManifest = `{
   "engines": { "cage": "^1.0.0" },
   "kind": "guest",
   "permissions": ["network"],
-  "activationEvents": ["onStartupFinished", "onView:tailscale", "onUri:tailscale"],
+  "activationEvents": ["onStartupFinished", "onView:tailscale", "onUri:tailnet"],
   "contributes": {
     "mcpServers": [{ "id": "node", "command": ["bin/tailnet"] }],
     "views": [{
       "id": "tailscale", "title": "Tailscale", "icon": "icon.svg", "entry": "view/index.html", "server": "node",
       "openUrls": ["https://login.tailscale.com/a/*", "https://login.tailscale.com/c/*", "http://127.0.0.1:*/*"]
     }],
-    "uriHandlers": [{ "scheme": "tailscale", "server": "node", "tool": "browser_return", "reveal": "tailscale" }]
+    "uriHandlers": [{ "scheme": "tailnet", "server": "node", "tool": "browser_return", "reveal": "tailscale" }]
   }
 }`
 
@@ -37,7 +37,7 @@ func TestManifestSecondFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Kind != KindGuest || len(m.Contributes.Views) != 1 || m.Schemes()[0] != "tailscale" {
+	if m.Kind != KindGuest || len(m.Contributes.Views) != 1 || m.Schemes()[0] != "tailnet" {
 		t.Fatalf("manifest %+v", m)
 	}
 	if m.Unavailable("0.1.8", true) != NeedsNewerApplication || m.Unavailable("1.2.0", false) != GuestNotSupported || m.Unavailable("", true) != "" {
@@ -75,14 +75,15 @@ func TestManifestSecondFormat(t *testing.T) {
 		"open url without path":        {`https://login.tailscale.com/a/*`, `https://login.tailscale.com`},
 		"open url other scheme":        {`https://login.tailscale.com/a/*`, `file:///etc/*`},
 		"open url bare host":           {`https://login.tailscale.com/a/*`, `https://intranet/*`},
-		"scheme reserved":              {`"scheme": "tailscale"`, `"scheme": "https"`},
-		"scheme form":                  {`"scheme": "tailscale"`, `"scheme": "Tail_scale"`},
-		"handler server":               {`"scheme": "tailscale", "server": "node"`, `"scheme": "tailscale", "server": "none"`},
+		"scheme reserved":              {`"scheme": "tailnet"`, `"scheme": "https"`},
+		"scheme of the environment":    {`"scheme": "tailnet"`, `"scheme": "tailscale"`},
+		"scheme form":                  {`"scheme": "tailnet"`, `"scheme": "Tail_net"`},
+		"handler server":               {`"scheme": "tailnet", "server": "node"`, `"scheme": "tailnet", "server": "none"`},
 		"handler tool":                 {`"tool": "browser_return", `, ``},
 		"handler reveal":               {`"reveal": "tailscale"`, `"reveal": "elsewhere"`},
 		"activation event":             {`"onStartupFinished"`, `"onCommand:x"`},
 		"activation of a missing view": {`"onView:tailscale"`, `"onView:other"`},
-		"activation of a missing link": {`"onUri:tailscale"`, `"onUri:other"`},
+		"activation of a missing link": {`"onUri:tailnet"`, `"onUri:other"`},
 	}
 	for name, change := range broken {
 		if !strings.Contains(tailscaleManifest, change[0]) {
@@ -226,7 +227,7 @@ func TestLoadPluginsRunsGuestPluginsWhereTold(t *testing.T) {
 		t.Fatalf("plugins %d, failures %v", len(plugins), failures)
 	}
 	defer plugins[0].Close()
-	if result, err := plugins[0].call(ctx, "current_time", nil, false); err != nil || result.IsError {
+	if result, err := plugins[0].call(ctx, "current_time", nil, fromModel); err != nil || result.IsError {
 		t.Fatalf("call: %v %+v", err, result)
 	}
 }

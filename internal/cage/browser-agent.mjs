@@ -868,6 +868,16 @@ const server = http.createServer(async (req, res) => {
       res.end('{"ok":true}');
       return;
     }
+    if (req.url === "/plugin-link") {
+      // A link of a scheme a plugin handles: every open workbench window is
+      // told, and the first to answer hands it to the plugin.
+      const url = typeof input.url === "string" ? input.url : "";
+      if (!url || url.length > 4096 || !/^[a-z][a-z0-9+.-]*:/i.test(url)) { res.writeHead(400); res.end("{}"); return; }
+      const payload = "event: plugin-link\ndata: " + JSON.stringify({ id: randomUUID(), url }) + "\n\n";
+      for (const stream of events) stream.write(payload);
+      res.end(JSON.stringify({ ok: events.size > 0 }));
+      return;
+    }
     if (req.url === "/upload-start" || req.url === "/upload-finish") {
       const result = await mutate(async () => {
         const tabId = req.url === "/upload-start" ? input.id : uploads.request(input.id).tabId;

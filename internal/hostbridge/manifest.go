@@ -65,8 +65,9 @@ const (
 var (
 	engineRange = regexp.MustCompile(`^(>=|\^)(\d+)\.(\d+)\.(\d+)$`)
 	uriScheme   = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
-	// commonSchemes belong to the browser and the system, never to a plugin.
-	commonSchemes = []string{"http", "https", "file", "ftp", "mailto", "data", "javascript", "blob", "about", "chrome", "ws", "wss"}
+	// commonSchemes belong to the browser, the system and the environment's own
+	// handlers, never to a plugin.
+	commonSchemes = []string{"http", "https", "file", "ftp", "mailto", "data", "javascript", "blob", "about", "chrome", "ws", "wss", "claude", "tailscale"}
 	urlPort       = regexp.MustCompile(`^(\*|\d{1,5})$`)
 	hostName      = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
 )

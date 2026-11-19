@@ -100,9 +100,14 @@ type Server struct {
 	projectShares                                    map[string]*projectShare
 	hostTools                                        *hostTools
 	hostToolsRemoved                                 bool
-	hostMarket                                       hostMarketCache
-	hostGrants                                       *hostGrants
-	hostGrantsOnce                                   sync.Once
+	// pluginLinkIDs are the links last handed to plugins; pluginLinksWritten
+	// is the list of link schemes last written to the environment.
+	pluginLinkIDs      []string
+	pluginLinksWritten string
+	pluginLinksKnown   bool
+	hostMarket         hostMarketCache
+	hostGrants         *hostGrants
+	hostGrantsOnce     sync.Once
 	// tailnetTool stands in for the running Tailscale plugin in tests.
 	tailnetTool             func(context.Context, string, json.RawMessage) (*mcp.CallToolResult, error)
 	hostViewMu              sync.Mutex
@@ -371,6 +376,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /api/host-tools", s.getHostTools)
 	mux.HandleFunc("POST /api/host-tools", s.setHostTools)
 	mux.HandleFunc("POST /api/host-tools/call", s.callHostTool)
+	mux.HandleFunc("POST /api/host-tools/link", s.openPluginLink)
 	mux.HandleFunc("GET /api/host-tools/market", s.getHostMarket)
 	mux.HandleFunc("GET "+hostPluginIconPath, s.hostPluginIcon)
 	mux.HandleFunc("GET /api/client/about", s.appAbout)

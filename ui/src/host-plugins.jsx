@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Blocks, Check, ChevronDown, ChevronRight, CircleAlert, Clock, Copy, Download, Folder, FolderOpen, Globe2,
-  Keyboard, LoaderCircle, Monitor, PanelLeft, RefreshCw, Search, Settings, ShieldCheck, SquareTerminal, Store, Trash2, TriangleAlert, Wrench,
+  Keyboard, Link2, LoaderCircle, Monitor, PanelLeft, RefreshCw, Search, Settings, ShieldCheck, SquareTerminal, Store, Trash2, TriangleAlert, Wrench,
 } from "lucide-react";
 import { api, writeClipboard } from "./api";
 import { runtimeURL } from "./client-context.mjs";
@@ -30,9 +30,8 @@ const permissionText = list => list?.length ? list.map(name => permissions[name]
 const unsupportedLabel = item => item.problem ? "需要更新 Cage" : "不支持此系统";
 
 // contributions lists what a plugin adds to the app beyond its tools: pages in
-// the sidebar. Every MCP plugin has a server, so servers alone are not shown
-// here; they appear as tools. Link handlers are not in effect yet, so they are
-// not promised either.
+// the sidebar and the links it handles. Every MCP plugin has a server, so
+// servers alone are not shown here; they appear as tools.
 const urlHost = pattern => pattern.replace(/^[a-z]+:\/\//, "").replace(/\/.*$/, "").replace(/:\*$/, "");
 function contributions(item) {
   const contributes = item?.contributes || {};
@@ -42,19 +41,23 @@ function contributions(item) {
     list.push({ key: `view:${view.id}`, icon: PanelLeft, title: `页面「${view.title || view.id}」`,
       text: `在侧栏添加一个页面。页面在隔离的框架中运行，只能使用这个插件自己的工具。${hosts.length ? `它可以在内置浏览器中打开：${hosts.join("、")}。` : "它不能打开网页。"}` });
   }
+  for (const handler of contributes.uri_handlers || []) {
+    list.push({ key: `uri:${handler.scheme}`, icon: Link2, title: `处理 ${handler.scheme}: 链接`,
+      text: `在环境里打开以 ${handler.scheme}: 开头的链接时，交给这个插件处理${handler.reveal ? "，并打开它的页面" : ""}。` });
+  }
   return list;
 }
 const contributionText = item => contributions(item).map(entry => entry.title).join("；");
 
 // purposes are what a plugin is for: abilities for Claude, from its MCP
-// servers, and changes to the app, from its pages. A plugin without
-// contributions is a first-version one: one MCP server.
+// servers, and changes to the app, from its pages and link handlers. A
+// plugin without contributions is a first-version one: one MCP server.
 export function purposes(item) {
   const contributes = item?.contributes;
   if (!contributes) return ["Claude 工具"];
   const list = [];
   if (contributes.mcp_servers?.length) list.push("Claude 工具");
-  if (contributes.views?.length) list.push("界面扩展");
+  if (contributes.views?.length || contributes.uri_handlers?.length) list.push("界面扩展");
   return list;
 }
 // categoryNames are the market's sections. The app lists only those it
@@ -154,6 +157,7 @@ function entryInfo(entry, view) {
       : plugin.enabled === false ? { tone: "off", label: "已停用" }
       : !plugin.supported ? { tone: "problem", label: unsupportedLabel(plugin) }
       : !view.enabled ? { tone: "", label: "未开启" }
+      : plugin.loaded && plugin.waiting ? { tone: "", label: "用到时启动" }
       : plugin.loaded ? { tone: "online", label: "运行中" }
       : view.running ? { tone: "", label: "未加载" } : { tone: "waiting", label: "等待启动" };
   } else if (!item.supported) state = { tone: "problem", label: unsupportedLabel(item) };
