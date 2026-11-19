@@ -69,7 +69,7 @@ func TestNodeServesItsActionsAsToolsForItsPage(t *testing.T) {
 			}
 		}
 	}
-	if strings.Join(names, " ") != "status connect login disconnect logout add_key remove_key open_service browser_return" {
+	if strings.Join(names, " ") != "status connect login disconnect logout add_key remove_key open_service browser_return acknowledge_rename" {
 		t.Fatalf("tools %v", names)
 	}
 	status := result(3)
