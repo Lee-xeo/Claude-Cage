@@ -113,7 +113,7 @@ try {
   await actions.getByRole("button", { name: "取消置顶", exact: true }).click();
   const renameButton = actions.getByRole("button", { name: "重命名", exact: true });
   await renameButton.hover();
-  await actions.getByText("重命名", { exact: true }).waitFor();
+  await page.getByRole("tooltip").filter({ hasText: /^重命名$/ }).waitFor();
   await renameButton.click();
   await page.getByLabel("标签名称").fill("开发终端");
   await page.getByRole("button", { name: "保存名称" }).click();

@@ -56,7 +56,10 @@ export function IconHints() {
       const box = element.getBoundingClientRect();
       const tip = hint.getBoundingClientRect();
       const left = Math.max(8, Math.min(window.innerWidth - tip.width - 8, box.left + (box.width - tip.width) / 2));
-      const top = box.bottom + 8 + tip.height <= window.innerHeight ? box.bottom + 8 : Math.max(8, box.top - tip.height - 8);
+      const above = box.top - tip.height - 8;
+      const below = box.bottom + 8;
+      const showAbove = (element.dataset.hintPlacement === "top" && above >= 8) || below + tip.height > window.innerHeight;
+      const top = showAbove ? Math.max(8, above) : below;
       hint.style.left = `${left}px`;
       hint.style.top = `${top}px`;
     }

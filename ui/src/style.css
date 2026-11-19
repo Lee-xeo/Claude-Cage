@@ -1708,9 +1708,7 @@ svg {
 }
 .terminal-row-actions > button {
   flex: 0 0 auto;
-  width: auto;
-  min-width: 25px;
-  gap: 4px;
+  width: 25px;
   min-height: 26px;
   height: 26px;
   padding: 0;
@@ -1722,17 +1720,6 @@ svg {
 }
 .terminal-row-actions > button:focus-visible {
   outline-offset: -2px;
-}
-.terminal-action-label {
-  display: none;
-  margin-left: 4px;
-  color: var(--muted);
-  font-size: 0.7857rem;
-  white-space: nowrap;
-}
-.terminal-row-actions > button:hover .terminal-action-label,
-.terminal-row-actions:not(:has(> button:hover)) > button:focus-visible .terminal-action-label {
-  display: block;
 }
 @media (prefers-reduced-motion: reduce) {
   .terminal-row-actions { transition: none; }

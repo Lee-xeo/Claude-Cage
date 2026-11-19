@@ -49,16 +49,28 @@ try {
     const short = project.getByRole("button", { name: "你好", exact: true });
     const before = await short.locator("svg").first().boundingBox();
     await short.hover();
-    await project.getByRole("group", { name: "你好 的操作", exact: true }).getByRole("button", { name: "重命名", exact: true }).waitFor();
+    const actions = project.getByRole("group", { name: "你好 的操作", exact: true });
+    const rename = actions.getByRole("button", { name: "重命名", exact: true });
+    await rename.waitFor();
+    await actions.evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished)));
+    const actionBounds = await actions.boundingBox();
+    const hint = page.getByRole("tooltip", { name: "重命名", exact: true });
+    await rename.hover();
+    const hoverHint = await hint.boundingBox();
+    assert.ok(hoverHint && hoverHint.y + hoverHint.height < (await rename.boundingBox()).y, "rename hint must appear above its icon");
+    assert.equal((await actions.textContent()).trim(), "", "action labels must only appear as hints");
+    assert.deepEqual(await actions.boundingBox(), actionBounds, "showing a hint shifted the action buttons");
     const after = await short.locator("svg").first().boundingBox();
     assert.ok(Math.abs(before.x - after.x) < 1, "hover shifted the session icon");
+    await page.mouse.move(width - 10, 10);
     await short.focus();
     if (engine !== "webkit") {
       await page.keyboard.press("Tab");
       assert.equal(await page.locator(":focus").getAttribute("aria-label"), "置顶");
     }
-    const rename = project.getByRole("group", { name: "你好 的操作", exact: true }).getByRole("button", { name: "重命名", exact: true });
     await rename.focus();
+    const focusHint = await hint.boundingBox();
+    assert.ok(focusHint && focusHint.y + focusHint.height < (await rename.boundingBox()).y, "keyboard focus must show the hint above its icon");
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("textbox", { name: "标签名称" }).waitFor();
