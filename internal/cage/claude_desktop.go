@@ -81,9 +81,14 @@ sudo tee /etc/claude-cage/desktop-openbox.xml >/dev/null <<'CAGE_CLAUDE_WINDOWS'
 <applications><application type="normal"><decor>no</decor><maximized>yes</maximized></application></applications>
 </openbox_config>
 CAGE_CLAUDE_WINDOWS
-sudo tee /etc/systemd/system/cage-claude-desktop.service >/dev/null <<'CAGE_CLAUDE_UNIT'
+# A Desktop opened before the environment's components were updated keeps
+# running under its former unit, which this name refers to until it closes.
+unit=/etc/systemd/system/desktop-session.service
+if ! { [ -L "$unit" ] && systemctl is-active --quiet desktop-session.service; }; then
+  if [ -L /run/desktop-session ]; then sudo rm -f /run/desktop-session; fi
+  sudo tee /etc/systemd/system/.desktop-session.tmp >/dev/null <<'DESKTOP_UNIT'
 [Unit]
-Description=Claude Desktop in Cage
+Description=Claude Desktop session
 [Service]
 Type=notify
 NotifyAccess=all
@@ -91,15 +96,17 @@ User=cage
 WorkingDirectory=/home/cage
 Environment=HOME=/home/cage
 EnvironmentFile=/etc/claude-cage/environment
-RuntimeDirectory=cage-desktop
+RuntimeDirectory=desktop-session
 RuntimeDirectoryMode=0700
 ExecStart=/usr/local/libexec/service-log /usr/local/libexec/claude-desktop-session
-ExecStop=/bin/bash /usr/local/lib/desktop-finish.sh /run/cage-desktop cage-claude-desktop.service
-LogNamespace=cage
+ExecStop=/bin/bash /usr/local/lib/desktop-finish.sh /run/desktop-session desktop-session.service
+LogNamespace=services
 KillMode=control-group
 TimeoutStartSec=45
 TimeoutStopSec=20
-CAGE_CLAUDE_UNIT
+DESKTOP_UNIT
+  sudo mv -f /etc/systemd/system/.desktop-session.tmp "$unit"
+fi
 sudo systemctl daemon-reload
 `
 }

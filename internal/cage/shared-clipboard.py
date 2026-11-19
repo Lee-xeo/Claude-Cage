@@ -29,7 +29,7 @@ WIRE_LIMIT = 30 * 1024 * 1024
 
 class CacheRegistry:
     def __init__(self, directory=None):
-        self.directory = Path(directory or Path(tempfile.gettempdir()) / ('cage-clipboard-ownership-' + str(os.getuid())))
+        self.directory = Path(directory or Path(tempfile.gettempdir()) / ('clipboard-ownership-' + str(os.getuid())))
 
     def ensure_directory(self):
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -101,7 +101,7 @@ class CacheRegistry:
     def register(self, paths, session, pending=False):
         root = Path(paths[0]).parent
         identity = uuid.uuid4().hex
-        fd, marker = tempfile.mkstemp(dir=root, prefix='.cage-clipboard-owner-')
+        fd, marker = tempfile.mkstemp(dir=root, prefix='.clipboard-owner-')
         with os.fdopen(fd, 'w') as output:
             output.write(identity)
         self.ensure_directory()
@@ -221,7 +221,7 @@ def import_files(source, session=''):
     registry = CacheRegistry()
     if session:
         registry.require_session(session)
-    root = Path(tempfile.mkdtemp(prefix='cage-clipboard-'))
+    root = Path(tempfile.mkdtemp(prefix='clipboard-'))
     record = None
     try:
         record = registry.register([str(root / '.pending')], session, pending=True)
@@ -329,7 +329,7 @@ def clipboard_worker(name, connection):
     os.environ['NO_AT_BRIDGE'] = '1'
     os.environ['DISPLAY'] = name
     if name == ':78':
-        os.environ['XAUTHORITY'] = '/run/cage-desktop/Xauthority'
+        os.environ['XAUTHORITY'] = '/run/desktop-session/Xauthority'
     else:
         os.environ.pop('XAUTHORITY', None)
     import gi

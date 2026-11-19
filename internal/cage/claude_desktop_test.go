@@ -71,7 +71,7 @@ func TestDesktopCallbackFocusAfterHandoff(t *testing.T) {
 				}
 				args = append(args, tc.url)
 				cmd := exec.Command("sh", args...)
-				cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "TEST_NODE="+node, "TEST_IDENTITY="+identity, "CALLBACK_EXIT="+code, "CAGE_CLAUDE_LOGIN="+login)
+				cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "TEST_NODE="+node, "TEST_IDENTITY="+identity, "CALLBACK_EXIT="+code, "LOGIN_ID="+login)
 				out, err := cmd.CombinedOutput()
 				if tc.fail {
 					if err == nil {

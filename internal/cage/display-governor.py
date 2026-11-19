@@ -328,8 +328,8 @@ def main():
         print('display governor: XI 2.1 unavailable; keeping the full rate', file=sys.stderr)
         connection.close()
         return 0
-    governor = Governor(connection, os.environ.get('CAGE_DISPLAY_OUTPUT', 'VNC-0'),
-                        Activity(os.environ.get('CAGE_DISPLAY_ACTIVITY')))
+    governor = Governor(connection, os.environ.get('DISPLAY_OUTPUT', 'VNC-0'),
+                        Activity(os.environ.get('DISPLAY_ACTIVITY_SOCKET')))
     # Never raise out of a python-xlib request: it can leave a reply lock held
     # and deadlock the full-rate restore below. Mark shutdown and wake select
     # instead, including when the idle display has no next timer deadline.

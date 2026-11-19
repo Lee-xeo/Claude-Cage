@@ -40,7 +40,7 @@ def main():
         handle = None
         try:
             handle = os.pidfd_open(int(proc.name))
-            if 'cage-editor.service' in (proc / 'cgroup').read_text():
+            if 'code-editor.service' in (proc / 'cgroup').read_text():
                 continue
             argv = (proc / 'cmdline').read_bytes().decode(errors='replace').rstrip('\0').split('\0')
             if not is_legacy_editor(argv, os.readlink(proc / 'exe'), proc.stat().st_uid, cage_uid):

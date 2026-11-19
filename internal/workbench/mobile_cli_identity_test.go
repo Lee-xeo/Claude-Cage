@@ -47,7 +47,7 @@ ns = {"__name__": "identity_test"}
 exec(compile(sys.stdin.read(), "mobile_cli_identity.py", "exec"), ns)
 setup = Path("../../agent-vm.setup.sh").read_text()
 policy = json.loads(setup.split("managed-settings.json > /dev/null\n", 1)[1].split("\nJSON", 1)[0])
-with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"HOME": directory, "CAGE_CLAUDE_SUBJECT": "a" * 64}, clear=True):
+with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"HOME": directory, "ACCOUNT_SUBJECT": "a" * 64}, clear=True):
     home = Path(directory)
     os.environ["ProgramFiles"] = str(home / "Program Files")
     managed = Path(os.environ["ProgramFiles"]) / "ClaudeCode" if os.name == "nt" else home / "managed"
@@ -196,7 +196,7 @@ fi
 				}
 				settings = filepath.Join(configDir, "settings.json")
 				email, organization := "synthetic@example.invalid", uuid.NewString()
-				prefix = []string{"env", fmt.Sprintf("CAGE_CLAUDE_SUBJECT=%x", sha256.Sum256([]byte(email+"\n"+organization))),
+				prefix = []string{"env", fmt.Sprintf("ACCOUNT_SUBJECT=%x", sha256.Sum256([]byte(email+"\n"+organization))),
 					"/usr/local/libexec/claude-account", "run", slot}
 				writeSubject = func(address string) {
 					state := map[string]any{"hasCompletedOnboarding": true, "oauthAccount": map[string]string{

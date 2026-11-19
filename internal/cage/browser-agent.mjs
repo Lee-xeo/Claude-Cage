@@ -25,7 +25,7 @@ const config = JSON.parse(
 );
 const displayScale = config.display_scale === 1.5 ? 1.5 : 2;
 // Started before Chromium, which then opens at this density.
-const displaySettings = createDisplaySettings({ file: "/home/cage-browser/.cache/cage-display/xsettings.conf", initial: displayScale });
+const displaySettings = createDisplaySettings({ file: "/home/cage-browser/.cache/display/xsettings.conf", initial: displayScale });
 process.on("exit", () => displaySettings.close());
 const selectionFile = "/home/cage-browser/workbench-state.json";
 const homepageFile = "/home/cage-browser/homepage.json";
@@ -85,8 +85,8 @@ const flags = [
   "--disable-session-crashed-bubble",
   "--window-size=1440,900",
   ...(displaySettings.available ? [] : [`--force-device-scale-factor=${displayScale}`]),
-  `--lang=${process.env.CAGE_LANGUAGE || "en-US"}`,
-  `--accept-lang=${process.env.CAGE_LANGUAGE || "en-US"}`,
+  `--lang=${process.env.BROWSER_LANG || "en-US"}`,
+  `--accept-lang=${process.env.BROWSER_LANG || "en-US"}`,
 ];
 const freshProfile = !existsSync("/home/cage-browser/profile/Default/Sessions");
 if (freshProfile) flags.push("about:blank");
@@ -115,7 +115,7 @@ const isNativeNewTab = url => /^chrome:\/\/(newtab|new-tab-page|new-tab-page-thi
 // Developer tools share the window with the page they inspect, or cover it.
 const inspectors = new Set();
 const pointerProbe = createPointerProbe();
-const displayActivity = createActivitySignal({ path: "/home/cage-browser/.cache/cage-display/activity.sock" });
+const displayActivity = createActivitySignal({ path: "/home/cage-browser/.cache/display/activity.sock" });
 process.on("exit", () => { pointerProbe.close(); displayActivity.close(); });
 // A scrolled distance goes to the one page that fills the window. Two panes,
 // developer tools and a hidden window keep the wheel steps of the display.
@@ -621,7 +621,7 @@ async function editor(workspace = config.workspace, reload = false) {
   return newTab(editorURL);
 }
 async function restartEditor(workspace) {
-  await runFile("/usr/bin/sudo", ["/usr/bin/systemctl", "restart", "cage-editor.service"], { timeout: 18000, maxBuffer: 4096 });
+  await runFile("/usr/bin/sudo", ["/usr/bin/systemctl", "restart", "code-editor.service"], { timeout: 18000, maxBuffer: 4096 });
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
     try {

@@ -23,7 +23,7 @@ import (
 
 // The broker belongs to Claude Desktop, not to the VM. An unopened desktop
 // is an ordinary empty poll; a failed service must still surface as an error.
-const desktopFilesPoll = `state=$(systemctl is-active cage-claude-desktop.service 2>/dev/null) || true
+const desktopFilesPoll = `state=$(systemctl is-active desktop-session.service 2>/dev/null) || true
 case "$state" in
   inactive|activating|deactivating|unknown)
     printf '%s\n' '{"available":false,"uploads":[],"downloads":[],"opens":[]}'
@@ -60,7 +60,7 @@ func (s *Server) guestFiles(ctx context.Context, target, method, path string, bo
 	if err != nil {
 		return nil, err
 	}
-	script := asWorkUser + "curl --silent --show-error --max-time 1800 --write-out '\\nCAGE_FILE_HTTP:%{http_code}' --unix-socket /run/cage-desktop/files.sock -X " + method
+	script := asWorkUser + "curl --silent --show-error --max-time 1800 --write-out '\\nCAGE_FILE_HTTP:%{http_code}' --unix-socket /run/desktop-session/files.sock -X " + method
 	if target == "terminal" {
 		script = asWorkUser + "/usr/local/libexec/desktop-files --save-file " + shellescape.Quote(name)
 	} else {

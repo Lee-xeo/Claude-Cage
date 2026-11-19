@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ ! -x /usr/bin/chromium ]]; then
-  echo 'Missing chromium; run cage setup first.' >&2
+  echo 'Missing chromium; set up the environment first.' >&2
   exit 1
 fi
 for app in code-server Xtigervnc openbox websockify; do
-  command -v "$app" >/dev/null || { echo "Missing $app; run cage setup first." >&2; exit 1; }
+  command -v "$app" >/dev/null || { echo "Missing $app; set up the environment first." >&2; exit 1; }
 done
 # English text keeps its requested fonts. For missing Han glyphs, prefer the
 # Simplified Chinese face of the installed Noto collection.
@@ -40,7 +40,7 @@ if [ ! -s "$HOME/.config/claude-cage/browser-password" ]; then
 fi
 sudo install -d -o cage-browser -g cage-browser -m 0700 /home/cage-browser/.vnc
 cat "$HOME/.config/claude-cage/browser-password" | sudo -u cage-browser sh -c 'umask 077; tigervncpasswd -f > "$HOME/.vnc/passwd"'
-sudo systemctl stop cage-browser || true
+sudo systemctl stop browser-session || true
 # Existing images may predate the explicit locale dependency. The scoped
 # maintenance channel can install it while business networking stays closed.
 if ! dpkg-query -W -f='${Status}' chromium-l10n 2>/dev/null | grep -qx 'install ok installed'; then
@@ -71,22 +71,22 @@ p.write_text(json.dumps(d))
 p.chmod(0o640)
 os.chown(p,0,grp.getgrnam('cage-browser').gr_gid)
 PYCONTROL
-sudo -u cage-browser env CAGE_LANGUAGE="$CAGE_LANGUAGE" python3 - <<'PYCODE'
+sudo -u cage-browser env BROWSER_LANG="$BROWSER_LANG" python3 - <<'PYCODE'
 import json, os
 from pathlib import Path
 p = Path.home() / "profile/Default/Preferences"
 p.parent.mkdir(parents=True, exist_ok=True)
 d = json.loads(p.read_text()) if p.exists() else {}
-d.setdefault("intl", {})["accept_languages"] = os.environ["CAGE_LANGUAGE"]
-d["intl"]["selected_languages"] = os.environ["CAGE_LANGUAGE"]
+d.setdefault("intl", {})["accept_languages"] = os.environ["BROWSER_LANG"]
+d["intl"]["selected_languages"] = os.environ["BROWSER_LANG"]
 d.setdefault("translate", {})["enabled"] = False
 d["credentials_enable_service"] = False
 d.setdefault("profile", {})["password_manager_enabled"] = False
 p.write_text(json.dumps(d))
 PYCODE
-sudo systemctl reset-failed cage-display cage-window-manager cage-browser cage-webvnc 2>/dev/null || true
-sudo systemctl reset-failed cage-display-governor 2>/dev/null || true
-sudo systemctl restart cage-display cage-window-manager cage-browser cage-webvnc
+sudo systemctl reset-failed browser-display browser-window-manager browser-session browser-web-viewer 2>/dev/null || true
+sudo systemctl reset-failed display-governor 2>/dev/null || true
+sudo systemctl restart browser-display browser-window-manager browser-session browser-web-viewer
 # Seed only appearance settings for a new editor profile. Existing preferences stay intact.
 python3 - <<'PYEDITOR'
 import shutil
@@ -98,9 +98,9 @@ if not p.exists():
 PYEDITOR
 # Systemd owns the editor independently of the SSH session and restarts crashes.
 (umask 077; printf '%s' "$PWD" > "$HOME/.config/claude-cage/editor-workspace")
-if ! systemctl is-active --quiet cage-editor.service; then
+if ! systemctl is-active --quiet code-editor.service; then
   sudo /usr/local/libexec/editor-migrate
-  sudo systemctl start cage-editor.service
+  sudo systemctl start code-editor.service
 fi
 sudo python3 /usr/local/lib/wait-services.py
-printf 'Cage services ready. Timezone=%s Locale=%s Browser=%s\n' "$CAGE_TZ" "$CAGE_LOCALE" "$CAGE_LANGUAGE"
+printf 'Services ready. Timezone=%s Locale=%s Browser=%s\n' "$CAGE_TZ" "$CAGE_LOCALE" "$BROWSER_LANG"

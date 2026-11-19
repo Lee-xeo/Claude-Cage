@@ -13,6 +13,10 @@ import tempfile
 import uuid
 from urllib.parse import urlsplit
 
+# Variables the workbench sets for its own helpers; the CLI never receives them.
+CONTROLLER_VARIABLES = frozenset(("ACCOUNT_PROFILE_ID", "ACCOUNT_SUBJECT", "ACCOUNT_BROWSER", "LOGIN_ID",
+                                  "LOGIN_CONNECTION", "LOGIN_OWNER", "WORKBENCH_TERMINAL", "TERMINAL_COMMAND"))
+
 
 class Unverified(Exception):
     pass
@@ -72,7 +76,7 @@ def ccs_launch(profile, args, id_index):
     probe_id = str(uuid.uuid4())
     probe_args = args.copy()
     probe_args[id_index] = probe_id
-    with tempfile.TemporaryDirectory(prefix="cage-ccs-launch-") as directory:
+    with tempfile.TemporaryDirectory(prefix="ccs-launch-") as directory:
         probe = Path(directory) / "claude"
         probe.write_text("#!" + sys.executable + " -I\n" + CCS_PROBE)
         probe.chmod(0o700)
@@ -289,7 +293,7 @@ def resolve(prefix, args, id_index, snapshot):
 
 def resolve_actual_context(binary, prefix, args, env, settings, snapshot):
     config, settings, route_env, route_settings, flags, policies = freeze_settings(env, settings, snapshot)
-    env = {key: value for key, value in env.items() if not key.upper().startswith("CAGE_")}
+    env = {key: value for key, value in env.items() if key.upper() not in CONTROLLER_VARIABLES}
     effective = {**route_env, **route_settings}
     fd = snapshot.fileno()
     status = subprocess.run([binary, *flags, "auth", "status"], env=env, pass_fds=() if os.name == "nt" else (fd,),
@@ -346,7 +350,7 @@ def official_turn(helper_path, account, args, snapshot, sid, resume, verify_only
                     raise Changed()
             elif key.startswith(("ANTHROPIC_", "CLAUDE_")) and key not in harmless_env:
                 raise Unverified()
-    subject = os.environ.get("CAGE_CLAUDE_SUBJECT")
+    subject = os.environ.get("ACCOUNT_SUBJECT")
     if not subject:
         raise Unverified()
     def bind_subscription(reading):
@@ -419,7 +423,7 @@ def main():
                 raise Unverified()
             bind(sid, False, None)
             single_turn_notice()
-            os.execvpe(prefix[0], [*prefix, *args], {key: value for key, value in os.environ.items() if not key.upper().startswith("CAGE_")})
+            os.execvpe(prefix[0], [*prefix, *args], {key: value for key, value in os.environ.items() if key.upper() not in CONTROLLER_VARIABLES})
         bind(sid, resume, material)
         if verify_only:
             raise Verified(Path(env.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").resolve())

@@ -47,7 +47,7 @@ func TestMiseArchivesHaveIndependentPinsResumeAndFallback(t *testing.T) {
 			binary := "#!/bin/sh\necho 2026.10.25\n# " + tc.arch + "\n"
 			npm, nh := miseArchive(t, "package/bin/mise", binary)
 			release, rh := miseArchive(t, "mise/bin/mise", binary)
-			cache := filepath.Join(dir, ".cache", "cage", "downloads", rh)
+			cache := filepath.Join(dir, ".cache", "tool-downloads", rh)
 			write := func(path string, data []byte, mode os.FileMode) {
 				t.Helper()
 				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {

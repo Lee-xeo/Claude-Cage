@@ -51,7 +51,7 @@ func TestDesktopResizeScriptAppliesTheViewersDensity(t *testing.T) {
 	write(filepath.Join(bin, "xsettingsd"), "#!/bin/sh\ntrap 'echo reload >> \"$CAGE_RESIZE_FIXTURE/reloads\"' HUP\nwhile :; do sleep 1 & wait $!; done\n", 0o700)
 	resize := func(scale string) string {
 		t.Helper()
-		script := strings.NewReplacer("/run/cage-desktop", desktop, "/run/cage-phone-desktop", phone).Replace(desktopResizeScript(1000, 800, scale))
+		script := strings.NewReplacer("/run/desktop-session", desktop, "/run/phone-desktop", phone).Replace(desktopResizeScript(1000, 800, scale))
 		cmd := exec.Command(bash, "--noprofile", "--norc", "-c", script)
 		cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
 		output, err := cmd.CombinedOutput()

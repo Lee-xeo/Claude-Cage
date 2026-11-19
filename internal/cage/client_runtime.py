@@ -15,8 +15,13 @@ import uuid
 import threading
 
 _KEYS = ("CAGE_CLI_STATE_ROOT", "CAGE_CLI_ACCOUNT_ROOT", "CAGE_CLI_SHARED_ROOT",
-         "CAGE_CLI_ACCOUNT_HELPER", "CAGE_CLI_BINARY", "CAGE_CLAUDE_SUBJECT", "CAGE_REMOTE_APP_CONTAINER",
-         "CAGE_LOGIN_OWNER", "CAGE_ACCOUNT_BROWSER")
+         "CAGE_CLI_ACCOUNT_HELPER", "CAGE_CLI_BINARY", "ACCOUNT_SUBJECT", "CAGE_REMOTE_APP_CONTAINER",
+         "LOGIN_OWNER", "ACCOUNT_BROWSER")
+
+# Variables the workbench sets for its own helpers. They describe the
+# controller, not the program being started, and are never passed on.
+CONTROLLER_VARIABLES = frozenset((*_KEYS, "ACCOUNT_PROFILE_ID", "LOGIN_ID", "LOGIN_CONNECTION",
+                                  "WORKBENCH_TERMINAL", "TERMINAL_COMMAND"))
 
 _context = {**os.environ, **globals().get("_controller_context", {})}
 _remote_windows = os.name == "nt" and _context.get("CAGE_REMOTE_APP_CONTAINER") == "1"
@@ -164,7 +169,7 @@ def launcher(script, *, executable=False, arguments=(), login_config=None):
             ("os.execv(" + repr(target) + ", [" + repr(target) + ", *" + repr(list(arguments)) + ", *sys.argv[1:]])\n" if executable else
              "sys.argv[0]=" + repr(target) + "\nrunpy.run_path(" + repr(target) +
              ",run_name='__main__',init_globals={'_controller_context':" + repr(internal) + "})\n"))
-    connection = os.environ.get("CAGE_LOGIN_CONNECTION", "")
+    connection = os.environ.get("LOGIN_CONNECTION", "")
     if executable and login_config and connection and os.name != "nt":
         invoke = ("runpy.run_path(" + repr(str(Path(__file__).resolve())) + ")['record_login_open']("
                   + repr(str(login_config)) + "," + repr(connection) + ",sys.argv[1:])\n")
@@ -191,14 +196,14 @@ def command_text(script, args=()):
 
 
 def environment(values):
-    clean = {key: value for key, value in values.items() if not key.upper().startswith("CAGE_")}
+    clean = {key: value for key, value in values.items() if key.upper() not in CONTROLLER_VARIABLES}
     if "PATH" in clean:
         clean["PATH"] = os.pathsep.join(path(entry) if entry else entry for entry in clean["PATH"].split(os.pathsep))
     for key in ("CLAUDE_CONFIG_DIR", "CLAUDE_CODE_GIT_BASH_PATH", "XDG_RUNTIME_DIR", "XAUTHORITY"):
         if clean.get(key):
             clean[key] = path(clean[key])
     browser = clean.get("BROWSER", "")
-    connection = values.get("CAGE_LOGIN_CONNECTION")
+    connection = values.get("LOGIN_CONNECTION")
     if connection and not browser and os.name != "nt":
         browser = OPENER
     if browser and (connection or browser == OPENER) and Path(browser).is_file():

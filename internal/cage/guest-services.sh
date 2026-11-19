@@ -1,7 +1,7 @@
 # Publish browser assets while the web endpoint is stopped, so clients cannot
 # mix old and new noVNC modules during an upgrade.
-if systemctl is-active --quiet cage-webvnc; then
-  sudo systemctl stop cage-webvnc
+if systemctl is-active --quiet browser-web-viewer; then
+  sudo systemctl stop browser-web-viewer
 fi
 if ! command -v ip >/dev/null || ! test -x /usr/sbin/iptables || ! command -v Xtigervnc >/dev/null || ! command -v openbox >/dev/null || ! command -v xrandr >/dev/null || ! command -v xdotool >/dev/null || ! command -v ibus-daemon >/dev/null || ! /usr/bin/python3 -c 'import gi; gi.require_version("IBus", "1.0"); gi.require_version("Gtk", "3.0")' 2>/dev/null; then
   sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-tools openbox x11-xserver-utils xdotool libgtk-3-0 ibus ibus-gtk3 gir1.2-ibus-1.0 gir1.2-gtk-3.0 python3-gi python3-xlib xsettingsd iproute2 iptables
@@ -29,21 +29,21 @@ workspace=$(cat /home/cage/.config/claude-cage/editor-workspace)
 exec /usr/bin/code-server --bind-addr 127.0.0.1:18080 --config /home/cage/.config/claude-cage/code-server.yaml --disable-telemetry --disable-update-check --disable-workspace-trust --disable-proxy "$workspace"
 SCRIPT
 sudo chmod 0755 /usr/local/libexec/editor-start
-sudo tee /etc/systemd/system/cage-editor.service >/dev/null <<'UNIT'
+sudo tee /etc/systemd/system/code-editor.service >/dev/null <<'UNIT'
 [Unit]
-Description=Cage file editor
+Description=Code editor
 [Service]
 User=cage
 WorkingDirectory=/home/cage
 Environment=HOME=/home/cage
 EnvironmentFile=/etc/claude-cage/environment
 ExecStart=/usr/local/libexec/service-log /usr/local/libexec/editor-start
-LogNamespace=cage
+LogNamespace=services
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=15
 UNIT
-printf 'cage-browser ALL=(root) NOPASSWD: /usr/bin/systemctl restart cage-editor.service\n' | sudo tee /etc/sudoers.d/editor-restart >/dev/null
+printf 'cage-browser ALL=(root) NOPASSWD: /usr/bin/systemctl restart code-editor.service\n' | sudo tee /etc/sudoers.d/editor-restart >/dev/null
 sudo chmod 0440 /etc/sudoers.d/editor-restart
 sudo tee /etc/profile.d/claude-cage.sh >/dev/null <<'SCRIPT'
 if [ -f /etc/claude-cage/environment ]; then
@@ -57,15 +57,15 @@ SCRIPT
 if ! grep -q '/etc/profile.d/claude-cage.sh' /etc/zsh/zshenv; then
   echo '. /etc/profile.d/claude-cage.sh' | sudo tee -a /etc/zsh/zshenv >/dev/null
 fi
-sudo tee /etc/systemd/system/cage-display.service >/dev/null <<'UNIT'
+sudo tee /etc/systemd/system/browser-display.service >/dev/null <<'UNIT'
 [Unit]
-Description=Claude Cage virtual browser display
-Wants=cage-display-governor.service
+Description=Virtual browser display
+Wants=display-governor.service
 [Service]
 User=cage-browser
 ExecStartPre=/usr/bin/rm -f /home/cage-browser/.vnc/display.sock
 ExecStart=/usr/local/libexec/service-log /usr/bin/Xtigervnc :77 -geometry 2880x1800 -depth 24 -rfbport 15900 -localhost -nolisten tcp -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd -AlwaysShared
-LogNamespace=cage
+LogNamespace=services
 Restart=on-failure
 UNIT
 sudo tee /etc/claude-cage/openbox.xml >/dev/null <<'WINDOW_CONFIG'
@@ -77,29 +77,30 @@ sudo tee /etc/claude-cage/openbox.xml >/dev/null <<'WINDOW_CONFIG'
 <applications><application type="normal"><decor>no</decor><maximized>yes</maximized></application></applications>
 </openbox_config>
 WINDOW_CONFIG
-sudo tee /etc/systemd/system/cage-window-manager.service >/dev/null <<'UNIT'
+sudo tee /etc/systemd/system/browser-window-manager.service >/dev/null <<'UNIT'
 [Unit]
-Description=Cage window geometry and focus (no desktop shell)
-Requires=cage-display.service
-After=cage-display.service
+Description=Browser window geometry and focus (no desktop shell)
+Requires=browser-display.service
+After=browser-display.service
 [Service]
 User=cage-browser
 Environment=DISPLAY=:77
 ExecStart=/usr/local/libexec/service-log /usr/bin/openbox --config-file /etc/claude-cage/openbox.xml
-LogNamespace=cage
+LogNamespace=services
 Restart=on-failure
 UNIT
-sudo tee /etc/systemd/system/cage-browser.service >/dev/null <<'UNIT'
+sudo tee /etc/systemd/system/browser-session.service >/dev/null <<'UNIT'
 [Unit]
-Description=Claude Cage persistent browser
-Requires=cage-display.service cage-window-manager.service
-After=cage-display.service cage-window-manager.service
+Description=Persistent browser
+Requires=browser-display.service browser-window-manager.service
+After=browser-display.service browser-window-manager.service
 [Service]
 User=cage-browser
 Environment=DISPLAY=:77
 EnvironmentFile=/etc/claude-cage/environment
+EnvironmentFile=-/etc/claude-cage/browser.env
 ExecStart=/usr/local/libexec/service-log /usr/local/libexec/input-session /usr/bin/node /usr/local/lib/browser-agent.mjs
-LogNamespace=cage
+LogNamespace=services
 # Let the controller close Chromium and flush its tabs and profile before
 # systemd terminates any remaining child processes.
 KillMode=mixed
@@ -108,44 +109,38 @@ RestartSec=2
 UNIT
 # Starts, restarts and stops with the display it paces. The display only
 # wants it: a guest without python3-xlib keeps its full refresh rate.
-sudo tee /etc/systemd/system/cage-display-governor.service >/dev/null <<'UNIT'
+sudo tee /etc/systemd/system/display-governor.service >/dev/null <<'UNIT'
 [Unit]
-Description=Claude Cage browser display pacing
-PartOf=cage-display.service
-After=cage-display.service
+Description=Browser display pacing
+PartOf=browser-display.service
+After=browser-display.service
 [Service]
 User=cage-browser
 Environment=DISPLAY=:77
 # The browser controller reports here the scrolling it delivers to a page.
-Environment=CAGE_DISPLAY_ACTIVITY=/home/cage-browser/.cache/cage-display/activity.sock
+Environment=DISPLAY_ACTIVITY_SOCKET=/home/cage-browser/.cache/display/activity.sock
 ExecStart=/usr/local/libexec/service-log /usr/local/libexec/display-governor
-LogNamespace=cage
+LogNamespace=services
 Restart=on-failure
 RestartSec=5
 UNIT
-# The display serves its viewers itself. Earlier versions ran a second server
-# that copied the screen for them; it holds the same port until stopped.
-if [ -e /etc/systemd/system/cage-vnc.service ]; then
-  sudo systemctl stop cage-vnc 2>/dev/null || true
-  sudo rm -f /etc/systemd/system/cage-vnc.service
-fi
-sudo tee /etc/systemd/system/cage-webvnc.service >/dev/null <<'UNIT'
+sudo tee /etc/systemd/system/browser-web-viewer.service >/dev/null <<'UNIT'
 [Unit]
-Description=Claude Cage browser web access
-Requires=cage-display.service
-After=cage-display.service
+Description=Browser web access
+Requires=browser-display.service
+After=browser-display.service
 [Service]
 User=cage-browser
 ExecStart=/usr/local/libexec/service-log /usr/bin/websockify --web=/usr/share/novnc 127.0.0.1:16080 127.0.0.1:15900
-LogNamespace=cage
+LogNamespace=services
 Restart=on-failure
 UNIT
 sudo systemctl daemon-reload
 
-if ! grep -q 'CAGE_WORKBENCH_PROMPT' /home/cage/.bashrc; then
+if ! grep -q 'WORKBENCH_TERMINAL_PROMPT' /home/cage/.bashrc; then
   sudo tee -a /home/cage/.bashrc >/dev/null <<'PROMPT'
-# CAGE_WORKBENCH_PROMPT
-if [ "${CAGE_WORKBENCH:-}" = 1 ]; then
+# WORKBENCH_TERMINAL_PROMPT
+if [ "${WORKBENCH_TERMINAL:-}" = 1 ]; then
   PS1='\[\e[32m\]\u\[\e[0m\]:\[\e[34m\]\W\[\e[0m\]\$ '
 fi
 PROMPT

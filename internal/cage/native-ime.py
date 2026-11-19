@@ -7,8 +7,8 @@ import re
 import socket
 import sys
 
-directory = (Path('/run/cage-phone-desktop/input') if os.environ.get('CAGE_PHONE_DESKTOP_INPUT') == '1'
-             else Path.home() / '.cache' / 'cage-input')
+directory = (Path('/run/phone-desktop/input') if os.environ.get('PHONE_INPUT') == '1'
+             else Path.home() / '.cache' / 'input-method')
 socket_path = directory / 'input.sock'
 limit = 32768
 
@@ -175,7 +175,7 @@ if not bus.is_connected():
 class Factory(IBus.Factory):
     def do_create_engine(self, name):
         options = dict(connection=bus.get_connection(),
-                       object_path='/org/freedesktop/IBus/Cage/' + str(len(engines)))
+                       object_path='/org/freedesktop/IBus/HostInput/' + str(len(engines)))
         # Older IBus releases use the original per-context focus signals.
         # Newer IBus can reuse engines and supplies the explicit focus ID.
         if IBus.Engine.find_property('has-focus-id') is not None:
@@ -186,12 +186,12 @@ class Factory(IBus.Factory):
 
 
 factory = Factory(connection=bus.get_connection(), object_path=IBus.PATH_FACTORY)
-component = IBus.Component(name='org.freedesktop.IBus.Cage', description='Cage host input',
-                           version='1', license='MIT', author='Cage', homepage='',
+component = IBus.Component(name='org.freedesktop.IBus.HostInput', description='Host input',
+                           version='1', license='MIT', author='', homepage='',
                            command_line='', textdomain='')
-component.add_engine(IBus.EngineDesc(name='cage-host', longname='Cage Host Input',
+component.add_engine(IBus.EngineDesc(name='host-input', longname='Host Input',
                                    description='Host input transport', language='en',
-                                   license='MIT', author='Cage', icon='', layout='us'))
+                                   license='MIT', author='', icon='', layout='us'))
 if not bus.register_component(component):
     raise RuntimeError('Private input engine unavailable')
 
@@ -214,7 +214,7 @@ def utf16_index(text, offset):
 def apply(value):
     engine = active
     mode = value.get('mode')
-    if mode in ('phone-status', 'phone-text', 'phone-char') and os.environ.get('CAGE_PHONE_DESKTOP_INPUT') == '1':
+    if mode in ('phone-status', 'phone-text', 'phone-char') and os.environ.get('PHONE_INPUT') == '1':
         if engine is None or not engine.reachable or not engine.context:
             return {'available': False}
         password = engine.purpose in (8, 9)
@@ -310,7 +310,7 @@ class Handler(socketserver.StreamRequestHandler):
 
             def probe():
                 engine = active
-                desktop_probe = (os.environ.get('CAGE_PHONE_DESKTOP_INPUT') == '1' and
+                desktop_probe = (os.environ.get('PHONE_INPUT') == '1' and
                                  value.get('mode') in ('phone-status', 'phone-text', 'phone-char'))
                 ordinary_probe = value.get('mode') in ('status', 'begin') and engine is not None and engine.purpose not in (8, 9)
                 if probe_ready and engine is not None and (desktop_probe or ordinary_probe):
@@ -352,7 +352,7 @@ def activate():
     def finish(source, result):
         if source.set_global_engine_async_finish(result):
             (directory / 'ready').touch(mode=0o600)
-    bus.set_global_engine_async('cage-host', 10000, None, finish)
+    bus.set_global_engine_async('host-input', 10000, None, finish)
     return False
 
 

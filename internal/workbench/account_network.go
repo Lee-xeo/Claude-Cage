@@ -184,7 +184,7 @@ func (s *Server) routeAccountCommand(ctx context.Context, id, command string) (s
 		return "", err
 	}
 	if a.Source != "" {
-		command = "export CAGE_LOGIN_OWNER=" + a.ID + "; " + command
+		command = "export LOGIN_OWNER=" + a.ID + "; " + command
 	}
 	if a.ProxyNodeID == "" {
 		return command, nil
@@ -197,7 +197,7 @@ func (s *Server) routeSelected(ctx context.Context, a claudeAccount, command str
 		return "", err
 	}
 	opener := "/usr/local/lib/account-routes/" + a.ID + "/open"
-	return wrapAccountNamespace("ip netns exec net-"+a.ID+" unshare -m", "export CAGE_ACCOUNT_BROWSER="+opener+" BROWSER="+opener+"; "+command), nil
+	return wrapAccountNamespace("ip netns exec net-"+a.ID+" unshare -m", "export ACCOUNT_BROWSER="+opener+" BROWSER="+opener+"; "+command), nil
 }
 
 // No shell supplied by the caller runs before setpriv drops root privileges.
@@ -277,7 +277,7 @@ func (s *Server) setAccountNode(list *claudeAccountList, in claudeAccountInput) 
 		} // Directories created by earlier workbenches.
 		unit := "desktop-" + id + ".service"
 		if id == "default" {
-			unit = "cage-claude-desktop.service"
+			unit = "desktop-session.service"
 		}
 		state, err := s.guest(ctx, fmt.Sprintf("systemctl show --property=ActiveState --value %s", unit))
 		if err != nil {

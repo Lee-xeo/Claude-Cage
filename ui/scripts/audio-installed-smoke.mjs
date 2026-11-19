@@ -40,7 +40,7 @@ try {
     const value = Math.round(Math.sin(i * 2 * Math.PI * 880 / 48000) * 8000);
     packet.writeInt16LE(value, i * 4); packet.writeInt16LE(value, i * 4 + 2);
   }
-  play = spawn("ssh", [...ssh, "sudo -u cage-browser /usr/bin/pacat --server=unix:/run/cage-audio/native --playback --raw --format=s16le --rate=48000 --channels=2 --latency-msec=20"]);
+  play = spawn("ssh", [...ssh, "sudo -u cage-browser /usr/bin/pacat --server=unix:/run/audio-output/native --playback --raw --format=s16le --rate=48000 --channels=2 --latency-msec=20"]);
   const completed = new Promise((resolve, reject) => { play.on("error", reject); play.on("close", code => code === 0 ? resolve() : reject(new Error(`guest playback exited ${code}`))); });
   play.stdin.end(packet);
   const measured = await page.waitForFunction(() => {

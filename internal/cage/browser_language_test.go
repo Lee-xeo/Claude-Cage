@@ -122,7 +122,7 @@ func TestBrowserLanguagePreferencesReplaceStaleSelection(t *testing.T) {
 	}
 	for _, language := range []string{"zh-TW", "fr-FR", "en-US"} {
 		cmd := exec.Command("python3", "-c", script)
-		cmd.Env = append(os.Environ(), "FIXTURE="+dir, "CAGE_LANGUAGE="+language)
+		cmd.Env = append(os.Environ(), "FIXTURE="+dir, "BROWSER_LANG="+language)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("%v %s", err, out)
 		}

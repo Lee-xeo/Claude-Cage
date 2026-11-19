@@ -6,7 +6,9 @@ if ! locale -a | tr '[:upper:]' '[:lower:]' | grep -qx "${CAGE_LOCALE,,}" && ! l
   printf '%s UTF-8\n' "$CAGE_LOCALE" | sudo tee -a /etc/locale.gen >/dev/null
   sudo locale-gen >/dev/null
 fi
-printf 'TZ=%s\nLANG=%s\nLC_ALL=%s\nCAGE_LANGUAGE=%s\nBROWSER=/usr/local/bin/xdg-open\nPULSE_SERVER=unix:/run/cage-audio/native\n' "$CAGE_TZ" "$CAGE_LOCALE" "$CAGE_LOCALE" "$CAGE_LANGUAGE" | sudo tee /etc/claude-cage/environment >/dev/null
+printf 'TZ=%s\nLANG=%s\nLC_ALL=%s\nBROWSER=/usr/local/bin/xdg-open\n' "$CAGE_TZ" "$CAGE_LOCALE" "$CAGE_LOCALE" | sudo tee /etc/claude-cage/environment >/dev/null
+# Only the browser service reads its interface language.
+printf 'BROWSER_LANG=%s\n' "$BROWSER_LANG" | sudo tee /etc/claude-cage/browser.env >/dev/null
 sudo update-locale "LANG=$CAGE_LOCALE" "LC_ALL=$CAGE_LOCALE"
 set -a
 . /etc/claude-cage/environment

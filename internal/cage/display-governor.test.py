@@ -123,7 +123,7 @@ class DisplayTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         number = next(n for n in range(120, 200) if not os.path.exists(f'/tmp/.X11-unix/X{n}'))
         self.activity = self.temp.name + '/activity/a.sock'
-        self.env = dict(os.environ, DISPLAY=f':{number}', CAGE_DISPLAY_ACTIVITY=self.activity)
+        self.env = dict(os.environ, DISPLAY=f':{number}', DISPLAY_ACTIVITY_SOCKET=self.activity)
         self.env.pop('XAUTHORITY', None)
         server = subprocess.Popen(['Xtigervnc', f':{number}', '-geometry', '800x600', '-depth', '24', '-rfbport', '-1',
                                    '-rfbunixpath', self.temp.name + '/d.sock', '-nolisten', 'tcp', '-SecurityTypes', 'None'],

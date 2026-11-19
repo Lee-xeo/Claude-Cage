@@ -282,7 +282,7 @@ func (s *Server) reconcileDesktops(ctx context.Context, observed map[string]desk
 
 func (s *Server) stopDesktopInstance(ctx context.Context, id string) error {
 	if id == "default" {
-		_, err := s.guest(ctx, "sudo systemctl stop cage-claude-desktop.service")
+		_, err := s.guest(ctx, "sudo systemctl stop desktop-session.service")
 		return err
 	}
 	return s.changeAccountDesktop(ctx, id, claudeAccount{}, "stop")
@@ -360,7 +360,7 @@ func (s *Server) defaultDesktopScope(ctx context.Context) (string, error) {
 	if list.DesktopRedirects["default"] != "" {
 		return "", errors.New("此 Desktop 已归入已有实例，请从实例列表打开")
 	}
-	const directory = "/run/systemd/system/cage-claude-desktop.service.d"
+	const directory = "/run/systemd/system/desktop-session.service.d"
 	const override = directory + "/40-account.conf"
 	const marker = directory + "/account-scope"
 	account := list.desktopOwner("default")
@@ -368,7 +368,7 @@ func (s *Server) defaultDesktopScope(ctx context.Context) (string, error) {
 		return "sudo rm -f -- " + override + " " + marker + "\n", nil
 	}
 	mode := "shared"
-	config := "[Service]\nBindReadOnlyPaths=" + marker + ":/run/cage-desktop/account-scope\n"
+	config := "[Service]\nBindReadOnlyPaths=" + marker + ":/run/desktop-session/account-scope\n"
 	if account.ProxyNodeID != "" {
 		if err := s.ensureAccountNetwork(ctx, account.ID, account.ProxyNodeID); err != nil {
 			return "", err

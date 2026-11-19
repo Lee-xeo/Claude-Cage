@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const audioCaptureCommand = "exec /usr/bin/parec --server=unix:/run/cage-audio/native --record --raw --format=s16le --rate=48000 --channels=2 --device=cage_output.monitor --latency-msec=20"
+const audioCaptureCommand = "exec /usr/bin/parec --server=unix:/run/audio-output/native --record --raw --format=s16le --rate=48000 --channels=2 --device=null.monitor --latency-msec=20"
 
 var audioFormat = struct {
 	Format     string `json:"format"`

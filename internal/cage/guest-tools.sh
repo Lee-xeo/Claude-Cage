@@ -88,7 +88,7 @@ cage_cache_claude() (
   checksum="$(printf '%s' "${integrity#sha512-}" | base64 -d | od -An -v -tx1 | tr -d ' \n')"
   [[ "$checksum" =~ ^[0-9a-f]{128}$ ]]
   url="$(printf '%s' "$metadata" | jq -er '.tarball | select(startswith("https://registry.npmjs.org/"))')"
-  cache="$HOME/.cache/cage/downloads/$checksum"
+  cache="$HOME/.cache/tool-downloads/$checksum"
   mkdir -p "$cache"
   exec 9>"$cache/lock"
   flock -w 60 9
@@ -202,7 +202,7 @@ cage_install_tool() (
     cage_configure_claude_npm_prefix
     exit 0
   fi
-  local cache="$HOME/.cache/cage/downloads/$checksum"
+  local cache="$HOME/.cache/tool-downloads/$checksum"
   mkdir -p "$cache"
   # First setup and maintenance can both reach this helper in a Linux guest.
   exec 9>"$cache/lock"

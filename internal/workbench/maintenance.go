@@ -239,7 +239,7 @@ func runMaintenanceScript(ctx context.Context, configPath string, cfg cage.Confi
 	defer stop()
 	s := &Server{profile: profile}
 	forward := fmt.Sprintf("127.0.0.1:%d:%s", maintenancePort, listener.Addr().String())
-	command := "sudo systemd-run --quiet --pipe --wait --collect --unit=cage-maintenance-operation --property=User=cage --property=RuntimeMaxSec=infinity --property=KillMode=control-group --setenv=HOME=/home/cage "
+	command := "sudo systemd-run --quiet --pipe --wait --collect --unit=maintenance-operation --property=User=cage --property=RuntimeMaxSec=infinity --property=KillMode=control-group --setenv=HOME=/home/cage "
 	command = cfg.GuestProfile.Linux(command) + "--working-directory=" + shellescape.Quote(guestPath(s.environmentDir())) + " /bin/bash -se"
 	cmd := s.sshCommandWithForwarding(ctx, "-o", "ExitOnForwardFailure=yes", "-R", forward, "-T", s.sshTarget(), "--", command)
 	cmd.Stdin = strings.NewReader(maintenanceScript(cage.DebianPrepareScript+"\n"+script, proxy.token))
@@ -250,7 +250,7 @@ func runMaintenanceScript(ctx context.Context, configPath string, cfg cage.Confi
 		if ctx.Err() != nil {
 			cleanup, finish := context.WithTimeout(context.Background(), 5*time.Second)
 			defer finish()
-			_, _ = s.guest(cleanup, "sudo systemctl stop cage-maintenance-operation.service")
+			_, _ = s.guest(cleanup, "sudo systemctl stop maintenance-operation.service")
 			return ctx.Err()
 		}
 		diagnostics.Log("error", "maintenance", fmt.Sprintf("software installation error=%v", err))
