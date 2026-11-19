@@ -194,7 +194,7 @@ func (s *Server) claudeDesktopCredentials(w http.ResponseWriter, r *http.Request
 	defer cancel()
 	b, err := s.guestQuick(ctx, `set -eu
 systemctl is-active --quiet desktop-session.service
-password=$(cat "$HOME/.config/claude-cage/desktop-password")
+password=$(cat "$HOME/.config/workbench/desktop-password" 2>/dev/null || cat "$HOME/.config/claude-cage/desktop-password")
 printf '%s\n' "$password"
 if test -f /run/desktop-session/base-display-scale; then cat /run/desktop-session/base-display-scale
 elif test -f /run/desktop-session/display-scale; then cat /run/desktop-session/display-scale

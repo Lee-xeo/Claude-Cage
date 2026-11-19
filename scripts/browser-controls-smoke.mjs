@@ -118,7 +118,7 @@ try {
   await writeFile(join(directory, "agent.mjs"), source
     .replaceAll("/home/cage-browser", directory)
     .replaceAll("/usr/local/lib/cage-split", join(directory, "split-extension"))
-    .replace("/etc/claude-cage/browser-control.json", join(directory, "control.json"))
+    .replace("/etc/workbench/browser-control.json", join(directory, "control.json"))
     .replace('spawn(browserBinary, flags', 'spawn(browserBinary, [...flags, "--use-mock-keychain", "--password-store=basic"]')
     .replace(listen, 'server.listen(0, "127.0.0.1", () => console.log("CONTROL_PORT=" + server.address().port));'));
   for (const name of ["browser-audit", "device-observation", "display-density", "browser-visibility", "browser-wheel", "browser-downloads", "browser-uploads", "browser-login", "browser-private", "browser-cookies", "browser-extensions", "browser-vault", "browser-clipboard", "native-input"])

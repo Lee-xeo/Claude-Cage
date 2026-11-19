@@ -43,7 +43,7 @@ def main(address):
         return 1
     temporary = os.environ["XDG_RUNTIME_DIR"]
     regular = Path.home() / ".config/chromium"
-    if not sign_in(url) or Path("/etc/claude-cage/login-browser-mode").exists():
+    if not sign_in(url) or Path("/etc/workbench/login-browser-mode").exists():
         os.execv(browser, [browser, "--user-data-dir=" + str(regular), address])
     # Incognito windows in the same Chromium process can share cookies. A new
     # profile also gives each concurrent sign-in its own process. systemd

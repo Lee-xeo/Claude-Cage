@@ -4,12 +4,17 @@
 sudo env APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" sh -se <<'CAGE_DEBIAN_MIRRORS'
 set -eu
 preference=auto
-if [ -f /etc/claude-cage/debian-mirror ]; then
-  preference=$(cat /etc/claude-cage/debian-mirror)
-fi
+# The user's own preference. Before an earlier installation's settings are
+# copied to the current directory, it is still found under its former name.
+for file in /etc/workbench/debian-mirror /etc/claude-cage/debian-mirror; do
+  if [ -f "$file" ]; then
+    preference=$(cat "$file")
+    break
+  fi
+done
 case "$preference" in
   auto|official) ;;
-  *) echo 'Invalid /etc/claude-cage/debian-mirror: use auto or official.' >&2; exit 1;;
+  *) echo "Invalid $file: use auto or official." >&2; exit 1;;
 esac
 for repository in debian debian-security; do
   list="/etc/apt/mirrors/$repository.list"

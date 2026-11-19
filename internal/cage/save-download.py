@@ -98,7 +98,7 @@ def error_message(error):
 def main():
     source_name, name = sys.argv[1:] if len(sys.argv) == 3 else ('', '')
     checked_download(source_name, name)
-    with open('/etc/claude-cage/browser-control.json') as config:
+    with open('/etc/workbench/browser-control.json') as config:
         workspace = json.load(config)['workspace']
     directory = os.open('/home/cage-browser/Downloads', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     source = None

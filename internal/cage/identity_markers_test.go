@@ -37,13 +37,15 @@ var identityMarkerAllowed = map[string]string{
 	// environments keep it so the extension keeps its state; environments
 	// created with a guest profile receive a neutral path instead.
 	"/usr/local/lib/cage-split": "legacy extension path",
+	// The Debian mirror preference is written by the user. The preparation
+	// that runs before the components are applied still finds it under the
+	// former name until the update has copied it.
+	"/etc/claude-cage/debian-mirror": "read of a user preference before it is copied",
 }
 
 // Persistent user data under ~/.local/share moves in a separate, verified
 // migration step; until then its readers keep the existing location.
 var identityMarkerDeferredPrefixes = []string{".local/share/cage"}
-
-var identityMarkerPendingSeen = map[string]bool{}
 
 func identityMarkers(script string, p *guestprofile.Profile) []string {
 	for _, oneOff := range []string{guestMigrationScript, guestLegacyCleanup} {
@@ -52,10 +54,6 @@ func identityMarkers(script string, p *guestprofile.Profile) []string {
 	found := map[string]bool{}
 	for _, pattern := range identityMarkerPatterns {
 		for _, match := range pattern.FindAllString(script, -1) {
-			if identityMarkerPending[match] {
-				identityMarkerPendingSeen[match] = true
-				continue
-			}
 			if _, ok := identityMarkerAllowed[match]; ok {
 				continue
 			}
@@ -95,11 +93,6 @@ func TestInstalledComponentsCarryNoProductIdentity(t *testing.T) {
 			if markers := identityMarkers(script, p); len(markers) > 0 {
 				t.Errorf("%s script (profile %v) still carries identity markers:\n  %s", name, p != nil, strings.Join(markers, "\n  "))
 			}
-		}
-	}
-	for match := range identityMarkerPending {
-		if !identityMarkerPendingSeen[match] {
-			t.Errorf("pending entry %q no longer occurs; remove it", match)
 		}
 	}
 }

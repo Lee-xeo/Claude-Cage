@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-mkdir -p "$HOME/.config/claude-cage"
-exec 9>"$HOME/.config/claude-cage/desktop-install.lock"
+mkdir -p "$HOME/.config/workbench"
+exec 9>"$HOME/.config/workbench/desktop-install.lock"
 flock -n 9 || { echo 'Claude Desktop installation is already running.' >&2; exit 1; }
 if systemctl is-active --quiet desktop-session.service; then
   echo '请先保存工作并关闭 Claude Desktop，再更新或修复安装。' >&2

@@ -23,7 +23,7 @@ install -d -m 0755 "/etc/netns/$ns"
 printf 'nameserver 127.0.0.1\noptions attempts:1 timeout:4\n' >"/etc/netns/$ns/resolv.conf"
 # Let the workbench browser reach this namespace without exposing a guest TCP
 # listener. The browser controller's group is configured for custom guest users.
-group=$(stat -c %G /etc/claude-cage/browser-control.json)
+group=$(stat -c %G /etc/workbench/browser-control.json)
 install -d -m 2750 -o "${SUDO_UID:?}" -g "$group" "/run/account-routes/$id"
 # Avoid host resolver services reached via Unix sockets.
 sed -E 's/^hosts:.*/hosts: files dns/' /etc/nsswitch.conf >"/etc/netns/$ns/nsswitch.conf"

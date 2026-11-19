@@ -42,7 +42,7 @@ try {
   const original=await readFile(new URL("browser-agent.mjs",sourceDir),"utf8");
   const marker='const input = JSON.parse(text || "{}");';
   assert.ok(original.includes('spawn(browserBinary, flags'), "Update the isolated browser launch adapter");
-  const adapted=original.replaceAll("/home/cage-browser",dir).replace("/etc/claude-cage/browser-control.json",join(dir,"control.json"))
+  const adapted=original.replaceAll("/home/cage-browser",dir).replace("/etc/workbench/browser-control.json",join(dir,"control.json"))
     .replace("/usr/local/lib/cage-split",join(dir,"extension"))
     .replace('spawn(browserBinary, flags',`spawn(${JSON.stringify(process.env.CAGE_TEST_BROWSER_PATH)}, [...flags, "--use-mock-keychain", "--password-store=basic"]`)
     .replace('"--start-fullscreen",','"--headless=new", "--ignore-certificate-errors", "--disable-background-networking",')

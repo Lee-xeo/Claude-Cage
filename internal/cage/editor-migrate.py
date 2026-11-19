@@ -10,7 +10,7 @@ import sys
 NODE = '/usr/lib/code-server/lib/node'
 ROOT = '/usr/lib/code-server'
 ENTRY = '/usr/lib/code-server/out/node/entry.js'
-CONFIG = '/home/cage/.config/claude-cage/code-server.yaml'
+CONFIG = '/home/cage/.config/workbench/code-server.yaml'
 
 
 def is_legacy_editor(argv, executable, uid, cage_uid):

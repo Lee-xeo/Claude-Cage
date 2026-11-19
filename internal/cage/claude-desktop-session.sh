@@ -19,7 +19,7 @@ umask 077
 touch "$XAUTHORITY"
 xauth -f "$XAUTHORITY" add "$DISPLAY" . "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 printf '%s' "$DBUS_SESSION_BUS_ADDRESS" > "$XDG_RUNTIME_DIR/bus-address"
-password="$HOME/.config/claude-cage/desktop-password"
+password="$HOME/.config/workbench/desktop-password"
 if [ ! -s "$password" ]; then
   mkdir -p "$(dirname "$password")"
   od -An -N4 -tx1 /dev/urandom | tr -d ' \n' > "$password"
@@ -34,7 +34,7 @@ for i in $(seq 1 100); do
   sleep .1
 done
 xdpyinfo -display "$DISPLAY" >/dev/null
-openbox --config-file /etc/claude-cage/desktop-openbox.xml &
+openbox --config-file /etc/workbench/desktop-openbox.xml &
 # Lower the refresh rate of unattended animation. Optional on older guests.
 if [ -x /usr/local/libexec/display-governor ]; then
   /usr/local/libexec/display-governor &
@@ -55,7 +55,7 @@ keyring_unlocked || { echo '无法解锁已有密钥环，登录数据未修改�
 touch "$XDG_RUNTIME_DIR/keyring-ready"
 # Record the running application's density for clients that reconnect later.
 display_scale=2
-if [[ -r /etc/claude-cage/display-scale && $(< /etc/claude-cage/display-scale) == 1.5 ]]; then
+if [[ -r /etc/workbench/display-scale && $(< /etc/workbench/display-scale) == 1.5 ]]; then
   display_scale=1.5
 fi
 printf '%s\n' "$display_scale" > "$XDG_RUNTIME_DIR/display-scale"

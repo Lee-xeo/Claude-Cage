@@ -21,7 +21,7 @@ import { UploadManager, uploadLimit } from "./browser-uploads.mjs";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
 const config = JSON.parse(
-  readFileSync("/etc/claude-cage/browser-control.json", "utf8"),
+  readFileSync("/etc/workbench/browser-control.json", "utf8"),
 );
 const displayScale = config.display_scale === 1.5 ? 1.5 : 2;
 // Started before Chromium, which then opens at this density.
@@ -905,7 +905,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.url === "/login-open" || (req.url === "/new" && (input.route || isClaudeSignIn(input.url)))) {
         const external = req.url === "/new" && !isClaudeSignIn(input.url);
-        const privateLogin = !external && !existsSync("/etc/claude-cage/login-browser-mode");
+        const privateLogin = !external && !existsSync("/etc/workbench/login-browser-mode");
         return loginBrowser.open(input.login || randomUUID(), input.url, async tab => {
           targets.set(tab.targetId, loginBrowser.tab(tab));
           await activate(tab.targetId, true);

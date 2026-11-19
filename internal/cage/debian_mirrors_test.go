@@ -48,7 +48,7 @@ exit 0
 				os.WriteFile(filepath.Join(dir, name), []byte(body), 0755)
 			}
 			script := strings.ReplaceAll(DebianMirrorsScript, "/etc/apt/mirrors", mirrors)
-			script = strings.ReplaceAll(script, "/etc/claude-cage/debian-mirror", preference)
+			script = strings.ReplaceAll(script, "/etc/workbench/debian-mirror", preference)
 			script = strings.ReplaceAll(script, "/usr/lib/apt/apt-helper", filepath.Join(dir, "apt-helper"))
 			suite := "trixie"
 			if mode == "bookworm" {

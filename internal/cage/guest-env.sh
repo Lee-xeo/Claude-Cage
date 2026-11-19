@@ -6,12 +6,13 @@ if ! locale -a | tr '[:upper:]' '[:lower:]' | grep -qx "${CAGE_LOCALE,,}" && ! l
   printf '%s UTF-8\n' "$CAGE_LOCALE" | sudo tee -a /etc/locale.gen >/dev/null
   sudo locale-gen >/dev/null
 fi
-printf 'TZ=%s\nLANG=%s\nLC_ALL=%s\nBROWSER=/usr/local/bin/xdg-open\n' "$CAGE_TZ" "$CAGE_LOCALE" "$CAGE_LOCALE" | sudo tee /etc/claude-cage/environment >/dev/null
+sudo install -d -m 0755 /etc/workbench
+printf 'TZ=%s\nLANG=%s\nLC_ALL=%s\nBROWSER=/usr/local/bin/xdg-open\n' "$CAGE_TZ" "$CAGE_LOCALE" "$CAGE_LOCALE" | sudo tee /etc/workbench/environment >/dev/null
 # Only the browser service reads its interface language.
-printf 'BROWSER_LANG=%s\n' "$BROWSER_LANG" | sudo tee /etc/claude-cage/browser.env >/dev/null
+printf 'BROWSER_LANG=%s\n' "$BROWSER_LANG" | sudo tee /etc/workbench/browser.env >/dev/null
 sudo update-locale "LANG=$CAGE_LOCALE" "LC_ALL=$CAGE_LOCALE"
 set -a
-. /etc/claude-cage/environment
+. /etc/workbench/environment
 set +a
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY FTP_PROXY NO_PROXY http_proxy https_proxy all_proxy ftp_proxy no_proxy
 

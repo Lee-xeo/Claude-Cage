@@ -152,7 +152,7 @@ try {
     }`;
   const isolated = source
     .replaceAll("/home/cage-browser", directory)
-    .replace("/etc/claude-cage/browser-control.json", join(directory, "control.json"))
+    .replace("/etc/workbench/browser-control.json", join(directory, "control.json"))
     .replace("/usr/local/lib/cage-split", join(directory, "extension"))
     .replace('spawn(browserBinary, flags', `spawn(${JSON.stringify(executable)}, [...flags, "--use-mock-keychain", "--password-store=basic"]`)
     .replace('"--start-fullscreen",', '"--headless=new",')

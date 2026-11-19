@@ -56,7 +56,7 @@ func TestDesktopCallbackFocusAfterHandoff(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "id"), []byte("#!/bin/sh\nprintf '%s\\n' \"$TEST_IDENTITY\"\n"), 0755); err != nil {
 					t.Fatal(err)
 				}
-				script := strings.ReplaceAll(guestOpen, "/etc/claude-cage/browser-control.json", config)
+				script := strings.ReplaceAll(guestOpen, "/etc/workbench/browser-control.json", config)
 				script = strings.ReplaceAll(script, "http://127.0.0.1:18500", server.URL)
 				script = strings.ReplaceAll(script, "/usr/bin/node", "\"$TEST_NODE\"")
 				code := "0"
