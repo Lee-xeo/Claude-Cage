@@ -8,7 +8,6 @@ if ! command -v ip >/dev/null || ! test -x /usr/sbin/iptables || ! command -v Xt
 fi
 sudo install -d -m 0755 /usr/local/share
 cage_novnc_root=/usr/share/novnc
-sudo ln -sfn "$cage_novnc_root" /usr/local/share/cage-webvnc
 sudo install -d -m 0755 /etc/claude-cage /usr/local/lib
 # New website passwords belong to the host vault. Keep existing browser data.
 cage_browser_policy_dir=/etc/chromium/policies/managed
@@ -20,16 +19,16 @@ if ! command -v xdg-mime >/dev/null; then
   sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends xdg-utils </dev/null
 fi
 sudo install -d -m 0755 /usr/local/share/applications
-printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Tailscale' 'NoDisplay=true' 'Exec=/usr/local/bin/cage-open %u' 'MimeType=x-scheme-handler/tailscale;' | sudo tee /usr/local/share/applications/tailnet-login.desktop >/dev/null
+printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Tailscale' 'NoDisplay=true' 'Exec=/usr/local/bin/xdg-open %u' 'MimeType=x-scheme-handler/tailscale;' | sudo tee /usr/local/share/applications/tailnet-login.desktop >/dev/null
 sudo -H -u cage-browser sh -ec 'mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}"'
 sudo -H -u cage-browser xdg-mime default tailnet-login.desktop x-scheme-handler/tailscale
-sudo tee /usr/local/bin/cage-editor-start >/dev/null <<'SCRIPT'
+sudo tee /usr/local/libexec/editor-start >/dev/null <<'SCRIPT'
 #!/bin/sh
 set -eu
 workspace=$(cat /home/cage/.config/claude-cage/editor-workspace)
 exec /usr/bin/code-server --bind-addr 127.0.0.1:18080 --config /home/cage/.config/claude-cage/code-server.yaml --disable-telemetry --disable-update-check --disable-workspace-trust --disable-proxy "$workspace"
 SCRIPT
-sudo chmod 0755 /usr/local/bin/cage-editor-start
+sudo chmod 0755 /usr/local/libexec/editor-start
 sudo tee /etc/systemd/system/cage-editor.service >/dev/null <<'UNIT'
 [Unit]
 Description=Cage file editor
@@ -38,14 +37,14 @@ User=cage
 WorkingDirectory=/home/cage
 Environment=HOME=/home/cage
 EnvironmentFile=/etc/claude-cage/environment
-ExecStart=/usr/local/bin/cage-log-run /usr/local/bin/cage-editor-start
+ExecStart=/usr/local/libexec/service-log /usr/local/libexec/editor-start
 LogNamespace=cage
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=15
 UNIT
-printf 'cage-browser ALL=(root) NOPASSWD: /usr/bin/systemctl restart cage-editor.service\n' | sudo tee /etc/sudoers.d/cage-editor >/dev/null
-sudo chmod 0440 /etc/sudoers.d/cage-editor
+printf 'cage-browser ALL=(root) NOPASSWD: /usr/bin/systemctl restart cage-editor.service\n' | sudo tee /etc/sudoers.d/editor-restart >/dev/null
+sudo chmod 0440 /etc/sudoers.d/editor-restart
 sudo tee /etc/profile.d/claude-cage.sh >/dev/null <<'SCRIPT'
 if [ -f /etc/claude-cage/environment ]; then
   set -a
@@ -53,7 +52,7 @@ if [ -f /etc/claude-cage/environment ]; then
   set +a
 fi
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY FTP_PROXY NO_PROXY http_proxy https_proxy all_proxy ftp_proxy no_proxy
-export BROWSER=/usr/local/bin/cage-open
+export BROWSER=/usr/local/bin/xdg-open
 SCRIPT
 if ! grep -q '/etc/profile.d/claude-cage.sh' /etc/zsh/zshenv; then
   echo '. /etc/profile.d/claude-cage.sh' | sudo tee -a /etc/zsh/zshenv >/dev/null
@@ -65,7 +64,7 @@ Wants=cage-display-governor.service
 [Service]
 User=cage-browser
 ExecStartPre=/usr/bin/rm -f /home/cage-browser/.vnc/display.sock
-ExecStart=/usr/local/bin/cage-log-run /usr/bin/Xtigervnc :77 -geometry 2880x1800 -depth 24 -rfbport 15900 -localhost -nolisten tcp -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd -AlwaysShared
+ExecStart=/usr/local/libexec/service-log /usr/bin/Xtigervnc :77 -geometry 2880x1800 -depth 24 -rfbport 15900 -localhost -nolisten tcp -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd -AlwaysShared
 LogNamespace=cage
 Restart=on-failure
 UNIT
@@ -86,7 +85,7 @@ After=cage-display.service
 [Service]
 User=cage-browser
 Environment=DISPLAY=:77
-ExecStart=/usr/local/bin/cage-log-run /usr/bin/openbox --config-file /etc/claude-cage/openbox.xml
+ExecStart=/usr/local/libexec/service-log /usr/bin/openbox --config-file /etc/claude-cage/openbox.xml
 LogNamespace=cage
 Restart=on-failure
 UNIT
@@ -99,7 +98,7 @@ After=cage-display.service cage-window-manager.service
 User=cage-browser
 Environment=DISPLAY=:77
 EnvironmentFile=/etc/claude-cage/environment
-ExecStart=/usr/local/bin/cage-log-run /usr/local/bin/cage-input-session /usr/bin/node /usr/local/lib/cage-browser-agent.mjs
+ExecStart=/usr/local/libexec/service-log /usr/local/libexec/input-session /usr/bin/node /usr/local/lib/browser-agent.mjs
 LogNamespace=cage
 # Let the controller close Chromium and flush its tabs and profile before
 # systemd terminates any remaining child processes.
@@ -119,7 +118,7 @@ User=cage-browser
 Environment=DISPLAY=:77
 # The browser controller reports here the scrolling it delivers to a page.
 Environment=CAGE_DISPLAY_ACTIVITY=/home/cage-browser/.cache/cage-display/activity.sock
-ExecStart=/usr/local/bin/cage-log-run /usr/local/bin/cage-display-governor
+ExecStart=/usr/local/libexec/service-log /usr/local/libexec/display-governor
 LogNamespace=cage
 Restart=on-failure
 RestartSec=5
@@ -137,7 +136,7 @@ Requires=cage-display.service
 After=cage-display.service
 [Service]
 User=cage-browser
-ExecStart=/usr/local/bin/cage-log-run /usr/bin/websockify --web=/usr/local/share/cage-webvnc 127.0.0.1:16080 127.0.0.1:15900
+ExecStart=/usr/local/libexec/service-log /usr/bin/websockify --web=/usr/share/novnc 127.0.0.1:16080 127.0.0.1:15900
 LogNamespace=cage
 Restart=on-failure
 UNIT

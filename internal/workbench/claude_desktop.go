@@ -149,7 +149,7 @@ func (s *Server) startClaudeDesktop() error {
 	}
 	ctx, cancel := context.WithTimeout(s.operationContext(), 55*time.Second)
 	defer cancel()
-	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", "/usr/local/bin/cage-claude-start")
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", "/usr/local/libexec/claude-desktop-start")
 	cmd.Stdin = bytes.NewReader(key)
 	cmd.Stdout, cmd.Stderr = s.jobs.execution(), s.jobs.execution()
 	if err = cmd.Run(); err != nil {

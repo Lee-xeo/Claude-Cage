@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 
 export async function phoneDesktop(op, input) {
-  const child = spawn("/usr/bin/sudo", ["-n", "/usr/local/lib/cage-phone-desktop/control.py"],
+  const child = spawn("/usr/bin/sudo", ["-n", "/usr/local/lib/phone-desktop/control.py"],
     { stdio: ["pipe", "pipe", "ignore"] });
   let size = 0;
   const chunks = [];

@@ -61,7 +61,7 @@ for i in $(seq 1 100); do
   if [ -S "$bus_socket" ]; then break; fi
   sleep .05
 done
-/usr/local/bin/cage-native-input &
+/usr/local/libexec/native-input &
 bridge_pid=$!
 for i in $(seq 1 100); do
   kill -0 "$bridge_pid"

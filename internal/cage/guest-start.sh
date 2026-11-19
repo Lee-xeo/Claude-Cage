@@ -99,8 +99,8 @@ PYEDITOR
 # Systemd owns the editor independently of the SSH session and restarts crashes.
 (umask 077; printf '%s' "$PWD" > "$HOME/.config/claude-cage/editor-workspace")
 if ! systemctl is-active --quiet cage-editor.service; then
-  sudo /usr/local/bin/cage-editor-migrate
+  sudo /usr/local/libexec/editor-migrate
   sudo systemctl start cage-editor.service
 fi
-sudo python3 /usr/local/lib/cage-wait-services.py
+sudo python3 /usr/local/lib/wait-services.py
 printf 'Cage services ready. Timezone=%s Locale=%s Browser=%s\n' "$CAGE_TZ" "$CAGE_LOCALE" "$CAGE_LANGUAGE"

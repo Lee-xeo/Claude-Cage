@@ -179,7 +179,7 @@ class Downloads:
 
 
 def create_downloads():
-    helper = SourceFileLoader('cage_download_copy', '/usr/local/bin/cage-save-download').load_module()
+    helper = SourceFileLoader('cage_download_copy', '/usr/local/libexec/save-download').load_module()
     with open('/etc/claude-cage/desktop-downloads.json') as config:
         workspace = json.load(config)['workspace']
     return Downloads(Path.home() / '.local/share/cage/desktop-downloads', workspace, helper.copy_to_workspace)

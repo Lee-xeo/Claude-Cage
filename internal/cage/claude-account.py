@@ -9,7 +9,6 @@ from pathlib import Path
 import re
 import shutil
 import signal
-import socket
 import stat
 import subprocess
 import sys
@@ -34,9 +33,9 @@ if os.name == "nt":
 else:
     import fcntl
 
-SHIM = "/usr/local/lib/cage-claude-bin"
-OPEN = "/usr/local/libexec/cage-cli/bin/cage-open" if sys.platform == "darwin" else "/usr/local/bin/cage-open"
-HELPER = "/usr/local/bin/cage-claude-account"
+SHIM = "/usr/local/libexec/claude-wrapper"
+OPEN = "/usr/local/bin/xdg-open"
+HELPER = "/usr/local/libexec/claude-account"
 DEFAULT = "default"
 
 
@@ -72,8 +71,6 @@ def cli_environment(base):
     # Executing the real binary must never recurse into the terminal's claude shim.
     path = [p for p in env.get("PATH", os.defpath).split(os.pathsep) if p and p != SHIM]
     env["PATH"] = os.pathsep.join([str(Path.home() / ".local/bin"), *path])
-    if sys.platform == "darwin" and Path("/usr/local/libexec/cage-cli/bin/claude").is_file():
-        env["PATH"] = "/usr/local/libexec/cage-cli/bin:/usr/local/bin:" + env["PATH"]
     if base.name == DEFAULT:
         # Let Claude resolve its normal ~/.claude.json and ~/.claude itself.
         # Preserve provider variables: an API-authenticated shell is not a
@@ -919,54 +916,9 @@ def main(args, *, mobile_settings_fd=None, verify_mobile=None):
     raise ValueError("unknown operation")
 
 
-def macos_open(args):
-    login = _controller_context.get("CAGE_CLAUDE_LOGIN", "")
-    account = ""
-    while len(args) >= 3:
-        flag, value, *args = args
-        if not re.fullmatch("[a-f0-9]{24}", value):
-            return 2
-        if flag == "--login-id":
-            login = value
-        elif flag == "--account-id":
-            account = value
-        else:
-            return 2
-    if len(args) != 1:
-        return 2
-    finish = args[0] == "--finish-login"
-    if not finish:
-        from urllib.parse import urlsplit
-        url = urlsplit(args[0])
-        if len(args[0]) > 8192 or url.scheme != "https" or url.username or url.password or url.port not in (None,443):
-            return 2
-        if url.hostname not in ("claude.ai", "claude.com", "console.anthropic.com", "platform.claude.com", "platform.anthropic.com"):
-            if not login:
-                os.execv("/usr/bin/open", ["open", args[0]])
-            return 2
-        if not login:
-            login = hashlib.sha256(args[0].encode()).hexdigest()[:24]
-    if not re.fullmatch("[0-9a-f]{24}", login):
-        return 2
-    data = {"action": "login-finish" if finish else "login-open", "login": login, "account": account}
-    if not finish:
-        data["url"] = args[0]
-    address = Path.home() / "Library/Application Support/Cage/Login/open.sock"
-    owner = address.lstat()
-    if not stat.S_ISSOCK(owner.st_mode) or owner.st_uid != os.getuid() or owner.st_mode & 0o077:
-        return 1
-    with socket.socket(socket.AF_UNIX) as client:
-        client.settimeout(12)
-        client.connect(str(address))
-        client.sendall(json.dumps(data).encode())
-        client.shutdown(socket.SHUT_WR)
-        with client.makefile("rb") as reply:
-            return 0 if reply.read(4) == b"OK" else 1
-
-
 def entrypoint(args):
     try:
-        return macos_open(args) if sys.platform == "darwin" and Path(sys.argv[0]).name == "cage-open" else main(args)
+        return main(args)
     except KeyboardInterrupt:
         return 130
     except SharedResourceConflict as error:

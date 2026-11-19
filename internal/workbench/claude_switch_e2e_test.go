@@ -59,7 +59,7 @@ func testClaudeAccountSwitchThroughSharedSession(t *testing.T, automatic bool) {
 	}
 	_ = os.WriteFile(filepath.Join(home, ".bash_profile"), []byte("export PATH="+shellescape.Quote(bin)+":/usr/bin:/bin\n"), 0600)
 	installClaudeTestHelpers(t, bin)
-	helper := filepath.Join(bin, "cage-claude-account")
+	helper := filepath.Join(bin, "claude-account")
 	var resumed atomic.Bool
 	model := mobileTestModel(t, &resumed)
 	t.Cleanup(model.Close)
@@ -115,7 +115,7 @@ func testClaudeAccountSwitchThroughSharedSession(t *testing.T, automatic bool) {
 	}
 	env := []string{"HOME=" + home, "PATH=" + bin + ":/usr/bin:/bin", "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy, "NO_PROXY=localhost,127.0.0.1", "NODE_EXTRA_CA_CERTS=" + ca, "SSL_CERT_FILE=" + ca, "DISABLE_AUTOUPDATER=1", "TERM=xterm-256color"}
 	mobileTestSSHRewrite(t, s, home, env, func(command string) string {
-		return strings.ReplaceAll(command, "/usr/local/bin/cage-claude-account", helper)
+		return strings.ReplaceAll(command, "/usr/local/libexec/claude-account", helper)
 	})
 	// Rewrite the helper path in decoded launch payloads at the test boundary.
 	s.claudeAccounts.probe = func(ctx context.Context, id string) (claudeGuestSnapshot, error) {

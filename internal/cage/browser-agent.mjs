@@ -185,7 +185,7 @@ const downloads = new DownloadManager({
   save: async (id, name) => {
     let output;
     try {
-      output = (await runFile("/usr/bin/sudo", ["/usr/local/bin/cage-save-download", id, name], { maxBuffer: 16384 })).stdout;
+      output = (await runFile("/usr/bin/sudo", ["/usr/local/libexec/save-download", id, name], { maxBuffer: 16384 })).stdout;
     } catch (error) {
       output = error.stdout || '{"ok":false,"error":"下载保存未完成，请检查共享目录后重试。"}';
     }
@@ -771,7 +771,7 @@ function pasteImage(png) {
   const data = Buffer.from(png, "base64");
   if (!data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new Error("Invalid PNG");
   return new Promise((resolve, reject) => {
-    const child = spawn("/usr/local/bin/cage-image-input", ["paste"], {
+    const child = spawn("/usr/local/libexec/image-input", ["paste"], {
       stdio: ["pipe", "ignore", "ignore"], timeout: 15000,
     });
     child.on("error", reject);

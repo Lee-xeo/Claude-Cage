@@ -46,7 +46,9 @@ var identityMarkerDeferredPrefixes = []string{".local/share/cage"}
 var identityMarkerPendingSeen = map[string]bool{}
 
 func identityMarkers(script string) []string {
-	script = strings.ReplaceAll(script, guestMigrationScript, "")
+	for _, oneOff := range []string{guestMigrationScript, guestLegacyCleanup} {
+		script = strings.ReplaceAll(script, oneOff, "")
+	}
 	found := map[string]bool{}
 	for _, pattern := range identityMarkerPatterns {
 		for _, match := range pattern.FindAllString(script, -1) {
@@ -103,16 +105,21 @@ func TestInstalledComponentsCarryNoProductIdentity(t *testing.T) {
 }
 
 func TestMigrationScriptIsNotInstalled(t *testing.T) {
-	if strings.TrimSpace(guestMigrationScript) == "" {
-		t.Fatal("the one-off migration script is empty")
-	}
 	start := DefaultConfig().StartScript()
-	if strings.Count(start, guestMigrationScript) != 1 {
-		t.Fatal("the start script must run the one-off migration exactly once")
+	for name, oneOff := range map[string]string{"migration": guestMigrationScript, "cleanup": guestLegacyCleanup} {
+		if strings.TrimSpace(oneOff) == "" {
+			t.Fatalf("the one-off %s script is empty", name)
+		}
+		if strings.Count(start, oneOff) != 1 {
+			t.Fatalf("the start script must run the one-off %s exactly once", name)
+		}
+	}
+	if strings.Index(start, guestLegacyCleanup) < strings.Index(start, guestStart) {
+		t.Fatal("former programs must be removed only after the current services started")
 	}
 	// The migration runs from the SSH session that applies the components;
 	// it must never be written to a file inside the environment.
-	if regexp.MustCompile(`tee [^\n]*<<'?GUEST_MIGRATION`).MatchString(start) {
+	if regexp.MustCompile(`tee [^\n]*<<'?LEGACY_`).MatchString(start) {
 		t.Fatal("the migration script is installed as a file")
 	}
 }

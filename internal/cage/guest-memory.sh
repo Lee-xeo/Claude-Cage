@@ -3,7 +3,7 @@
 # Containers share the host kernel. Their memory and swap limits belong to
 # the container cgroup; never load host modules or create swap devices here.
 if ! systemd-detect-virt --container --quiet; then
-sudo tee /usr/local/bin/cage-memory-start >/dev/null <<'SCRIPT'
+sudo tee /usr/local/libexec/memory-reserve >/dev/null <<'SCRIPT'
 #!/bin/sh
 set -eu
 if [ -f /run/cage-zram-device ]; then
@@ -22,7 +22,7 @@ swapon -p 100 "$device"
 printf '%s\n' "$device" > /run/cage-zram-device
 trap - EXIT
 SCRIPT
-sudo chmod 0755 /usr/local/bin/cage-memory-start
+sudo chmod 0755 /usr/local/libexec/memory-reserve
 sudo tee /etc/systemd/system/cage-memory.service >/dev/null <<'UNIT'
 [Unit]
 Description=Cage compressed memory reserve
@@ -31,7 +31,7 @@ Before=cage-browser.service cage-editor.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/cage-memory-start
+ExecStart=/usr/local/libexec/memory-reserve
 [Install]
 WantedBy=multi-user.target
 UNIT

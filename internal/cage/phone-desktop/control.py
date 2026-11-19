@@ -13,7 +13,7 @@ import sys
 
 STATE = Path('/run/cage-phone-desktop-owner')
 RUNTIME = Path('/run/cage-phone-desktop')
-TOOLS = '/usr/local/lib/cage-phone-desktop'
+TOOLS = '/usr/local/lib/phone-desktop'
 UNIT = 'cage-phone-desktop.service'
 
 

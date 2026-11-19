@@ -26,7 +26,7 @@ _runtime = None
 def client_runtime():
     global _runtime
     if _runtime is None:
-        helper = Path(shutil.which("cage-claude-account") or "/usr/local/bin/cage-claude-account").resolve()
+        helper = Path(shutil.which("claude-account", path=os.pathsep.join(("/usr/local/libexec", os.environ.get("PATH", "")))) or "/usr/local/libexec/claude-account").resolve()
         paths = (Path(__file__).with_name("client_runtime.py"),
                  helper.with_name("client_runtime.py"), helper.parent.parent / "client_runtime.py",
                  Path("/usr/local/bin/client_runtime.py"),

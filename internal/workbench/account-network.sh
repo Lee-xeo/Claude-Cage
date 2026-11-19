@@ -39,7 +39,7 @@ while [[ $# -ge 3 ]]; do
   [[ $1 == --account-id || $1 == --login-id ]] && [[ $2 =~ ^[a-f0-9]{24}$ ]] || exit 2
   args+=("$1" "$2"); shift 2
 done
-opener=(sudo nsenter --net=/proc/1/ns/net setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups /usr/local/bin/cage-open "${args[@]}")
+opener=(sudo nsenter --net=/proc/1/ns/net setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups /usr/local/bin/xdg-open "${args[@]}")
 if [[ ${1:-} == --finish-login ]]; then exec "${opener[@]}" --finish-login; fi
 if [[ ${1:-} == --stdin ]]; then url=$(cat); else url=${1:-}; fi
 [[ $url == https://* && $url != *[[:space:]]* && ${#url} -le 8192 ]] || exit 2

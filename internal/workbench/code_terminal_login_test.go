@@ -32,7 +32,7 @@ func TestCodeLoginReturnsToEachInitiatingTerminal(t *testing.T) {
 		return claudeGuestSnapshot{LoggedIn: true, Email: "existing@example.org"}, nil
 	}
 	mobileTestSSHRewrite(t, s, home, []string{"HOME=" + home, "PATH=/usr/bin:/bin"}, func(command string) string {
-		if strings.Contains(command, "cage-claude-account login") {
+		if strings.Contains(command, "claude-account login") {
 			return "read confirmation"
 		}
 		if strings.Contains(command, "exec bash -i") {

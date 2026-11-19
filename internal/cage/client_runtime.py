@@ -25,6 +25,11 @@ _remote_windows = os.name == "nt" and _context.get("CAGE_REMOTE_APP_CONTAINER") 
 PRIVATE_MODE = 0o777 if _remote_windows else 0o700
 
 
+# The environment's URL opener. Only it records which terminal started an
+# official sign-in, so only it is wrapped by a launcher.
+OPENER = "/usr/local/bin/xdg-open"
+
+
 class RuntimePathConflict(ValueError):
     def __init__(self, alias, target):
         super().__init__("Runtime path is already in use")
@@ -195,8 +200,8 @@ def environment(values):
     browser = clean.get("BROWSER", "")
     connection = values.get("CAGE_LOGIN_CONNECTION")
     if connection and not browser and os.name != "nt":
-        browser = "/usr/local/libexec/cage-cli/bin/cage-open" if sys.platform == "darwin" else "/usr/local/bin/cage-open"
-    if browser and (connection or "cage" in browser.lower()) and Path(browser).is_file():
+        browser = OPENER
+    if browser and (connection or browser == OPENER) and Path(browser).is_file():
         clean["BROWSER"] = launcher(browser, executable=True, login_config=clean.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     for key, prefix in (("PULSE_SERVER", "unix:"), ("IBUS_ADDRESS", "unix:path=")):
         value = clean.get(key, "")

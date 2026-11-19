@@ -478,5 +478,5 @@ func (s *Server) recoverClaudeLogin(ctx context.Context, accountID, target, sour
 	if !validClaudeID(target) || !validClaudeID(source) || len(subject) != 64 || strings.Trim(subject, "0123456789abcdef") != "" {
 		return claudeGuestSnapshot{}, errors.New("Claude 登录恢复参数无效")
 	}
-	return s.readClaudeGuestReport(ctx, target, "exec /usr/local/bin/cage-claude-account recover-login "+target+" "+source+" "+subject)
+	return s.readClaudeGuestReport(ctx, target, "exec /usr/local/libexec/claude-account recover-login "+target+" "+source+" "+subject)
 }
