@@ -189,6 +189,7 @@ func (e *External) startLocked(ctx context.Context) error {
 		cmd = exec.Command(program, command[1:]...)
 		cmd.Dir = e.Dir
 		cmd.Env = userEnv()
+		hideWindow(cmd)
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "computer", Version: "1"}, nil)
 	connect, cancel := context.WithTimeout(ctx, 20*time.Second)

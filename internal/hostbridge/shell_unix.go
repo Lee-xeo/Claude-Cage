@@ -29,6 +29,9 @@ func shellCommand(command string) *exec.Cmd {
 	return cmd
 }
 
+// hideWindow does nothing here: programs open no window of their own.
+func hideWindow(*exec.Cmd) {}
+
 func killTree(cmd *exec.Cmd) {
 	if cmd.Process != nil {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
