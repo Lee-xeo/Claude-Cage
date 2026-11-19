@@ -224,7 +224,7 @@ func TestGuestServiceEntrypointsIncludeToolDownloader(t *testing.T) {
 			if !ok {
 				t.Fatal("service entry missing")
 			}
-			functions, _, ok = strings.Cut(functions, "sudo tee /usr/local/lib/tailnet-client.mjs")
+			functions, _, ok = strings.Cut(functions, "sudo tee /usr/local/lib/browser-visibility.mjs")
 			if !ok {
 				t.Fatal("service function boundary missing")
 			}
