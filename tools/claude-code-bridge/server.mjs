@@ -2,20 +2,11 @@ import { createInterface } from 'node:readline';
 import { parseArgs } from 'node:util';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { askCli } from './ask-cli.mjs';
+import { askCli, askResult, askTool, resultTool } from './ask-cli.mjs';
 
-const inputSchema = {
-  type: 'object',
-  properties: {
-    text: { type: 'string', minLength: 1, description: '原样转发给 Claude 的问题。' },
-    sessionId: { type: 'string', description: '继续本聊天上次返回的 Claude Code 会话。首轮省略。' },
-  },
-  required: ['text'],
-  additionalProperties: false,
-};
 const toolList = [
-  { name: 'ask', description: '通过 Cage SSH 询问 Claude Code 并返回回复。', inputSchema },
-  { name: 'send', description: 'ask 的兼容入口，直接返回回复和 sessionId。', inputSchema },
+  askTool, resultTool,
+  { ...askTool, name: 'send', description: 'ask 的兼容入口。' },
 ];
 const supportedVersions = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -57,7 +48,8 @@ async function serve(call) {
     if (!toolList.some(tool => tool.name === params.name)) return rpcError(-32602, 'Unknown tool');
     let value, isError = false;
     try {
-      value = await call(params.name, params.arguments === undefined ? {} : params.arguments);
+      value = await call(params.name, params.arguments === undefined ? {} : params.arguments, params._meta?.threadId);
+      isError = value.status === 'failed' || value.status === 'busy';
     } catch (error) {
       value = errorBody(error);
       isError = true;
@@ -65,9 +57,14 @@ async function serve(call) {
     const content = [{ type: 'text', text: JSON.stringify(value) }];
     write({ id, result: { content, isError } });
   }
+  const pending = new Set();
   for await (const line of input) {
-    if (line.trim()) await handle(line);
+    if (!line.trim()) continue;
+    const response = handle(line);
+    pending.add(response);
+    response.finally(() => pending.delete(response));
   }
+  await Promise.all(pending);
 }
 
 
@@ -80,18 +77,22 @@ try {
   const hostId = values['host-id'] || process.env.CAGE_HOST_ID;
   if (!hostId) throw Error('请指定 --host-id 或 CAGE_HOST_ID');
   const profileDir = values['profile-dir'] || join(homedir(), '.claude-cage');
-  const call = (name, args) => {
-    if (!toolList.some(tool => tool.name === name)) throw Error('未知工具');
-    if (!isObject(args) || Object.keys(args).some(key => !Object.hasOwn(inputSchema.properties, key))) {
-      throw Error('参数为 text 和可选的 sessionId');
+  const call = (name, args, threadId) => {
+    const tool = toolList.find(item => item.name === name);
+    if (!tool) throw Error('未知工具');
+    if (!isObject(args) || Object.keys(args).some(key => !Object.hasOwn(tool.inputSchema.properties, key))) {
+      throw Error('工具参数无效');
     }
-    return askCli({ hostId, profileDir }, args);
+    const config = { hostId, profileDir };
+    return name === 'ask_result' ? askResult(config, args) : askCli(config, args, threadId);
   };
   if (values.call) {
     let raw = '';
     process.stdin.setEncoding('utf8');
     for await (const chunk of process.stdin) raw += chunk;
-    console.log(JSON.stringify(await call(values.call, parseJson(raw))));
+    const result = await call(values.call, parseJson(raw), process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID);
+    console.log(JSON.stringify(result));
+    if (result.status === 'failed' || result.status === 'busy') process.exitCode = 1;
   } else {
     await serve(call);
   }
