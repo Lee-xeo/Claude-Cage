@@ -21,7 +21,7 @@ def owner(window, pid_atom):
 
 
 def visibility(show):
-    runtime = Path('/run/cage-desktop')
+    runtime = Path('/run/desktop-session')
     if not runtime.is_dir():
         return
     # Startup and legacy unmanaged sessions must remain viewable before the

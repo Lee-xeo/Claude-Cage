@@ -30,11 +30,11 @@ def run(*args):
     return subprocess.check_output(args, stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3).decode()
 
 
-layout_file = Path('/run/cage-phone-desktop/layout.json')
+layout_file = Path('/run/phone-desktop/layout.json')
 
 
 def display_scale():
-    path = Path('/run/cage-desktop/display-scale')
+    path = Path('/run/desktop-session/display-scale')
     value = float(path.read_text()) if path.exists() else 2
     # A computer showing more of the application on a 1x screen goes below 1.
     if not math.isfinite(value) or not .75 <= value <= 8:
@@ -44,18 +44,18 @@ def display_scale():
 
 def set_display_scale(value):
     dpi = round(value * 96 * 1024)
-    config = Path('/run/cage-desktop/xsettings.conf')
+    config = Path('/run/desktop-session/xsettings.conf')
     temporary = config.with_suffix('.new')
     # A session started by an earlier version has no list of its other settings.
-    fixed = Path('/run/cage-desktop/xsettings.fixed')
+    fixed = Path('/run/desktop-session/xsettings.fixed')
     rest = fixed.read_text() if fixed.exists() else 'Gtk/DecorationLayout ":"\n'
     temporary.write_text(f'Xft/DPI {dpi}\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI {dpi}\n' + rest)
     temporary.replace(config)
-    pid = int(Path('/run/cage-desktop/xsettings.pid').read_text())
+    pid = int(Path('/run/desktop-session/xsettings.pid').read_text())
     if Path(f'/proc/{pid}/comm').read_text().strip() != 'xsettingsd':
         raise Failure(503)
     os.kill(pid, signal.SIGHUP)
-    Path('/run/cage-desktop/display-scale').write_text(str(value) + '\n')
+    Path('/run/desktop-session/display-scale').write_text(str(value) + '\n')
 
 
 def encode_frame(image):
@@ -96,15 +96,15 @@ def display_size(width, height):
 def restore_layout():
     if not layout_file.exists():
         return
-    with open('/run/cage-desktop/resize.lock', 'a') as lock:
+    with open('/run/desktop-session/resize.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         layout = json.loads(layout_file.read_text())
         # A computer that resized meanwhile left its latest size and density.
-        pending = Path('/run/cage-desktop/desktop-size')
+        pending = Path('/run/desktop-session/desktop-size')
         latest = pending.read_text().split() if pending.exists() else []
         if len(latest) > 2:
             layout['scale'] = float(latest[2])
-        if 'scale' in layout and Path('/run/cage-desktop/xsettings.pid').exists():
+        if 'scale' in layout and Path('/run/desktop-session/xsettings.pid').exists():
             set_display_scale(layout['scale'])
         conn = display.Display()
         for wid, saved in layout['minimums'].items():
@@ -137,7 +137,7 @@ def fitted_window(size, window):
 def native_input(payload):
     with socket.socket(socket.AF_UNIX) as conn:
         conn.settimeout(2)
-        conn.connect(str(Path.home() / '.cache/cage-input/input.sock'))
+        conn.connect(str(Path.home() / '.cache/input-method/input.sock'))
         conn.sendall(json.dumps(payload).encode() + b'\n')
         return json.loads(conn.makefile('rb').readline(32769))
 
@@ -150,17 +150,17 @@ class View:
     def __init__(self):
         self.conn = display.Display()
         self.root = self.conn.screen().root
-        self.id = os.environ['CAGE_PHONE_ID']
+        self.id = os.environ['PHONE_ID']
         self.generation = secrets.token_hex(16)
         self.redirected = set()
         self.size = None
         self.pixels = None
         self.scale = display_scale()
-        self.dynamic_scale = Path('/run/cage-desktop/xsettings.pid').exists()
+        self.dynamic_scale = Path('/run/desktop-session/xsettings.pid').exists()
         self.requested_scale = self.scale
         self.scale_ready = 0
-        self.resize(int(os.environ['CAGE_PHONE_WIDTH']), int(os.environ['CAGE_PHONE_HEIGHT']),
-                    float(os.environ.get('CAGE_PHONE_PIXEL_RATIO', '0')))
+        self.resize(int(os.environ['PHONE_WIDTH']), int(os.environ['PHONE_HEIGHT']),
+                    float(os.environ.get('PHONE_PIXEL_RATIO', '0')))
         self.last = time.monotonic()
 
     def resize(self, w, h, pixel_ratio=0):
@@ -174,7 +174,7 @@ class View:
         self.fit_display()
 
     def fit_display(self):
-        with open('/run/cage-desktop/resize.lock', 'a') as lock:
+        with open('/run/desktop-session/resize.lock', 'a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             geometry = self.root.get_geometry()
             current = (geometry.width, geometry.height)

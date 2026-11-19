@@ -45,9 +45,9 @@ var identityMarkerDeferredPrefixes = []string{".local/share/cage"}
 
 var identityMarkerPendingSeen = map[string]bool{}
 
-func identityMarkers(script string) []string {
+func identityMarkers(script string, p *guestprofile.Profile) []string {
 	for _, oneOff := range []string{guestMigrationScript, guestLegacyCleanup} {
-		script = strings.ReplaceAll(script, oneOff, "")
+		script = strings.ReplaceAll(script, p.Linux(oneOff), "")
 	}
 	found := map[string]bool{}
 	for _, pattern := range identityMarkerPatterns {
@@ -92,7 +92,7 @@ func TestInstalledComponentsCarryNoProductIdentity(t *testing.T) {
 			"debianPrepare": DebianPrepareScript,
 		}
 		for name, script := range scripts {
-			if markers := identityMarkers(script); len(markers) > 0 {
+			if markers := identityMarkers(script, p); len(markers) > 0 {
 				t.Errorf("%s script (profile %v) still carries identity markers:\n  %s", name, p != nil, strings.Join(markers, "\n  "))
 			}
 		}

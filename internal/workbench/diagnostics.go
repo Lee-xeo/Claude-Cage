@@ -75,8 +75,13 @@ func (s *Server) diagnosticExport(w http.ResponseWriter, r *http.Request) {
 		var err error
 		guest, err = s.guest(ctx, `sudo python3 - <<'CAGE_DIAGNOSTIC_JOURNAL'
 import subprocess, sys
-result = subprocess.run(['journalctl','--namespace=cage','--no-pager','-o','short-iso','-n','150','--since','14 days ago'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5, check=True)
-data = result.stdout
+# Services log to their own namespace; earlier versions used a former name
+# whose entries remain readable until they expire.
+data = b''
+for namespace in ('cage', 'services'):
+    result = subprocess.run(['journalctl','--namespace='+namespace,'--no-pager','-o','short-iso','-n','150','--since','14 days ago'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+    if result.returncode == 0:
+        data += result.stdout
 if len(data) > 49152:
     data = data[-49152:]
     data = data.partition(b'\n')[2]
@@ -86,7 +91,7 @@ CAGE_DIAGNOSTIC_JOURNAL`)
 			guest = nil
 			guestState = "guest collection failed"
 		} else {
-			guestState = "collected last 150 service lines (max 48 KiB)"
+			guestState = "collected recent service lines (max 48 KiB)"
 		}
 	}
 	var bundle bytes.Buffer

@@ -36,8 +36,11 @@ func (p *Profile) Linux(script string) string {
 	for _, v := range []string{"user", "sys.argv[2]"} {
 		script = strings.ReplaceAll(script, "pwd.getpwnam("+v+")", "pwd.getpwnam("+roles+".get("+v+", "+v+"))")
 	}
-	script = strings.ReplaceAll(script, "cage_output", p.AudioName)
-	script = strings.ReplaceAll(script, "sink_properties=device.description=Cage", `sink_properties="device.description='`+p.AudioDescription+`'"`)
+	// Environments without a profile use PulseAudio's default null sink.
+	script = strings.ReplaceAll(script, "sink_name=null rate=48000 channels=2 format=s16le", "sink_name="+p.AudioName+" rate=48000 channels=2 format=s16le "+`sink_properties="device.description='`+p.AudioDescription+`'"`)
+	script = strings.ReplaceAll(script, "set-default-sink null\n", "set-default-sink "+p.AudioName+"\n")
+	script = strings.ReplaceAll(script, "set-default-source null.monitor", "set-default-source "+p.AudioName+".monitor")
+	script = strings.ReplaceAll(script, "--device=null.monitor", "--device="+p.AudioName+".monitor")
 	script = strings.ReplaceAll(script, "2880x1800", fmt.Sprintf("%dx%d", p.DisplayWidth, p.DisplayHeight))
 	script = strings.ReplaceAll(script, "--window-size=1440,900", fmt.Sprintf("--window-size=%d,%d", p.BrowserWidth, p.BrowserHeight))
 	if p.GPUBackend == "virgl" {
@@ -99,7 +102,7 @@ type accountRule struct {
 var linuxAccountRules = func() []accountRule {
 	var rules []accountRule
 	for _, old := range []string{"cage-browser", "cage"} {
-		for _, prefix := range []string{"User=", "Group=", "-u ", `"-u", "`, "-o ", "-g ", "id ", "id -u ", "enable-linger ", "--shell /bin/bash ", "-G cage-audio ", "ALL=(", "getpwnam('", "getgrnam('", `getpwnam("`, `getgrnam("`, "= "} {
+		for _, prefix := range []string{"User=", "Group=", "-u ", `"-u", "`, "-o ", "-g ", "id ", "id -u ", "enable-linger ", "--shell /bin/bash ", "-G pulse-access ", "ALL=(", "getpwnam('", "getgrnam('", `getpwnam("`, `getgrnam("`, "= "} {
 			rules = append(rules, accountRule{regexp.MustCompile(regexp.QuoteMeta(prefix+old) + `([^A-Za-z0-9_-]|$)`), prefix, old == "cage-browser"})
 		}
 	}

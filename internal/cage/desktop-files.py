@@ -608,7 +608,7 @@ def main():
             def connect(self):
                 self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 self.sock.settimeout(self.timeout)
-                self.sock.connect('/run/cage-desktop/files.sock')
+                self.sock.connect('/run/desktop-session/files.sock')
         client = Connection('localhost', timeout=5)
         try:
             # Electron's folder fallback invokes `xdg-open .` with the target

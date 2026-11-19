@@ -709,19 +709,19 @@ def launch(request):
     policy_available = migrate_cage_policy()
     connection = identifier(request["id"])
     folder = ROOT / connection
-    os.environ["CAGE_LOGIN_CONNECTION"] = connection
+    os.environ["LOGIN_CONNECTION"] = connection
     folder.mkdir(parents=True, exist_ok=True, mode=PRIVATE_MODE)
     prefix = request["prefix"]
     if os.name == "nt":
         account_id = request.get("account") or "default"
         os.environ["CLAUDE_CONFIG_DIR"] = str(config_directory(account_id))
         if request.get("subject"):
-            _controller_context["CAGE_CLAUDE_SUBJECT"] = request["subject"]
+            _controller_context["ACCOUNT_SUBJECT"] = request["subject"]
         prefix = [_controller_context["CAGE_CLI_BINARY"]]
         request["prefix"] = prefix
-    elif len(prefix) == 5 and Path(prefix[2]).name == "cage-claude-account" and prefix[3] == "run":
+    elif len(prefix) == 5 and Path(prefix[2]).name == "claude-account" and prefix[3] == "run":
         os.environ["CLAUDE_CONFIG_DIR"] = str(config_directory(prefix[4]))
-        _controller_context["CAGE_CLAUDE_SUBJECT"] = prefix[1].split("=", 1)[1]
+        _controller_context["ACCOUNT_SUBJECT"] = prefix[1].split("=", 1)[1]
     elif request.get("config"):
         os.environ["CLAUDE_CONFIG_DIR"] = request["config"]
     session_id = identifier(request.get("resume") or request.get("session_id") or connection)
@@ -742,7 +742,7 @@ def launch(request):
         if not account["has_status_line"](account["profile"](account_id)):
             status_command = _runtime["command_text"](_controller_context["CAGE_CLI_ACCOUNT_HELPER"], ["statusline", account_id])
             settings["statusLine"] = {"type": "command", "command": status_command}
-    elif len(prefix) == 5 and Path(prefix[2]).name == "cage-claude-account" and prefix[3] == "run":
+    elif len(prefix) == 5 and Path(prefix[2]).name == "claude-account" and prefix[3] == "run":
         account = runpy.run_path(prefix[2])
         if not account["has_status_line"](account["profile"](prefix[4])):
             settings["statusLine"] = {"type": "command", "command": _runtime["command_text"](prefix[2], ["statusline", prefix[4]])}
@@ -753,7 +753,7 @@ def launch(request):
     with state_file(connection) as state:
         if live(state.get("pid")) and not state.get("closed"):
             raise ValueError("目标会话已有进程，未重复启动")
-        state.update(codex_enabled=request.get("codex_enabled") is True, cli_id=session_id, config=str(config_directory("default")), login_subject=_controller_context.get("CAGE_CLAUDE_SUBJECT"),
+        state.update(codex_enabled=request.get("codex_enabled") is True, cli_id=session_id, config=str(config_directory("default")), login_subject=_controller_context.get("ACCOUNT_SUBJECT"),
                      workspace=str(Path.cwd()), pid=os.getpid(), closed=False, updated_at=time.time(), approvals=[], busy=False,
                      channel_pid=None, pending_send=None, display=None, stopped=False,
                      requests=previous.get("requests", {}), sent=previous.get("sent", []))

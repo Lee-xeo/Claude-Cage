@@ -107,7 +107,7 @@ async function saveLanguage(profile, language) {
 
 export class PhoneBrowser {
   constructor({ binary = "/usr/bin/chromium", directory = "/home/cage-browser/phone-profiles",
-                language = process.env.CAGE_LANGUAGE || "en-US", connect, pipeFactory } = {}) {
+                language = process.env.BROWSER_LANG || "en-US", connect, pipeFactory } = {}) {
     this.binary = binary;
     this.directory = directory;
     this.language = language;

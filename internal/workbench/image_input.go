@@ -230,7 +230,7 @@ func (s *Server) imageInput(w http.ResponseWriter, r *http.Request) {
 func (s *Server) guestImage(ctx context.Context, target string, data []byte) (map[string]any, error) {
 	script := "sudo -H -u cage /usr/local/libexec/image-input save"
 	if target == "desktop" {
-		script = "systemctl is-active --quiet cage-claude-desktop.service && sudo -H -u cage env DISPLAY=:78 XAUTHORITY=/run/cage-desktop/Xauthority /usr/local/libexec/image-input paste"
+		script = "systemctl is-active --quiet desktop-session.service && sudo -H -u cage env DISPLAY=:78 XAUTHORITY=/run/desktop-session/Xauthority /usr/local/libexec/image-input paste"
 	}
 	script, err := s.linuxTemplate(script)
 	if err != nil {

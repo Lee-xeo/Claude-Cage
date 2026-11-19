@@ -12,7 +12,7 @@ fd = lib.inotify_init1(os.O_CLOEXEC | os.O_NONBLOCK)
 if fd < 0:
     raise OSError(ctypes.get_errno(), "inotify_init1")
 root = Path("/run")
-name = re.compile(r"desktop-[0-9a-f]{24}|cage-desktop")
+name = re.compile(r"desktop-[0-9a-f]{24}|desktop-session")
 wake = select.poll()
 wake.register(fd, select.POLLIN)
 watched = {}

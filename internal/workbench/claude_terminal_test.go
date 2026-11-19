@@ -109,7 +109,7 @@ func TestManagedTerminalPreservesTheSelectedProfileInTheGuestShell(t *testing.T)
 		{managed, home + "/.local/share/cage/claude-accounts/" + managed + "/config"},
 	} {
 		work := t.TempDir()
-		cmd := exec.Command("bash", "-c", managedClaudeTerminalScript(work, `printf '%s' "$CLAUDE_CONFIG_DIR/$CAGE_CLAUDE_ACCOUNT_ID/$CAGE_CLAUDE_SUBJECT" > observed`, tc.guestID, "expected", false))
+		cmd := exec.Command("bash", "-c", managedClaudeTerminalScript(work, `printf '%s' "$CLAUDE_CONFIG_DIR/$ACCOUNT_PROFILE_ID/$ACCOUNT_SUBJECT" > observed`, tc.guestID, "expected", false))
 		cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "CLAUDE_CONFIG_DIR=" + home + "/custom-config"}
 		cmd.Stdin = strings.NewReader("exit\n")
 		if b, err := cmd.CombinedOutput(); err != nil {

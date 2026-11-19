@@ -38,7 +38,7 @@ func claudeAccountScript() string {
 		`sudo install -d -m 0755 /usr/local/libexec/claude-wrapper
 sudo tee /usr/local/libexec/claude-wrapper/claude >/dev/null <<'CAGE_CLAUDE_SHIM'
 #!/bin/sh
-exec /usr/local/libexec/claude-account run "$CAGE_CLAUDE_ACCOUNT_ID" "$@"
+exec /usr/local/libexec/claude-account run "$ACCOUNT_PROFILE_ID" "$@"
 CAGE_CLAUDE_SHIM
 sudo chmod 0755 /usr/local/libexec/claude-wrapper/claude
 `
@@ -181,8 +181,8 @@ func imageInputScript() string {
 }
 
 func phoneBrowserScript() string {
-	return "\nsudo tee /usr/local/lib/browser-phone.mjs >/dev/null <<'CAGE_PHONE_BROWSER'\n" + phoneBrowser + "\nCAGE_PHONE_BROWSER\n" +
-		"sudo tee /usr/local/lib/browser-phone-network.mjs >/dev/null <<'CAGE_PHONE_NETWORK'\n" + phoneBrowserNetwork + "\nCAGE_PHONE_NETWORK\n"
+	return "\nsudo tee /usr/local/lib/browser-phone.mjs >/dev/null <<'PHONE_BROWSER_MODULE'\n" + phoneBrowser + "\nPHONE_BROWSER_MODULE\n" +
+		"sudo tee /usr/local/lib/browser-phone-network.mjs >/dev/null <<'PHONE_NETWORK_MODULE'\n" + phoneBrowserNetwork + "\nPHONE_NETWORK_MODULE\n"
 }
 
 func browserServices() string {
@@ -316,7 +316,7 @@ printf 'Cage tool packages are ready; applying browser and editor components.\n'
 }
 
 func (c Config) EnvironmentScript() string {
-	return fmt.Sprintf("export CAGE_TZ=%s\nexport CAGE_LOCALE=%s\nexport CAGE_LANGUAGE=%s\n", shellescape.Quote(c.Timezone), shellescape.Quote(c.Locale), shellescape.Quote(c.BrowserLanguage)) + guestEnv
+	return fmt.Sprintf("export CAGE_TZ=%s\nexport CAGE_LOCALE=%s\nexport BROWSER_LANG=%s\n", shellescape.Quote(c.Timezone), shellescape.Quote(c.Locale), shellescape.Quote(c.BrowserLanguage)) + guestEnv
 }
 
 func (c Config) StartScript() string {
@@ -327,7 +327,7 @@ func (c Config) StartScript() string {
 func (c Config) SetupScript() string { return c.GuestProfile.Linux(GuestSetup) }
 
 func componentStartScript() string {
-	return APTBootstrapScript + "\n" + guestMigrationScript + "\n" + claudeAccountScript() + browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet cage-editor.service; then sudo systemctl stop cage-editor.service; fi\n" + guestStart + "\n" + guestLegacyCleanup
+	return APTBootstrapScript + "\n" + guestMigrationScript + "\n" + claudeAccountScript() + browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet code-editor.service; then sudo systemctl stop code-editor.service; fi\n" + guestStart + "\n" + guestLegacyCleanup
 }
 
 func markGuestStart(body string) string {
@@ -356,8 +356,8 @@ func (m GuestManifest) Current() bool {
 }
 
 func guestDiagnostics() string {
-	return "sudo tee /usr/local/libexec/service-log >/dev/null <<'CAGE_LOG_RUN'\n" + diagnostics.GuestRunner() + "\nCAGE_LOG_RUN\nsudo chmod 0755 /usr/local/libexec/service-log\n" + `sudo install -d -m 0755 /etc/systemd/journald@cage.conf.d
-sudo tee /etc/systemd/journald@cage.conf.d/limits.conf >/dev/null <<'CAGE_JOURNAL'
+	return "sudo tee /usr/local/libexec/service-log >/dev/null <<'CAGE_LOG_RUN'\n" + diagnostics.GuestRunner() + "\nCAGE_LOG_RUN\nsudo chmod 0755 /usr/local/libexec/service-log\n" + `sudo install -d -m 0755 /etc/systemd/journald@services.conf.d
+sudo tee /etc/systemd/journald@services.conf.d/limits.conf >/dev/null <<'CAGE_JOURNAL'
 [Journal]
 Storage=persistent
 SystemMaxUse=10M
@@ -369,6 +369,6 @@ MaxFileSec=1day
 RateLimitIntervalSec=30s
 RateLimitBurst=200
 CAGE_JOURNAL
-sudo systemctl try-restart systemd-journald@cage.service
+sudo systemctl try-restart systemd-journald@services.service
 `
 }

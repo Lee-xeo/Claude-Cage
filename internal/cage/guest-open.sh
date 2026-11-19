@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-login="${CAGE_CLAUDE_LOGIN:-}"
+login="${LOGIN_ID:-}"
 route=""
 account=""
 while [ "$#" -ge 3 ]; do

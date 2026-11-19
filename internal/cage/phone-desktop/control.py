@@ -11,10 +11,10 @@ import socket
 import subprocess
 import sys
 
-STATE = Path('/run/cage-phone-desktop-owner')
-RUNTIME = Path('/run/cage-phone-desktop')
+STATE = Path('/run/phone-desktop-owner')
+RUNTIME = Path('/run/phone-desktop')
 TOOLS = '/usr/local/lib/phone-desktop'
-UNIT = 'cage-phone-desktop.service'
+UNIT = 'phone-desktop.service'
 
 
 class Failure(Exception):
@@ -49,8 +49,8 @@ def launch(request, record):
         raise Failure(400)
     if type(w) is not int or type(h) is not int or not (240 <= w <= 1440 and 160 <= h <= 1600):
         raise Failure(400)
-    desktop = command('systemctl', 'show', 'cage-claude-desktop.service', '-p', 'ActiveState', '--value').strip()
-    if desktop != b'active' or not Path('/run/cage-desktop/keyring-ready').exists():
+    desktop = command('systemctl', 'show', 'desktop-session.service', '-p', 'ActiveState', '--value').strip()
+    if desktop != b'active' or not Path('/run/desktop-session/keyring-ready').exists():
         raise Failure(412)
     owner = {'id': ident, 'mode': 'shared'}
     state = unit_state()
@@ -61,16 +61,16 @@ def launch(request, record):
     args = ['systemd-run', '--quiet', '--collect', '--unit=' + UNIT, '--service-type=exec',
             '--working-directory=' + user.pw_dir, '--uid=' + user.pw_name, '--gid=' + str(user.pw_gid)]
     # This unit owns only capture and input. Closing it leaves Desktop running.
-    for prop in ['RuntimeDirectory=cage-phone-desktop',
+    for prop in ['RuntimeDirectory=phone-desktop',
                  'RuntimeDirectoryMode=0700', 'UMask=0077', 'KillMode=control-group', 'TimeoutStopSec=8',
                  'ProtectSystem=strict', 'ProtectHome=read-only',
-                 'ReadWritePaths=/run/cage-desktop',
+                 'ReadWritePaths=/run/desktop-session',
                  'ExecStopPost=' + TOOLS + '/session.sh --restore',
-                 'BindsTo=cage-claude-desktop.service', 'After=cage-claude-desktop.service',
+                 'BindsTo=desktop-session.service', 'After=desktop-session.service',
                  'StandardOutput=null', 'StandardError=null']:
         args.append('--property=' + prop)
-    for name, value in [('HOME', user.pw_dir), ('CAGE_PHONE_ID', ident), ('CAGE_PHONE_WIDTH', w), ('CAGE_PHONE_HEIGHT', h),
-                        ('CAGE_PHONE_PIXEL_RATIO', pixel_ratio)]:
+    for name, value in [('HOME', user.pw_dir), ('PHONE_ID', ident), ('PHONE_WIDTH', w), ('PHONE_HEIGHT', h),
+                        ('PHONE_PIXEL_RATIO', pixel_ratio)]:
         args.append('--setenv=' + name + '=' + str(value))
     command(*args, TOOLS + '/session.sh')
     temporary = record.with_suffix('.new')

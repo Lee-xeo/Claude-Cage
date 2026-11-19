@@ -7,15 +7,17 @@ from pathlib import Path
 identifier = re.compile(r"[0-9a-f]{24}")
 home = Path.home()
 base = home / ".local/share/desktop-profiles"
+# A Desktop opened before the environment's components were updated keeps
+# running under the unit name of that time until it is closed.
+legacy = "cage-claude-desktop.service"
 units = subprocess.check_output([
-    "systemctl", "show", "--property=Id,ActiveState,MainPID", "desktop-*.service",
-    "cage-claude-desktop*.service"
+    "systemctl", "show", "--property=Id,ActiveState,MainPID", "desktop-*.service", legacy
 ], text=True)
 running = {}
 for unit in units.strip().split("\n\n"):
     values = dict(line.split("=", 1) for line in unit.splitlines() if "=" in line)
     if values.get("ActiveState") == "active":
-        running[values["Id"]] = int(values["MainPID"])
+        running["desktop-session.service" if values["Id"] == legacy else values["Id"]] = int(values["MainPID"])
 result = {}
 def inspect(instance, runtime, unit):
     active = unit in running
@@ -29,8 +31,8 @@ def inspect(instance, runtime, unit):
         if isinstance(observation, dict):
             result[instance]["identity"] = observation
 
-if (home / ".config/Claude").is_dir() or "cage-claude-desktop.service" in running:
-    inspect("default", "cage-desktop", "cage-claude-desktop.service")
+if (home / ".config/Claude").is_dir() or "desktop-session.service" in running:
+    inspect("default", "desktop-session", "desktop-session.service")
 if base.is_dir():
     for folder in base.iterdir():
         if identifier.fullmatch(folder.name) and (folder / "launch.lock").is_file():

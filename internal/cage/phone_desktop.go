@@ -30,7 +30,7 @@ fi
 		if err != nil {
 			panic(err)
 		}
-		fmt.Fprintf(&s, "sudo tee %s >/dev/null <<'CAGE_PHONE_DESKTOP_FILE'\n%s\nCAGE_PHONE_DESKTOP_FILE\n", target, b)
+		fmt.Fprintf(&s, "sudo tee %s >/dev/null <<'PHONE_DESKTOP_FILE'\n%s\nPHONE_DESKTOP_FILE\n", target, b)
 	}
 	s.WriteString(`sudo chmod 0755 /usr/local/lib/phone-desktop/{control.py,session.sh,xdg-open}
 printf '%s\n' 'cage-browser ALL=(root) NOPASSWD: /usr/local/lib/phone-desktop/control.py ""' | sudo tee /etc/sudoers.d/phone-desktop >/dev/null

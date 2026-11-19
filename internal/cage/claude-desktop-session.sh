@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Keep dbus-daemon and other children from announcing readiness for the app.
-if [ "${CAGE_DESKTOP_SESSION:-}" != 1 ]; then
-  export CAGE_DESKTOP_SESSION=1 CAGE_NOTIFY_SOCKET="$NOTIFY_SOCKET"
+# Keep dbus-daemon and other children from announcing readiness for the app:
+# the notification socket passes to the inner session as an argument.
+if [ "${1:-}" != --session ]; then
+  ready_socket=$NOTIFY_SOCKET
   unset NOTIFY_SOCKET
-  exec dbus-run-session -- "$0"
+  exec dbus-run-session -- "$0" --session "$ready_socket"
 fi
-export DISPLAY=:78 XAUTHORITY=/run/cage-desktop/Xauthority
-export XDG_RUNTIME_DIR=/run/cage-desktop XDG_CURRENT_DESKTOP=Openbox
+ready_socket=$2
+set --
+# The application receives its own runtime directory, not the unit's.
+unset RUNTIME_DIRECTORY LOG_NAMESPACE
+export DISPLAY=:78 XAUTHORITY=/run/desktop-session/Xauthority
+export XDG_RUNTIME_DIR=/run/desktop-session XDG_CURRENT_DESKTOP=Openbox
 export PATH="$HOME/.local/bin:$PATH" BROWSER=/usr/local/bin/xdg-open
 dbus-update-activation-environment DISPLAY XAUTHORITY XDG_RUNTIME_DIR XDG_CURRENT_DESKTOP
 umask 077
@@ -116,7 +121,7 @@ printf '%s\n' "$app_pid" > "$XDG_RUNTIME_DIR/app-pid"
 for i in $(seq 1 200); do
   kill -0 "$app_pid"
   if xprop -root _NET_CLIENT_LIST 2>/dev/null | grep -q '0x[1-9a-f]'; then
-    NOTIFY_SOCKET="$CAGE_NOTIFY_SOCKET" systemd-notify --ready
+    NOTIFY_SOCKET="$ready_socket" systemd-notify --ready
     break
   fi
   sleep .1

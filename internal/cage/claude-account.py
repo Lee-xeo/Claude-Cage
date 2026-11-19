@@ -357,7 +357,7 @@ def query_usage(binary, env, base, expected):
     status = "error"
     summary = {}
     options = ["--setting-sources", "user", "--settings", '{"disableAllHooks":true}']
-    with tempfile.TemporaryDirectory(prefix="cage-claude-usage-") as cwd:
+    with tempfile.TemporaryDirectory(prefix="claude-usage-") as cwd:
         try:
             summary = identity(binary, env, cwd, options, timeout=4)
             if subject(summary) != expected:
@@ -718,7 +718,7 @@ def main(args, *, mobile_settings_fd=None, verify_mobile=None):
             raise ValueError("usage requires an expected account")
         print(json.dumps(query_usage(binary, env, base, rest[0])))
         return 0
-    expected = _controller_context.get("CAGE_CLAUDE_SUBJECT")
+    expected = _controller_context.get("ACCOUNT_SUBJECT")
     if mode == "statusline":
         raw = sys.stdin.buffer.read((1 << 20) + 1)
         if len(raw) <= 1 << 20:
@@ -732,9 +732,9 @@ def main(args, *, mobile_settings_fd=None, verify_mobile=None):
             summary["quota"] = quota
         print(json.dumps(summary))
         return 0
-    owner = _controller_context.get("CAGE_LOGIN_OWNER", "")
+    owner = _controller_context.get("LOGIN_OWNER", "")
     owner_args = ["--account-id", owner] if re.fullmatch("[0-9a-f]{24}", owner) else []
-    scoped = _controller_context.get("CAGE_ACCOUNT_BROWSER")
+    scoped = _controller_context.get("ACCOUNT_BROWSER")
     if mode == "login":
         if os.name != "nt":
             env["BROWSER"] = _runtime["launcher"](scoped or OPEN, executable=True, arguments=[*owner_args, "--login-id", account_id])

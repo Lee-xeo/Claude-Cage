@@ -184,7 +184,7 @@ class DesktopFileDBusTests(unittest.TestCase):
 
             # Run the actual shell and Python entry points against their private
             # Unix socket. This also exercises Electron's relative `.` fallback.
-            socket = Path('/run/cage-desktop/files.sock')
+            socket = Path('/run/desktop-session/files.sock')
             server = files.FileServer(str(socket), files.Handler)
             server.broker = broker
             threading.Thread(target=server.serve_forever, daemon=True).start()

@@ -239,7 +239,7 @@ import json, os, pwd, socket, subprocess
 account=pwd.getpwuid(os.getuid())
 result={'hostname':socket.gethostname(),'username':account.pw_name,'home':account.pw_dir,'audio_name':'','audio_description':''}
 try:
-    text=subprocess.run(['pactl','--server=unix:/run/cage-audio/native','-f','json','list','sinks'],capture_output=True,text=True,timeout=3,check=True).stdout
+    text=subprocess.run(['pactl','--server=unix:/run/audio-output/native','-f','json','list','sinks'],capture_output=True,text=True,timeout=3,check=True).stdout
     sinks=json.loads(text)
     if len(sinks)==1:
         result['audio_name']=str(sinks[0].get('name',''))[:120]

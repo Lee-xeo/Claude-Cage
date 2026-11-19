@@ -49,7 +49,7 @@ printf '%s\\n' "$@"
         self.email = "owner@example.test"
         self.subject = hashlib.sha256((self.email + "\ntest-org").encode()).hexdigest()
         self.env = {"HOME": str(self.home), "PATH": os.defpath, "TEST_EMAIL": self.email,
-                    "CAGE_CLAUDE_SUBJECT": self.subject, "PYTHONDONTWRITEBYTECODE": "1", "TMPDIR": str(self.home)}
+                    "ACCOUNT_SUBJECT": self.subject, "PYTHONDONTWRITEBYTECODE": "1", "TMPDIR": str(self.home)}
 
     def run_helper(self, mode, account, *args, data=None, env=None, check=True, cwd=None):
         return subprocess.run([sys.executable, str(source), mode, account, *args], env=env or self.env,
@@ -373,10 +373,12 @@ printf '%s\\n' "$@"
 
     def test_official_process_receives_no_controller_flags_and_callbacks_still_work(self):
         capture = self.home / "child-environment"
-        env = {**self.env, "CAGE_LANGUAGE": "en-US", "CAGE_WORKBENCH": "1", "TEST_CAPTURE_ENV": str(capture)}
+        env = {**self.env, "BROWSER_LANG": "en-US", "WORKBENCH_TERMINAL": "1", "TEST_CAPTURE_ENV": str(capture)}
         args = self.run_helper("run", FIRST, "--model", "sonnet", env=env).stdout.splitlines()
         child_env = dict(line.split("=", 1) for line in capture.read_text().splitlines())
         self.assertFalse(any(key.upper().startswith("CAGE_") for key in child_env))
+        self.assertFalse(set(child_env) & {"WORKBENCH_TERMINAL", "ACCOUNT_SUBJECT", "ACCOUNT_PROFILE_ID"})
+        self.assertEqual(child_env["BROWSER_LANG"], "en-US")
         self.assertNotIn("cage", child_env["CLAUDE_CONFIG_DIR"].lower())
         self.assertNotIn("cage", args[1].lower())
         settings = json.loads(Path(args[1]).read_text())
@@ -392,7 +394,7 @@ printf '%s\\n' "$@"
     def test_callback_state_does_not_enter_its_process_environment(self):
         runtime = runpy.run_path(source.with_name("client_runtime.py"), init_globals={"_controller_context": self.env})
         probe = self.home / "probe.py"
-        probe.write_text('import json,os\nprint(json.dumps({"flags":[k for k in os.environ if k.startswith("CAGE_")],"subject":globals()["_controller_context"]["CAGE_CLAUDE_SUBJECT"]}))\n')
+        probe.write_text('import json,os\nprint(json.dumps({"flags":[k for k in os.environ if k.startswith("CAGE_") or k in ("ACCOUNT_SUBJECT", "LOGIN_OWNER", "ACCOUNT_BROWSER")],"subject":globals()["_controller_context"]["ACCOUNT_SUBJECT"]}))\n')
         result = subprocess.run(runtime["command"](probe), env=runtime["environment"](self.env),
                                 text=True, capture_output=True, check=True)
         self.assertEqual(json.loads(result.stdout), {"flags": [], "subject": self.subject})

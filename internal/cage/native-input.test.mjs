@@ -93,8 +93,8 @@ test("the helper relays each line to the input bridge until its pipe closes", { 
   });
   let relay;
   try {
-    mkdirSync(join(home, ".cache/cage-input"), { recursive: true });
-    await new Promise(resolve => bridge.listen(join(home, ".cache/cage-input/input.sock"), resolve));
+    mkdirSync(join(home, ".cache/input-method"), { recursive: true });
+    await new Promise(resolve => bridge.listen(join(home, ".cache/input-method/input.sock"), resolve));
     const start = () => spawn("python3", [fileURLToPath(new URL("./native-ime.py", import.meta.url)), "--relay"], { env: { ...process.env, HOME: home }, stdio: ["pipe", "pipe", "inherit"] });
     const children = [];
     relay = createDesktopRelay({ start: () => { const child = start(); children.push(child); return child; }, idle: 50 });
@@ -103,7 +103,7 @@ test("the helper relays each line to the input bridge until its pipe closes", { 
     assert.equal(children.length, 1);
     // An unreachable bridge is an ordinary unavailable answer.
     await new Promise(resolve => bridge.close(resolve));
-    rmSync(join(home, ".cache/cage-input/input.sock"), { force: true });
+    rmSync(join(home, ".cache/input-method/input.sock"), { force: true });
     assert.equal(await relay.request('{"n":4}\n'), '{"available":false}');
     assert.equal(await new Promise(resolve => children[0].once("close", resolve)), 0);
   } finally {
