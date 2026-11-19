@@ -354,6 +354,12 @@ func (s *Server) routeRemote(w http.ResponseWriter, r *http.Request) bool {
 				}
 				switch contentType {
 				case "application/json", "text/plain", "text/event-stream", "application/octet-stream", "application/zip", "image/png", "image/jpeg", "image/webp":
+				case "image/svg+xml":
+					if r.Method != http.MethodGet || r.URL.Path != hostPluginIconPath || response.StatusCode != http.StatusOK {
+						return errors.New("remote SVG is only allowed for plugin icons")
+					}
+					// The gateway strips upstream policies. Apply our own sandbox to the icon.
+					response.Header.Set("Content-Security-Policy", hostPluginIconCSP)
 				default:
 					return errors.New("remote active content is refused")
 				}

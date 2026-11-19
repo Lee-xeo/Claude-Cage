@@ -372,7 +372,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/host-tools", s.setHostTools)
 	mux.HandleFunc("POST /api/host-tools/call", s.callHostTool)
 	mux.HandleFunc("GET /api/host-tools/market", s.getHostMarket)
-	mux.HandleFunc("GET /api/host-tools/icon", s.hostPluginIcon)
+	mux.HandleFunc("GET "+hostPluginIconPath, s.hostPluginIcon)
 	mux.HandleFunc("GET /api/client/about", s.appAbout)
 	mux.HandleFunc("POST /api/client/about", s.appAbout)
 	mux.HandleFunc("POST /api/projects/open", s.openProject)

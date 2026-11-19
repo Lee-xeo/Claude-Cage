@@ -451,6 +451,11 @@ type hostMarketEntryView struct {
 	Icon bool `json:"icon,omitempty"`
 }
 
+const (
+	hostPluginIconPath = "/api/host-tools/icon"
+	hostPluginIconCSP  = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+)
+
 // hostPluginIcon serves a plugin's picture: of the installed plugin, or with
 // market=1 the one the community list names. Pictures come from plugin
 // authors, so they are served as pictures only, with nothing able to run.
@@ -482,7 +487,7 @@ func (s *Server) hostPluginIcon(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", kind)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	w.Header().Set("Content-Security-Policy", hostPluginIconCSP)
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	_, _ = w.Write(data)
 }

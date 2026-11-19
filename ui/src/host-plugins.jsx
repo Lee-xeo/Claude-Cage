@@ -225,11 +225,17 @@ export function pluginPages(model) {
   return pages;
 }
 
+function PluginPageIcon({ src }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <PanelLeft size={17} aria-hidden="true" />;
+  return <img className="plugin-page-icon" src={src} alt="" draggable="false" onError={() => setFailed(true)} />;
+}
+
 export function PluginPagesNav({ pages, selected, onOpen }) {
   return pages.map(page => (
     <button key={page.key} className={`sidebar-link ${selected === page.key ? "selected" : ""}`}
       aria-current={selected === page.key ? "page" : undefined} onClick={() => onOpen(page)} aria-label={`打开 ${page.title}`}>
-      {page.icon ? <img className="plugin-page-icon" src={page.icon} alt="" draggable="false" /> : <PanelLeft size={17} />}{page.title}
+      <PluginPageIcon key={page.icon} src={page.icon} />{page.title}
     </button>
   ));
 }

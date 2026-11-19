@@ -45,6 +45,42 @@ func TestRemoteHostManagementKeepsLocalSessionAndOriginBoundary(t *testing.T) {
 	}
 }
 
+func TestDesktopGatewayForwardsOnlySandboxedPluginSVGIcons(t *testing.T) {
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16"/></svg>`
+	const upstreamPolicy = "default-src *"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", upstreamPolicy)
+		if r.URL.Query().Get("name") == "html" {
+			w.Header().Set("Content-Type", "text/html")
+		} else {
+			w.Header().Set("Content-Type", "image/svg+xml")
+		}
+		_, _ = w.Write([]byte(svg))
+	}))
+	t.Cleanup(upstream.Close)
+	s := testServer(t)
+	s.remote = newDesktopGateway(s.profile, &gatewayLocalFixture{endpoint: upstream})
+	t.Cleanup(s.remote.close)
+	d := s.remote.desktop
+	generation := chooseLocal(t, d, d.context().ConnectionID)
+
+	icon := gatewayRequest(s, "/api/host-tools/icon?name=system-status&connection="+generation, "")
+	if icon.Code != http.StatusOK || icon.Header().Get("Content-Type") != "image/svg+xml" || icon.Body.String() != svg {
+		t.Fatalf("plugin SVG was not preserved: %d %s %s", icon.Code, icon.Header().Get("Content-Type"), icon.Body.String())
+	}
+	policies := strings.Join(icon.Header().Values("Content-Security-Policy"), "\n")
+	if !strings.Contains(policies, "default-src 'none'; style-src 'unsafe-inline'; sandbox") || strings.Contains(policies, upstreamPolicy) ||
+		icon.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("plugin SVG lost its gateway protection: %v", icon.Header())
+	}
+
+	for _, path := range []string{"/api/host-tools/icon?name=html", "/api/status"} {
+		if response := gatewayRequest(s, path, generation); response.Code != http.StatusBadGateway {
+			t.Errorf("unexpected active content reached the client for %s: %d", path, response.Code)
+		}
+	}
+}
+
 func TestRemoteIdentityPersistsAndCorruptionDoesNotReplaceIt(t *testing.T) {
 	profile := t.TempDir()
 	first, err := ensureRemoteInstance(profile)
