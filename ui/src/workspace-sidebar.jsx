@@ -27,13 +27,11 @@ import { WorkspaceTabs } from "./workspace-tabs";
 import { projectSessionRows, sessionKey } from "./session-order.mjs";
 import { AccountMenu } from "./account";
 import { useSSHNavigation } from "./remote-hosts";
-import { GuestSystemIcon } from "./guest-system-icon";
 
 const SESSION_PREVIEW_LIMIT = 5;
 
 export function WorkspaceSidebar({
   workspace,
-  guestSystem,
   projects,
   projectGroups = [],
   tabs,
@@ -104,7 +102,6 @@ export function WorkspaceSidebar({
         <span className="sidebar-brand">
           <img className="brand-logo" src={logo} alt="" />
           Cage
-                <GuestSystemIcon system={guestSystem} />
         </span>
         <button
           className="icon-button"

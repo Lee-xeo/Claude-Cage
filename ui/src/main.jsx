@@ -1499,7 +1499,6 @@ function App() {
               pages, pageOpen: managementPage === "plugin-view" ? pluginView : "", onView: openPluginView } : null}
             updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
-            guestSystem={account?.guest_system || status.guest_system || guestSystem?.guest_system || "debian-13"}
             projects={projects}
             projectGroups={groups}
             tabs={displayTabs}
