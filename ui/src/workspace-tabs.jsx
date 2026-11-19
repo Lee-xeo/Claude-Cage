@@ -15,7 +15,7 @@ import {
   TerminalSquare,
   X,
 } from "lucide-react";
-import { tabName } from "./workspace-state.mjs";
+import { dropAfter, tabName } from "./workspace-state.mjs";
 import { AgentIcon } from "./agent-icon";
 
 export function TabIcon({ kind, favicon, agent, accountNumber, size = 16 }) {
@@ -56,6 +56,7 @@ export function WorkspaceTabs({
   onRename,
   onPin,
   onReorder,
+  onSidebarReorder,
   splitDrag,
   openingSession,
   sessionOpenError,
@@ -98,6 +99,12 @@ export function WorkspaceTabs({
   const firstFocusable = tabs.findIndex(tab => tab.historySession
     ? !busy && openingSession !== tab.cli_session_id && !tab.sessionRunningElsewhere
     : ready || tab.kind === "terminal");
+  const sidebarDrop = (clientX, clientY, from) => {
+    const row = document.elementFromPoint(clientX, clientY)?.closest("[data-tab-id]");
+    const to = row?.dataset.tabId;
+    if (!to || to === from || row.parentElement !== list.current) return null;
+    return { to, after: dropAfter(row, clientY) };
+  };
   const finishDrag = (commit, event) => {
     const current = pointer.current;
     pointer.current = null;
@@ -108,6 +115,11 @@ export function WorkspaceTabs({
     if (!commit) return;
     const { clientX, clientY } = event;
     if (!tabs.find(tab => tab.id === current.id)?.historySession && splitDrag.drop(current.id, clientX, clientY)) return;
+    if (onSidebarReorder) {
+      const drop = sidebarDrop(clientX, clientY, current.id);
+      if (drop) onSidebarReorder(current.id, drop.to, drop.after);
+      return;
+    }
     const over = document.elementFromPoint(clientX, clientY);
     if (!list.current?.contains(over)) return;
     if (horizontal) onReorder(current.id, null, current.order);
@@ -154,7 +166,8 @@ export function WorkspaceTabs({
     current.moved = true;
     const dropSide = tabs.find(tab => tab.id === current.id)?.historySession ? null : splitDrag.hover(current.id, event.clientX, event.clientY);
     if (!horizontal || dropSide) {
-      setDrag({ id: current.id, offsets: {}, widths: {} });
+      const drop = onSidebarReorder && !dropSide ? sidebarDrop(event.clientX, event.clientY, current.id) : null;
+      setDrag({ id: current.id, drop, offsets: {}, widths: {} });
       return;
     }
     const item = current.items.find(item => item.id === current.id);
@@ -308,6 +321,7 @@ export function WorkspaceTabs({
             <React.Fragment key={tab.id}>
             <div
               data-tab-id={tab.id}
+              data-drop-position={drag?.drop?.to === tab.id ? drag.drop.after ? "after" : "before" : undefined}
               className={`${horizontal || vertical ? "browser-tab" : "sidebar-tab"} ${runningElsewhere ? "session-occupied" : ""} ${tab.id === active ? "active" : ""} ${tab.closed ? "ended" : ""} ${drag?.id === tab.id ? "dragging" : ""} ${horizontal && tabWidth(tab.id) < 96 ? "compact" : ""} ${horizontal && tabWidth(tab.id) < 40 ? "tiny" : ""} ${horizontal && tabWidth(tab.id) < 24 ? "sliver" : ""}`}
               style={
                 horizontal
@@ -327,7 +341,7 @@ export function WorkspaceTabs({
                 if (pointer.current) finishDrag(false);
               }}
               onClickCapture={(event) => {
-                if (suppressClick.current) {
+                if (event.detail && suppressClick.current) {
                   event.preventDefault();
                   event.stopPropagation();
                   suppressClick.current = false;
@@ -342,6 +356,7 @@ export function WorkspaceTabs({
                 aria-description={runningElsewhere ? runningNotice : undefined}
                 aria-label={tab.claudeLabel ? `${title} · ${tab.claudeLabel}` : title}
                 aria-selected={tab.historySession ? undefined : tab.id === active}
+                aria-keyshortcuts={onSidebarReorder && tabs.length > 1 ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
                 tabIndex={
                   tab.id === active ||
                   (!tabs.some((t) => t.id === active) && index === firstFocusable)
@@ -353,10 +368,15 @@ export function WorkspaceTabs({
                 onClick={() => onSelect(tab.id)}
                 onContextMenu={(event) => showMenu(tab, event)}
                 onKeyDown={(event) => {
-                  if (!horizontal && !vertical && event.altKey && ["ArrowUp", "ArrowDown"].includes(event.key)) {
+                  if (onSidebarReorder && event.altKey && ["ArrowUp", "ArrowDown"].includes(event.key)) {
                     event.preventDefault();
-                    const target = tabs[index + (event.key === "ArrowUp" ? -1 : 1)];
-                    if (target) onReorder(tab.id, target.id);
+                    const after = event.key === "ArrowDown";
+                    const target = tabs[index + (after ? 1 : -1)];
+                    if (target) {
+                      onSidebarReorder(tab.id, target.id, after);
+                      const button = event.currentTarget;
+                      requestAnimationFrame(() => button.focus());
+                    }
                     return;
                   }
                   if (event.key === "F10" && event.shiftKey) {

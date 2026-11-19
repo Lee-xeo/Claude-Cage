@@ -114,6 +114,8 @@ function App() {
       readLocal(clientStorageKey("cage-browser-tab-layout"), "horizontal"),
     ),
     [selectedProject, setSelectedProject] = useState(""),
+    [savedProjectOrder, setSavedProjectOrder] = useState(() =>
+      readLocal(clientStorageKey("cage-sidebar-project-order"), {})),
     [savedTabs, setSavedTabs] = useState(readLocal(clientStorageKey("cage-tab-layout"), {})),
     [privateTabMetadata, setPrivateTabMetadata] = useState({}),
     [projectDialog, setProjectDialog] = useState(null),
@@ -1501,6 +1503,7 @@ function App() {
             workspace={selectedProject || status.workspace}
             projects={projects}
             projectGroups={groups}
+            projectOrder={savedProjectOrder[tabLayoutKey]}
             tabs={displayTabs}
             sessions={cliSessions.sessions.map(session => ({ ...session,
               claudeAccountNumber: claudeNumbers.get(session.account_id) }))}
@@ -1530,7 +1533,8 @@ function App() {
             onRename={renameTab}
             onPin={pinTab}
             splitDrag={splitDrag}
-            onReorder={reorder}
+            onProjectReorder={order => persist("cage-sidebar-project-order",
+              { ...savedProjectOrder, [tabLayoutKey]: order }, setSavedProjectOrder)}
             onSessionReorder={(path, order) => changeTabMetadata({ ...metadata,
               sessionOrder: { ...metadata.sessionOrder, [path]: order } })}
             onProjectSelect={setSelectedProject}

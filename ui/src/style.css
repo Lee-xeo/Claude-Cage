@@ -1517,6 +1517,36 @@ svg {
   align-items: center;
   position: relative;
 }
+.sidebar-project {
+  position: relative;
+}
+.project-disclosure[aria-keyshortcuts] {
+  touch-action: none;
+  user-select: none;
+}
+.project-disclosure[aria-keyshortcuts]:hover,
+.sidebar-tab > button[aria-keyshortcuts]:hover {
+  cursor: grab;
+}
+.sidebar-project[data-project-dragging] > .project-heading {
+  opacity: .5;
+}
+.sidebar-project[data-project-dragging] .project-disclosure,
+.sidebar-tab.dragging > button[aria-keyshortcuts] {
+  cursor: grabbing;
+}
+:is(.sidebar-project, .sidebar-tab)[data-drop-position]::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset-inline: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+:is(.sidebar-project, .sidebar-tab)[data-drop-position="before"]::after { top: 0; }
+:is(.sidebar-project, .sidebar-tab)[data-drop-position="after"]::after { bottom: 0; }
 .project-disclosure {
   flex: 1;
   min-width: 0;
