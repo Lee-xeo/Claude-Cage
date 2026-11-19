@@ -198,6 +198,7 @@ func StartGateControl(configPath, instanceDir string, gate *EgressGate) (func(),
 		_ = json.NewEncoder(w).Encode(gate.Status())
 	})
 	ctx, cancel := context.WithCancel(context.Background())
+	watched := make(chan struct{})
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
@@ -205,11 +206,15 @@ func StartGateControl(configPath, instanceDir string, gate *EgressGate) (func(),
 			nodes.close()
 			gate.Close("网络控制服务已停止")
 			_ = server.Close()
+			// The watcher may be writing a diagnostic into the instance folder;
+			// the caller can remove that folder once stop returns.
+			<-watched
 			_ = os.RemoveAll(dir)
 		})
 	}
 	go func() { _ = server.Serve(listener); stop() }()
 	go func() {
+		defer close(watched)
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
