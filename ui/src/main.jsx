@@ -25,7 +25,7 @@ import { SetupProgress } from "./setup-progress";
 import { GuestSystemPicker, validGuestChoice } from "./guest-system-picker";
 import { AppearanceProvider } from "./appearance";
 import { EnvironmentShield } from "./environment-shield";
-import { TailscalePanel } from "./tailscale";
+import { TailscaleSetup } from "./tailscale";
 import { HostPluginsPanel, pluginPages, pluginPageTitle, useHostPlugins } from "./host-plugins";
 import { PluginView } from "./plugin-view";
 import { WorkspaceSidebar } from "./workspace-sidebar";
@@ -259,6 +259,13 @@ function App() {
   const hostPlugins = useHostPlugins(pluginsAvailable && (pluginSidebar || managementPage === "plugins" ? true : "light"));
   const pages = pluginPages(hostPlugins);
   const openPage = pages.find(page => page.key === pluginView);
+  // Tailscale is a built-in plugin with its own entry in the main sidebar:
+  // its page opens from there, or its setup until it has a page.
+  const tailscalePage = pages.find(page => page.key === "tailscale/tailscale");
+  const openTailscale = () => {
+    if (tailscalePage) openPluginView(tailscalePage);
+    else setManagementPage("tailscale");
+  };
   const openPluginView = (page) => {
     setPluginView(page.key); setManagementPage("plugin-view");
     if (window.matchMedia("(max-width: 520px)").matches) setSidebarCollapsed(true);
@@ -988,7 +995,7 @@ function App() {
         if (!state.enabled) { setTailnetLogin(null); return; }
         if (["Running", "NeedsMachineAuth"].includes(state.backend) || state.return_id && state.return_id !== tailnetLogin.returnID) {
           setTailnetLogin(null);
-          setManagementPage("tailscale");
+          openTailscale();
           return;
         }
       } catch { /* A temporary connection failure can recover during authorization. */ }
@@ -1507,10 +1514,10 @@ function App() {
           <WorkspaceSidebar
             onClaudeAccounts={() => setManagementPage("claude-accounts")}
             claudeAccountsOpen={managementPage === "claude-accounts"}
-            tailscaleOpen={managementPage === "tailscale"}
+            tailscaleOpen={managementPage === "tailscale" || managementPage === "plugin-view" && pluginView === tailscalePage?.key}
             plugins={pluginsAvailable ? { model: hostPlugins, open: pluginSidebar, page: managementPage === "plugins" ? pluginPage : null,
               onConfirm: confirm, onOpen: () => setPluginSidebar(true), onBack: leavePlugins, onPage: openPluginPage,
-              pages, pageOpen: managementPage === "plugin-view" ? pluginView : "", onView: openPluginView } : null}
+              pages: pages.filter(page => page !== tailscalePage), pageOpen: managementPage === "plugin-view" ? pluginView : "", onView: openPluginView } : null}
             updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
             projects={projects}
@@ -1554,7 +1561,7 @@ function App() {
             terminalMenuAt={terminalMenuAt}
             onBrowser={openBrowser}
             onTailscale={() => {
-              setManagementPage("tailscale");
+              openTailscale();
               if (window.matchMedia("(max-width: 520px)").matches) setSidebarCollapsed(true);
             }}
             desktopOpen={!managementPage && desktopOpen}
@@ -1597,15 +1604,16 @@ function App() {
               </header>
               <div className="management-content">
                 {managementPage === "plugin-view" ? <PluginView key={pluginView} plugin={openPage?.plugin || pluginView.split("/")[0]} view={openPage?.view || { id: pluginView.split("/")[1] || "" }}
-                  onConfirm={confirm} onNotify={notify} onOpenUrl={async url => Boolean(await openBrowserPage(url, false))} />
-                : managementPage === "plugins" ? pluginPage && <HostPluginsPanel model={hostPlugins} page={pluginPage} onPage={openPluginPage} status={status} onConfirm={confirm} /> : managementPage === "tailscale" ? <TailscalePanel status={status}
-                  onOpenBrowser={async url => Boolean(await openBrowserPage(url, false))}
-                  onOpenLogin={async (value) => {
-                    const tab = await openBrowserPage(value.auth_url, false);
-                    if (tab?.id) setTailnetLogin({ tabId: tab.id, returnID: value.return_id });
-                    return Boolean(tab?.id);
-                  }}
-                  onConfirm={confirm} onInstall={async () => {
+                  onConfirm={confirm} onNotify={notify} onOpenUrl={async url => {
+                    // Tailscale's sign-in comes back to its page once the browser returns.
+                    const login = openPage?.plugin === "tailscale" && url.startsWith("https://login.tailscale.com/");
+                    const before = login ? await api("/tailscale").catch(() => null) : null;
+                    const tab = await openBrowserPage(url, false);
+                    if (login && tab?.id) setTailnetLogin({ tabId: tab.id, returnID: before?.return_id });
+                    return Boolean(tab?.id ?? tab);
+                  }} />
+                : managementPage === "plugins" ? pluginPage && <HostPluginsPanel model={hostPlugins} page={pluginPage} onPage={openPluginPage} status={status} onConfirm={confirm} /> : managementPage === "tailscale" ? <TailscaleSetup status={status} installed={hostPlugins.view?.plugins?.some(plugin => plugin.name === "tailscale")}
+                  onInstall={async () => {
                     await action("/tailscale/install", {});
                   }} /> : <ClaudeAccountsPanel proxySources={proxy?.sources || []} desktopNetwork={status.account_desktops_supported} store={claudeProfiles} tabs={tabs} onConfirm={confirm}
                   running={status.vm_running} environmentBusy={busy || storageRecovery}

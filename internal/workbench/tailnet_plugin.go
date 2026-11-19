@@ -1,9 +1,12 @@
 package workbench
 
 import (
+	"bytes"
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -28,10 +31,20 @@ const tailnetPluginManifest = `{
   "contributes": {
     "mcpServers": [
       { "id": "node", "command": ["/usr/local/bin/tailnet", "mcp"] }
+    ],
+    "views": [
+      { "id": "tailscale", "title": "Tailscale", "entry": "view/index.html", "server": "node",
+        "openUrls": ["https://login.tailscale.com/*", "http://127.0.0.1:*/*"] }
     ]
   }
 }
 `
+
+// tailnetView is the plugin's page, written into its folder beside the
+// manifest.
+//
+//go:embed tailnet_view
+var tailnetView embed.FS
 
 // tailnetTools are the plugin's tools for the actions of the workbench.
 var tailnetTools = map[string]string{
@@ -54,8 +67,12 @@ func (s *Server) tailnetPluginInstalled() bool {
 // other.
 func (s *Server) ensureTailnetPlugin() (bool, error) {
 	path := filepath.Join(s.tailnetPluginDir(), hostbridge.ManifestFile)
+	pageChanged, err := s.writeTailnetView()
+	if err != nil {
+		return false, err
+	}
 	if current, err := os.ReadFile(path); err == nil && string(current) == tailnetPluginManifest {
-		return false, nil
+		return pageChanged, nil
 	}
 	fresh := !s.tailnetPluginInstalled()
 	if err := os.MkdirAll(s.tailnetPluginDir(), 0o755); err != nil {
@@ -70,6 +87,31 @@ func (s *Server) ensureTailnetPlugin() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// writeTailnetView puts the page's files in the plugin's view folder, and
+// reports whether any was new or different.
+func (s *Server) writeTailnetView() (bool, error) {
+	changed := false
+	err := fs.WalkDir(tailnetView, "tailnet_view", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		data, err := tailnetView.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(s.tailnetPluginDir(), "view", filepath.Base(name))
+		if current, err := os.ReadFile(target); err == nil && bytes.Equal(current, data) {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		changed = true
+		return os.WriteFile(target, data, 0o644)
+	})
+	return changed, err
 }
 
 var errTailnetNotRunning = errors.New("the plugin is not running")

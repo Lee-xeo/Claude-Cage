@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -100,6 +102,16 @@ func TestTailnetPluginIsRegisteredOnce(t *testing.T) {
 	manifest, err := hostbridge.LoadManifest(s.tailnetPluginDir())
 	if err != nil || manifest.Kind != hostbridge.KindGuest || manifest.ServerCommand()[1] != "mcp" {
 		t.Fatalf("manifest %+v: %v", manifest, err)
+	}
+	// Its page comes with it, and says nothing of where it runs.
+	if len(manifest.Contributes.Views) != 1 || manifest.Contributes.Views[0].Entry != "view/index.html" {
+		t.Fatalf("views %+v", manifest.Contributes.Views)
+	}
+	for _, name := range []string{"index.html", "app.js", "style.css"} {
+		data, err := os.ReadFile(filepath.Join(s.tailnetPluginDir(), "view", name))
+		if err != nil || len(data) == 0 || strings.Contains(strings.ToLower(string(data)), "cage") {
+			t.Fatalf("page file %s: %v", name, err)
+		}
 	}
 	if !s.hostGrantStore().allowed(hostGrantPlugin+tailnetPlugin, manifest.Permissions) {
 		t.Fatal("the user's installing it was not remembered")

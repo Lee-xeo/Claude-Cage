@@ -1,0 +1,58 @@
+:root {
+  --paper: #fff; --ink: #1f1f1f; --strong: #111; --muted: #6b6b6b; --line: #e3e3e3; --chrome: #f6f6f6;
+  --hover: #efefef; --accent: #2f6fed; --button: #1f1f1f; --button-ink: #fff; --danger: #c43d3d; --focus: #2f6fed;
+  color-scheme: light dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 13px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+.panel { max-width: 720px; margin: 0 auto; padding: 24px 20px 40px; display: flex; flex-direction: column; gap: 20px; container-type: inline-size; }
+button { font: inherit; color: inherit; border: 1px solid var(--line); background: var(--paper); border-radius: 7px; padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+button:hover:not(:disabled) { background: var(--hover); }
+button:disabled { opacity: 0.55; cursor: default; }
+button.primary { background: var(--button); border-color: var(--button); color: var(--button-ink); }
+button.icon { padding: 5px 7px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+input, textarea { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; min-width: 0; }
+textarea { width: 100%; resize: vertical; min-height: 72px; font-family: ui-monospace, monospace; font-size: 12px; background: var(--chrome); }
+code { font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.help { color: var(--muted); font-size: 12px; margin: 0; }
+.state { display: flex; align-items: center; gap: 12px; }
+.state > .text { flex: 1; min-width: 0; }
+.state strong { display: block; font-size: 17px; color: var(--strong); }
+.state span { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.mark { flex: none; width: 40px; height: 40px; border-radius: 10px; background: var(--hover); display: grid; place-items: center; font-weight: 700; color: var(--muted); }
+.connected .mark { color: var(--accent); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.overview > .help { margin-top: 14px; }
+.notice { border-left: 2px solid var(--accent); padding: 0 12px; font-size: 12px; }
+.notice p { margin: 6px 0; overflow-wrap: anywhere; }
+.error { color: var(--danger); margin: 0; }
+.section { border-top: 1px solid var(--line); padding-top: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.section h2 { margin: 0; font-size: 14px; }
+.section h2 small { margin-left: 8px; color: var(--muted); font-weight: 400; font-size: 13px; }
+.row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.row > .grow { flex: 1; min-width: 0; }
+.row strong { font-size: 13px; overflow-wrap: anywhere; }
+.row .sub { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.badge { font-size: 10px; padding: 2px 6px; margin-left: 5px; border-radius: 4px; color: var(--muted); border: 1px solid var(--line); font-weight: 400; }
+.presence { display: flex; align-items: center; gap: 5px; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.presence i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+.presence.online i { background: var(--success, #528267); }
+.empty { text-align: center; color: var(--muted); padding: 26px 20px; background: var(--chrome); border-radius: 8px; }
+.empty strong { display: block; color: var(--ink); font-weight: 500; margin-bottom: 6px; }
+.peer { border-bottom: 1px solid var(--line); padding: 12px 0; }
+.peer:last-child { border-bottom: 0; }
+.detail { display: flex; flex-direction: column; gap: 10px; padding: 16px; margin-top: 12px; background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; }
+.form { display: flex; gap: 8px; }
+.form input { flex: 1; }
+.box { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; min-width: 0; }
+.box > span, .box > code { flex: 1; min-width: 0; }
+.key code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.disclosure { width: 100%; justify-content: space-between; border: 0; padding: 0; background: transparent; font-weight: 600; }
+.disclosure:hover:not(:disabled) { background: transparent; }
+.search { width: 100%; }
+.footer { font-size: 11px; }
+@container (max-width: 600px) {
+  .row { flex-wrap: wrap; }
+  .form { flex-direction: column; }
+}
