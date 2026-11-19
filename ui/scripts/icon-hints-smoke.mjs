@@ -4,6 +4,7 @@ import { createWorkbench } from "./workbench-fixture.mjs";
 const { browser, page, errors } = await createWorkbench({
   beforeNavigate: async (page, state) => {
     state.status.local_vm_storage = true;
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.route("**/api/host-tools**", route => route.fulfill({ json: {
       available: true, enabled: true, plugins: [], catalog: [], entries: [],
     } }));
@@ -22,13 +23,50 @@ try {
   await page.keyboard.press("Escape");
   assert.equal(await hint.isVisible(), false);
 
-  // Clicking Back replaces the whole sidebar without a reliable pointerout/focusout.
-  await page.getByRole("button", { name: "MCP 插件", exact: true }).click();
-  const back = page.getByRole("button", { name: "退出 MCP 插件", exact: true });
+  const plugins = page.getByRole("button", { name: "插件", exact: true });
+  const pluginSidebar = page.getByRole("complementary", { name: "插件", exact: true });
+  const mainSidebar = page.locator(".workspace-sidebar[aria-label='项目与终端']");
+  const mainSidebarElement = await mainSidebar.elementHandle();
+  const originalBounds = await mainSidebar.boundingBox();
+  await mainSidebar.evaluate(sidebar => {
+    const panel = sidebar.nextElementSibling;
+    const workspace = sidebar.parentElement.nextElementSibling;
+    const workspaceLeft = workspace.getBoundingClientRect().left;
+    panel.addEventListener("transitionstart", event => {
+      if (event.target !== panel || event.propertyName !== "transform") return;
+      function sample() {
+        if (panel.dataset.open !== "true") return;
+        const { left, right } = panel.getBoundingClientRect();
+        const edge = sidebar.getBoundingClientRect().left;
+        if (right - edge < 2) {
+          requestAnimationFrame(sample);
+          return;
+        }
+        window.pluginSlide = {
+          enteringFromLeft: left < edge && right > edge,
+          overlaysSidebar: panel.contains(document.elementFromPoint((edge + right) / 2, 10)),
+          workspaceStill: workspace.getBoundingClientRect().left === workspaceLeft,
+        };
+      }
+      requestAnimationFrame(sample);
+    });
+  });
+  await plugins.click();
+  await page.waitForFunction(() => document.getElementById("plugin-sidebar").getBoundingClientRect().left === 0);
+  assert.deepEqual(await page.evaluate(() => window.pluginSlide), {
+    enteringFromLeft: true,
+    overlaysSidebar: true,
+    workspaceStill: true,
+  }, "The plugin panel must slide over the sidebar without moving the workspace");
+  assert.deepEqual(await pluginSidebar.boundingBox(), originalBounds);
+  assert.equal(await mainSidebar.evaluate(el => el.inert), true);
+  const back = pluginSidebar.getByRole("button", { name: "返回工作台侧栏" });
   await back.hover();
-  assert.equal(await hint.textContent(), "退出 MCP 插件（Esc）");
+  assert.equal(await hint.textContent(), "返回工作台侧栏（Esc）");
   await back.click();
-  assert.equal(await back.count(), 0);
+  await pluginSidebar.waitFor({ state: "hidden" });
+  await page.waitForFunction(element => document.activeElement === element, await plugins.elementHandle());
+  assert.equal(await mainSidebar.evaluate((el, original) => el === original, mainSidebarElement), true);
   assert.equal(await hint.isVisible(), false, "Back must dismiss its hint when the sidebar closes");
 
   await button.hover();

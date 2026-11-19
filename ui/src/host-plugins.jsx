@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Blocks, Check, ChevronDown, ChevronRight, CircleAlert, Clock, Copy, Download, Folder, FolderOpen, Globe2,
   Keyboard, Link2, LoaderCircle, Monitor, PanelLeft, RefreshCw, Search, Settings, ShieldCheck, SquareTerminal, Store, Trash2, TriangleAlert, Wrench,
@@ -234,10 +234,10 @@ export function PluginPagesNav({ pages, selected, onOpen }) {
   ));
 }
 
-export function HostPluginsNav({ onOpen }) {
+export function HostPluginsNav({ open, onOpen }) {
   return (
-    <button className="sidebar-link host-plugins-entry" onClick={onOpen} aria-label="MCP 插件">
-      <Blocks size={17} />MCP 插件<ChevronRight size={15} className="trailing-icon" />
+    <button className="sidebar-link host-plugins-entry" onClick={onOpen} aria-expanded={open} aria-controls="plugin-sidebar">
+      <Blocks size={17} />插件<ChevronRight size={15} className="trailing-icon" />
     </button>
   );
 }
@@ -287,11 +287,10 @@ const matches = (entry, query) => {
   return [entry.name, pluginTitle(item), pluginText(item)].some(text => text.toLowerCase().includes(needle));
 };
 
-// HostPluginsSidebar replaces the main sidebar while plugins are browsed,
-// like an editor's extensions view. Opening it changes nothing in the
-// workspace; a plugin, the market or the settings open there when chosen.
-export function HostPluginsSidebar({ model, page, onPage, onBack, onConfirm }) {
+export function HostPluginsSidebar({ visible, model, page, onPage, onBack, onConfirm }) {
   const { view, error, busy, market } = model;
+  const sidebar = useRef(null);
+  const list = useRef(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(true);
   const { installed, available } = useMemo(() => pluginEntries(model), [model]);
@@ -299,7 +298,15 @@ export function HostPluginsSidebar({ model, page, onPage, onBack, onConfirm }) {
   const updates = installed.filter(entry => entry.offer).length;
   const installable = available.filter(entry => entry.offer.supported).length;
   const inMarket = page?.kind === "market" || page?.kind === "plugin" && !installed.some(entry => entry.name === page.name);
+  useLayoutEffect(() => {
+    if (!visible) return;
+    setQuery("");
+    setOpen(true);
+    list.current.scrollTop = 0;
+    sidebar.current?.focus({ preventScroll: true });
+  }, [visible]);
   useEffect(() => {
+    if (!visible) return;
     const leave = event => {
       if (event.key !== "Escape" || event.defaultPrevented || document.querySelector('[role="dialog"], .settings-page')) return;
       // Only from the plugin views: a terminal or page beside them keeps its Escape.
@@ -311,13 +318,14 @@ export function HostPluginsSidebar({ model, page, onPage, onBack, onConfirm }) {
     };
     window.addEventListener("keydown", leave);
     return () => window.removeEventListener("keydown", leave);
-  }, [onBack]);
+  }, [visible, onBack]);
   return (
-    <aside className="workspace-sidebar plugin-sidebar" aria-label="MCP 插件">
+    <aside ref={sidebar} id="plugin-sidebar" className="workspace-sidebar plugin-sidebar" aria-label="插件"
+      data-open={visible} inert={!visible} tabIndex={-1}>
       <div className="sidebar-top">
         <span className="plugin-sidebar-title">
-          <button className="icon-button" onClick={onBack} aria-label="退出 MCP 插件" title="退出 MCP 插件（Esc）"><ArrowLeft size={16} /></button>
-          MCP 插件
+          <button className="icon-button" onClick={onBack} aria-label="返回工作台侧栏" title="返回工作台侧栏（Esc）"><ArrowLeft size={16} /></button>
+          插件
         </span>
         <span className="plugin-sidebar-tools">
           <button className="icon-button" disabled={!view?.enabled || Boolean(busy)} onClick={() => model.change({ reload: true }, "reload")}
@@ -330,7 +338,7 @@ export function HostPluginsSidebar({ model, page, onPage, onBack, onConfirm }) {
         <Search size={15} aria-hidden="true" />
         <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索已安装的插件" aria-label="搜索已安装的插件" />
       </label>
-      <div className="plugin-sidebar-body">
+      <div className="plugin-sidebar-body" ref={list}>
         <button type="button" className={`plugin-market-entry ${inMarket ? "selected" : ""}`} aria-current={inMarket ? "page" : undefined}
           onClick={() => onPage({ kind: "market" })}>
           <span className="plugin-market-entry-icon"><Store size={18} /></span>

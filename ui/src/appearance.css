@@ -19,6 +19,10 @@
   background: color-mix(in srgb, var(--sidebar) 84%, transparent);
   backdrop-filter: blur(24px);
 }
+:root[data-translucent="true"] .workspace-sidebar.plugin-sidebar {
+  background: var(--sidebar);
+  backdrop-filter: none;
+}
 :root[data-translucent="true"] .settings-page {
   background: transparent;
 }

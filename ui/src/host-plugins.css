@@ -36,7 +36,20 @@
 @keyframes plugin-pulse { 50% { opacity: 0.35; } }
 
 /* Sidebar */
-.plugin-sidebar { padding: 0; }
+.workspace-sidebar.plugin-sidebar {
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto 0 0;
+  padding: 0;
+  visibility: hidden;
+  transform: translateX(-100%);
+  transition: transform 220ms ease, visibility 0s 220ms;
+}
+.plugin-sidebar[data-open="true"] {
+  visibility: visible;
+  transform: translateX(0);
+  transition-delay: 0s;
+}
 .plugin-sidebar .sidebar-top { padding: 0 8px 0 6px; }
 .plugin-sidebar-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 1.0714rem; color: var(--strong); }
 .plugin-sidebar-tools { display: flex; align-items: center; gap: 2px; }
@@ -356,9 +369,10 @@
   .plugin-master-footer { flex-wrap: wrap; padding: 12px 20px; }
 }
 @media (max-width: 520px) {
-  .plugin-sidebar { width: 100%; flex: 1; }
+  .plugin-sidebar { width: 100vw; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .workspace-sidebar.plugin-sidebar { transition: none; }
   .plugin-state.waiting i { animation: none; }
   .plugin-switch span, .plugin-switch span::after, .plugin-master-icon, .plugin-card-item { transition: none; }
 }

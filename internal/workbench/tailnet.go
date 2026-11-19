@@ -79,7 +79,7 @@ func (s *Server) tailnet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "这次 Tailscale 操作没有获得允许", http.StatusForbidden)
 		return
 	case err != nil || called == nil:
-		http.Error(w, "Tailscale 操作未完成。请在「MCP 插件」里确认 Tailscale 已启用并重新加载；原设备身份和 SSH 公钥会保留。", 502)
+		http.Error(w, "Tailscale 操作未完成。请在「插件」里确认 Tailscale 已启用并重新加载；原设备身份和 SSH 公钥会保留。", 502)
 		return
 	}
 	text := ""
