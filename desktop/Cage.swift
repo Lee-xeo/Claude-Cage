@@ -562,16 +562,6 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                 }
                 replyHandler(["png":png.base64EncodedString()],nil)
             } else { replyHandler(["text":board.string(forType:.string) ?? ""],nil) }
-        case "chooseGuestMedia":
-            guard !nativeFilePanelOpen else { replyHandler(nil,"请先完成当前文件窗口"); return }
-            let panel = NSOpenPanel()
-            panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
-            panel.allowedContentTypes = [UTType(filenameExtension: "ipsw") ?? .data]
-            panel.title = "选择 Apple 恢复镜像"; nativeFilePanelOpen = true
-            panel.beginSheetModal(for: window) { response in
-                self.nativeFilePanelOpen = false
-                replyHandler(response == .OK ? (panel.url?.path ?? "") : "", nil)
-            }
         case "chooseUploadFiles":
             guard !nativeFilePanelOpen else { replyHandler(nil,"请先完成当前文件窗口"); return }
             let panel = NSOpenPanel()

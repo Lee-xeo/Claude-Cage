@@ -20,7 +20,6 @@ enum NativeInputTests {
         }
         precondition(MacKeyboard.identity(83, characters: "1").code == "Numpad1")
         precondition(MacKeyboard.identity(76, characters: "\r").key == "Enter")
-        precondition(MacKeyboard.virtualKey(code: "KeyW", key: "z", shortcut: true) == 6, "logical shortcut followed a foreign keyboard layout")
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         let window = NSWindow(contentRect: NSRect(x: 120, y: 180, width: 900, height: 700),

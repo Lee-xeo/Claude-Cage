@@ -26,12 +26,6 @@ enum MacKeyboard {
         "NumpadEnter":"Enter", "NumpadDecimal":".", "NumpadMultiply":"*", "NumpadAdd":"+",
         "NumpadDivide":"/", "NumpadSubtract":"-", "NumpadEqual":"=", "NumpadComma":",",
     ]
-    private static let symbols = [
-        " ":"Space", "=":"Equal", "+":"Equal", "-":"Minus", "_":"Minus", "[":"BracketLeft", "{":"BracketLeft",
-        "]":"BracketRight", "}":"BracketRight", "'":"Quote", "\"":"Quote", ";":"Semicolon", ":":"Semicolon",
-        "\\":"Backslash", "|":"Backslash", ",":"Comma", "<":"Comma", ".":"Period", ">":"Period",
-        "/":"Slash", "?":"Slash", "`":"Backquote", "~":"Backquote",
-    ]
 
     static func identity(_ keyCode: UInt16, characters: String) -> (key: String, code: String) {
         guard let code = codes[keyCode] else { return (characters.isEmpty ? "Unidentified" : characters, "Unidentified") }
@@ -41,14 +35,5 @@ enum MacKeyboard {
             return (characters.isEmpty ? "Unidentified" : characters, code)
         }
         return (code, code)
-    }
-
-    static func virtualKey(code: String, key: String, shortcut: Bool) -> UInt16? {
-        if shortcut, key.utf8.count == 1, let ascii = key.uppercased().utf8.first {
-            if (65...90).contains(ascii) { return keyCodes["Key" + key.uppercased()] }
-            if (48...57).contains(ascii) { return keyCodes["Digit" + key] }
-            if let symbol = symbols[key] { return keyCodes[symbol] }
-        }
-        return keyCodes[code] ?? keyCodes[key] ?? symbols[key].flatMap { keyCodes[$0] }
     }
 }

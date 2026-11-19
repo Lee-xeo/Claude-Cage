@@ -476,10 +476,6 @@ internal sealed class MainWindow : Form
                     }
                     else result = new { text = Clipboard.ContainsText() ? Clipboard.GetText() : "" };
                     break;
-                case "chooseGuestMedia":
-                    using (var picker = new OpenFileDialog { Title = "选择 Windows 11 x64 安装镜像", Filter = "Windows ISO (*.iso)|*.iso", Multiselect = false })
-                        result = picker.ShowDialog(this) == DialogResult.OK ? picker.FileName : "";
-                    break;
                 case "appReference":
                     var appReference = request.Text("kind") switch {
                         "source" => "https://github.com/Lee-xeo/Claude-Cage/commits/main",
@@ -487,14 +483,6 @@ internal sealed class MainWindow : Form
                         _ => throw new InvalidDataException("未知的项目页面")
                     };
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(appReference) { UseShellExecute = true });
-                    result = true; break;
-                case "guestInstallReference":
-                    var reference = request.Text("kind") switch {
-                        "windows-media" => "https://www.microsoft.com/software-download/windows11",
-                        "editor-license" => "https://aka.ms/vscode-server-license",
-                        _ => throw new InvalidDataException("未知的安装参考页面")
-                    };
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(reference) { UseShellExecute = true });
                     result = true; break;
                 case "chooseUploadFiles":
                     using (var picker = new OpenFileDialog { Title = "选择本机文件", Multiselect = request.TryGetProperty("multiple", out var multiple) && multiple.ValueKind == JsonValueKind.True, CheckFileExists = true })
@@ -594,7 +582,7 @@ internal sealed class MainWindow : Form
           const fileActions = new Set([
             'uploadHostFiles', 'chooseUploadFiles', 'clipboardSyncRead', 'clipboardSyncWrite',
             'saveBrowserDownload', 'browserDownloadAction', 'desktopFileAction', 'exportDiagnostics',
-            'importTheme', 'exportTheme', 'saveRecoveryKey', 'shareLocalProject', 'chooseFolder', 'chooseGuestMedia',
+            'importTheme', 'exportTheme', 'saveRecoveryKey', 'shareLocalProject', 'chooseFolder',
           ]);
           chrome.webview.addEventListener('message', ({data}) => {
             const item = pending.get(data.id); if (!item) return;
