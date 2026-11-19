@@ -3,7 +3,6 @@
 package hostbridge
 
 import (
-	"os"
 	"os/exec"
 	"strconv"
 	"syscall"
@@ -15,9 +14,10 @@ func shellCommand(command string) *exec.Cmd {
 	return cmd
 }
 
-// userEnv is the environment for programs run on the user's behalf. Windows
-// gives a desktop application the same PATH as a terminal.
-func userEnv() []string { return os.Environ() }
+// userEnv is the environment for programs run on the user's behalf, without
+// the application's own variables. Windows gives a desktop application the
+// same PATH as a terminal.
+func userEnv() []string { return baseEnv() }
 
 func killTree(cmd *exec.Cmd) {
 	if cmd.Process == nil {

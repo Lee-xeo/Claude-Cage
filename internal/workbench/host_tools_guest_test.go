@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -88,6 +89,24 @@ func TestGuestPluginFilesAreCopiedWhole(t *testing.T) {
 	}
 	if output, err := run("tool", "a b").Output(); err != nil || string(output) != "bare a b\n" {
 		t.Fatalf("bare program: %v %q", err, output)
+	}
+	// The services' own variables stay with them; an ordinary session's reach
+	// the program.
+	shown := run("env")
+	shown.Env = append(shown.Env, "CAGE_LANGUAGE=en", "BROWSER=/usr/local/bin/opener", "TZ=Europe/London")
+	output, err := shown.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"HOME=" + home, "TZ=Europe/London"} {
+		if !strings.Contains("\n"+string(output), "\n"+line+"\n") {
+			t.Fatalf("%s is missing from the program's environment:\n%s", line, output)
+		}
+	}
+	for _, name := range []string{"CAGE_LANGUAGE=", "BROWSER="} {
+		if strings.Contains("\n"+string(output), "\n"+name) {
+			t.Fatalf("%s reached the program:\n%s", name, output)
+		}
 	}
 	// Knowing a program by the folder it runs in needs /proc, which the
 	// environment has; elsewhere only the rest of the script is checked.

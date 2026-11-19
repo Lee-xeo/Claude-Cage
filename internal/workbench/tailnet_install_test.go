@@ -26,16 +26,22 @@ func TestTailnetInstallAtomicallyReplacesRunningPayloadAndPreservesIdentity(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	executable := filepath.Join(bin, "cage-tailnet")
-	if err = os.WriteFile(executable, old, 0755); err != nil {
+	// An installation from an earlier version, under the program's old name.
+	former := filepath.Join(bin, "cage-tailnet")
+	if err = os.WriteFile(former, old, 0755); err != nil {
 		t.Fatal(err)
 	}
+	formerRule := filepath.Join(sudoers, "cage-tailnet")
+	if err = os.WriteFile(formerRule, []byte("old rule\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	executable := filepath.Join(bin, "tailnet")
 	identity := filepath.Join(root, "identity.json")
 	if err = os.WriteFile(identity, []byte("saved-node-and-keys"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	// This is a real open executable inode, rather than a mocked install result.
-	running := exec.Command(executable, "60")
+	running := exec.Command(former, "60")
 	if err = running.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +65,16 @@ func TestTailnetInstallAtomicallyReplacesRunningPayloadAndPreservesIdentity(t *t
 	if data, err := os.ReadFile(identity); err != nil || string(data) != "saved-node-and-keys" {
 		t.Fatal("installation touched identity", err)
 	}
-	if entries, err := filepath.Glob(filepath.Join(bin, ".cage-tailnet.*")); err != nil || len(entries) != 0 {
+	if _, err := os.Stat(former); !os.IsNotExist(err) {
+		t.Fatal("the program under its old name was left behind", err)
+	}
+	if _, err := os.Stat(formerRule); !os.IsNotExist(err) {
+		t.Fatal("the old sudo rule was left behind", err)
+	}
+	if rule, err := os.ReadFile(filepath.Join(sudoers, "tailnet")); err != nil || !strings.Contains(string(rule), executable) {
+		t.Fatalf("sudo rule for the program: %q %v", rule, err)
+	}
+	if entries, err := filepath.Glob(filepath.Join(bin, ".tailnet.*")); err != nil || len(entries) != 0 {
 		t.Fatal("staged payload left behind", entries, err)
 	}
 	// A failed staged copy must leave the working binary and identity in place.
@@ -78,7 +93,7 @@ func TestTailnetInstallAtomicallyReplacesRunningPayloadAndPreservesIdentity(t *t
 	if actual, err := os.ReadFile(identity); err != nil || string(actual) != "saved-node-and-keys" {
 		t.Fatal("failed installation touched identity", err)
 	}
-	if entries, err := filepath.Glob(filepath.Join(bin, ".cage-tailnet.*")); err != nil || len(entries) != 0 {
+	if entries, err := filepath.Glob(filepath.Join(bin, ".tailnet.*")); err != nil || len(entries) != 0 {
 		t.Fatal("failed installation leaked its stage", entries, err)
 	}
 }

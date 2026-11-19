@@ -137,7 +137,7 @@ func codexBuildConfig(ctx context.Context, dir, project string) ([]string, error
 	cache, err := os.UserCacheDir()
 	if err == nil {
 		key := sha256.Sum256([]byte(project))
-		proxy := filepath.Join(cache, "Cage", "project-go-proxy", fmt.Sprintf("%x", key[:16]))
+		proxy := filepath.Join(cache, "project-go-proxy", fmt.Sprintf("%x", key[:16]))
 		if real, err := filepath.EvalSymlinks(proxy); err == nil && real == proxy {
 			if info, err := os.Stat(proxy); err == nil && info.IsDir() {
 				access[proxy] = "read"

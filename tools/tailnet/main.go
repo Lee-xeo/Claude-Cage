@@ -442,7 +442,7 @@ func runSession(s gliderssh.Session) {
 func (n *node) writeSSHConfig(peers []peer) error {
 	var b strings.Builder
 	if len(peers) > 0 {
-		b.WriteString("# Managed by Cage Tailscale. Only known tailnet devices use this transport.\nHost")
+		b.WriteString("# Managed by the Tailscale helper. Only known tailnet devices use this transport.\nHost")
 		for _, p := range peers {
 			b.WriteString(" " + p.IP)
 			if safeHost(p.Name) {
@@ -521,7 +521,7 @@ func main() {
 			os.Exit(2)
 		}
 		if err := dial(os.Args[2], os.Args[3]); err != nil {
-			fmt.Fprintln(os.Stderr, "Cage Tailscale 连接失败，请检查私网连接与目标 SSH 服务")
+			fmt.Fprintln(os.Stderr, "Tailscale 连接失败，请检查私网连接与目标 SSH 服务")
 			os.Exit(1)
 		}
 		return

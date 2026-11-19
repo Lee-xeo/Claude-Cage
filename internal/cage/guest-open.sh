@@ -24,8 +24,8 @@ case "${1:-}" in
     set -- /login-finish "" "$login"
     ;;
   tailscale:*)
-    if [ "$(id -un)" = cage ]; then exec /usr/local/bin/cage-tailnet --browser-return; fi
-    exec sudo -n -H -u cage /usr/local/bin/cage-tailnet --browser-return
+    if [ "$(id -un)" = cage ]; then exec /usr/local/bin/tailnet --browser-return; fi
+    exec sudo -n -H -u cage /usr/local/bin/tailnet --browser-return
     ;;
   claude://*)
     sudo -u cage /usr/local/bin/cage-claude-open "$1"

@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -102,10 +103,21 @@ func (b *Bridge) authorize(next http.Handler) http.Handler {
 // describe this product or where it runs rather than what the tool does.
 var reservedWords = []string{"cage", "guest", "virtual machine", "vm", "虚拟机", "客机"}
 
-// CheckWording reports the first reserved word found in a tool's name or
-// description, matching whole words for the Latin ones.
+// CheckWording reports the first reserved word found in what a tool shows
+// the model: its name, title and description, and the names and wording of
+// its parameters and results. Latin words are matched whole.
 func CheckWording(tool *mcp.Tool) (word string, found bool) {
-	text := strings.ToLower(tool.Name + " " + tool.Title + " " + tool.Description)
+	text := tool.Name + " " + tool.Title + " " + tool.Description
+	if tool.Annotations != nil {
+		text += " " + tool.Annotations.Title
+	}
+	for _, schema := range []any{tool.InputSchema, tool.OutputSchema} {
+		if schema != nil {
+			data, _ := json.Marshal(schema)
+			text += " " + string(data)
+		}
+	}
+	text = strings.ToLower(text)
 	fields := strings.FieldsFunc(text, func(r rune) bool {
 		return r < 0x80 && !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
 	})

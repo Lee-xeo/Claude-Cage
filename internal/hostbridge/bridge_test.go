@@ -205,6 +205,12 @@ func TestToolsDescribeOnlyWhatTheyDo(t *testing.T) {
 	if word, found := CheckWording(&mcp.Tool{Name: "package_info", Description: "Show vmstat-free package details."}); found {
 		t.Errorf("an ordinary description was refused for %q", word)
 	}
+	// A parameter's description is shown to the model as well.
+	parameter := map[string]any{"type": "object", "properties": map[string]any{
+		"path": map[string]any{"type": "string", "description": "A file in the guest"}}}
+	if _, found := CheckWording(&mcp.Tool{Name: "read", Description: "Reads a file.", InputSchema: parameter}); !found {
+		t.Error("a parameter description passed the wording check")
+	}
 }
 
 func TestBackgroundCommandIsReadLater(t *testing.T) {

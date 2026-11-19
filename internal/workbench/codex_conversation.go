@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sylvinus/agent-vm/internal/hostbridge"
 )
 
 // Each process owns one ephemeral thread. No thread ID, cwd, executable or
@@ -139,6 +141,7 @@ func startCodexConversationMode(ctx context.Context, bin, project string, comput
 		"-c", `web_search="disabled"`, "app-server", "--listen", "stdio://")
 	cmd := exec.CommandContext(life, bin, args...)
 	cmd.Dir = dir
+	cmd.Env = hostbridge.WithoutAppEnv(os.Environ())
 	cmd.WaitDelay = 2 * time.Second
 	w, err := cmd.StdinPipe()
 	var r io.ReadCloser
@@ -231,7 +234,7 @@ func startCodexConversationMode(ctx context.Context, bin, project string, comput
 		params["sandbox"] = "workspace-write"
 		params["approvalPolicy"] = "on-request"
 		params["approvalsReviewer"] = "user"
-		params["developerInstructions"] = params["developerInstructions"].(string) + " Use the shell directly for builds, tests, diagnostic logs and command-line tools. Use Computer Use for graphical tasks in the target app. A local port listener or an SSH connection may need a one-command network permission: request with_additional_permissions with network.enabled=true, in the assigned project. Cage presents that request to the host user. Only the host user can approve access. Return only task-relevant results. Do not seek or disclose host network addresses or unrelated personal information."
+		params["developerInstructions"] = params["developerInstructions"].(string) + " Use the shell directly for builds, tests, diagnostic logs and command-line tools. Use Computer Use for graphical tasks in the target app. A local port listener or an SSH connection may need a one-command network permission: request with_additional_permissions with network.enabled=true, in the assigned project. The user decides on each such request; only the user can approve access. Return only task-relevant results. Do not seek or disclose this computer's network addresses or unrelated personal information."
 	}
 	if err = c.call("thread/start", params, &start); err != nil {
 		return nil, err

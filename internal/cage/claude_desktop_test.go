@@ -116,7 +116,7 @@ func TestTailnetBrowserOpenPassesOnlyReturnSignal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bin, "id"), []byte("#!/bin/sh\nprintf '%s' \"$TEST_IDENTITY\""), 0755); err != nil {
 		t.Fatal(err)
 	}
-	script := strings.ReplaceAll(guestOpen, "/usr/local/bin/cage-tailnet", helper)
+	script := strings.ReplaceAll(guestOpen, "/usr/local/bin/tailnet", helper)
 	for _, identity := range []string{"cage", "cage-browser"} {
 		cmd := exec.Command("sh", "-c", script, "open", "tailscale://return?code=private-fixture")
 		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "TEST_IDENTITY="+identity)

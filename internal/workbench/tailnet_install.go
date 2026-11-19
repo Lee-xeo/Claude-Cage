@@ -14,12 +14,22 @@ import (
 
 // Stage beside the installed executable so a running node can finish on its old
 // inode. Identity and user data live elsewhere and are never part of installation.
-const tailnetInstallScript = `set -eu; tmp=$(mktemp /tmp/cage-tailnet.XXXXXX); stage=; trap 'rm -f "$tmp"; if test -n "$stage"; then sudo rm -f "$stage"; fi' EXIT; cat > "$tmp"; stage=$(sudo mktemp /usr/local/bin/.cage-tailnet.XXXXXX); sudo install -m 0755 "$tmp" "$stage"; sudo mv -f "$stage" /usr/local/bin/cage-tailnet; printf 'cage-browser ALL=(cage) NOPASSWD: /usr/local/bin/cage-tailnet\n' | sudo tee /etc/sudoers.d/cage-tailnet >/dev/null; sudo chmod 0440 /etc/sudoers.d/cage-tailnet`
+// The program was once installed under an older name; that copy and its sudo
+// rule go once the new one is in place, and the node writes its SSH settings
+// with its own path when it starts again.
+const tailnetInstallScript = `set -eu; tmp=$(mktemp /tmp/tailnet.XXXXXX); stage=; trap 'rm -f "$tmp"; if test -n "$stage"; then sudo rm -f "$stage"; fi' EXIT; cat > "$tmp"; stage=$(sudo mktemp /usr/local/bin/.tailnet.XXXXXX); sudo install -m 0755 "$tmp" "$stage"; sudo mv -f "$stage" ` + tailnetProgram + `; printf 'cage-browser ALL=(cage) NOPASSWD: ` + tailnetProgram + `\n' | sudo tee /etc/sudoers.d/tailnet >/dev/null; sudo chmod 0440 /etc/sudoers.d/tailnet; sudo rm -f ` + tailnetFormerProgram + ` /etc/sudoers.d/cage-tailnet`
+
+// tailnetProgram is where the program is installed in the environment.
+const tailnetProgram = "/usr/local/bin/tailnet"
+
+// tailnetFormerProgram is where earlier versions installed it; it is only
+// looked for, to bring such an installation up to date.
+const tailnetFormerProgram = "/usr/local/bin/cage-tailnet"
 
 func (s *Server) refreshInstalledTailnet() error {
 	ctx, cancel := context.WithTimeout(s.operationContext(), 15*time.Second)
 	defer cancel()
-	installed, err := s.guest(ctx, "if test -x /usr/local/bin/cage-tailnet; then printf installed; fi")
+	installed, err := s.guest(ctx, "if test -x "+tailnetProgram+" || test -x "+tailnetFormerProgram+"; then printf installed; fi")
 	if err != nil {
 		return err
 	}

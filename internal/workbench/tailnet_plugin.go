@@ -26,7 +26,7 @@ const tailnetPluginManifest = `{
   "permissions": ["network"],
   "contributes": {
     "mcpServers": [
-      { "id": "node", "command": ["/usr/local/bin/cage-tailnet", "mcp"] }
+      { "id": "node", "command": ["/usr/local/bin/tailnet", "mcp"] }
     ]
   }
 }

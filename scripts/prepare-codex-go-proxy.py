@@ -40,7 +40,7 @@ def main():
 
     cache = Path(subprocess.check_output(["go", "env", "GOMODCACHE"], text=True).strip()) / "cache/download"
     project_key = hashlib.sha256(os.fsencode(project)).hexdigest()[:32]
-    dest = Path.home() / "Library/Caches/Cage/project-go-proxy" / project_key
+    dest = Path.home() / "Library/Caches/project-go-proxy" / project_key
     dest.mkdir(mode=0o700, parents=True, exist_ok=True)
     if dest.resolve() != dest:
         raise ValueError("The dedicated proxy directory cannot be a symbolic link")

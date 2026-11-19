@@ -69,15 +69,17 @@ func readTerminalPath() string {
 	return path
 }
 
-// userEnv is this process's environment with the PATH of the user's
-// terminal, for the programs run on their behalf.
+// userEnv is this process's environment, without the application's own
+// variables and with the PATH of the user's terminal, for the programs run on
+// their behalf.
 func userEnv() []string {
+	base := baseEnv()
 	path := terminalPath()
 	if path == "" {
-		return os.Environ()
+		return base
 	}
-	env := make([]string, 0, len(os.Environ())+1)
-	for _, entry := range os.Environ() {
+	env := make([]string, 0, len(base)+1)
+	for _, entry := range base {
 		if !strings.HasPrefix(entry, "PATH=") {
 			env = append(env, entry)
 		}

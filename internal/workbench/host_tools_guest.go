@@ -101,7 +101,9 @@ mv "$dir.new" "$dir"`
 // folder, the rest the program and its arguments. The program is taken from
 // the folder when it is there, as on this computer, and from PATH otherwise.
 // One still running from before, as when it does not stop when its input
-// closes, is ended first: it is known by the folder it runs in.
+// closes, is ended first: it is known by the folder it runs in. The program
+// gets the environment of an ordinary session, not the variables the
+// environment's own services set for themselves.
 const guestPluginRunScript = `dir="$HOME/$1"
 shift
 note="$dir.pid"
@@ -114,7 +116,7 @@ echo $$ > "$note"
 program=$1
 shift
 case "$program" in /*) ;; *) [ -f "./$program" ] && program="./$program" ;; esac
-exec "$program" "$@"`
+exec env -i HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" SHELL="${SHELL:-/bin/sh}" PATH="$PATH" LANG="${LANG:-C.UTF-8}" ${LC_ALL:+LC_ALL="$LC_ALL"} ${TZ:+TZ="$TZ"} "$program" "$@"`
 
 // guestPluginCommand copies the plugin's files into the environment, unless
 // they are there already, and returns the command that runs its server
