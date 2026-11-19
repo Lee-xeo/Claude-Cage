@@ -204,9 +204,7 @@ func TestLoadPluginsRunsGuestPluginsWhereTold(t *testing.T) {
 		t.Skip("python3 is not installed")
 	}
 	dir := t.TempDir()
-	if err := InstallFromCatalog("clock", dir); err != nil {
-		t.Fatal(err)
-	}
+	installExamplePlugin(t, dir)
 	manifest := `{"name":"clock","version":"1","description":"Tells the time.","permissions":[],"engines":{"cage":">=0.1.0"},"kind":"guest",
 		"contributes":{"mcpServers":[{"id":"main","command":["python3","server.py"]}]}}`
 	if err := os.WriteFile(filepath.Join(dir, "clock", ManifestFile), []byte(manifest), 0o644); err != nil {
@@ -238,9 +236,7 @@ func TestLoadPluginsCanLeaveHostPluginsOut(t *testing.T) {
 		t.Skip("python3 is not installed")
 	}
 	dir := t.TempDir()
-	if err := InstallFromCatalog("clock", dir); err != nil {
-		t.Fatal(err)
-	}
+	installExamplePlugin(t, dir)
 	started := false
 	plugins, failures := LoadPlugins(context.Background(), dir, LoadOptions{GuestOnly: true,
 		Guest: func(context.Context, Manifest, string) (*exec.Cmd, error) { started = true; return nil, nil }})

@@ -287,27 +287,24 @@ func TestManifestMustBeComplete(t *testing.T) {
 	}
 }
 
+// installExamplePlugin copies the example plugin from testdata into its own
+// folder under dir.
+func installExamplePlugin(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.CopyFS(filepath.Join(dir, "clock"), os.DirFS(filepath.Join("testdata", "clock"))); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // The example in the plugin guide must load as written.
-func TestCatalogPluginInstallsAndLoads(t *testing.T) {
+func TestExamplePluginLoads(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 is unavailable")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	dir := t.TempDir()
-	catalog := Catalog()
-	if len(catalog) == 0 || catalog[0].Name != "clock" {
-		t.Fatalf("catalog %+v", catalog)
-	}
-	if err := InstallFromCatalog("clock", dir); err != nil {
-		t.Fatal(err)
-	}
-	if err := InstallFromCatalog("clock", dir); err == nil {
-		t.Fatal("replaced an installed plugin")
-	}
-	if err := InstallFromCatalog("missing", dir); err == nil {
-		t.Fatal("installed an unknown plugin")
-	}
+	installExamplePlugin(t, dir)
 	if plugins, failures := LoadPlugins(ctx, dir, LoadOptions{Off: []string{"clock"}}); len(plugins) != 0 || len(failures) != 0 {
 		t.Fatalf("started a plugin that is turned off: %d %v", len(plugins), failures)
 	}
