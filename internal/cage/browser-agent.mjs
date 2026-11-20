@@ -369,7 +369,9 @@ chrome.stdio[4].on("data", (chunk) => {
       uploads.cancelTab(uploadTab);
   }
 });
-chrome.on("exit", () => {
+chrome.on("exit", (code, signal) => {
+  // Record only how Chromium ended; never page addresses or contents.
+  if (!shuttingDown) console.error(`Chromium exited unexpectedly: code=${code} signal=${signal}`);
   ready = false;
   for (const p of pending.values()) {
     clearTimeout(p.timer);
@@ -379,8 +381,10 @@ chrome.on("exit", () => {
   process.exit(shuttingDown ? 0 : 1);
 });
 for (const channel of chrome.stdio.slice(3))
-  channel.on("error", () => {
-    if (!shuttingDown) process.exit(1);
+  channel.on("error", (error) => {
+    if (shuttingDown) return;
+    console.error(`Chromium control pipe failed: ${error?.code || error?.name || "unknown"}`);
+    process.exit(1);
   });
 async function session(id) {
   if (!targets.has(id)) throw new Error("Tab no longer exists");
