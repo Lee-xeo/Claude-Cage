@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -88,4 +89,26 @@ func userEnv() []string {
 		}
 	}
 	return append(env, "PATH="+path)
+}
+
+// lookProgram is the program called name in the first folder of the PATH in
+// env that has it, or name itself when none does, for exec to look up on
+// this process's own PATH.
+func lookProgram(name string, env []string) string {
+	path := ""
+	for _, entry := range env {
+		if value, found := strings.CutPrefix(entry, "PATH="); found {
+			path = value
+		}
+	}
+	for _, dir := range filepath.SplitList(path) {
+		if !filepath.IsAbs(dir) {
+			continue
+		}
+		candidate := filepath.Join(dir, name)
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			return candidate
+		}
+	}
+	return name
 }

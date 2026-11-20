@@ -19,6 +19,10 @@ func shellCommand(command string) *exec.Cmd {
 // same PATH as a terminal.
 func userEnv() []string { return baseEnv() }
 
+// lookProgram leaves name for exec to find: programs get this process's own
+// PATH here, so the two agree.
+func lookProgram(name string, _ []string) string { return name }
+
 // hideWindow keeps a console program from opening a window of its own: the
 // application has no console for it to share.
 func hideWindow(cmd *exec.Cmd) {

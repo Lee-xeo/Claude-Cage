@@ -21,3 +21,22 @@ func TestTerminalPathTakesThePathOfTheLoginShell(t *testing.T) {
 		t.Fatalf("PATH not taken from the shell: %q", path)
 	}
 }
+
+func TestLookProgramSearchesThePathGivenToTheProgram(t *testing.T) {
+	// Tools such as npx or uvx are often only on the terminal's PATH.
+	tools, empty := t.TempDir(), t.TempDir()
+	program := filepath.Join(tools, "runner")
+	if err := os.WriteFile(program, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(empty, "runner"), []byte("not a program"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{"HOME=/home/someone", "PATH=relative:" + empty + ":" + tools}
+	if found := lookProgram("runner", env); found != program {
+		t.Fatalf("found %q, want %q", found, program)
+	}
+	if found := lookProgram("missing", env); found != "missing" {
+		t.Fatalf("a program on no PATH folder should be left to exec, got %q", found)
+	}
+}
