@@ -85,13 +85,18 @@ func (t *terminalSession) summary() map[string]any {
 			closed = false
 		}
 	}
-	result := map[string]any{"id": t.id, "title": t.title, "closed": closed, "workspace": t.workspace, "kind": t.kind,
+	return map[string]any{"id": t.id, "title": t.title, "closed": closed, "workspace": t.workspace, "kind": t.kind,
 		"claude_account_id": t.claudeAccountID, "claude_account_source": t.claudeAccountSource, "cli_session_id": t.sharedID,
 		"background_login": t.backgroundLogin, "login_notice": t.loginNotice, "cli_starting": t.cliStartupPendingLocked()}
-	if !closed && len(t.claudeCompletions) > 0 {
-		result["claude_completions"] = t.claudeCompletions
+}
+
+func (t *terminalSession) completionNotifications() []claudeCompletion {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return nil
 	}
-	return result
+	return t.claudeCompletions
 }
 
 func (t *terminalSession) cliStartupPendingLocked() bool {

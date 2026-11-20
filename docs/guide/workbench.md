@@ -85,7 +85,7 @@ Cage 的共享 Claude 会话会先显示“正在准备 Claude 会话…”，�
 
 ### 接收 macOS 完成通知
 
-在 macOS 菜单栏选择 **Cage → Claude Code 完成通知**，并允许 Cage 发送通知。在其他应用或其他 Cage 标签里工作时，本机受 Cage 管理的 Claude Code 终端完成一轮回复后会显示系统通知。通知随工作台的状态刷新送达，点击即可切回仍打开的终端。
+在 macOS 菜单栏选择 **Cage → Claude Code 完成通知**，并允许 Cage 发送通知。在其他应用或其他 Cage 标签里工作时，Cage 会用自己的图标转发本机 Claude Code 发出的原始完成提醒。Claude Code 通常在回复结束约一分钟、会话继续空闲时发出提醒。点击通知即可切回仍打开的终端。
 
 选项默认关闭。在同一菜单中取消勾选即可关闭。升级后请重新打开 Claude Code 会话，新启动的会话会加载通知所需的钩子。
 

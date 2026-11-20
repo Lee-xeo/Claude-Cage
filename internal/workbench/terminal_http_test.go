@@ -14,6 +14,29 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func TestTerminalCompletionTextRequiresDesktopOptIn(t *testing.T) {
+	s := testServer(t)
+	session := newTerminalSession(nil)
+	session.id = "test-terminal"
+	session.claudeCompletions = []claudeCompletion{{ID: "event", Title: "Claude", Message: "original notification"}}
+	s.terminals.sessions = map[string]*terminalSession{session.id: session}
+
+	const terminals = "/api/terminals"
+	const optedIn = terminals + "?claude_completions=1"
+	for _, response := range []*httptest.ResponseRecorder{
+		desktopRequestForTest(s, http.MethodGet, terminals, nil),
+		request(s, http.MethodGet, optedIn, "", "", true),
+	} {
+		if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "original notification") {
+			t.Fatalf("ordinary list exposed notification content: %d %s", response.Code, response.Body.String())
+		}
+	}
+	response := desktopRequestForTest(s, http.MethodGet, optedIn, nil)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "original notification") {
+		t.Fatalf("opted-in desktop did not receive notification content: %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestTerminalStartupStatePreservesStreamAndReconnect(t *testing.T) {
 	s := testServer(t)
 	t.Cleanup(s.terminals.close)

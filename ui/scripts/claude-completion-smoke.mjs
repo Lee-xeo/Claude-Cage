@@ -4,12 +4,15 @@ import { createWorkbench } from "./workbench-fixture.mjs";
 
 const first = "1111111111111111";
 const second = "2222222222222222";
-const event = { id: randomUUID(), at: Date.now() / 1000 };
+const event = { id: randomUUID(), at: Date.now() / 1000, title: "Report ready", message: "Claude is waiting for your input" };
 let nextTarget;
 const messages = [];
 const { browser, page, errors } = await createWorkbench({
   beforeNavigate: async (page, state) => {
-    await page.addInitScript(() => { window.cageClaudeCompletionAvailable = true; });
+    await page.addInitScript(() => {
+      window.cageClaudeCompletionAvailable = true;
+      window.cageClaudeCompletionsEnabled = true;
+    });
     Object.assign(state.status, { ready: true, vm_running: true });
     state.terminals = [
       { id: first, title: "Claude 1", kind: "claude", workspace: state.settings.workspace },
@@ -37,7 +40,8 @@ try {
   await openNotification();
   await lane.getByText("Claude 2", { exact: true }).first().waitFor();
   assert.ok(messages.some(msg => msg.visible.includes(first) && !msg.visible.includes(second)
-    && msg.events.some(row => row.id === event.id && row.terminal === second)));
+    && msg.events.some(row => row.id === event.id && row.terminal === second
+      && row.title === event.title && row.message === event.message)));
 
   nextTarget = first;
   await openNotification();

@@ -10,7 +10,18 @@ import (
 )
 
 func (s *Server) listTerminals(w http.ResponseWriter, r *http.Request) {
-	jsonReply(w, s.terminalSummaries())
+	terminals := s.terminalSummaries()
+	if r.URL.Query().Get("claude_completions") == "1" && s.hasTrustedView(r) {
+		for _, row := range terminals {
+			id, _ := row["id"].(string)
+			if terminal := s.terminals.get(id); terminal != nil {
+				if notifications := terminal.completionNotifications(); len(notifications) > 0 {
+					row["claude_completions"] = notifications
+				}
+			}
+		}
+	}
+	jsonReply(w, terminals)
 }
 
 func (s *Server) newTerminal(w http.ResponseWriter, r *http.Request) {

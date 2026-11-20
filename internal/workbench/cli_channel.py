@@ -1,4 +1,4 @@
-"""Guest-side Claude terminal discovery and authenticated local channel bridge."""
+# Guest-side Claude terminal discovery and authenticated local channel bridge.
 import contextlib
 import hashlib
 import json
@@ -388,6 +388,16 @@ def hook(connection):
     payload = json.load(sys.stdin)
     event = payload.get("hook_event_name")
     with state_file(connection) as state:
+        if event == "Notification":
+            message = payload.get("message")
+            if (payload.get("notification_type") == "idle_prompt" and not payload.get("agent_id")
+                    and state.get("cli_id") == payload.get("session_id") and not state.get("closed")
+                    and isinstance(message, str) and message.strip()):
+                title = payload.get("title")
+                notice = {"id": str(uuid.uuid4()), "at": time.time(), "message": clip_text(message, 4096),
+                          "title": clip_text(title, 256) if isinstance(title, str) else ""}
+                state["completions"] = state.get("completions", [])[-7:] + [notice]
+            return {}
         if event == "UserPromptSubmit" and state.get("login_subject") and client_runtime().get("changed_prompt_login", lambda _: False)(state):
             return {"decision": "block", "reason": "正在核对这个终端已更改的 Claude 登录，请稍后继续。"}
         if state.get("account_switch"):
@@ -409,13 +419,6 @@ def hook(connection):
             state.pop("pending_send", None)
         if event in ("UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "SessionEnd"):
             state["approvals"] = []
-        if not payload.get("agent_id"):
-            if event == "UserPromptSubmit" and not state.get("account_switch"):
-                state["completion_turn"] = str(uuid.uuid4())
-            if event in ("Stop", "StopFailure", "SessionEnd"):
-                turn = state.pop("completion_turn", None)
-                if event == "Stop" and turn and not state.get("stopped") and not state.get("account_switch"):
-                    state["completions"] = state.get("completions", [])[-7:] + [{"id": turn, "at": state["updated_at"]}]
         if event in ("Stop", "StopFailure", "SessionEnd"):
             state["busy"] = False
             state.pop("display", None)
@@ -749,12 +752,13 @@ def launch(request):
         if active_session(request["resume"]):
             raise ValueError("原会话仍在电脑终端运行，请先结束该终端中的 Claude Code 再接续")
     command = _runtime["command_text"](__file__, ["hook", connection])
-    events = ("SessionStart", "UserPromptSubmit", "MessageDisplay", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure", "SessionEnd")
+    events = ("SessionStart", "UserPromptSubmit", "MessageDisplay", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure", "SessionEnd", "Notification")
     handler = {"type": "command", "command": command, "timeout": 5}
     if os.name == "nt":
         argv = _runtime["command"](__file__, ["hook", connection])
         handler = {"type": "command", "command": argv[0], "args": argv[1:], "timeout": 5}
-    settings = {"hooks": {event: [{"hooks": [handler.copy()]}] for event in events}}
+    settings = {"hooks": {event: [{"hooks": [handler]}] for event in events}}
+    settings["hooks"]["Notification"][0]["matcher"] = "idle_prompt"
     prefix = request["prefix"]
     if os.name == "nt":
         account = runpy.run_path(_controller_context["CAGE_CLI_ACCOUNT_HELPER"])
@@ -775,7 +779,7 @@ def launch(request):
         state.update(codex_enabled=request.get("codex_enabled") is True, cli_id=session_id, config=str(config_directory("default")), login_subject=_controller_context.get("CAGE_CLAUDE_SUBJECT"),
                      workspace=str(Path.cwd()), pid=os.getpid(), closed=False, updated_at=time.time(), approvals=[], busy=False,
                      channel_pid=None, pending_send=None, display=None, stopped=False,
-                     completion_turn=None, completions=[],
+                     completions=[],
                      requests=previous.get("requests", {}), sent=previous.get("sent", []))
         receipt = handoff_receipt(config_directory("default"), session_id)
         transfer = read_json(receipt, {})
@@ -880,7 +884,6 @@ def serve(connection):
                                 raise ValueError("这段会话已有消息正在处理，请等待后重试")
                             state.pop("stopped", None)
                             state["pending_send"] = request_id
-                            state["completion_turn"] = request_id
                             requests[request_id] = digest
                             state.setdefault("sent", []).append({"id": request_id, "text": text})
                             # Persist admission before writing to the CLI. A lost
@@ -895,7 +898,6 @@ def serve(connection):
                         emit({"method": "notifications/claude/channel/permission", "params": {
                             "request_id": approval["relay_id"], "behavior": "allow" if request["allow"] else "deny"}})
                     elif action == "stop":
-                        state.pop("completion_turn", None)
                         state["stopped"] = True
                         state["busy"] = False
                         state["approvals"] = []

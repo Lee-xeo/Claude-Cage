@@ -76,8 +76,10 @@ func cliTransport85(data []byte) string {
 }
 
 type claudeCompletion struct {
-	ID string  `json:"id"`
-	At float64 `json:"at"`
+	ID      string  `json:"id"`
+	At      float64 `json:"at"`
+	Title   string  `json:"title,omitempty"`
+	Message string  `json:"message"`
 }
 
 type terminalConversation struct {
@@ -112,8 +114,7 @@ func cliChannelCommand(mode, argument string) string {
 	bootstrap := fmt.Sprintf(`import base64,os,pathlib,sys,tempfile
 d=pathlib.Path.home()/".local/share/cage/cli-channel-code"
 d.mkdir(parents=True,exist_ok=True,mode=0o700)
-n="%x"
-p=d/(n+".py")
+p=d/"%x.py"
 if not p.is_file():
  import gzip
  with tempfile.NamedTemporaryFile(dir=d,delete=False) as f:

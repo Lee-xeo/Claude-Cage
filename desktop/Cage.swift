@@ -264,12 +264,19 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             guard let self else { return }
             self.requestingClaudeCompletion = false
             self.claudeCompletionMenu?.state = claudeCompletion.enabled ? .on : .off
+            self.publishClaudeCompletionPreference()
             guard !accepted else { return }
             let alert = NSAlert()
             alert.messageText = CageLanguage.text("Claude Code 完成通知")
             alert.informativeText = CageLanguage.text("请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。")
             alert.beginSheetModal(for: self.window, completionHandler: nil)
         }
+    }
+
+    private func publishClaudeCompletionPreference() {
+        guard let claudeCompletion else { return }
+        let enabled = claudeCompletion.enabled ? "true" : "false"
+        webView.evaluateJavaScript("window.cageClaudeCompletionsEnabled = \(enabled); window.dispatchEvent(new Event('cage-claude-completion-preference'));", completionHandler: nil)
     }
 
     private func openClaudeCompletion() {
@@ -448,7 +455,16 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         window.backgroundColor = NSColor(srgbRed: Double((hex >> 16) & 255)/255, green: Double((hex >> 8) & 255)/255, blue: Double(hex & 255)/255, alpha: 1)
         loading.textColor = .labelColor
     }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loading.isHidden = true; retry.isHidden = true; completeUpdateButton.isHidden = true; existingEnvironmentButton.isHidden = true; webView.isHidden = false; window.makeFirstResponder(webView); publishWindowVisibility() }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loading.isHidden = true
+        retry.isHidden = true
+        completeUpdateButton.isHidden = true
+        existingEnvironmentButton.isHidden = true
+        webView.isHidden = false
+        window.makeFirstResponder(webView)
+        publishWindowVisibility()
+        publishClaudeCompletionPreference()
+    }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         CageDiagnostics.record("Workbench navigation failed: \(error)")
         let failure = error as NSError

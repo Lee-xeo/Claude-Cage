@@ -6,7 +6,7 @@ final class ClaudeCompletionNotifications: NSObject, UNUserNotificationCenterDel
         && Bundle.main.bundleIdentifier != nil
         && Bundle.main.bundleIdentifier != "io.github.lee-xeo.claude-cage-client"
 
-    private static let preference = "cage.claudeCompletionNotifications"
+    private static let preference = "cage.forwardClaudeCompletionNotifications"
     private static let prefix = "cage-claude-completion:"
     private static let lifetime: TimeInterval = 60
     private let center = UNUserNotificationCenter.current()
@@ -51,14 +51,16 @@ final class ClaudeCompletionNotifications: NSObject, UNUserNotificationCenterDel
             guard let id = (event["id"] as? String).flatMap(UUID.init(uuidString:)),
                   let terminal = event["terminal"] as? String, Self.validTerminal(terminal),
                   let seconds = event["at"] as? Double, seconds.isFinite,
+                  let message = event["message"] as? String, !message.isEmpty,
                   seen[id] == nil else { continue }
             let finished = Date(timeIntervalSince1970: seconds)
             guard finished >= cutoff, finished <= now.addingTimeInterval(5) else { continue }
             seen[id] = finished
             guard !visible.contains(terminal) else { continue }
             let content = UNMutableNotificationContent()
-            content.title = "Claude Code"
-            content.body = CageLanguage.text("本轮回复已结束")
+            let title = event["title"] as? String ?? ""
+            content.title = title.isEmpty ? "Claude Code" : title
+            content.body = message
             content.userInfo = ["terminal": terminal]
             let request = UNNotificationRequest(identifier: Self.prefix + id.uuidString, content: content, trigger: nil)
             center.add(request) { error in

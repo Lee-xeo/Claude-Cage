@@ -794,6 +794,7 @@ function App() {
           if (next.job.error) notify(next.job.error);
         }
         if (next.ready) {
+          const includeCompletionMessages = window.cageClaudeCompletionsEnabled && getClientContext().mode === "local";
           const fetchBrowser = !next.environment_update_required && (!browserStreamReady.current || !initialized.current);
           const [browserResult, t] = await Promise.all([
             fetchBrowser ? api("/browser/tabs").then(result => {
@@ -803,7 +804,7 @@ function App() {
               if (live) setBrowserError(error.message);
               return null;
             }) : null,
-            api("/terminals"),
+            api(includeCompletionMessages ? "/terminals?claude_completions=1" : "/terminals"),
           ]);
           if (!live) return;
           const b = browserResult || browserSnapshot.current;
@@ -906,10 +907,13 @@ function App() {
         if (live) setFatal(e.message);
       }
     })();
+    const refreshCompletions = () => refreshStatus.current?.();
+    window.addEventListener("cage-claude-completion-preference", refreshCompletions);
     return () => {
       live = false;
       refreshStatus.current = null;
       clearTimeout(timer);
+      window.removeEventListener("cage-claude-completion-preference", refreshCompletions);
     };
   }, []);
   useEffect(() => {
