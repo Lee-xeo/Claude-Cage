@@ -16,7 +16,10 @@ func freeGiB(dir string) (int, bool) {
 	defer C.free(unsafe.Pointer(path))
 	// User-requested installations may use space macOS can reclaim from
 	// caches and local snapshots. statfs alone excludes that capacity.
-	if capacity := int64(C.cageImportantDiskCapacity(path)); capacity >= 0 {
+	// Mounted APFS sparse images can report zero for important usage while
+	// blocks are writable; confirm zero through statfs, which still returns
+	// zero for a volume that is actually full.
+	if capacity := int64(C.cageImportantDiskCapacity(path)); capacity > 0 {
 		return int(capacity >> 30), true
 	}
 	return statfsFreeGiB(dir)
