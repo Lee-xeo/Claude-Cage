@@ -23,7 +23,11 @@ permissions:
   contents: read
 concurrency:
   group: cage-ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer pull request or manual run replaces the older one. On main every
+  # merge already passed its pull request checks, so a running push check is
+  # allowed to finish (its packages may feed platform-preview.yml); GitHub
+  # still replaces a queued, not yet started main run with the newest push.
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 jobs:
   workflow-checks:
     runs-on: ubuntu-24.04
@@ -108,6 +112,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      # Same checksum-pinned ZIP cache as the windows-toolchain action, so this
+      # job does not depend on a fresh SourceForge download each run.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nsis-*.zip
+          key: windows-nsis-${{ hashFiles('scripts/install-nsis.ps1') }}
       - name: Install the verified NSIS compiler
         run: ./scripts/install-nsis.ps1
       - name: Install the verified WebView2 prerequisite
