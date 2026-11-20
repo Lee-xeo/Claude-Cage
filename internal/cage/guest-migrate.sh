@@ -30,12 +30,24 @@ for name in sorted(os.listdir(former)):
     staged = os.path.join(current, '.' + name + '.copy')
     shutil.copy2(source, staged)
     os.chown(staged, info.st_uid, info.st_gid)
+    # On disk before it takes the name: a power loss never leaves an empty
+    # setting where the copy was expected.
+    with open(staged, 'rb') as stream:
+        os.fsync(stream.fileno())
     if not filecmp.cmp(source, staged, shallow=False):
         os.unlink(staged)
         sys.exit('Copying ' + name + ' did not verify; earlier settings are unchanged.')
     os.replace(staged, target)
-with open(marker, 'w'):
-    pass
+# A copy interrupted before it took its name is left from an earlier attempt
+# whose source has since gone.
+for name in os.listdir(current):
+    if name.startswith('.') and name.endswith('.copy') and not os.path.lexists(os.path.join(former, name[1:-5])):
+        os.unlink(os.path.join(current, name))
+with open(marker, 'w') as stream:
+    os.fsync(stream.fileno())
+directory = os.open(current, os.O_RDONLY | os.O_DIRECTORY)
+os.fsync(directory)
+os.close(directory)
 LEGACY_COPY
 )
 sudo python3 -I -c "$legacy_copy" /etc/claude-cage /etc/workbench 755
