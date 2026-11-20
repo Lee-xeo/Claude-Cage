@@ -39,6 +39,9 @@ func ConfigureWindowsRuntime() error {
 	if err := windows.IsWow64Process2(windows.CurrentProcess(), &processMachine, &nativeMachine); err != nil || nativeMachine != 0x8664 {
 		return fmt.Errorf("Cage Windows 版本需要 Intel 或 AMD 的 x64 处理器，暂不支持 Windows on ARM")
 	}
+	if err := os.Setenv("PATHEXT", normalizePathExt(os.Getenv("PATHEXT"))); err != nil {
+		return err
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return err
