@@ -33,13 +33,13 @@ export function parseArgs(args) {
 }
 
 // Validate HTTPS at every redirect; do not use browser credentials or tokens.
-export async function httpsResponse(url, fetchImpl = fetch) {
+export async function httpsResponse(url, fetchImpl = fetch, method = 'GET') {
   for (let redirects = 0; redirects <= 5; redirects++) {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password) fail('unsafe_download', 'Only public HTTPS downloads without embedded credentials are supported.');
     let response;
     try {
-      response = await fetchImpl(parsed, { redirect: 'manual', signal: AbortSignal.timeout(120000), headers: { 'User-Agent': 'Cage-Agent-Bootstrap/1', Accept: 'application/json, application/octet-stream' } });
+      response = await fetchImpl(parsed, { method, redirect: 'manual', signal: AbortSignal.timeout(120000), headers: { 'User-Agent': 'Cage-Agent-Bootstrap/1', Accept: 'application/json, application/octet-stream' } });
     } catch {
       fail('download_connection_failed', 'Could not connect to the public release service. Check host connectivity and user-configured proxy settings; Node 24 can use --use-env-proxy.', 'check_host_network');
     }
@@ -90,19 +90,86 @@ export function checksumFor(manifest, name) {
   return matches[0][1].toLowerCase();
 }
 
-export async function makePlan(options, fetchImpl = fetch) {
-  const releaseURL = `https://api.github.com/repos/${repo}/releases/${options.version ? `tags/${options.version}` : 'latest'}`;
+const suffixes = { 'darwin-arm64': 'macos-arm64.dmg', 'linux-amd64': 'linux-amd64.deb', 'win32-amd64': 'windows-amd64-setup.exe' };
+const downloadURL = (tag, name) => `https://github.com/${repo}/releases/download/${tag}/${name}`;
+
+// A published release's static files carry everything a plan needs: the
+// SHA256SUMS manifest names the packages, and the package URL reports its
+// size. They are not subject to the GitHub REST API's per-IP limit.
+export function selectStaticAsset(tag, manifest, options) {
+  if (!/^v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(tag)) fail('invalid_release', 'Release tag does not match the requested published release.');
+  const version = tag.slice(1);
+  const names = new Set(manifest.split(/\r?\n/).map(line => line.match(/^[a-fA-F0-9]{64} [ *](\S+)\s*$/)?.[1]).filter(Boolean));
+  const listed = name => names.has(name);
+  let name = `Cage-${version}-${suffixes[options.platform]}`;
+  let unsigned = false;
+  if (!listed(name) && options.platform === 'win32-amd64' && listed(`Cage-${version}-windows-amd64-setup-unsigned.exe`)) {
+    if (!options.allowUnsigned) fail('unsigned_package_requires_consent', 'Only an unsigned Windows preview is available. Ask the user before selecting it with --allow-unsigned.', 'user_decision');
+    name = `Cage-${version}-windows-amd64-setup-unsigned.exe`;
+    unsigned = true;
+  }
+  if (!listed(name)) fail('asset_unavailable', 'This release has no matching package and checksum manifest. Choose a published release containing both.');
+  return { name, unsigned, sha256: checksumFor(manifest, name) };
+}
+
+async function publishedSize(url, fetchImpl) {
+  const response = await httpsResponse(url, fetchImpl, 'HEAD');
+  await response.body?.cancel();
+  const size = Number(response.headers.get('content-length'));
+  if (!Number.isSafeInteger(size) || size <= 0) fail('invalid_release', 'The package has no valid published size.');
+  return size;
+}
+
+async function staticSelection(tag, options, fetchImpl) {
+  const selected = selectStaticAsset(tag, await boundedText(downloadURL(tag, 'SHA256SUMS'), fetchImpl), options);
+  const url = downloadURL(tag, selected.name);
+  return { tag, asset: selected.name, url, size: await publishedSize(url, fetchImpl), sha256: selected.sha256, unsigned: selected.unsigned };
+}
+
+// github.com/<repo>/releases/latest redirects to the latest published
+// release's tag page without using the REST API.
+export async function latestTag(fetchImpl = fetch) {
+  let response;
+  try {
+    response = await fetchImpl(new URL(`https://github.com/${repo}/releases/latest`), { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(30000), headers: { 'User-Agent': 'Cage-Agent-Bootstrap/1' } });
+  } catch {
+    return '';
+  }
+  await response.body?.cancel();
+  const location = [301, 302, 303, 307, 308].includes(response.status) ? response.headers.get('location') : null;
+  const match = location && new URL(location, 'https://github.com/').href.match(new RegExp(`^https://github\\.com/${repo}/releases/tag/(v\\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?)$`));
+  return match ? match[1] : '';
+}
+
+async function apiSelection(fetchImpl, options) {
   let release;
-  try { release = JSON.parse(await boundedText(releaseURL, fetchImpl)); } catch (error) { if (error instanceof BootstrapError) throw error; fail('invalid_release', 'Could not read public release metadata.'); }
+  try { release = JSON.parse(await boundedText(`https://api.github.com/repos/${repo}/releases/latest`, fetchImpl)); } catch (error) { if (error instanceof BootstrapError) throw error; fail('invalid_release', 'Could not read public release metadata.'); }
   const selected = selectAsset(release, options);
   const sha256 = checksumFor(await boundedText(selected.sums.browser_download_url, fetchImpl), selected.asset.name);
-  const cli = { 'darwin-arm64': '/Applications/Cage.app/Contents/Resources/cage', 'linux-amd64': '/usr/bin/claude-cage', 'win32-amd64': '%LOCALAPPDATA%\\Programs\\Cage\\resources\\cage.exe' }[options.platform];
+  return { tag: selected.tag, asset: selected.asset.name, url: selected.asset.browser_download_url, size: selected.asset.size, sha256, unsigned: selected.unsigned };
+}
+
+export async function makePlan(options, fetchImpl = fetch) {
+  let selected;
+  if (options.version) {
+    selected = await staticSelection(options.version, options, fetchImpl);
+  } else {
+    try {
+      selected = await apiSelection(fetchImpl, options);
+    } catch (error) {
+      if (!(error instanceof BootstrapError) || error.code !== 'rate_limited') throw error;
+      const tag = await latestTag(fetchImpl);
+      if (!tag) fail('rate_limited', `The GitHub API limit for this network was reached and the latest release could not be resolved. Pick a tag from https://github.com/${repo}/releases and pass --version TAG, which uses only the release's static files.`, 'choose_version');
+      selected = await staticSelection(tag, options, fetchImpl);
+    }
+  }
+  const cli = { 'darwin-arm64': '/Applications/Cage.app/Contents/Resources/cage', 'linux-amd64': '/usr/bin/claude-cage', 'win32-amd64': '<install_directory>\\resources\\cage.exe' }[options.platform];
   const installation = {
     'darwin-arm64': { guide: 'https://claude-cage.com/docs/installation/', steps: ['Check codesign and spctl on the mounted Cage.app. Preserve macOS Gatekeeper checks.', 'For an update, save work and stop Cage through its existing UI before replacing app files.', 'Mount the verified DMG read-only with hdiutil attach -readonly -nobrowse. Copy Cage.app to /Applications using the existing installation guide; eject the mounted volume.', 'Run the installed CLI agent capabilities. If agent is unknown, this release predates Agent support; use its documented UI or an authorized newer build.'] },
     'linux-amd64': { guide: 'https://claude-cage.com/docs/installation/', argv: ['sudo', 'apt-get', 'install', '--', '<downloaded_absolute_path>'], steps: ['Save work and stop Cage before an update. Run the package manager in the user-approved privilege context.', 'Run /usr/bin/claude-cage agent capabilities. The name cage belongs to a different Linux program.'] },
-    'win32-amd64': { guide: 'https://claude-cage.com/docs/installation/', argv: ['<downloaded_absolute_path>', '/S'], steps: ['Save work and stop Cage before an update. Inspect Get-AuthenticodeSignature on signed packages.', 'Run the installer in the user-approved context; system security prompts require the user.', 'Default per-user CLI: $env:LOCALAPPDATA\\Programs\\Cage\\resources\\cage.exe. Honor any custom install directory; then run agent capabilities.'] },
+    'win32-amd64': { guide: 'https://claude-cage.com/docs/installation/', argv: ['<downloaded_absolute_path>', '/S'], steps: ['Save work and stop Cage before an update. Inspect Get-AuthenticodeSignature on signed packages.', 'Run the installer in the user-approved context; system security prompts require the user.', 'The CLI is resources\\cage.exe in the install directory: D:\\Cage when a local fixed D: drive exists, otherwise $env:LOCALAPPDATA\\Programs\\Cage. Read InstallLocation under HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ClaudeCage for the actual one; then run agent capabilities.'] },
   }[options.platform];
-  return { protocol, status: 'planned', release: selected.tag, release_url: `https://github.com/${repo}/releases/tag/${selected.tag}`, platform: options.platform, asset: selected.asset.name, url: selected.asset.browser_download_url, size: selected.asset.size, sha256, unsigned: selected.unsigned, cli, installation, data_policy: 'Preserve ~/.claude-cage, user projects and persistent VM disks. Downloads and application files are separate from profile data.' };
+  return { protocol, status: 'planned', release: selected.tag, release_url: `https://github.com/${repo}/releases/tag/${selected.tag}`, platform: options.platform, asset: selected.asset, url: selected.url, size: selected.size, sha256: selected.sha256, unsigned: selected.unsigned, cli, installation, data_policy: 'Preserve ~/.claude-cage, user projects and persistent VM disks. Downloads and application files are separate from profile data.' };
 }
 
 export async function downloadPlan(plan, destination, fetchImpl = fetch) {
