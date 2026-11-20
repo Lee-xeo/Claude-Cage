@@ -2417,5 +2417,8 @@
   "颜色须为六位十六进制值，例如 #fdf6e3": "Les couleurs doivent être des valeurs hexadécimales à six chiffres, par exemple #fdf6e3",
   "高对比": "Contraste élevé",
   "黄色": "Jaune",
-  "黑色": "Noir"
+  "黑色": "Noir",
+  "上游项目": "Projet d'origine",
+  "许可证": "Licence",
+  "复制项目地址": "Copier l'adresse du projet"
 }

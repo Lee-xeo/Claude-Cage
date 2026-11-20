@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -59,6 +60,39 @@ type MarketEntry struct {
 	Bytes   int64  `json:"bytes"`
 	// Icon is the address of the plugin's picture, if it has one.
 	Icon string `json:"icon,omitempty"`
+	// Source names the open-source project the plugin is built on, when it
+	// is. It is only shown, never acted on.
+	Source *Source `json:"source,omitempty"`
+}
+
+// Source is the project a plugin packages or builds on.
+type Source struct {
+	Project string `json:"project"`
+	Version string `json:"version,omitempty"`
+	// License is an SPDX expression, as MIT or Apache-2.0.
+	License string `json:"license,omitempty"`
+	// URL is the project's https home page.
+	URL string `json:"url,omitempty"`
+}
+
+var sourceLicense = regexp.MustCompile(`^[A-Za-z0-9.+-]+( (AND|OR|WITH) [A-Za-z0-9.+-]+)*$`)
+
+// valid reports whether every field is short plain text, and the address
+// https to a named host.
+func (s *Source) valid() bool {
+	plain := func(text string, limit int) bool {
+		return len(text) <= limit && !strings.ContainsFunc(text, func(r rune) bool { return r < 0x20 || r == 0x7f })
+	}
+	if strings.TrimSpace(s.Project) == "" || !plain(s.Project, 100) || !plain(s.Version, 40) || len(s.License) > 60 ||
+		s.License != "" && !sourceLicense.MatchString(s.License) {
+		return false
+	}
+	if s.URL == "" {
+		return true
+	}
+	address, err := url.Parse(s.URL)
+	return err == nil && len(s.URL) <= 300 && address.Scheme == "https" && hostName.MatchString(address.Hostname()) &&
+		address.User == nil && address.Port() == ""
 }
 
 // FetchIcon downloads the entry's picture and returns it with its media type.
@@ -133,6 +167,10 @@ func (m Market) Fetch(ctx context.Context, client *http.Client) ([]MarketEntry, 
 func (m Market) shown(entry MarketEntry) MarketEntry {
 	if entry.Permissions == nil {
 		entry.Permissions = []string{}
+	}
+	// A source that is not well formed is not shown; the plugin still is.
+	if entry.Source != nil && !entry.Source.valid() {
+		entry.Source = nil
 	}
 	// A picture from anywhere else is not shown; the plugin still is.
 	if rest := strings.TrimPrefix(entry.Icon, m.IconPrefix+entry.Name+"/"); m.IconPrefix == "" || rest == entry.Icon || !validIcon(rest) || strings.ContainsAny(rest, "?#%") {

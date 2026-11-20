@@ -185,10 +185,16 @@ func (e *External) startLocked(ctx context.Context) error {
 		if !filepath.IsAbs(program) && (filepath.Base(program) != program || fileExists(filepath.Join(e.Dir, program))) {
 			program = filepath.Join(e.Dir, program)
 		}
+		env := userEnv()
+		// A bare name is found on the PATH the program is given, which may
+		// be longer than this process's own.
+		if filepath.Base(program) == program {
+			program = lookProgram(program, env)
+		}
 		// The program outlives the call that starts it.
 		cmd = exec.Command(program, command[1:]...)
 		cmd.Dir = e.Dir
-		cmd.Env = userEnv()
+		cmd.Env = env
 		hideWindow(cmd)
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "computer", Version: "1"}, nil)
