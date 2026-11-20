@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { lstat, readdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { isMainModule } from "./is-main-module.mjs";
 
 const bundleID = "io.github.lee-xeo.claude-cage";
 function isCage(bundle) {
@@ -40,7 +40,7 @@ function intact(bundle) {
   } catch { return false; }
 }
 
-export async function cleanupApps({ keep, roots, onInUse = () => {}, onModified = () => {} }) {
+export async function cleanupApps({ keep, roots, onInUse = () => {}, onModified = () => {}, onUnreadable = () => {} }) {
   if (!keep.length)
     throw new Error("At least one verified Cage.app must be kept.");
   const retained = new Set();
@@ -75,17 +75,23 @@ export async function cleanupApps({ keep, roots, onInUse = () => {}, onModified 
       }
       return;
     }
-    for (const entry of await readdir(directory))
-      await visit(path.join(directory, entry));
+    let entries;
+    try {
+      entries = await readdir(directory);
+    } catch (error) {
+      // Cleanup is best effort: other software may leave private directories
+      // under shared roots such as /Applications.
+      if (!["EACCES", "EPERM", "ENOENT"].includes(error.code)) throw error;
+      onUnreadable(directory);
+      return;
+    }
+    for (const entry of entries) await visit(path.join(directory, entry));
   }
   for (const root of roots) await visit(path.resolve(root));
   return removed;
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
-) {
+if (isMainModule(import.meta.url)) {
   const keep = [],
     roots = [];
   for (let i = 2; i < process.argv.length; i += 2) {
@@ -102,6 +108,7 @@ if (
     keep, roots,
     onInUse: (bundle) => console.error(`Old Cage App is still running; quit it and rerun cleanup: ${bundle}`),
     onModified: (bundle) => console.error(`旧应用包含修改内容或无法验证完整性，文件已保留：${bundle}`),
+    onUnreadable: (directory) => console.error(`Skipped unreadable directory: ${directory}`),
   }))
     console.log(`Removed old App: ${bundle}`);
 }

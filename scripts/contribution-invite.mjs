@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
+import { isMainModule } from './is-main-module.mjs';
 
 const marker = '<!-- contribution-invite -->';
 
@@ -81,7 +81,7 @@ export async function runContributionInvite({ repository, actor, eventName, even
   return { status, issue: Number(number), author };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   try {
     const event = JSON.parse(await fs.readFile(process.env.GITHUB_EVENT_PATH, 'utf8'));
     const result = await runContributionInvite({

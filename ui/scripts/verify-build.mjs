@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,7 +42,8 @@ export async function verifyBuild(directory = defaultDirectory) {
   return Object.keys(files).length;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Node reports the entry module by its real path; compare real paths so symlinked checkouts still run.
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   const count = await verifyBuild(process.argv[2] ? resolve(process.argv[2]) : defaultDirectory);
   console.log(`Verified ${count} frontend build resources.`);
 }

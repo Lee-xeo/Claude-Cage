@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
+import { isMainModule } from './is-main-module.mjs';
 
 const maxChecksums = 64 * 1024;
 // The in-place updater of every published App rejects a larger installer.
@@ -183,6 +183,6 @@ async function main() {
   console.log(`Prepared Cage ${result.version}: ${result.assets.length} verified assets and one SHA256SUMS in ${result.directory}`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMainModule(import.meta.url)) {
   main().catch(error => { console.error(error.message); process.exitCode = 1; });
 }

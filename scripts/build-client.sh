@@ -39,14 +39,14 @@ mkdir -p "$stage/result"
 if [[ "$platform" == macos ]]; then
   bundle="$stage/result/Cage Client.app"
   mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-  swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library \
+  xcrun swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library \
     -framework Cocoa -framework WebKit -framework Security -framework LocalAuthentication \
     desktop/Cage.swift desktop/InterfaceLanguage.swift desktop/MacKeyboard.swift desktop/NativeInput.swift desktop/Updates.swift desktop/AccountDevice.swift \
     -o "$bundle/Contents/MacOS/Cage"
   node scripts/bundle-cloud-kit.mjs "$bundle/Contents/Resources"
   cp "$stage/cage" "$bundle/Contents/Resources/cage"
   node scripts/collect-app-licenses.mjs "$bundle/Contents/Resources/licenses"
-  swift desktop/Icon.swift logo.png "$stage/Cage.iconset"
+  xcrun swift desktop/Icon.swift logo.png "$stage/Cage.iconset"
   iconutil -c icns "$stage/Cage.iconset" -o "$bundle/Contents/Resources/Cage.icns"
   cat > "$bundle/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

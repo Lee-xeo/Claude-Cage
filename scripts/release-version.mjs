@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import { isMainModule } from './is-main-module.mjs';
 
 const numeric = /^(?:0|[1-9][0-9]*)$/;
 const syntax = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
@@ -151,6 +152,6 @@ function main(args) {
   writeFileSync(destination, `${JSON.stringify({ schema: 1, platform, version, commitSha }, null, 2)}\n`);
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   try { main(process.argv.slice(2)); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

@@ -63,6 +63,18 @@ sudo apt remove claude-cage
 ## 常见问题
 
 - 工作台无法显示：确认在普通用户的图形桌面会话中启动，且系统 WebKitGTK 安装完整。不要关闭 WebKit 沙箱来绕过桌面配置问题。
+- Ubuntu 24.04 上窗口出现前报 `bwrap: setting up uid map: Permission denied` 或 `Failed to fully launch dbus-proxy`：系统默认限制非特权用户命名空间，WebKitGTK 的 bubblewrap 沙箱因此无法启动。保留沙箱，为 Cage 桌面程序添加应用专属的 AppArmor 配置，例如以管理员身份创建 `/etc/apparmor.d/claude-cage`：
+
+  ```text
+  abi <abi/4.0>,
+  include <tunables/global>
+  profile claude-cage /usr/lib/claude-cage/cage-desktop flags=(unconfined) {
+    userns,
+    include if exists <local/claude-cage>
+  }
+  ```
+
+  然后运行 `sudo apparmor_parser -r /etc/apparmor.d/claude-cage` 并重新打开 Cage。不建议用 `kernel.apparmor_restrict_unprivileged_userns=0` 放开整台机器的限制。背景见 [Ubuntu 24.04 发行说明](https://documentation.ubuntu.com/release-notes/24.04/)。
 - 提示 KVM 不可用：按安装前准备检查设备和权限。普通阿里云实例未必提供嵌套虚拟化。
 - 提示找不到物理网卡：内置代理需要可识别的主机网络接口。Docker 容器的 veth、VPN 隧道和桥接接口不作为物理出口；桌面主机与容器测试的网络条件不同。
 - 能打开工作台但无法联网：在 Cage 内确认已选择代理节点并查看网络检查。主机浏览器能联网不能证明 Cage 代理已可用。

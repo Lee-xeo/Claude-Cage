@@ -35,17 +35,23 @@ for (const file of ["LICENSE.txt", "AUTHORS", "NOTICE.cage", "docs", "vendor/pak
 cpSync(join(root, "ui/.generated/novnc"), join(target, "novnc-source"), { recursive: true });
 
 // The embedded Tailscale node is a separate guest executable and module.
-const tailnetModules = new Set();
+// Name each module from Go's metadata rather than its cache path, which
+// differs with a custom GOMODCACHE. -buildvcs=false keeps source archives
+// without .git working while GOFLAGS stays cleared.
+const tailnetModules = new Map();
+const moduleFormat = '{{with .Module}}{{with .Replace}}{{.Dir}}{{else}}{{.Dir}}{{end}}{{"\\t"}}{{.Path}}{{"\\t"}}{{.Version}}{{end}}';
 for (const [os, arch] of [["linux", "amd64"], ["darwin", "arm64"], ["windows", "amd64"]]) {
-  const dirs = execFileSync("go", ["list", "-deps", "-f", "{{if .Module}}{{.Module.Dir}}{{end}}", "."], {
+  const lines = execFileSync("go", ["list", "-buildvcs=false", "-deps", "-f", moduleFormat, "."], {
     cwd: join(root, "tools/tailnet"), env: { ...process.env, GOOS: os, GOARCH: arch, CGO_ENABLED: "0", GOFLAGS: "" }, encoding: "utf8",
   });
-  for (const dir of dirs.split("\n").filter(Boolean)) if (resolve(dir) !== join(root, "tools/tailnet")) tailnetModules.add(dir);
+  for (const line of lines.split(/\r?\n/).filter(Boolean)) {
+    const [dir, path, version] = line.split("\t");
+    if (!dir || !path) throw Error(`Missing guest dependency module metadata: ${line}`);
+    if (resolve(dir) !== join(root, "tools/tailnet")) tailnetModules.set(dir, version ? `${path}@${version}` : path);
+  }
 }
 const tailnetNotices = [];
-for (const dir of tailnetModules) {
-  const normalized = dir.replaceAll("\\", "/");
-  const name = normalized.slice(normalized.lastIndexOf("/pkg/mod/") + 9);
+for (const [dir, name] of tailnetModules) {
   const dest = join(target, "tailnet-go", name);
   const licenses = readdirSync(dir).filter(file => /^(licen[sc]e|copying|notice|patents|authors)(\.|$)/i.test(file) && statSync(join(dir, file)).isFile());
   if (!licenses.length) throw Error(`Missing guest dependency license: ${name}`);

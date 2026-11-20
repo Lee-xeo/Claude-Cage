@@ -4,10 +4,11 @@ import { createReadStream } from 'node:fs';
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
 import { compareVersions, nextVersion, parseVersion, versionFiles } from './release-version.mjs';
 import { prepareReleaseAssets } from './prepare-release-assets.mjs';
+import { isMainModule } from './is-main-module.mjs';
 
 export const versionPaths = ['VERSION', 'ui/package.json', 'ui/package-lock.json', 'www/package.json', 'www/package-lock.json'];
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -302,6 +303,6 @@ async function main() {
   } else throw new Error('Usage: release-control.mjs prepare|publish (explicit release workflow only).');
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMainModule(import.meta.url)) {
   main().catch(error => { console.error(error.message); process.exitCode = 1; });
 }

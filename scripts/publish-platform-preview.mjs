@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, copyFileSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { isMainModule } from './is-main-module.mjs';
 
 const repo = 'Lee-xeo/Claude-Cage';
 const gh = args => execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
@@ -136,4 +136,4 @@ async function main() {
   appendFileSync(process.env.GITHUB_OUTPUT, `tag=${tag}\nurl=${release.html_url}\n`);
   console.log(`Verified platform packages in version release: ${release.html_url}`);
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+if (isMainModule(import.meta.url)) main().catch(error => { console.error(error.message); process.exitCode = 1; });

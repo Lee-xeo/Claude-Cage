@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Packaged files must stay readable by every user, whatever the caller's umask.
+umask 022
 cd "$(dirname "$0")/.."
 [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] || { echo 'Package on x86_64 Linux.' >&2; exit 1; }
 case "${1:-}" in '') bash scripts/build-linux.sh ;; --skip-build) ;; *) echo 'Usage: scripts/package-linux.sh [--skip-build]' >&2; exit 2 ;; esac
@@ -44,6 +46,8 @@ Description: Isolated coding workspace with a persistent Linux VM
  Cage combines projects, terminals, a browser and an editor in a native
  desktop window. Select a local virtual machine or connect to a Cage server over SSH.
 EOF
+# Files copied from the Go module cache can be read-only or owner-only.
+chmod -R u+rwX,go+rX,go-w "$stage"
 deb="$output/Cage-$version-linux-amd64.deb"
 dpkg-deb --root-owner-group --build "$stage" "$deb"
 cp _output/linux-deps/mihomo-v1.19.33-source.tar.gz "$output/"
