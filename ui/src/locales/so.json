@@ -2417,5 +2417,8 @@
   "颜色须为六位十六进制值，例如 #fdf6e3": "Midabku waa inuu noqdaa qiime hexadecimal ah oo lix xaraf ah, tusaale #fdf6e3",
   "高对比": "Kala-soocid sare",
   "黄色": "Jaalle",
-  "黑色": "Madow"
+  "黑色": "Madow",
+  "停止任务已结束，但环境仍显示在运行，无法确认已安全停止。可以重试停止，或仅退出桌面应用。": "Hawshii joojinta way dhammaatay, laakiin deegaanku wali wuxuu u muuqdaa mid shaqaynaya, lamana xaqiijin karo in si ammaan ah loo joojiyay. Isku day joojinta mar kale ama xir barnaamijka desktop-ka oo keliya.",
+  "后台未报告本次停止任务的结果，无法确认环境已停止。可以重试停止，或仅退出桌面应用。": "Adeegga gadaashu ma soo sheegin natiijada joojintan, lamana xaqiijin karo in deegaanku joogsaday. Isku day joojinta mar kale ama xir barnaamijka desktop-ka oo keliya.",
+  "停止请求未返回任务编号，请重试。": "Codsiga joojintu ma soo celin lambar hawleed. Mar kale isku day."
 }

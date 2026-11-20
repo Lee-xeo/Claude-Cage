@@ -131,6 +131,7 @@ export function AppUpdateDialog({ updates, onStatus }) {
         },
         isCancelled: () => attempt.current !== request || getClientContext().connection_id !== request.connection,
         onStatus,
+        tr,
       });
       if (attempt.current === request) close();
     } catch (failure) {

@@ -2417,5 +2417,8 @@
   "颜色须为六位十六进制值，例如 #fdf6e3": "Les couleurs doivent être des valeurs hexadécimales à six chiffres, par exemple #fdf6e3",
   "高对比": "Contraste élevé",
   "黄色": "Jaune",
-  "黑色": "Noir"
+  "黑色": "Noir",
+  "停止任务已结束，但环境仍显示在运行，无法确认已安全停止。可以重试停止，或仅退出桌面应用。": "La tâche d’arrêt est terminée, mais l’environnement apparaît toujours en cours d’exécution ; impossible de confirmer un arrêt sûr. Vous pouvez relancer l’arrêt ou quitter uniquement l’application de bureau.",
+  "后台未报告本次停止任务的结果，无法确认环境已停止。可以重试停止，或仅退出桌面应用。": "Le service d’arrière-plan n’a pas signalé le résultat de cet arrêt ; impossible de confirmer que l’environnement est arrêté. Vous pouvez relancer l’arrêt ou quitter uniquement l’application de bureau.",
+  "停止请求未返回任务编号，请重试。": "La demande d’arrêt n’a renvoyé aucun numéro de tâche. Veuillez réessayer."
 }

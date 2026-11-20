@@ -22,6 +22,7 @@ func executionFailure(action string, err error, output string) error {
 		reason, next string
 	}{
 		{[]string{strings.ToLower(host.HypervisorPlatformMissing), strings.ToLower(host.HypervisorNotReady)}, "Windows 虚拟化尚未就绪", "请在“启用或关闭 Windows 功能”中启用 Windows Hypervisor Platform（Windows 虚拟机监控程序平台），确认固件已开启 CPU 虚拟化，重启电脑后再继续。"},
+		{[]string{"is still running, or lima cannot say"}, "无法确认环境已停止：环境进程状态异常（例如虚拟机管理进程已退出而虚拟机仍在运行）", "Cage 已保留环境。请重试停止；仍失败时在设置中导出诊断包，不要删除环境目录。"},
 		{[]string{"base vm not found"}, "基础模板缺失，无法创建或重置环境", "请先完成环境安装；已有环境的磁盘应保留，不要删除或重置个人数据。"},
 		{[]string{"base vm setup did not complete"}, "基础模板尚未安装完成", "请继续环境安装后重试；已有环境的磁盘应保留，不要删除或重置个人数据。"},
 		{[]string{"desktop file service state=failed"}, "Claude Desktop 的文件服务已经退出", "请从 Cage 重新打开 Claude Desktop；若应用反复退出，请在设置中查看资源用量并导出诊断包。"},
