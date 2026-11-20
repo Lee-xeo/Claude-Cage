@@ -112,6 +112,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      # Same checksum-pinned ZIP cache as the windows-toolchain action, so this
+      # job does not depend on a fresh SourceForge download each run.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nsis-*.zip
+          key: windows-nsis-${{ hashFiles('scripts/install-nsis.ps1') }}
       - name: Install the verified NSIS compiler
         run: ./scripts/install-nsis.ps1
       - name: Install the verified WebView2 prerequisite
