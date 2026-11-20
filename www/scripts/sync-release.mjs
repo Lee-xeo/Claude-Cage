@@ -1,9 +1,9 @@
 // Public downloads and metadata stay anonymous, including the manifest fallback.
 import { createHash } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, realpathSync } from 'node:fs';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { parseArgs } from 'node:util';
@@ -292,6 +292,7 @@ async function main() {
   console.log(`Website download: Cage ${version}`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+// Node reports the entry module by its real path; compare real paths so symlinked checkouts still run.
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))) {
   main().catch(error => { console.error(error.message); process.exitCode = 1; });
 }

@@ -4,9 +4,10 @@ import { execFileSync, spawn } from 'node:child_process';
 import { copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile, access, open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { Writable } from 'node:stream';
+import { isMainModule } from './is-main-module.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const pin = JSON.parse(await readFile(new URL('../packaging/windows/signing.json', import.meta.url), 'utf8'));
@@ -249,7 +250,7 @@ async function main(argv) {
   } finally { if (staged) await rm(staged, { recursive: true, force: true }); }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMainModule(import.meta.url)) {
   main(process.argv.slice(2)).catch(error => {
     if (process.argv[2] === 'diagnose') console.error(JSON.stringify(credentialDiagnostic(error)));
     else console.error(redact(error.message, secretNames.map(name => process.env[name])));

@@ -4,7 +4,7 @@ import { createReadStream } from "node:fs";
 import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { pathToFileURL } from "node:url";
+import { isMainModule } from "./is-main-module.mjs";
 
 export async function sha256(file) {
   const hash = createHash("sha256");
@@ -75,7 +75,7 @@ export async function fetchBuildArtifact(url, expected, destination, transfer = 
   } finally { await rm(stage, { recursive: true, force: true }); }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMainModule(import.meta.url)) {
   if (process.argv.length !== 5) throw new Error("Usage: fetch-build-artifact.mjs URL SHA256 FILE");
   await fetchBuildArtifact(...process.argv.slice(2));
 }

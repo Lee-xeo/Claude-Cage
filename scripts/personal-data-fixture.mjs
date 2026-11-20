@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { isMainModule } from './is-main-module.mjs';
 
 const entries = [
   '.claude-cage/config.json',
@@ -43,7 +43,7 @@ export async function verify(home, manifest) {
   return Object.keys(records).length;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMainModule(import.meta.url)) {
   const [operation, home, manifest] = process.argv.slice(2);
   if (!home || !manifest || !['seed', 'verify'].includes(operation)) {
     throw new Error('Usage: personal-data-fixture.mjs seed|verify TEST_HOME MANIFEST');

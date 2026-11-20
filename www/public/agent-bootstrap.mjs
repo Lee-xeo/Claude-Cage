@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Node >=20, standard library only. No installation or user data mutation.
 import { createHash } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, realpathSync } from 'node:fs';
 import { chmod, link, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const repo = 'Lee-xeo/Claude-Cage';
 const protocol = 1;
@@ -144,4 +144,6 @@ export async function main(args = process.argv.slice(2)) {
   }
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) await main();
+// Node reports the entry module by its real path. macOS temporary directories sit
+// behind /var -> /private/var, so compare real paths instead of the typed path.
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))) await main();

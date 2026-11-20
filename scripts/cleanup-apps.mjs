@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { lstat, readdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { isMainModule } from "./is-main-module.mjs";
 
 const bundleID = "io.github.lee-xeo.claude-cage";
 function isCage(bundle) {
@@ -82,10 +82,7 @@ export async function cleanupApps({ keep, roots, onInUse = () => {}, onModified 
   return removed;
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
-) {
+if (isMainModule(import.meta.url)) {
   const keep = [],
     roots = [];
   for (let i = 2; i < process.argv.length; i += 2) {
