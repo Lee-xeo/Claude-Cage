@@ -605,9 +605,11 @@ def sync_profile_settings(base, lock_dir):
             stream.write("\n")
             temporary = stream.name
         try:
-            # The CLI may save its own change meanwhile; keep that one.
+            # The CLI may save its own change meanwhile; keep that one and let
+            # the next start sync again rather than failing this launch.
             if (path.read_bytes() if path.exists() else None) != original:
-                raise SharedResourceConflict("账号设置在同步期间被修改，已保留原设置，请稍后重试")
+                Path(temporary).unlink(missing_ok=True)
+                return
             os.replace(temporary, path)
         except BaseException:
             Path(temporary).unlink(missing_ok=True)

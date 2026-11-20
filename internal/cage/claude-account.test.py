@@ -532,15 +532,14 @@ printf '%s\\n' "$@"
         (common/"settings.json").write_text("{}")
         self.run_helper("share",FIRST)
         self.assertEqual(json.loads((config/"settings.json").read_text()),{})
-        # A CLI save during the sync wins; the helper reports and leaves no temporary file.
+        # A CLI save during the sync wins; the helper skips this run and leaves no temporary file.
         (common/"settings.json").write_text(json.dumps({"theme":"dark"}))
         real=helper.json.dump
         def racing(data,stream,**options):
             (config/"settings.json").write_text('{"model":"cli"}')
             return real(data,stream,**options)
         with patch.object(helper.json,"dump",side_effect=racing):
-            with self.assertRaises(helper.SharedResourceConflict):
-                helper.sync_profile_settings(base,helper.shared_root())
+            helper.sync_profile_settings(base,helper.shared_root())
         self.assertEqual((config/"settings.json").read_text(),'{"model":"cli"}')
         self.assertEqual(sorted(p.name for p in config.iterdir() if p.is_file() and not p.is_symlink()),["settings.json"])
         # An unreadable file is left for the official CLI to report.
