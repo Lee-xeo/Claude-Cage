@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -97,6 +98,10 @@ func run() int {
 	args := os.Args[1:]
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		fmt.Print(help)
+		return 0
+	}
+	if text, ok := subcommandHelp(args); ok {
+		fmt.Print(text)
 		return 0
 	}
 	// These read only this build's own metadata. Answering them before the
@@ -612,7 +617,7 @@ func run() int {
 		if resourceErr != nil {
 			return fail(resourceErr)
 		}
-		args = append([]string{"setup", "--memory", fmt.Sprint(memory), "--cpus", fmt.Sprint(cpus), "--disk", "24", "--preinstall=node,python,chromium,gh,claude,code-server"}, args[1:]...)
+		args = append([]string{"setup", "--memory", fmt.Sprint(memory), "--cpus", fmt.Sprint(cpus), "--disk", "24", "--preinstall=node,python,chromium,gh,claude,code-server"}, requireWorkbenchTools(args[1:])...)
 	}
 	if args[0] == "up" || args[0] == "login" {
 		result := cli.Main([]string{"run", "true"}, cli.Stdio())
@@ -672,6 +677,78 @@ func containerInstallScript(kind string) (string, error) {
 func runGuestServiceStart(script string, stdio cli.IO, invoke func([]string, cli.IO) int) int {
 	stdio.Stdin = strings.NewReader(script)
 	return invoke([]string{"run", "bash", "-s"}, stdio)
+}
+
+// The shared environment's start script needs these tools. A --preinstall
+// list given to `cage setup`, such as "default", keeps its choices and gains
+// any of them it lacks, so the base it builds can always start.
+var workbenchTools = []string{"chromium", "code-server"}
+
+func requireWorkbenchTools(args []string) []string {
+	complete := func(list string) string {
+		if list == "" {
+			list = "default"
+		}
+		names := strings.Split(list, ",")
+		for _, tool := range workbenchTools {
+			if !slices.Contains(names, tool) {
+				names = append(names, tool)
+			}
+		}
+		return strings.Join(names, ",")
+	}
+	result := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case strings.HasPrefix(a, "--preinstall="):
+			result = append(result, "--preinstall="+complete(strings.TrimPrefix(a, "--preinstall=")))
+		case a == "--preinstall":
+			// As in setup, only a following non-option is its value.
+			value := ""
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+				value = args[i]
+			}
+			result = append(result, "--preinstall="+complete(value))
+		default:
+			result = append(result, a)
+		}
+	}
+	return result
+}
+
+// Commands whose remaining arguments belong to a program in the environment,
+// such as `cage run ls -h`, or that answer --help themselves.
+var helpPassthrough = map[string]bool{
+	"agent": true, "run": true, "shell": true, "sh": true, "claude": true, "code": true,
+	"opencode": true, "codex": true, "vibe": true, "pi": true,
+}
+
+// subcommandHelp answers `cage COMMAND --help` before the command opens or
+// creates a profile, so asking for help never runs it. It prints the
+// command's lines from the overview, or the overview when it has none.
+func subcommandHelp(args []string) (string, bool) {
+	if len(args) < 2 || args[1] != "--help" && args[1] != "-h" || helpPassthrough[args[0]] {
+		return "", false
+	}
+	var lines []string
+	matched := false
+	for _, line := range strings.Split(help, "\n") {
+		switch {
+		case strings.HasPrefix(line, "cage "):
+			fields := strings.Fields(line)
+			matched = len(fields) > 1 && fields[1] == args[0]
+		case !strings.HasPrefix(line, " "):
+			matched = false
+		}
+		if matched {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return help, true
+	}
+	return strings.Join(lines, "\n") + "\n\nRun 'cage --help' for all commands.\n", true
 }
 
 func fail(err error) int {

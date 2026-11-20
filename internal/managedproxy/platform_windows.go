@@ -89,6 +89,12 @@ func stopWindowsCore(profile string) error {
 		return err
 	}
 	defer windows.CloseHandle(handle)
+	// An exited process stays openable while another handle keeps it, and its
+	// image name can no longer be queried (ERROR_GEN_FAILURE). Its PID cannot be
+	// reused meanwhile, so an exited object here never names a running process.
+	if exited, err := windows.WaitForSingleObject(handle, 0); err == nil && exited == windows.WAIT_OBJECT_0 {
+		return removeStaleCore(profile, path)
+	}
 	image, created, err := identifyCore(handle)
 	if err != nil {
 		return err

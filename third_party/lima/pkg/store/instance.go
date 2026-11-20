@@ -227,7 +227,12 @@ func ReadPIDFile(path string) (int, error) {
 	proc, err := os.FindProcess(pid)
 	if runtime.GOOS == "windows" {
 		// On Windows, os.FindProcess will fail if the process does not exist.
+		// It succeeds for an exited process that another handle keeps open.
 		if err == nil {
+			if processExited(pid) {
+				_ = os.Remove(path)
+				return 0, nil
+			}
 			return pid, nil
 		}
 		var errno syscall.Errno

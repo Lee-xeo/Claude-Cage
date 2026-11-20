@@ -7,6 +7,17 @@ export function stopExitState(status, jobId) {
   return status.vm_running ? "waiting" : "exit";
 }
 
+// Once no job is running, vm_running may lag only briefly. A VM that keeps
+// reporting running after its stop finished, or a status that no longer names
+// this stop, cannot be confirmed; report it instead of waiting forever.
+export const stopConfirmationGraceMs = 20000;
+
+export function stopUnconfirmedMessage(status, jobId) {
+  if (status.job?.id === jobId)
+    return "停止任务已结束，但环境仍显示在运行，无法确认已安全停止。可以重试停止，或仅退出桌面应用。";
+  return "后台未报告本次停止任务的结果，无法确认环境已停止。可以重试停止，或仅退出桌面应用。";
+}
+
 // Exit owns its wait loop: boot failures and a stopped UI poll must not strand it.
 export async function stopAndExit({
   stop,
@@ -15,9 +26,12 @@ export async function stopAndExit({
   isCancelled,
   onStatus,
   delay = () => new Promise((resolve) => setTimeout(resolve, 350)),
+  now = () => Date.now(),
+  confirmationGraceMs = stopConfirmationGraceMs,
 }) {
   const job = await stop();
   if (!job.id) throw new Error("停止请求未返回任务编号，请重试。");
+  let idleSince = null;
   while (!isCancelled()) {
     const status = await readStatus();
     if (isCancelled()) return false;
@@ -28,6 +42,10 @@ export async function stopAndExit({
       await exit();
       return true;
     }
+    if (status.job?.running) idleSince = null;
+    else if (idleSince === null) idleSince = now();
+    else if (now() - idleSince >= confirmationGraceMs)
+      throw new Error(stopUnconfirmedMessage(status, job.id));
     await delay();
   }
   return false;

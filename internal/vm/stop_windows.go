@@ -50,6 +50,11 @@ func stopOrphanedInstance(_ context.Context, inst *limatype.Instance) error {
 		return err
 	}
 	defer windows.CloseHandle(handle)
+	// An exited QEMU kept open by another handle no longer reports its image
+	// name; it has already stopped.
+	if state, err := windows.WaitForSingleObject(handle, 0); err == nil && state == windows.WAIT_OBJECT_0 {
+		return nil
+	}
 	image := make([]uint16, 32768)
 	size := uint32(len(image))
 	if err := windows.QueryFullProcessImageName(handle, 0, &image[0], &size); err != nil {
