@@ -400,6 +400,31 @@ function App() {
       }
     }
   };
+  const completionNotifications = window.cageClaudeCompletionAvailable && getClientContext().mode === "local" && status?.ready;
+  const terminalVisible = !showHome && !desktopOpen && !managementPage && !settingsOpen;
+  const visibleCompletionTerminals = terminalVisible
+    ? panes.filter(tab => tab.kind === "terminal").map(tab => tab.sessionId).join(",")
+    : "";
+  const canOpenCompletion = !settingsOpen && !dialog && !projectDialog && !rename && !startRequest;
+  useEffect(() => {
+    if (!completionNotifications) return;
+    const terminals = tabs.filter(tab => tab.kind === "terminal" && !tab.closed);
+    const events = terminals.flatMap(tab => (tab.claude_completions || []).map(event => ({ ...event, terminal: tab.sessionId })));
+    const synchronize = () => {
+      const canNavigate = canOpenCompletion && !document.querySelector("[data-environment-dialog]");
+      void native("claudeCompletions", {
+        events,
+        visible: visibleCompletionTerminals ? visibleCompletionTerminals.split(",") : [],
+        terminals: canNavigate ? terminals.map(tab => tab.sessionId) : [],
+      }).then(target => {
+        if (target?.terminal) void select("terminal:" + target.terminal);
+      }).catch(() => {});
+    };
+    synchronize();
+    window.addEventListener("cage-claude-completion-open", synchronize);
+    return () => window.removeEventListener("cage-claude-completion-open", synchronize);
+  }, [completionNotifications, tabs, visibleCompletionTerminals, canOpenCompletion]);
+
   const destination = (id, x, y) => {
     const box = workspaceBox.current?.getBoundingClientRect();
     if (!box || busy || !running || desktopOpen || tabs.length < 2 ||

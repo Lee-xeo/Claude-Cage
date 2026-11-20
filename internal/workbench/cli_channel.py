@@ -285,7 +285,8 @@ def view(config, session_id, path=None):
             "workspace": workspace or state.get("workspace", ""), "title": title or (turns[0]["prompt"][:40] if turns else "Claude Code"),
             "updated_at": modified, "turns": turns, "running": bool(running), "active": bool(running and (state.get("busy") or state.get("approvals"))), "channel_ready": bool(channel), "can_send": bool(channel and not state.get("resume_task")), "has_history": has_history, "history_truncated": shortened,
             "connection_notice": "" if channel else notice, "account_failure": state.get("account_failure", ""),
-            "resume_pending": bool(state.get("resume_task")), "native_history": native_history}
+            "resume_pending": bool(state.get("resume_task")), "native_history": native_history,
+            "completions": state.get("completions", [])}
 
 
 def history_summary(path):
@@ -378,6 +379,7 @@ def discover(request):
             item["running"] = item["running"] or process["running"]
             item["claude_desktop"] = process["claude_desktop"]
             item.pop("turns")
+            item.pop("completions")
             sessions.append(item)
     return sessions
 
@@ -407,6 +409,13 @@ def hook(connection):
             state.pop("pending_send", None)
         if event in ("UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "SessionEnd"):
             state["approvals"] = []
+        if not payload.get("agent_id"):
+            if event == "UserPromptSubmit" and not state.get("account_switch"):
+                state["completion_turn"] = str(uuid.uuid4())
+            if event in ("Stop", "StopFailure", "SessionEnd"):
+                turn = state.pop("completion_turn", None)
+                if event == "Stop" and turn and not state.get("stopped") and not state.get("account_switch"):
+                    state["completions"] = state.get("completions", [])[-7:] + [{"id": turn, "at": state["updated_at"]}]
         if event in ("Stop", "StopFailure", "SessionEnd"):
             state["busy"] = False
             state.pop("display", None)
@@ -766,6 +775,7 @@ def launch(request):
         state.update(codex_enabled=request.get("codex_enabled") is True, cli_id=session_id, config=str(config_directory("default")), login_subject=_controller_context.get("CAGE_CLAUDE_SUBJECT"),
                      workspace=str(Path.cwd()), pid=os.getpid(), closed=False, updated_at=time.time(), approvals=[], busy=False,
                      channel_pid=None, pending_send=None, display=None, stopped=False,
+                     completion_turn=None, completions=[],
                      requests=previous.get("requests", {}), sent=previous.get("sent", []))
         receipt = handoff_receipt(config_directory("default"), session_id)
         transfer = read_json(receipt, {})
@@ -870,6 +880,7 @@ def serve(connection):
                                 raise ValueError("这段会话已有消息正在处理，请等待后重试")
                             state.pop("stopped", None)
                             state["pending_send"] = request_id
+                            state["completion_turn"] = request_id
                             requests[request_id] = digest
                             state.setdefault("sent", []).append({"id": request_id, "text": text})
                             # Persist admission before writing to the CLI. A lost
@@ -884,6 +895,7 @@ def serve(connection):
                         emit({"method": "notifications/claude/channel/permission", "params": {
                             "request_id": approval["relay_id"], "behavior": "allow" if request["allow"] else "deny"}})
                     elif action == "stop":
+                        state.pop("completion_turn", None)
                         state["stopped"] = True
                         state["busy"] = False
                         state["approvals"] = []

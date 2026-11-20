@@ -65,7 +65,10 @@
     "无法初始化工作台：{0}": "無法初始化工作台：{0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "基於 agent-vm、Lima、Chromium、noVNC 與 xterm.js",
     "当前连接旧后台；更新尚未完成。": "目前連線的是舊版後端服務；更新尚未完成。",
-    "开发版本": "開發版本"
+    "开发版本": "開發版本",
+    "Claude Code 完成通知": "Claude Code 完成通知",
+    "本轮回复已结束": "本輪回覆已結束",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "請在系統設定的「通知」中允許 Cage 傳送通知，再開啟此選項。"
   },
   "ru": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage уже запущен, но его окно сейчас не удаётся открыть. Откройте Cage через панель задач.",
@@ -133,7 +136,10 @@
     "无法初始化工作台：{0}": "Не удалось инициализировать рабочую область: {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "На основе agent-vm, Lima, Chromium, noVNC и xterm.js",
     "当前连接旧后台；更新尚未完成。": "Подключено к старой фоновой службе; обновление ещё не завершено.",
-    "开发版本": "Версия для разработки"
+    "开发版本": "Версия для разработки",
+    "Claude Code 完成通知": "Уведомления о завершении ответа Claude Code",
+    "本轮回复已结束": "Claude Code закончил ответ",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "Разрешите уведомления Cage в разделе «Уведомления» системных настроек и включите этот параметр."
   },
   "ar": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage قيد التشغيل بالفعل، لكن تعذّر إظهار نافذته حاليًا. يرجى فتح Cage من شريط المهام.",
@@ -201,7 +207,10 @@
     "无法初始化工作台：{0}": "تعذّرت تهيئة مساحة العمل: {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "يستند إلى agent-vm، Lima، Chromium، noVNC و xterm.js",
     "当前连接旧后台；更新尚未完成。": "متصل حاليًا بالخدمة الخلفية القديمة؛ لم يكتمل التحديث بعد.",
-    "开发版本": "إصدار تطويري"
+    "开发版本": "إصدار تطويري",
+    "Claude Code 完成通知": "إشعارات اكتمال رد Claude Code",
+    "本轮回复已结束": "اكتمل الرد",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "اسمح لـ Cage بإرسال الإشعارات في قسم الإشعارات ضمن إعدادات النظام، ثم فعّل هذا الخيار."
   },
   "fa": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage در حال اجراست، اما فعلاً نمی‌توان پنجره آن را نمایش داد. لطفاً Cage را از نوار وظیفه باز کنید.",
@@ -269,7 +278,10 @@
     "无法初始化工作台：{0}": "مقداردهی اولیه فضای کار ممکن نشد: {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "بر پایه agent-vm، Lima، Chromium، noVNC و xterm.js",
     "当前连接旧后台；更新尚未完成。": "اکنون به سرویس پس‌زمینه قدیمی متصل است؛ به‌روزرسانی هنوز تکمیل نشده است.",
-    "开发版本": "نسخه توسعه"
+    "开发版本": "نسخه توسعه",
+    "Claude Code 完成通知": "اعلان پایان پاسخ Claude Code",
+    "本轮回复已结束": "پاسخ این نوبت کامل شد",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "در بخش «اعلان‌ها» در تنظیمات سیستم به Cage اجازهٔ ارسال اعلان بدهید، سپس این گزینه را فعال کنید."
   },
   "ko": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage가 이미 실행 중이지만 지금은 창을 표시할 수 없습니다. 작업 표시줄에서 Cage를 여세요.",
@@ -337,7 +349,10 @@
     "无法初始化工作台：{0}": "작업 공간을 초기화할 수 없습니다: {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "agent-vm, Lima, Chromium, noVNC, xterm.js 기반",
     "当前连接旧后台；更新尚未完成。": "이전 백그라운드 서비스에 연결되어 있습니다. 업데이트가 아직 완료되지 않았습니다.",
-    "开发版本": "개발 버전"
+    "开发版本": "개발 버전",
+    "Claude Code 完成通知": "Claude Code 응답 완료 알림",
+    "本轮回复已结束": "이번 응답이 완료되었습니다",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "시스템 설정의 ‘알림’에서 Cage의 알림을 허용한 다음 이 옵션을 켜세요."
   },
   "es": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage ya se está ejecutando, pero su ventana no se puede mostrar en este momento. Abra Cage desde la barra de tareas.",
@@ -405,7 +420,10 @@
     "无法初始化工作台：{0}": "No se puede inicializar el área de trabajo: {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "Basado en agent-vm, Lima, Chromium, noVNC y xterm.js",
     "当前连接旧后台；更新尚未完成。": "Conectado a un servicio en segundo plano antiguo; la actualización aún no se ha completado.",
-    "开发版本": "Versión de desarrollo"
+    "开发版本": "Versión de desarrollo",
+    "Claude Code 完成通知": "Avisos de respuesta completada de Claude Code",
+    "本轮回复已结束": "La respuesta ha terminado",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "Permite las notificaciones de Cage en la sección Notificaciones de Ajustes del Sistema y luego activa esta opción."
   },
   "my": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage လည်ပတ်နေပြီဖြစ်သော်လည်း ဝင်းဒိုးကို ယခု ပြန်ခေါ်၍ မရသေးပါ။ Taskbar မှ Cage ကို ဖွင့်ပါ။",
@@ -473,7 +491,10 @@
     "无法初始化工作台：{0}": "အလုပ်ခွင်ကို ပြင်ဆင်၍ မရပါ- {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "agent-vm၊ Lima၊ Chromium၊ noVNC နှင့် xterm.js ကို အခြေခံထားသည်",
     "当前连接旧后台；更新尚未完成。": "ယခု နောက်ခံဝန်ဆောင်မှု ဗားရှင်းဟောင်းနှင့် ချိတ်ဆက်ထားသည်၊ အပ်ဒိတ် မပြီးသေးပါ။",
-    "开发版本": "ဖွံ့ဖြိုးဆဲ ဗားရှင်း"
+    "开发版本": "ဖွံ့ဖြိုးဆဲ ဗားရှင်း",
+    "Claude Code 完成通知": "Claude Code တုံ့ပြန်မှု ပြီးဆုံးကြောင်း အသိပေးချက်များ",
+    "本轮回复已结束": "ဤအကြိမ် တုံ့ပြန်မှု ပြီးဆုံးပါပြီ",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "စနစ်ဆက်တင်ရှိ အသိပေးချက်များတွင် Cage ကို အသိပေးချက်များ ပို့ခွင့်ပြုပြီး ဤရွေးချယ်မှုကို ဖွင့်ပါ။"
   },
   "be": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage ужо запушчана, але яе акно зараз не ўдаецца адкрыць. Адкрыйце Cage праз панэль задач.",
@@ -541,7 +562,10 @@
     "无法初始化工作台：{0}": "Не ўдалося ініцыялізаваць працоўную вобласць: {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "На аснове agent-vm, Lima, Chromium, noVNC і xterm.js",
     "当前连接旧后台；更新尚未完成。": "Падключана да старой фонавай службы; абнаўленне яшчэ не завершана.",
-    "开发版本": "Версія для распрацоўкі"
+    "开发版本": "Версія для распрацоўкі",
+    "Claude Code 完成通知": "Апавяшчэнні пра завяршэнне адказу Claude Code",
+    "本轮回复已结束": "Адказ завершаны",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "Дазвольце Cage адпраўляць апавяшчэнні ў раздзеле «Апавяшчэнні» сістэмных налад і ўключыце гэту опцыю."
   },
   "ps": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage دمخه روان دی، خو کړکۍ یې اوس مهال نه شي راښکاره کېدای. مهرباني وکړئ Cage د ټاسک بار څخه پرانیزئ.",
@@ -609,7 +633,10 @@
     "无法初始化工作台：{0}": "کاري ځای چمتو نه شو: {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "پر agent-vm، Lima، Chromium، noVNC او xterm.js ولاړ",
     "当前连接旧后台；更新尚未完成。": "اوس له زاړه شالید سره وصل دی؛ تازه کول لا بشپړ شوي نه دي.",
-    "开发版本": "پراختیايي نسخه"
+    "开发版本": "پراختیايي نسخه",
+    "Claude Code 完成通知": "د Claude Code د ځواب بشپړېدو خبرتیاوې",
+    "本轮回复已结束": "د دې پړاو ځواب بشپړ شو",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "د سیسټم په امستنو کې د خبرتیاوو له برخې Cage ته د خبرتیاوو اجازه ورکړئ او بیا دا اختیار فعال کړئ."
   },
   "prs": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage از قبل در حال اجرا است، اما فعلاً پنجرهٔ آن نمایش داده نمی‌شود. لطفاً Cage را از نوار وظیفه باز کنید.",
@@ -677,7 +704,10 @@
     "无法初始化工作台：{0}": "آماده‌سازی فضای کاری ممکن نشد: {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "بر پایهٔ agent-vm، Lima، Chromium، noVNC و xterm.js",
     "当前连接旧后台；更新尚未完成。": "اکنون به سرویس پس‌زمینهٔ قدیمی وصل است؛ به‌روزرسانی هنوز تکمیل نشده است.",
-    "开发版本": "نسخهٔ انکشافی"
+    "开发版本": "نسخهٔ انکشافی",
+    "Claude Code 完成通知": "اعلان پایان پاسخ Claude Code",
+    "本轮回复已结束": "پاسخ این نوبت پایان یافت",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "در بخش «اعلان‌ها» در تنظیمات سیستم، به Cage اجازهٔ فرستادن اعلان بدهید و سپس این گزینه را فعال کنید."
   },
   "am": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage አስቀድሞ እየሠራ ነው፤ ነገር ግን መስኮቱን ለጊዜው ማምጣት አልተቻለም። እባክዎ Cageን ከተግባር አሞሌው ይክፈቱ።",
@@ -745,7 +775,10 @@
     "无法初始化工作台：{0}": "የሥራ ቦታውን ማስጀመር አልተቻለም፦ {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "በagent-vm፣ Lima፣ Chromium፣ noVNC እና xterm.js ላይ የተመሠረተ",
     "当前连接旧后台；更新尚未完成。": "አሁን የተገናኘው ከአሮጌው የጀርባ አገልግሎት ጋር ነው፤ ዝማኔው ገና አልተጠናቀቀም።",
-    "开发版本": "የልማት ስሪት"
+    "开发版本": "የልማት ስሪት",
+    "Claude Code 完成通知": "የ Claude Code ምላሽ ሲጠናቀቅ ማሳወቂያዎች",
+    "本轮回复已结束": "የዚህ ዙር ምላሽ ተጠናቋል",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "በስርዓት ቅንብሮች የማሳወቂያዎች ክፍል ውስጥ Cage ማሳወቂያ እንዲልክ ይፍቀዱ፣ ከዚያ ይህን አማራጭ ያብሩ።"
   },
   "so": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage hore ayuu u socdaa, laakiin daaqadda hadda lama soo saari karo. Fadlan Cage ka fur barta hawlaha (taskbar).",
@@ -813,7 +846,10 @@
     "无法初始化工作台：{0}": "Goobta shaqada lama diyaarin karo: {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "Wuxuu ku salaysan yahay agent-vm, Lima, Chromium, noVNC iyo xterm.js",
     "当前连接旧后台；更新尚未完成。": "Hadda waxaad ku xiran tahay adeegga gadaasha ee hore; cusboonaysiintu weli ma dhammaan.",
-    "开发版本": "Nooca horumarinta"
+    "开发版本": "Nooca horumarinta",
+    "Claude Code 完成通知": "Ogeysiisyada marka Claude Code soo afjaro jawaabta",
+    "本轮回复已结束": "Jawaabtii way dhammaatay",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "Ka oggolow Cage inuu soo diro ogeysiisyo qaybta Ogeysiisyada ee dejimaha nidaamka, dabadeed shid xulashadan."
   },
   "ti": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage ድሮ ይሰርሕ ኣሎ፡ ግን መስኮቱ ንግዚኡ ክቐርብ ኣይከኣለን። በጃኹም Cage ካብ ባር ዕማማት (taskbar) ክፈቱ።",
@@ -881,7 +917,10 @@
     "无法初始化工作台：{0}": "ናይ ስራሕ ቦታ ከዳሉ ኣይከኣለን፦ {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "ኣብ agent-vm፣ Lima፣ Chromium፣ noVNC ከምኡ'ውን xterm.js ዝተመስረተ",
     "当前连接旧后台；更新尚未完成。": "ሕጂ ምስ ናይ ቀደም ናይ ድሕሪት ኣገልግሎት ተራኺቡ ኣሎ፤ ምሕዳስ ገና ኣይተዛዘመን።",
-    "开发版本": "ናይ ምምዕባል ስሪት"
+    "开发版本": "ናይ ምምዕባል ስሪት",
+    "Claude Code 完成通知": "ምላሽ Claude Code ምስ ተዛዘመ ዝመጽእ መፍለጢ",
+    "本轮回复已结束": "ምላሽ ናይዚ ዙር ተዛዚሙ",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "ኣብ ክፍሊ መፍለጢ ናይ ቅጥዕታት ስርዓት Cage መፍለጢ ክልእኽ ፍቐዱ፣ ድሕሪኡ ነዚ ኣማራጺ ኣብርሁ።"
   },
   "fr": {
     "Cage 已在运行，但窗口暂时无法唤起。请从任务栏打开 Cage。": "Cage est déjà en cours d'exécution, mais sa fenêtre ne peut pas être affichée pour le moment. Ouvrez Cage depuis la barre des tâches.",
@@ -949,6 +988,9 @@
     "无法初始化工作台：{0}": "Impossible d'initialiser l'espace de travail : {0}",
     "基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js": "Basé sur agent-vm, Lima, Chromium, noVNC et xterm.js",
     "当前连接旧后台；更新尚未完成。": "Connecté à un ancien service en arrière-plan ; la mise à jour n'est pas encore terminée.",
-    "开发版本": "Version de développement"
+    "开发版本": "Version de développement",
+    "Claude Code 完成通知": "Notifications de fin de réponse de Claude Code",
+    "本轮回复已结束": "La réponse est terminée",
+    "请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。": "Autorisez Cage à envoyer des notifications dans Réglages Système, puis activez cette option."
   }
 }

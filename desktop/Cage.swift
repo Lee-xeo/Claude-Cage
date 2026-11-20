@@ -40,6 +40,9 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     private var completeUpdateMenu: NSMenuItem!
     private var controllerNeedsUpdate = false
     private var appUpdater: CageAppUpdater!
+    private var claudeCompletion: ClaudeCompletionNotifications?
+    private var claudeCompletionMenu: NSMenuItem?
+    private var requestingClaudeCompletion = false
 
     private struct DesktopEntry {
         let status: String
@@ -103,6 +106,12 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         }
         return withExtendedLifetime(auth) { dispatchMain() }
     }
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        if ClaudeCompletionNotifications.available {
+            claudeCompletion = ClaudeCompletionNotifications { [weak self] in self?.openClaudeCompletion() }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let appearance = UserDefaults.standard.dictionary(forKey: "cage.windowAppearance") ?? [:]
         let mode = appearance["mode"] as? String ?? "system"
@@ -121,6 +130,9 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         config.websiteDataStore = .default()
         config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "cage")
         config.userContentController.addUserScript(WKUserScript(source: "window.cageNativeIMEAvailable = true;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        if claudeCompletion != nil {
+            config.userContentController.addUserScript(WKUserScript(source: "window.cageClaudeCompletionAvailable = true;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -186,6 +198,12 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         completeUpdateMenu.isHidden = !controllerNeedsUpdate
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: CageLanguage.text("设置…"), action: #selector(settings), keyEquivalent: ",")
+        if let claudeCompletion {
+            let item = appMenu.addItem(withTitle: CageLanguage.text("Claude Code 完成通知"), action: #selector(toggleClaudeCompletion), keyEquivalent: "")
+            item.target = self
+            item.state = claudeCompletion.enabled ? .on : .off
+            claudeCompletionMenu = item
+        }
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: CageLanguage.text("隐藏 Cage"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: CageLanguage.text("显示全部"), action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
@@ -239,6 +257,30 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName:"Cage", .applicationVersion:version, .credits:NSAttributedString(string:CageLanguage.text("本机隔离编码工作区") + "\n" + CageLanguage.text("基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js") + status)])
     }
     @objc private func settings() { action("settings") }
+    @objc private func toggleClaudeCompletion() {
+        guard let claudeCompletion, !requestingClaudeCompletion else { return }
+        requestingClaudeCompletion = true
+        claudeCompletion.toggle { [weak self] accepted in
+            guard let self else { return }
+            self.requestingClaudeCompletion = false
+            self.claudeCompletionMenu?.state = claudeCompletion.enabled ? .on : .off
+            guard !accepted else { return }
+            let alert = NSAlert()
+            alert.messageText = CageLanguage.text("Claude Code 完成通知")
+            alert.informativeText = CageLanguage.text("请在系统设置的「通知」里允许 Cage 发送通知，再开启此选项。")
+            alert.beginSheetModal(for: self.window, completionHandler: nil)
+        }
+    }
+
+    private func openClaudeCompletion() {
+        guard let window, let webView else { return }
+        NSApp.unhide(nil)
+        window.deminiaturize(nil)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        webView.evaluateJavaScript("window.dispatchEvent(new Event('cage-claude-completion-open'));", completionHandler: nil)
+    }
+
     @objc private func openProject() { action("openProject") }
     @objc private func newTab() { action("newTab") }
     @objc private func newTerminal() { action("newTerminal") }
@@ -428,6 +470,13 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         let origin = message.frameInfo.securityOrigin
         guard message.frameInfo.isMainFrame, origin.protocol == "http", origin.host == "localhost", origin.port == expectedPort, let body = message.body as? [String:Any], let action = body["action"] as? String else { replyHandler(nil,"请求来源无效"); return }
         switch action {
+        case "claudeCompletions":
+            guard let claudeCompletion else { replyHandler([:], nil); return }
+            let foreground = NSApp.isActive && window.isKeyWindow && !webView.isHidden
+            let visible = foreground ? Set(body["visible"] as? [String] ?? []) : []
+            claudeCompletion.receive(body["events"] as? [[String: Any]] ?? [], visible: visible)
+            let target = claudeCompletion.target(in: body["terminals"] as? [String] ?? [])
+            replyHandler(target.map { ["terminal": $0] } ?? [:], nil)
         case "remoteInput":
             replyHandler(nativeInput.handle(body), nil)
         case "accountDevice":

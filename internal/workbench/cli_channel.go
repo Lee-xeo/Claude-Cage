@@ -75,6 +75,11 @@ func cliTransport85(data []byte) string {
 	return out.String()
 }
 
+type claudeCompletion struct {
+	ID string  `json:"id"`
+	At float64 `json:"at"`
+}
+
 type terminalConversation struct {
 	LoginHint           codeLoginHint `json:"login_hint"`
 	NativeCCSUnverified bool          `json:"native_ccs_unverified"`
@@ -96,6 +101,8 @@ type terminalConversation struct {
 	Active              bool          `json:"active"`
 	ConnectionNotice    string        `json:"connection_notice"`
 	HistoryTruncated    bool          `json:"history_truncated"`
+
+	Completions []claudeCompletion `json:"completions"`
 }
 
 func cliChannelCommand(mode, argument string) string {
@@ -315,6 +322,7 @@ func (s *Server) readTerminalConversation(ctx context.Context, id string, observ
 		terminal.mu.Lock()
 		if terminal.connectionID == current.Connection {
 			terminal.conversationEnded = !current.Running
+			terminal.claudeCompletions = current.Completions
 		}
 		terminal.mu.Unlock()
 	}
@@ -527,7 +535,6 @@ func (s *Server) prepareTerminalConversation(workspace string, selection claudeS
 	data, _ := json.Marshal(payload)
 	record.CanSend = new(bool)
 	record.ConnectionNotice = ""
-	body := cliChannelCommand("launch", string(data)) + "; exec bash -i"
 	directory := record.GuestWorkspace
 	if directory == "" {
 		directory = guestPath(workspace)
@@ -536,8 +543,12 @@ func (s *Server) prepareTerminalConversation(workspace string, selection claudeS
 	if err := writePrivate(mobileRecordPath(s.profile, id), record); err != nil {
 		return "", nil, err
 	}
-	script := "cd " + shellescape.Quote(directory) + " && exec env TERM=xterm-256color COLORTERM=truecolor CAGE_WORKBENCH=1 bash -lic " + shellescape.Quote(body)
-	return script, record, nil
+	return cliTerminalLaunchScript(directory, string(data)), record, nil
+}
+
+func cliTerminalLaunchScript(directory, payload string) string {
+	body := cliChannelCommand("launch", payload) + "; exec bash -i"
+	return "cd " + shellescape.Quote(directory) + " && exec env TERM=xterm-256color COLORTERM=truecolor CAGE_WORKBENCH=1 bash -lic " + shellescape.Quote(body)
 }
 
 func (s *Server) isTerminalConversation(id string) bool {

@@ -148,6 +148,39 @@ class ChannelTests(unittest.TestCase):
         self.assertTrue(path.exists())
         self.assertFalse((self.root.parent/"cli-account-switches"/switch_id/"history.jsonl").exists())
 
+    def test_completion_hook_reports_distinct_main_turns(self) -> None:
+        def fire(event: str, **fields: str) -> None:
+            payload = {"hook_event_name": event, "session_id": self.session, **fields}
+            with patch.object(channel.sys, "stdin", io.StringIO(json.dumps(payload))):
+                channel.hook(self.session)
+
+        def completions() -> list[dict[str, object]]:
+            return channel.view(self.home / ".claude", self.session)["completions"]
+
+        fire("Stop")
+        self.assertEqual(completions(), [])
+        fire("UserPromptSubmit", prompt="private question")
+        fire("Stop", agent_id="subagent")
+        self.assertEqual(completions(), [])
+        fire("Stop", last_assistant_message="private answer")
+        fire("Stop")
+        first = completions()
+        self.assertEqual(len(first), 1)
+        self.assertEqual(set(first[0]), {"id", "at"})
+
+        for ending in ("StopFailure", "SessionEnd"):
+            fire("UserPromptSubmit")
+            fire(ending)
+            fire("Stop")
+        self.assertEqual(completions(), first)
+
+        fire("UserPromptSubmit")
+        fire("Stop")
+        second = completions()
+        self.assertEqual(len(second), 2)
+        self.assertEqual(second[0], first[0])
+        self.assertNotEqual(second[1]["id"], first[0]["id"])
+
     def test_failure_hook_reports_kind_and_new_turn_clears_it(self):
         payload={"hook_event_name":"StopFailure","session_id":self.session,"error":"rate_limit","error_details":"private upstream diagnostic"}
         with patch.object(channel.sys,"stdin",io.StringIO(json.dumps(payload))):channel.hook(self.session)

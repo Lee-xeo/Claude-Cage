@@ -26,6 +26,7 @@ type terminalSession struct {
 	sharedID              string
 	connectionID          string
 	conversationEnded     bool
+	claudeCompletions     []claudeCompletion
 	workspace             string
 	kind, claudeAccountID string
 	loginGuestID          string
@@ -84,9 +85,13 @@ func (t *terminalSession) summary() map[string]any {
 			closed = false
 		}
 	}
-	return map[string]any{"id": t.id, "title": t.title, "closed": closed, "workspace": t.workspace, "kind": t.kind,
+	result := map[string]any{"id": t.id, "title": t.title, "closed": closed, "workspace": t.workspace, "kind": t.kind,
 		"claude_account_id": t.claudeAccountID, "claude_account_source": t.claudeAccountSource, "cli_session_id": t.sharedID,
 		"background_login": t.backgroundLogin, "login_notice": t.loginNotice, "cli_starting": t.cliStartupPendingLocked()}
+	if !closed && len(t.claudeCompletions) > 0 {
+		result["claude_completions"] = t.claudeCompletions
+	}
+	return result
 }
 
 func (t *terminalSession) cliStartupPendingLocked() bool {
