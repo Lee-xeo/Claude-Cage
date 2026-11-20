@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/exitpolicy"
@@ -63,11 +64,43 @@ func Token() string {
 }
 func Dir(profile string) string { return filepath.Join(profile, "proxy") }
 func Socket(profile string) string {
-	h := sha256.Sum256([]byte(filepath.Clean(profile)))
 	if runtime.GOOS == "windows" {
-		return filepath.Join(os.TempDir(), fmt.Sprintf("cage-proxy-%x", h[:8]), "control.sock")
+		if path, err := windowsSocket(profile, false); err == nil {
+			return path
+		}
+		// No usable directory: starting the core reports WindowsSocket's cause.
+		return filepath.Join(Dir(profile), "control.sock")
 	}
+	h := sha256.Sum256([]byte(filepath.Clean(profile)))
 	return filepath.Join("/tmp", fmt.Sprintf("cage-proxy-%d-%x", os.Getuid(), h[:8]), "control.sock")
+}
+
+var windowsSockets sync.Map
+
+// WindowsSocket is the core's control socket in a private ASCII directory
+// outside AppData and Temp, where Windows AF_UNIX sockets could not be
+// connected or removed (#484). The choice is stable for a profile. Starting
+// the core creates the directory; other callers only look it up.
+func WindowsSocket(profile string) (string, error) { return windowsSocket(profile, true) }
+
+func windowsSocket(profile string, create bool) (string, error) {
+	key := filepath.Clean(profile)
+	if path, ok := windowsSockets.Load(key); ok && !create {
+		return path.(string), nil
+	}
+	dir, err := host.PrivateSocketDir(key, len(`\proxy.sock`), create)
+	if err != nil {
+		return "", err
+	}
+	path := dir + `\proxy.sock`
+	windowsSockets.Store(key, path)
+	return path, nil
+}
+
+// legacyWindowsSocket is where versions before #484 placed the socket.
+func legacyWindowsSocket(profile string) string {
+	h := sha256.Sum256([]byte(filepath.Clean(profile)))
+	return filepath.Join(os.TempDir(), fmt.Sprintf("cage-proxy-%x", h[:8]), "control.sock")
 }
 func Load(profile string) (Store, error) {
 	var s Store
