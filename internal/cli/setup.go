@@ -127,7 +127,7 @@ func (in install) exports() string {
 		if in[n] {
 			v = 1
 		}
-		fmt.Fprintf(&b, "export AGENT_VM_INSTALL_%s=%d\n", strings.ToUpper(strings.ReplaceAll(n, "-", "_")), v)
+		fmt.Fprintf(&b, "AGENT_VM_INSTALL_%s=%d\n", strings.ToUpper(strings.ReplaceAll(n, "-", "_")), v)
 	}
 	return b.String()
 }
@@ -552,9 +552,11 @@ func cageInstallEnv() string {
 	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
 		progress := ""
 		if os.Getenv("CAGE_SETUP_PROGRESS") == "1" {
-			progress = "export CAGE_SETUP_PROGRESS=1\n"
+			progress = "CAGE_SETUP_PROGRESS=1\n"
 		}
-		return "set -e\nexport CLAUDE_CAGE=1\n" + progress + cage.DebianPrepareScriptFor(os.Getenv(cage.DebianMirrorEnv)) + "\n" + cage.ToolInstallPrelude()
+		// Shell variables of this session only; the installers it starts do not
+		// inherit them.
+		return "set -e\nCLAUDE_CAGE=1\n" + progress + cage.DebianPrepareScriptFor(os.Getenv(cage.DebianMirrorEnv)) + "\n" + cage.ToolInstallPrelude()
 	}
 	return ""
 }

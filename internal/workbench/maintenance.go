@@ -77,7 +77,7 @@ func (p *maintenanceProxy) close() {
 	p.transport.CloseIdleConnections()
 }
 func (p *maintenanceProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	expected := "Basic " + base64.StdEncoding.EncodeToString([]byte("cage-install:"+p.token))
+	expected := "Basic " + base64.StdEncoding.EncodeToString([]byte("install:"+p.token))
 	if subtle.ConstantTimeCompare([]byte(r.Header.Get("Proxy-Authorization")), []byte(expected)) != 1 {
 		w.Header().Set("Proxy-Authenticate", `Basic realm="Cage maintenance"`)
 		http.Error(w, "Maintenance authentication required", 407)
@@ -168,8 +168,10 @@ func maintenanceScript(script, token string) string {
 umask 077
 cage_maintenance_dir=$(mktemp -d)
 trap 'rm -rf "$cage_maintenance_dir"' EXIT
-export CAGE_INSTALL_PROXY='http://cage-install:%s@127.0.0.1:%d'
-export CAGE_APT_CONFIG="$cage_maintenance_dir/apt.conf"
+# Plain shell variables: the installers started below, the official ones
+# among them, inherit only the standard proxy variables.
+CAGE_INSTALL_PROXY='http://install:%s@127.0.0.1:%d'
+CAGE_APT_CONFIG="$cage_maintenance_dir/apt.conf"
 printf 'Acquire::http::Proxy "%%s";\nAcquire::https::Proxy "%%s";\nAcquire::Retries "1";\nAcquire::http::Timeout "15";\nAcquire::https::Timeout "15";\n' "$CAGE_INSTALL_PROXY" "$CAGE_INSTALL_PROXY" > "$CAGE_APT_CONFIG"
 unset ALL_PROXY all_proxy NO_PROXY no_proxy FTP_PROXY ftp_proxy
 export http_proxy="$CAGE_INSTALL_PROXY" https_proxy="$CAGE_INSTALL_PROXY" HTTP_PROXY="$CAGE_INSTALL_PROXY" HTTPS_PROXY="$CAGE_INSTALL_PROXY"
@@ -201,7 +203,7 @@ func StartGuestServices(ctx context.Context, configPath string, stdout, stderr i
 	if err != nil {
 		return err
 	}
-	return runMaintenanceScript(ctx, configPath, cfg, "export CAGE_DISPLAY_SCALE="+scale+"\n"+cfg.StartScript(), stdout, stderr)
+	return runMaintenanceScript(ctx, configPath, cfg, "CAGE_DISPLAY_SCALE="+scale+"\n"+cfg.StartScript(), stdout, stderr)
 }
 
 func RunMaintenanceScript(ctx context.Context, configPath, script string, stdout, stderr io.Writer) error {

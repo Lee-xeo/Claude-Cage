@@ -193,7 +193,7 @@ func TestContainerInstallsGitHubCLIByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(script, "export AGENT_VM_INSTALL_GH=1\n") {
+	if !strings.Contains(script, "AGENT_VM_INSTALL_GH=1\n") {
 		t.Fatal("fresh cloud environments would omit GitHub CLI")
 	}
 }

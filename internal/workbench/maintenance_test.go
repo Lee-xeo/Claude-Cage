@@ -62,7 +62,7 @@ func TestMaintenanceRequiresAuthenticationAndSoftwareSource(t *testing.T) {
 	} {
 		proxyURL, _ := url.Parse(server.URL)
 		if test.auth {
-			proxyURL.User = url.UserPassword("cage-install", "fixture-only")
+			proxyURL.User = url.UserPassword("install", "fixture-only")
 		}
 		transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 		client := &http.Client{Transport: transport, Timeout: time.Second}
@@ -106,7 +106,7 @@ func TestMaintenanceClosesTLSConnectionsAndRefusesBusinessHosts(t *testing.T) {
 	}
 	defer connection.Close()
 	_ = connection.SetDeadline(time.Now().Add(3 * time.Second))
-	auth := base64.StdEncoding.EncodeToString([]byte("cage-install:fixture"))
+	auth := base64.StdEncoding.EncodeToString([]byte("install:fixture"))
 	_, _ = fmt.Fprintf(connection, "CONNECT deb.debian.org:443 HTTP/1.1\r\nHost: deb.debian.org:443\r\nProxy-Authorization: Basic %s\r\n\r\n", auth)
 	reader := bufio.NewReader(connection)
 	response, err := http.ReadResponse(reader, nil)
@@ -154,5 +154,35 @@ printf '%s' "$CAGE_APT_CONFIG"
 	}
 	if _, err = os.Stat(string(output)); !os.IsNotExist(err) {
 		t.Fatal("maintenance credential was retained")
+	}
+}
+
+// Installers started by maintenance, the official ones among them, inherit
+// only the standard proxy variables, and those carry no product name.
+func TestMaintenanceInstallersInheritNoProductIdentity(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the installer Bash script runs in the Linux guest, not the Windows host")
+	}
+	shell, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not available")
+	}
+	home := t.TempDir()
+	command := exec.Command(shell, "-se")
+	command.Dir = home
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "TMPDIR=" + home}
+	// Only the variables the script itself adds; the machine running the
+	// test may have the product name in its own paths.
+	command.Stdin = strings.NewReader(maintenanceScript("CAGE_DISPLAY_SCALE=2\nenv | grep -v '^PATH='\n", "fixture-token"))
+	output, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inherited := strings.ReplaceAll(string(output), home, "")
+	if strings.Contains(strings.ToLower(inherited), "cage") {
+		t.Fatalf("an installer would see the product name:\n%s", inherited)
+	}
+	if !strings.Contains(inherited, "\nhttp_proxy=http://install:fixture-token@127.0.0.1:") {
+		t.Fatalf("installers lost the proxy:\n%s", inherited)
 	}
 }

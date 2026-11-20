@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -53,8 +54,10 @@ func exportsOf(t *testing.T, stdin []string) map[string]string {
 	}
 	m := map[string]string{}
 	for _, l := range strings.Split(strings.TrimSuffix(stdin[0], agentvm.SetupScript), "\n") {
-		if k, v, ok := strings.Cut(strings.TrimPrefix(l, "export AGENT_VM_INSTALL_"), "="); ok {
-			m[k] = v
+		if rest, ok := strings.CutPrefix(l, "AGENT_VM_INSTALL_"); ok {
+			if k, v, ok := strings.Cut(rest, "="); ok {
+				m[k] = v
+			}
 		}
 	}
 	return m
@@ -331,5 +334,23 @@ func TestCageSetupResumesExistingBuild(t *testing.T) {
 	log := te.fake.CallLog()
 	if strings.Contains(log, "create base-building") || !strings.Contains(log, "clone base-building base") {
 		t.Fatalf("partial build was recreated instead of resumed: %s", log)
+	}
+}
+
+// The installers the setup script starts, the official ones among them,
+// do not inherit the session's own variables.
+func TestSetupSessionVariablesAreNotExported(t *testing.T) {
+	t.Setenv("CLAUDE_CAGE_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	t.Setenv("CAGE_SETUP_PROGRESS", "1")
+	script := cageInstallEnv() + install{"gh": true}.exports()
+	for _, line := range strings.Split(script, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "export ") && regexp.MustCompile(`(?i)cage|AGENT_VM`).MatchString(line) {
+			t.Errorf("exported to installers: %q", line)
+		}
+	}
+	for _, want := range []string{"\nCLAUDE_CAGE=1\n", "\nCAGE_SETUP_PROGRESS=1\n", "AGENT_VM_INSTALL_GH=1\n"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("setup session misses %q", want)
+		}
 	}
 }

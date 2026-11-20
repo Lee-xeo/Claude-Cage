@@ -294,7 +294,7 @@ var chromiumDownload string
 func toolInstallFunctions() string {
 	return toolVersions + `
 cage_curl_download() {
-  python3 - "$@" <<'CAGE_DOWNLOAD_IDLE'
+  CAGE_SETUP_PROGRESS="${CAGE_SETUP_PROGRESS:-}" python3 - "$@" <<'CAGE_DOWNLOAD_IDLE'
 ` + toolDownload + `
 CAGE_DOWNLOAD_IDLE
 }
@@ -356,7 +356,7 @@ printf 'Cage tool packages are ready; applying browser and editor components.\n'
 }
 
 func (c Config) EnvironmentScript() string {
-	return fmt.Sprintf("export CAGE_TZ=%s\nexport CAGE_LOCALE=%s\nexport BROWSER_LANG=%s\n", shellescape.Quote(c.Timezone), shellescape.Quote(c.Locale), shellescape.Quote(c.BrowserLanguage)) + guestEnv
+	return fmt.Sprintf("CAGE_TZ=%s\nCAGE_LOCALE=%s\nexport BROWSER_LANG=%s\n", shellescape.Quote(c.Timezone), shellescape.Quote(c.Locale), shellescape.Quote(c.BrowserLanguage)) + guestEnv
 }
 
 func (c Config) StartScript() string {
