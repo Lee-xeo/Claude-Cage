@@ -19,7 +19,7 @@ keywords: Agent CLI JSON 自动化 配置 接口 安装 诊断 修复 capabiliti
 | 平台 | 默认 CLI 位置 | 调用示例 |
 | --- | --- | --- |
 | macOS | `/Applications/Cage.app/Contents/Resources/cage` | `"/Applications/Cage.app/Contents/Resources/cage" agent capabilities` |
-| Windows | `%LOCALAPPDATA%\Programs\Cage\resources\cage.exe`，自定义安装目录以实际位置为准 | `& "$env:LOCALAPPDATA\Programs\Cage\resources\cage.exe" agent capabilities` |
+| Windows | `<安装目录>\resources\cage.exe`。首次安装默认装到本地 D 盘的 `D:\Cage`，没有本地 D 盘时为 `%LOCALAPPDATA%\Programs\Cage`；已安装时以注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\ClaudeCage` 的 `InstallLocation` 为准 | `& (Join-Path (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ClaudeCage').InstallLocation 'resources\cage.exe') agent capabilities` |
 | Linux | `/usr/bin/claude-cage` | `claude-cage agent capabilities` |
 
 `agent capabilities` 输出本构建的协议版本、操作清单、输入字段和退出码，不启动后台或创建配置。首次配置与每次升级后都先读取一次。机器阅读入口为 `/agent.md`、`/llms.txt`、`/llms-full.txt`，使用 Cage 的外部 Agent 从本页开始。
