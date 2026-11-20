@@ -438,7 +438,7 @@ func (s *Server) proxyDelay(w http.ResponseWriter, r *http.Request) {
 	}
 	err = managedproxy.API(r.Context(), s.profile, "GET", "/proxies/"+url.PathEscape(in.NodeID)+"/delay?timeout=5000&url="+url.QueryEscape("https://www.gstatic.com/generate_204"), nil, &v)
 	if err != nil {
-		requestError(w, errors.New("节点未载入核心或测速失败；请先应用节点以载入当前列表"))
+		requestError(w, managedproxy.DelayError(err))
 		return
 	}
 	jsonReply(w, v)
