@@ -258,6 +258,12 @@ func runAgent(args []string, stdin io.Reader, stdout io.Writer, clientOnly bool)
 		var data json.RawMessage
 		if command == "call" {
 			body := []byte("{}")
+			// Input is read only with --input. Data already waiting on stdin
+			// means the caller expected it to be read; do not run the
+			// operation as if no fields had been given.
+			if f, ok := stdin.(*os.File); ok && *input == "" && pendingInput(f) {
+				return bad("Standard input has data, but call reads input only with --input - or --input FILE. Repeat the call with --input -.")
+			}
 			if *input != "" {
 				reader := stdin
 				if *input != "-" {
