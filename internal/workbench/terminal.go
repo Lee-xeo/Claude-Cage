@@ -126,7 +126,7 @@ func (s *Server) terminalStream(w http.ResponseWriter, r *http.Request) {
 		}
 		switch input.Type {
 		case "input":
-			if err := session.enqueueInput(r.Context(), input.Data); err != nil {
+			if err := session.enqueueInputWait(r.Context(), input.Data, terminalInputWait); err != nil {
 				return
 			}
 		case "resize":

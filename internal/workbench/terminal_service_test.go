@@ -336,3 +336,42 @@ func TestTerminalSplitLoginInput(t *testing.T) {
 		}
 	}
 }
+
+func TestTerminalInputBurstWaitsForWriterInOrder(t *testing.T) {
+	session := terminalSession{kind: "shell", inputs: make(chan string, 8)}
+	received := make(chan string, 64)
+	go func() {
+		// A slow PTY writer: the burst below overruns the queue several times.
+		for input := range session.inputs {
+			time.Sleep(time.Millisecond)
+			received <- input
+		}
+	}()
+	var want []string
+	for i := range 32 {
+		input := fmt.Sprintf("\x1b[?%dc", i)
+		want = append(want, input)
+		if err := session.enqueueInputWait(t.Context(), input, 5*time.Second); err != nil {
+			t.Fatalf("burst input %d: %v", i, err)
+		}
+	}
+	for i, input := range want {
+		if got := <-received; got != input {
+			t.Fatalf("input %d reordered: %q", i, got)
+		}
+	}
+	close(session.inputs)
+
+	blocked := terminalSession{kind: "shell", inputs: make(chan string, 1)}
+	if err := blocked.enqueueInputWait(t.Context(), "a", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := blocked.enqueueInputWait(t.Context(), "b", 30*time.Millisecond); !errors.Is(err, errTerminalInputFull) {
+		t.Fatalf("stalled writer returned %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := blocked.enqueueInputWait(ctx, "b", time.Second); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled request returned %v", err)
+	}
+}
