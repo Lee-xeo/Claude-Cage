@@ -62,7 +62,7 @@ CCS_PROBE = """
 import json, os, sys
 
 args = sys.argv[1:]
-if os.environ['CAGE_CAPTURE_ID'] not in args:
+if os.environ['CAPTURE_PROBE_ID'] not in args:
     sys.exit(1)
 settings = {}
 source = None
@@ -77,7 +77,7 @@ if '--settings' in args:
         if len(content) > 1048576: sys.exit(1)
         settings = json.loads(content)
     del args[index:index + 2]
-print('CAGE_CCS_CAPTURE:' + json.dumps([args, settings, source, dict(os.environ)]))
+print('CAPTURE_RESULT:' + json.dumps([args, settings, source, dict(os.environ)]))
 """
 
 
@@ -89,11 +89,11 @@ def ccs_launch(profile, args, id_index):
         probe = Path(directory) / "claude"
         probe.write_text("#!" + sys.executable + " -I\n" + CCS_PROBE)
         probe.chmod(0o700)
-        env = dict(os.environ, CCS_CLAUDE_PATH=str(probe), CAGE_CAPTURE_ID=probe_id)
+        env = dict(os.environ, CCS_CLAUDE_PATH=str(probe), CAPTURE_PROBE_ID=probe_id)
         result = subprocess.run(["ccs", profile, *probe_args], env=env, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20)
-    records = [line.removeprefix(b"CAGE_CCS_CAPTURE:") for line in result.stdout.splitlines()
-               if line.startswith(b"CAGE_CCS_CAPTURE:")]
+    records = [line.removeprefix(b"CAPTURE_RESULT:") for line in result.stdout.splitlines()
+               if line.startswith(b"CAPTURE_RESULT:")]
     if result.returncode or len(records) != 1 or len(records[0]) > 2 << 20:
         raise Unverified()
     passed, settings, source, env = json.loads(records[0])
@@ -111,7 +111,7 @@ def ccs_launch(profile, args, id_index):
     if any(flag not in ("--disallowedTools", "--disallowed-tools", "--append-system-prompt", "--append-system-prompt-file")
            or not value or value.startswith("-") for flag, value in zip(extra[::2], extra[1::2])):
         raise Unverified()
-    env.pop("CAGE_CAPTURE_ID", None)
+    env.pop("CAPTURE_PROBE_ID", None)
     env.pop("CCS_CLAUDE_PATH", None)
     return args + extra, settings, env
 
@@ -302,7 +302,8 @@ def resolve(prefix, args, id_index, snapshot):
 
 def resolve_actual_context(binary, prefix, args, env, settings, snapshot):
     config, settings, route_env, route_settings, flags, policies = freeze_settings(env, settings, snapshot)
-    env = {key: value for key, value in env.items() if key.upper() not in CONTROLLER_VARIABLES}
+    env = {key: value for key, value in env.items()
+           if key.upper() not in CONTROLLER_VARIABLES and not key.upper().startswith(("CAGE_", "CLAUDE_CAGE_"))}
     effective = {**route_env, **route_settings}
     fd = snapshot.fileno()
     status = subprocess.run([binary, *flags, "auth", "status"], env=env, pass_fds=() if os.name == "nt" else (fd,),
@@ -432,7 +433,8 @@ def main():
                 raise Unverified()
             bind(sid, False, None)
             single_turn_notice()
-            os.execvpe(prefix[0], [*prefix, *args], {key: value for key, value in os.environ.items() if key.upper() not in CONTROLLER_VARIABLES})
+            os.execvpe(prefix[0], [*prefix, *args], {key: value for key, value in os.environ.items()
+                                                     if key.upper() not in CONTROLLER_VARIABLES and not key.upper().startswith(("CAGE_", "CLAUDE_CAGE_"))})
         bind(sid, resume, material)
         if verify_only:
             raise Verified(Path(env.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").resolve())

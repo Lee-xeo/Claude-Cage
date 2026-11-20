@@ -196,7 +196,8 @@ def command_text(script, args=()):
 
 
 def environment(values):
-    clean = {key: value for key, value in values.items() if key.upper() not in CONTROLLER_VARIABLES}
+    clean = {key: value for key, value in values.items()
+             if key.upper() not in CONTROLLER_VARIABLES and not key.upper().startswith(("CAGE_", "CLAUDE_CAGE_"))}
     if "PATH" in clean:
         clean["PATH"] = os.pathsep.join(path(entry) if entry else entry for entry in clean["PATH"].split(os.pathsep))
     for key in ("CLAUDE_CONFIG_DIR", "CLAUDE_CODE_GIT_BASH_PATH", "XDG_RUNTIME_DIR", "XAUTHORITY"):

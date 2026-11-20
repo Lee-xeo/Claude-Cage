@@ -396,7 +396,7 @@ class ChannelTests(unittest.TestCase):
         with patch.object(channel, "Path", path), patch.object(channel.sys, "platform", "linux"), patch.object(channel.subprocess, "run", side_effect=migrate) as run:
             self.assertTrue(channel.migrate_cage_policy())
             self.assertTrue(json.loads(policy.read_text())["channelsEnabled"])
-            backup = policy.with_name("managed-settings.json.cage-before-channels")
+            backup = policy.with_name("managed-settings.json.before-channels")
             self.assertEqual(json.loads(backup.read_text()), original)
             blocked = {**original, "channelsEnabled": False}
             policy.write_text(json.dumps(blocked))

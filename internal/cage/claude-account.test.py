@@ -740,6 +740,9 @@ class SharedPluginsMcpAndMemoryTests(unittest.TestCase):
         fixture = patch.dict(os.environ, self.env, clear=True)
         fixture.start()
         self.addCleanup(fixture.stop)
+        previous_cwd = os.getcwd()
+        os.chdir(self.home)
+        self.addCleanup(os.chdir, previous_cwd)
         self.common = self.home / ".claude"
         (self.common / "plugins").mkdir(parents=True)
 
@@ -992,6 +995,33 @@ class SharedPluginsMcpAndMemoryTests(unittest.TestCase):
         self.assertEqual(shown.stdout, "mine")
         self.write(config / "settings.json", {"statusLine": {"type": "command", "command": "own"}})
         self.assertTrue(helper.has_status_line(first))
+
+    def test_legacy_cage_plugin_registry_migrates_to_neutral_path(self):
+        first, config = self.profile(FIRST)
+        plugins = config / "plugins"
+        (plugins / "marketplaces/team/.claude-plugin").mkdir(parents=True)
+        (plugins / "marketplaces/team/.claude-plugin/marketplace.json").write_text("example/team")
+        (plugins / "cache/team/lint/1.0.0").mkdir(parents=True)
+        (plugins / "cache/team/lint/1.0.0/plugin.md").write_text("lint1.0.0")
+        with patch.object(helper.tempfile, "tempdir", str(self.home)):
+            legacy_alias, legacy_real = helper.legacy_plugin_root_forms(config)
+        self.write(plugins / "known_marketplaces.json", {
+            "team": {"source": {"source": "github", "repo": "example/team"},
+                     "installLocation": legacy_real + "marketplaces/team", "lastUpdated": "2026-11-01T00:00:00.000Z"}
+        })
+        self.write(plugins / "installed_plugins.json", {
+            "version": 2,
+            "plugins": {"lint@team": [{"scope": "user", "installPath": legacy_alias + "cache/team/lint/1.0.0", "version": "1.0.0"}]}
+        })
+        self.share(FIRST)
+        common_installed = self.read(self.common / "plugins/installed_plugins.json")["plugins"]
+        self.assertEqual(common_installed["lint@team"][0]["installPath"], str(self.common / "plugins/cache/team/lint/1.0.0"))
+        # Next account syncs cleanly and no legacy cage path remains.
+        second, other = self.profile(SECOND)
+        self.share(SECOND)
+        other_installed = self.read(other / "plugins/installed_plugins.json")["plugins"]
+        self.assertNotIn("cage", other_installed["lint@team"][0]["installPath"].lower())
+        self.assertTrue(Path(other_installed["lint@team"][0]["installPath"]).joinpath("plugin.md").exists())
 
 
 def numpy_base36(value):

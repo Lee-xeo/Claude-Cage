@@ -398,9 +398,9 @@ def hook(connection):
             return {"decision": "block", "reason": "正在核对这个终端已更改的 Claude 登录，请稍后继续。"}
         if state.get("account_switch"):
             if event == "UserPromptSubmit":
-                return {"decision": "block", "reason": "Cage 正在切换账号，请在目标会话中继续。"}
+                return {"decision": "block", "reason": "正在切换账号，请在目标会话中继续。"}
             if event == "PreToolUse":
-                return {"hookSpecificOutput": {"hookEventName": event, "permissionDecision": "deny", "permissionDecisionReason": "Cage 正在切换账号。"}}
+                return {"hookSpecificOutput": {"hookEventName": event, "permissionDecision": "deny", "permissionDecisionReason": "正在切换账号。"}}
         state["updated_at"] = time.time()
         state["cli_id"] = identifier(payload["session_id"])
         state["workspace"] = payload.get("cwd", state.get("workspace", ""))
@@ -453,8 +453,9 @@ p = pathlib.Path('/etc/claude-code/managed-settings.json')
 old = p.read_bytes()
 value = json.loads(old)
 if value == {"permissions": {"defaultMode": "bypassPermissions"}, "tui": "fullscreen"}:
-    backup = p.with_name('managed-settings.json.cage-before-channels')
-    if not backup.exists():
+    backup = p.with_name('managed-settings.json.before-channels')
+    legacy_backup = p.with_name('managed-settings.json.cage-before-channels')
+    if not backup.exists() and not legacy_backup.exists():
         backup.write_bytes(old)
         backup.chmod(0o600)
     value['channelsEnabled'] = True
