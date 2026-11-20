@@ -92,7 +92,7 @@ func packageInstallFailure(action string, cause error, log string) error {
 		patterns     []string
 		reason, next string
 	}{
-		{[]string{"temporary failure resolving", "could not resolve", "name or service not known"}, "APT 无法解析下载服务器域名", "请在网络与代理设置中检查所选节点和 DNS，再继续安装。"},
+		{[]string{"temporary failure resolving", "could not resolve", "name or service not known", "something wicked happened resolving", "no address associated with hostname"}, "APT 无法解析下载服务器域名", "请在网络与代理设置中检查所选节点和 DNS，再继续安装。"},
 		{[]string{"connection timed out", "timed out", "could not connect to", "unable to connect to", "connection failed", "connection refused"}, "APT 连接下载服务器失败或超时", "请检查所选代理是否可用，再继续安装。"},
 		{[]string{"proxy authentication required", "407 proxy"}, "代理服务器拒绝了当前登录凭据", "请在网络与代理设置中更新代理账号或订阅，再应用节点。"},
 		{[]string{aptNotFoundNeedle, "has no installation candidate"}, "软件源中找不到所需的软件包", "请确认软件源可访问且 apt update 已成功，再继续安装。"},
