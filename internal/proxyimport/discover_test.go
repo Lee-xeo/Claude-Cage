@@ -131,6 +131,17 @@ func TestLocationsUsePlatformDataRoots(t *testing.T) {
 			t.Fatal(test.platform)
 		}
 	}
+	for _, test := range []struct{ platform, data string }{{"darwin", "Library/Application Support"}, {"windows", "AppData/Roaming"}, {"linux", ".local/share"}} {
+		found := false
+		for _, loc := range Locations(test.platform, "/home/person", "", "") {
+			if loc.Client == "Clash Neo" {
+				found = loc.Verge && loc.Directory == filepath.Join("/home/person", test.data, "io.github.clash-neo")
+			}
+		}
+		if !found {
+			t.Fatal("missing Clash Neo location on", test.platform)
+		}
+	}
 	locations := Locations("linux", "/home/person", "/custom/data", "/custom/config")
 	for _, loc := range locations {
 		if loc.Client == "Clash Verge Rev" && loc.Directory != "/custom/data/io.github.clash-verge-rev.clash-verge-rev" {

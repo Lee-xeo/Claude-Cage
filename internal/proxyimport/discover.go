@@ -64,6 +64,8 @@ func Locations(platform, home, dataHome, configHome string) []Location {
 		{"FlClash", filepath.Join(dataHome, "com.follow.clash"), false},
 		{"FlClash", filepath.Join(dataHome, "com.follow.clash", "profiles"), false},
 		{"Clash Verge Rev", filepath.Join(dataHome, "io.github.clash-verge-rev.clash-verge-rev"), true},
+		// Clash Neo is a Verge fork and keeps the same profile layout.
+		{"Clash Neo", filepath.Join(dataHome, "io.github.clash-neo"), true},
 		{"Clash Verge", filepath.Join(configHome, "clash-verge"), true},
 		{"Clash / ClashX", filepath.Join(configHome, "clash"), false},
 		{"Mihomo", filepath.Join(configHome, "mihomo"), false},
