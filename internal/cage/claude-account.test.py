@@ -478,6 +478,77 @@ printf '%s\\n' "$@"
             self.assertEqual(settings["statusLine"],supplied["statusLine"])
             self.assertEqual(flags[2:],["--model","haiku"])
 
+    def test_desktop_share_adds_only_missing_settings_and_is_idempotent(self):
+        # Every path, including the helper's own profile lookup, stays in the fixture home.
+        fixture=patch.dict(os.environ,self.env,clear=True);fixture.start();self.addCleanup(fixture.stop)
+        common=self.home/".claude";(common/"skills/local").mkdir(parents=True)
+        shared={"hooks":[{"type":"command","command":"shared-hook"}]}
+        user={"hooks":[{"type":"command","command":"account-hook"}]}
+        def write_common(data):(common/"settings.json").write_text(json.dumps(data))
+        write_common({"model":"opus","theme":"dark","statusLine":{"type":"command","command":"line"},
+                      "env":{"ANTHROPIC_AUTH_TOKEN":"fixture-private"},"apiKeyHelper":"helper","hooks":{"Stop":[shared]}})
+        base=helper.profile(FIRST);config=helper.config_directory(base)
+        self.assertTrue(base.is_relative_to(self.home))
+        config.mkdir(parents=True)
+        (config/".credentials.json").write_text("private")
+        original={"model":"sonnet","custom":1,"hooks":{"Stop":[user]}}
+        (config/"settings.json").write_text(json.dumps(original))
+        def share():
+            self.run_helper("share",FIRST)
+            return json.loads((config/"settings.json").read_text())
+        backups=lambda:sorted((self.home/".local/share/cage/claude-shared/backups"/FIRST).glob("settings.json-*"))
+        stored=share()
+        self.assertEqual(stored,{"model":"sonnet","custom":1,"theme":"dark","hooks":{"Stop":[user,shared]}})
+        self.assertTrue((config/"skills/local").is_symlink())
+        self.assertEqual((config/".credentials.json").read_text(),"private")
+        self.assertEqual(json.loads(backups()[0].read_text()),original)
+        self.assertFalse(any(p.name.startswith("tmp") for p in config.iterdir()))
+        first=(config/"settings.json").read_bytes()
+        share()
+        self.assertEqual((config/"settings.json").read_bytes(),first)
+        self.assertEqual(len(backups()),1)
+        # Terminals do not pass hook groups the profile already runs.
+        with patch.object(helper.Path,"cwd",return_value=self.home):
+            flags=helper.shared_launch_arguments(base,[])
+        self.assertNotIn("hooks",json.loads(Path(flags[1]).read_text()))
+        # Shared changes refresh earlier additions; a value the user edited stays.
+        stored["theme"]="mine";(config/"settings.json").write_text(json.dumps(stored))
+        renewed={"type":"command","command":"renewed-hook"}
+        write_common({"model":"opus","theme":"light","effortLevel":"high","hooks":{"Stop":[renewed]}})
+        self.assertEqual(share(),{"model":"sonnet","custom":1,"theme":"mine","effortLevel":"high","hooks":{"Stop":[user,renewed]}})
+        # Removing the shared settings withdraws exactly what was added.
+        write_common({})
+        self.assertEqual(share(),{**original,"theme":"mine"})
+
+    def test_desktop_share_withdraws_to_the_original_and_keeps_concurrent_edits(self):
+        fixture=patch.dict(os.environ,self.env,clear=True);fixture.start();self.addCleanup(fixture.stop)
+        common=self.home/".claude";common.mkdir()
+        (common/"settings.json").write_text(json.dumps({"theme":"dark","hooks":{"Stop":[{"hooks":[]}]}}))
+        base=helper.profile(FIRST);config=helper.config_directory(base)
+        self.assertTrue(base.is_relative_to(self.home))
+        config.mkdir(parents=True)
+        self.run_helper("share",FIRST)
+        self.assertEqual(json.loads((config/"settings.json").read_text()),{"theme":"dark","hooks":{"Stop":[{"hooks":[]}]}})
+        (common/"settings.json").write_text("{}")
+        self.run_helper("share",FIRST)
+        self.assertEqual(json.loads((config/"settings.json").read_text()),{})
+        # A CLI save during the sync wins; the helper reports and leaves no temporary file.
+        (common/"settings.json").write_text(json.dumps({"theme":"dark"}))
+        real=helper.json.dump
+        def racing(data,stream,**options):
+            (config/"settings.json").write_text('{"model":"cli"}')
+            return real(data,stream,**options)
+        with patch.object(helper.json,"dump",side_effect=racing):
+            with self.assertRaises(helper.SharedResourceConflict):
+                helper.sync_profile_settings(base,helper.shared_root())
+        self.assertEqual((config/"settings.json").read_text(),'{"model":"cli"}')
+        self.assertEqual(sorted(p.name for p in config.iterdir() if p.is_file() and not p.is_symlink()),["settings.json"])
+        # An unreadable file is left for the official CLI to report.
+        (config/"settings.json").write_text("{ editing")
+        self.run_helper("share",FIRST)
+        self.assertEqual((config/"settings.json").read_text(),"{ editing")
+        self.assertEqual(self.run_helper("share","default").returncode,0)
+
     def test_conflicting_shared_resource_preserves_both_versions(self):
         with patch.dict(os.environ,self.env,clear=True):
             base=helper.profile(FIRST);config=helper.config_directory(base);config.mkdir(parents=True)

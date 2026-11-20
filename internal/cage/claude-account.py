@@ -516,6 +516,107 @@ def shared_profile_resources(base):
                 else:
                     shutil.copy2(source, backup)
             merge(source, destination)
+        sync_profile_settings(base, lock_dir)
+
+
+# Only local behavior is shared. Never copy env, apiKeyHelper, login/org
+# constraints, OAuth metadata, or account-synced remote configuration.
+SHARED_SETTINGS = frozenset({"model", "permissions", "hooks", "statusLine", "attribution", "language",
+                             "effortLevel", "alwaysThinkingEnabled", "includeCoAuthoredBy", "respectGitignore",
+                             "spinnerTipsEnabled", "outputStyle", "disableAllHooks", "includeGitInstructions",
+                             "theme", "skipDangerousModePermissionPrompt", "tui", "autoMemoryEnabled"})
+# The terminal status line also records quota readings; a copied user status
+# line would disable that for terminals, and Desktop does not draw one.
+PROFILE_SETTINGS = SHARED_SETTINGS - {"statusLine"}
+
+
+def sync_profile_settings(base, lock_dir):
+    """Copy shared settings into a profile for clients that take no flags.
+
+    Only keys the profile does not set are added, and hook groups are appended
+    per event. A private record outside the configuration directory lists the
+    additions, so later runs refresh or withdraw exactly those entries and never
+    a value the user changed. Callers hold resources.lock.
+    """
+    config = config_directory(base)
+    path, record_path = config / "settings.json", base / "shared-settings.json"
+    common = json_file(Path.home() / ".claude/settings.json")
+    if path.is_symlink() or not isinstance(common, dict):
+        return
+    original = path.read_bytes() if path.exists() else None
+    try:
+        current = json.loads(original) if original is not None else {}
+    except ValueError:
+        # Leave a file the user is still editing to the CLI's own diagnostics.
+        return
+    if not isinstance(current, dict) or "hooks" in current and not isinstance(current["hooks"], dict):
+        return
+    try:
+        record = json_file(record_path)
+    except ValueError:
+        record = {}
+    if not isinstance(record, dict) or not all(isinstance(record.get(name, {}), dict) for name in ("keys", "hooks")):
+        record = {}
+    result = json.loads(json.dumps(current))
+    # Withdraw the previous additions that are still exactly as written.
+    for key, value in (record.get("keys") or {}).items():
+        if key in result and result[key] == value:
+            del result[key]
+    hooks = result.get("hooks")
+    if isinstance(hooks, dict):
+        for event, groups in (record.get("hooks") or {}).items():
+            present = hooks.get(event)
+            if not isinstance(present, list) or not isinstance(groups, list):
+                continue
+            for group in groups:
+                if group in present:
+                    present.remove(group)
+            if not present:
+                del hooks[event]
+        if not hooks and record.get("hooks_created"):
+            del result["hooks"]
+    added = {key: common[key] for key in sorted(PROFILE_SETTINGS - {"hooks"}) if key in common and key not in result}
+    result.update(added)
+    added_hooks, created = {}, "hooks" not in result
+    if isinstance(common.get("hooks"), dict):
+        target = result.setdefault("hooks", {})
+        for event, groups in common["hooks"].items():
+            present = target.get(event, [])
+            if not isinstance(groups, list) or not isinstance(present, list):
+                continue
+            missing = []
+            for group in groups:
+                if group not in present and group not in missing:
+                    missing.append(group)
+            if missing:
+                target[event] = present + missing
+                added_hooks[event] = missing
+        if created and not target:
+            del result["hooks"]
+    new_record = {"keys": added, "hooks": added_hooks, "hooks_created": created and bool(added_hooks)}
+    if result != current:
+        if original is not None:
+            backup = lock_dir / "backups" / base.name / ("settings.json-" + str(time.time_ns()))
+            backup.parent.mkdir(mode=PRIVATE_MODE, parents=True, exist_ok=True)
+            with backup.open("xb") as output:
+                output.write(original)
+        with tempfile.NamedTemporaryFile(mode="w", dir=config, delete=False) as stream:
+            json.dump(result, stream, indent=2, ensure_ascii=False)
+            stream.write("\n")
+            temporary = stream.name
+        try:
+            # The CLI may save its own change meanwhile; keep that one.
+            if (path.read_bytes() if path.exists() else None) != original:
+                raise SharedResourceConflict("账号设置在同步期间被修改，已保留原设置，请稍后重试")
+            os.replace(temporary, path)
+        except BaseException:
+            Path(temporary).unlink(missing_ok=True)
+            raise
+    if new_record != record:
+        with tempfile.NamedTemporaryFile(mode="w", dir=base, delete=False) as stream:
+            json.dump(new_record, stream, separators=(",", ":"))
+            temporary = stream.name
+        os.replace(temporary, record_path)
 
 
 def shared_launch_arguments(base, args, settings_fd=None):
@@ -629,15 +730,24 @@ def shared_launch_arguments_locked(base, args, settings_fd):
         else:
             own_memory.symlink_to(memory, target_is_directory=True)
     settings = {"autoMemoryDirectory": shared_memory_path(memory)}
-    # Only local behavior is shared. Never copy env, apiKeyHelper, login/org
-    # constraints, OAuth metadata, or account-synced remote configuration.
     common_settings = json_file(Path.home() / ".claude/settings.json")
-    shared_keys = {"model", "permissions", "hooks", "statusLine", "attribution", "language",
-                   "effortLevel", "alwaysThinkingEnabled", "includeCoAuthoredBy", "respectGitignore",
-                   "spinnerTipsEnabled", "outputStyle", "disableAllHooks", "includeGitInstructions",
-                   "theme", "skipDangerousModePermissionPrompt", "tui", "autoMemoryEnabled"}
+    shared_keys = SHARED_SETTINGS
     if isinstance(common_settings, dict):
         settings.update({key: value for key, value in common_settings.items() if key in shared_keys})
+    # Hook groups already present in the profile's own settings (including
+    # those copied there for Desktop) run from that file. Pass only the rest.
+    own_hooks = json_file(config_directory(base) / "settings.json")
+    own_hooks = own_hooks.get("hooks") if isinstance(own_hooks, dict) else None
+    if isinstance(settings.get("hooks"), dict) and isinstance(own_hooks, dict):
+        remaining = {}
+        for event, groups in settings["hooks"].items():
+            present = own_hooks.get(event)
+            groups = [group for group in groups if not (isinstance(present, list) and group in present)] if isinstance(groups, list) else groups
+            if groups:
+                remaining[event] = groups
+        settings["hooks"] = remaining
+        if not remaining:
+            del settings["hooks"]
     # Respect an explicit memory location in existing user/project settings.
     paths = [Path.home() / ".claude/settings.json", config_directory(base) / "settings.json"]
     for parent in reversed((Path.cwd(), *Path.cwd().parents)):
@@ -708,6 +818,11 @@ def main(args, *, mobile_settings_fd=None, verify_mobile=None):
     original_umask = os.umask(0o077)
     if account_id != DEFAULT:
         config_directory(base).mkdir(mode=PRIVATE_MODE, parents=True, exist_ok=True)
+    if mode == "share":
+        # Desktop starts its own CLI without arguments; prepare the profile.
+        if account_id != DEFAULT:
+            shared_profile_resources(base)
+        return 0
     elif mode == "statusline":
         base.mkdir(mode=PRIVATE_MODE, parents=True, exist_ok=True)
     env = cli_environment(base)
