@@ -172,6 +172,12 @@ func (s *Server) changeProxy(action string, in proxyInput, resumeVersion *uint64
 			}
 			p.Chain = append([]string(nil), in.NodeIDs...)
 			p.Selected = p.Chain[len(p.Chain)-1]
+			// A one-node route is the interface's single-exit mode. It keeps
+			// the exit's imported dialer-proxy hops, as select does, instead of
+			// overriding them with a direct connection (#345).
+			if len(p.Chain) == 1 {
+				p.Chain = nil
+			}
 			if _, err := p.Route(); err != nil {
 				return err
 			}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestProxyRouteAPIIsAtomicAndSurvivesRefresh(t *testing.T) {
@@ -195,5 +196,56 @@ func TestProxySelectReplacesExistingChain(t *testing.T) {
 	}
 	if err := s.changeProxy("route", proxyInput{NodeIDs: []string{a}}, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// 回归 #345：单节点应用曾以单元素显式链覆盖导入的 dialer-proxy，所选出口失去中转，
+// 切走后旧出口又恢复中转。
+func TestSingleNodeRouteKeepsImportedDialer(t *testing.T) {
+	s := testServer(t)
+	p, _ := managedproxy.Load(s.profile)
+	if err := p.Import("chain", "", []byte(`proxies:
+  - {name: T, type: http, server: 127.0.0.1, port: 1080}
+  - {name: A, type: socks5, server: 127.0.0.1, port: 1081, dialer-proxy: T}
+  - {name: B, type: socks5, server: 127.0.0.1, port: 1082, dialer-proxy: T}
+`), "chain", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	nodes := p.Sources[1].Nodes
+	transit, a, b := nodes[0].ID, nodes[1].ID, nodes[2].ID
+	if err := p.Save(s.profile); err != nil {
+		t.Fatal(err)
+	}
+	oldValidate, oldStart := validateProxyCore, startProxyCore
+	t.Cleanup(func() { validateProxyCore, startProxyCore = oldValidate, oldStart })
+	validateProxyCore = func(_ context.Context, profile string, p managedproxy.Store) error {
+		_, err := p.Runtime(profile)
+		return err
+	}
+	startProxyCore = func(context.Context, string, managedproxy.Store) error { return nil }
+	for _, exit := range []string{a, b, a} {
+		if err := s.changeProxy("route", proxyInput{NodeIDs: []string{exit}}, nil); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := managedproxy.Load(s.profile)
+		route, err := got.Route()
+		if err != nil || got.Selected != exit || len(got.Chain) != 0 || !reflect.DeepEqual(route, []string{transit, exit}) {
+			t.Fatalf("single exit lost its imported hop: chain=%v route=%v err=%v", got.Chain, route, err)
+		}
+		runtime, err := got.Runtime(s.profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var config struct {
+			Proxies []map[string]any `yaml:"proxies"`
+		}
+		if err := yaml.Unmarshal(runtime, &config); err != nil {
+			t.Fatal(err)
+		}
+		for _, proxy := range config.Proxies {
+			if (proxy["name"] == a || proxy["name"] == b) && proxy["dialer-proxy"] != transit {
+				t.Fatalf("node %v lost its imported dialer after selecting %s: %v", proxy["name"], exit, proxy)
+			}
+		}
 	}
 }
