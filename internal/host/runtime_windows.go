@@ -1,6 +1,7 @@
 package host
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -69,12 +70,12 @@ func ConfigureWindowsRuntime() error {
 func windowsHypervisorReady() error {
 	proc := windows.NewLazySystemDLL("WinHvPlatform.dll").NewProc("WHvGetCapability")
 	if err := proc.Find(); err != nil {
-		return fmt.Errorf("请启用 Windows Hypervisor Platform（Windows 虚拟机监控程序平台）并重启后再启动环境")
+		return errors.New(HypervisorPlatformMissing)
 	}
 	var present, written uint32
 	result, _, _ := proc.Call(0, uintptr(unsafe.Pointer(&present)), unsafe.Sizeof(present), uintptr(unsafe.Pointer(&written)))
 	if result != 0 || written != 4 || present == 0 {
-		return fmt.Errorf("Windows 虚拟化尚未就绪：请在固件中启用 CPU 虚拟化，启用 Windows Hypervisor Platform 并重启")
+		return errors.New(HypervisorNotReady)
 	}
 	return nil
 }

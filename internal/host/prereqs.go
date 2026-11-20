@@ -121,6 +121,13 @@ func inGroup(name string) bool {
 	return err == nil && slices.Contains(ids, g.Gid)
 }
 
+// Windows hypervisor preflight failures, printed by setup. The workbench
+// recognizes them in the operation log, so keep both texts in sync there.
+const (
+	HypervisorPlatformMissing = "请启用 Windows Hypervisor Platform（Windows 虚拟机监控程序平台）并重启后再启动环境"
+	HypervisorNotReady        = "Windows 虚拟化尚未就绪：请在固件中启用 CPU 虚拟化，启用 Windows Hypervisor Platform 并重启"
+)
+
 // WindowsPrereqs checks for QEMU and queries the Windows Hypervisor Platform
 // capability without elevation.
 // winget's QEMU does not add itself to PATH:
