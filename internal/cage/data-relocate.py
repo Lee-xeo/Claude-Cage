@@ -176,7 +176,7 @@ def rollback(share, aside=None):
     if not os.path.lexists(former) and os.path.isdir(current) and not os.path.islink(current):
         os.rename(current, former)
         rewrite_absolute_links(former, os.path.abspath(current), os.path.abspath(former))
-    if aside and os.path.isdir(aside) and not os.path.lexists(current):
+    if aside and os.path.lexists(aside) and not os.path.lexists(current):
         os.rename(aside, current)
     fsync_directory(share)
 

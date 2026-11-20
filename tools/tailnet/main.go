@@ -146,7 +146,7 @@ func copyStateDir(from, to string) error {
 			return err
 		}
 		files++
-		return os.WriteFile(target, data, info.Mode().Perm())
+		return writeSyncedFile(target, data, info.Mode().Perm())
 	})
 	if err != nil {
 		return err
@@ -182,6 +182,22 @@ func copyStateDir(from, to string) error {
 		return err
 	}
 	return nil
+}
+
+func writeSyncedFile(path string, data []byte, mode os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // deviceName is the name the device has on the network: this system's

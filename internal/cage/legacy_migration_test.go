@@ -124,6 +124,114 @@ func TestLegacySettingsAreCopiedOnceAndKept(t *testing.T) {
 	}
 }
 
+func TestLegacySettingsCopySurvivesMidMigrationInterruptionAndVerifyFailure(t *testing.T) {
+	python := python3(t)
+	program := legacySettingsCopy(t)
+	root := t.TempDir()
+	former, current := filepath.Join(root, "claude-cage"), filepath.Join(root, "workbench")
+	if err := os.MkdirAll(former, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(former, "alpha"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(former, "beta"), []byte("two\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	formerBefore := snapshotFiles(t, former)
+
+	// Simulate an interrupted run where alpha was copied, beta left a partial
+	// staged file, and the completion marker was not yet written.
+	if err := os.MkdirAll(current, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(current, "alpha"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(current, ".beta.copy"), []byte("truncated"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verification failure aborts before replacing beta, removes staged copy,
+	// leaves former intact, and does not write .settings-copied.
+	failing := strings.Replace(program, "filecmp.cmp(source, staged, shallow=False)", "False", 1)
+	if out, err := exec.Command(python, "-I", "-c", failing, former, current, "700").CombinedOutput(); err == nil {
+		t.Fatalf("expected verification failure, succeeded: %s", out)
+	}
+	if _, err := os.Lstat(filepath.Join(current, ".beta.copy")); !os.IsNotExist(err) {
+		t.Fatalf("failed staged copy was not cleaned up: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(current, ".settings-copied")); !os.IsNotExist(err) {
+		t.Fatalf("marker written despite verification failure: %v", err)
+	}
+	if !bytes.Equal(snapshotFiles(t, former), formerBefore) {
+		t.Fatal("former directory changed on failed verification")
+	}
+
+	// Re-entry completes beta byte-exact and records completion.
+	if out, err := exec.Command(python, "-I", "-c", program, former, current, "700").CombinedOutput(); err != nil {
+		t.Fatalf("retry copy: %v\n%s", err, out)
+	}
+	for name, want := range map[string]string{"alpha": "one\n", "beta": "two\n"} {
+		got, err := os.ReadFile(filepath.Join(current, name))
+		if err != nil || string(got) != want {
+			t.Fatalf("%s: %q %v", name, got, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(current, ".settings-copied")); err != nil {
+		t.Fatalf("completion marker missing after retry: %v", err)
+	}
+	if !bytes.Equal(snapshotFiles(t, former), formerBefore) {
+		t.Fatal("former directory changed after retry")
+	}
+}
+
+func TestLegacyBashrcPromptRewriteIsAtomicAndIdempotent(t *testing.T) {
+	python := python3(t)
+	const begin, end = "python3 - <<'LEGACY_PROMPT'\n", "\nLEGACY_PROMPT\n"
+	start := strings.Index(guestMigrate, begin)
+	stop := strings.Index(guestMigrate, end)
+	if start < 0 || stop < start {
+		t.Fatal("LEGACY_PROMPT not found in guest-migrate.sh")
+	}
+	program := guestMigrate[start+len(begin) : stop]
+	home := t.TempDir()
+	bashrc := filepath.Join(home, ".bashrc")
+	original := "# user config\nexport FOO=bar\n# CAGE_WORKBENCH_PROMPT\nif [ \"${CAGE_WORKBENCH:-}\" = 1 ]; then\n  PS1='x'\nfi\n"
+	if err := os.WriteFile(bashrc, []byte(original), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(bashrc, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	run := func() {
+		t.Helper()
+		cmd := exec.Command(python, "-I", "-c", program)
+		cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("prompt rewrite: %v\n%s", err, out)
+		}
+	}
+	run()
+	after, err := os.ReadFile(bashrc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# user config\nexport FOO=bar\n# WORKBENCH_TERMINAL_PROMPT\nif [ \"${WORKBENCH_TERMINAL:-}\" = 1 ]; then\n  PS1='x'\nfi\n"
+	if string(after) != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", after, want)
+	}
+	info, err := os.Stat(bashrc)
+	if err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatalf("mode %v %v, want 0640", info.Mode().Perm(), err)
+	}
+	run()
+	afterAgain, _ := os.ReadFile(bashrc)
+	if string(afterAgain) != want {
+		t.Fatalf("not idempotent:\n%s", afterAgain)
+	}
+}
+
 func snapshotFiles(t *testing.T, root string) []byte {
 	t.Helper()
 	var out bytes.Buffer

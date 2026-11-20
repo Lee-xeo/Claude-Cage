@@ -87,6 +87,7 @@ sudo systemctl daemon-reload
 # Workbench terminals select their prompt by a variable whose name changed.
 # Only the exact block earlier versions appended is replaced.
 python3 - <<'LEGACY_PROMPT'
+import os, stat, tempfile
 from pathlib import Path
 p = Path.home() / '.bashrc'
 former = b"""# CAGE_WORKBENCH_PROMPT
@@ -98,7 +99,18 @@ if [ "${WORKBENCH_TERMINAL:-}" = 1 ]; then
 if p.is_file() and not p.is_symlink():
     before = p.read_bytes()
     if former in before:
-        p.write_bytes(before.replace(former, current, 1))
+        mode = stat.S_IMODE(p.stat().st_mode)
+        with tempfile.NamedTemporaryFile(dir=p.parent, prefix='.bashrc.', delete=False) as stream:
+            stream.write(before.replace(former, current, 1))
+            stream.flush()
+            os.fsync(stream.fileno())
+            staged = stream.name
+        try:
+            os.chmod(staged, mode)
+            os.replace(staged, p)
+        except BaseException:
+            os.unlink(staged)
+            raise
 LEGACY_PROMPT
 # Downloaded tool archives are a cache; keep it under its current name. The
 # image paste lock of earlier versions lived beside it.
