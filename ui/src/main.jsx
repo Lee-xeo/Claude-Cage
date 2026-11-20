@@ -734,6 +734,7 @@ function App() {
         exit: () => native("quitNow"),
         isCancelled: () => quitAfterStop.current !== request,
         onStatus: setStatus,
+        tr,
       });
     } catch (error) {
       if (quitAfterStop.current === request) {

@@ -12,14 +12,16 @@ internal sealed class AppUpdater : IDisposable
     public static string Root => Path.Combine(Backend.Root, "updates");
     private readonly Action<Dictionary<string, object?>> changed;
     private readonly Action quit, reconnect;
+    private readonly Func<string> readPublisher;
     private readonly Dictionary<string, object?> state = new() { ["phase"] = "idle", ["currentVersion"] = Version, ["message"] = "" };
     private CancellationTokenSource? cancellation;
     private InstallPlan? prepared;
     private bool committed;
 
-    public AppUpdater(Action<Dictionary<string, object?>> changed, Action quit, Action reconnect)
+    public AppUpdater(Action<Dictionary<string, object?>> changed, Action quit, Action reconnect, Func<string>? readPublisher = null)
     {
         this.changed = changed; this.quit = quit; this.reconnect = reconnect;
+        this.readPublisher = readPublisher ?? (() => Authenticode.Publisher(Environment.ProcessPath!));
         try
         {
             var result = Path.Combine(Root, "last-result.json");
@@ -86,10 +88,17 @@ internal sealed class AppUpdater : IDisposable
         Change("checking", "正在检查更新，优先使用主机网络");
         string? archive = null;
         string retryAt = "";
-        using var process = new Process { StartInfo = Backend.StartInfo(Backend.Executable, "app-update", checkOnly ? "check" : "download") };
+        using var process = new Process();
         var started = false;
         try
         {
+            // An unsigned development build cannot authenticate an automatic
+            // replacement. Still check for releases, but never download one.
+            string? publisher = null;
+            try { publisher = await Task.Run(readPublisher, token); }
+            catch (Exception error) when (error is IOException or CryptographicException or UnauthorizedAccessException) { }
+            token.ThrowIfCancellationRequested();
+            process.StartInfo = Backend.StartInfo(Backend.Executable, "app-update", checkOnly || publisher == null ? "check" : "download");
             if (!process.Start()) throw new IOException("无法启动更新检查");
             started = true;
             using var abort = token.Register(() => { try { if (!process.HasExited) process.Kill(); } catch (InvalidOperationException) { } });
@@ -108,17 +117,18 @@ internal sealed class AppUpdater : IDisposable
                         JsonValueKind.Number => property.Value.GetInt64(),
                         _ => property.Value.Clone(),
                     };
-                changed(new(state));
+                if (publisher == null && state.GetValueOrDefault("phase") as string == "available")
+                    Change("manual", "当前 Windows 程序未签名或签名无法验证，请从官方发布页下载安装包，退出 Cage 后安装到原位置；配置、凭据、项目和虚拟机磁盘会保留。");
+                else changed(new(state));
             }
             await process.WaitForExitAsync(token); await errors;
             if (process.ExitCode != 0) throw new IOException(last.ValueKind == JsonValueKind.Object && last.Text("message") is { Length: > 0 } error ? error : "更新请求未完成");
-            if (checkOnly || last.Text("phase") != "downloaded") return;
+            if (checkOnly || publisher == null || last.Text("phase") != "downloaded") return;
             archive = UpdatePolicy.DownloadPath(last.Text("archivePath"), Root);
             var version = last.Text("latestVersion"); var digest = last.Text("sha256");
             if (!UpdatePolicy.IsNewer(version, Version)) throw new IOException("安装包版本无效或不高于当前版本");
             cancellation.CancelAfter(TimeSpan.FromMinutes(25));
             Change("verifying", "正在验证 Windows 签名和安装包内容");
-            var publisher = await Task.Run(() => Authenticode.Publisher(Environment.ProcessPath!), token);
             await Task.Run(() => UpdateInstaller.VerifyArchive(archive, digest, version, publisher), token);
             token.ThrowIfCancellationRequested();
             prepared = new InstallPlan(archive, digest, version, publisher,

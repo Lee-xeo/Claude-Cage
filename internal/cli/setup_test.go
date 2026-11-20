@@ -248,6 +248,18 @@ func TestSetupExistingNote(t *testing.T) {
 	}
 }
 
+// An embedding program whose VM disk holds user data replaces the --reset advice.
+func TestSetupExistingNoteUsesEmbedderHint(t *testing.T) {
+	previous := StaleBaseHint
+	StaleBaseHint = "keep the disk and update its components"
+	t.Cleanup(func() { StaleBaseHint = previous })
+	te, _, _ := setupRun(t, "--preinstall=none")
+	te.fake.VMs["proj-deadbeef"] = &vm.Instance{Name: "proj-deadbeef", Status: vm.Stopped}
+	if te.setupBase([]string{"setup", "--preinstall=none"}) != 0 || !strings.Contains(te.out(), StaleBaseHint) || strings.Contains(te.out(), "--reset") {
+		t.Errorf("with a VM: %s", te.out())
+	}
+}
+
 func TestSetupBase(t *testing.T) {
 	te, code, stdin := setupRun(t, "--preinstall=none", "--disk", "12", "--memory=5", "--cpus", "2")
 	if code != 0 {

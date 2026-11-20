@@ -519,7 +519,7 @@ def handoff_session(request):
     if live(state.get("pid")) and live(state.get("channel_pid")) and not state.get("closed"):
         return {"running": True, "channel_ready": True}
     for row in rows:
-        if row.get("cwd") != workspace:
+        if not workspace_within(row.get("cwd") or "", workspace):
             raise ValueError("原会话的项目已变化，请重新读取会话列表")
         # A waiting CLI has no executing tool. Resume its task on the shared
         # channel so any permission decision is requested again on the phone.
@@ -529,7 +529,7 @@ def handoff_session(request):
         # Refresh the supported CLI registry immediately before signalling so
         # stale discovery data cannot select a different process or workspace.
         current = active_sessions(session_id, config)
-        matched = next((item for item in current if item.get("pid") == row["pid"] and item.get("cwd") == workspace and item.get("kind") == "interactive" and item.get("status") in ("idle", "waiting")), None)
+        matched = next((item for item in current if item.get("pid") == row["pid"] and workspace_within(item.get("cwd") or "", workspace) and item.get("kind") == "interactive" and item.get("status") in ("idle", "waiting")), None)
         if matched is None:
             return {"running": bool(current)}
         if matched["status"] == "waiting":
@@ -639,6 +639,7 @@ def prepare_account_switch(request):
     if pending:
         raise ValueError("历史仍有结果未确认的工具，不能自动接续")
     folder.mkdir(mode=PRIVATE_MODE, parents=True, exist_ok=True)
+    copy_history(config / "file-history" / sid, folder / "file-history" / sid)
     target = folder / "history.jsonl"
     with tempfile.NamedTemporaryFile(dir=folder, delete=False) as stream:
         stream.write(path.read_bytes())
@@ -648,6 +649,12 @@ def prepare_account_switch(request):
     with state_file(connection) as state:
         state["closed"] = True
     return {"transcript": str(target)}
+
+
+def copy_history(source, target):
+    if source.is_dir() and not source.is_symlink():
+        shutil.copytree(source, target, dirs_exist_ok=True, ignore=lambda d, n: [x for x in n if os.path.islink(os.path.join(d, x))],
+                        copy_function=lambda a, b: os.path.exists(b) or shutil.copy2(a, b))
 
 
 def cancel_account_switch(request):
@@ -799,6 +806,8 @@ def launch(request):
         expected = ROOT.parent / "cli-account-switches" / identifier(request["switch_id"]) / "history.jsonl"
         if Path(request["resume_transcript"]) != expected or not expected.is_file():
             raise ValueError("账号交接历史无效")
+        for frozen in (expected.parent / "file-history").glob("*"):
+            copy_history(frozen, Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "file-history" / frozen.name)
         args += ["--resume", _runtime["path"](expected), "--fork-session", "--session-id", session_id]
     else:
         args += ["--resume", session_id] if request.get("resume") else ["--session-id", session_id]

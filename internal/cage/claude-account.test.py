@@ -541,7 +541,7 @@ printf '%s\\n' "$@"
             (config/"settings.json").write_text('{"model":"cli"}')
             return real(data,stream,**options)
         with patch.object(helper.json,"dump",side_effect=racing):
-            helper.sync_profile_settings(base,helper.shared_root())
+            helper.sync_profile_settings(base,helper.shared_root(),{},False)
         self.assertEqual((config/"settings.json").read_text(),'{"model":"cli"}')
         self.assertEqual(sorted(p.name for p in config.iterdir() if p.is_file() and not p.is_symlink()),["settings.json"])
         # An unreadable file is left for the official CLI to report.
@@ -723,6 +723,284 @@ else:
         self.assertEqual(observed["quota"]["five_hour"]["resets_at"], now + 3600)
         self.assertEqual(observed["quota"]["seven_day"]["used_percentage"], 67)
         self.assertEqual(observed["quota"]["seven_day"]["resets_at"], 0)
+
+
+class SharedPluginsMcpAndMemoryTests(unittest.TestCase):
+    """Cross-account sharing of plugins, MCP servers, memory and instructions."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = Path(tmp.name).resolve()
+        fake = self.home / ".local/bin/claude"
+        fake.parent.mkdir(parents=True)
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.chmod(0o700)
+        self.env = {"HOME": str(self.home), "PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1", "TMPDIR": str(self.home)}
+        fixture = patch.dict(os.environ, self.env, clear=True)
+        fixture.start()
+        self.addCleanup(fixture.stop)
+        self.common = self.home / ".claude"
+        (self.common / "plugins").mkdir(parents=True)
+
+    def profile(self, account):
+        base = helper.profile(account)
+        # Never touch a real profile: every path must stay in the fixture home.
+        self.assertTrue(base.resolve().is_relative_to(self.home))
+        helper.config_directory(base).mkdir(parents=True, exist_ok=True)
+        return base, helper.config_directory(base)
+
+    def share(self, account, check=True):
+        result = subprocess.run([sys.executable, str(source), "share", account], env=self.env, cwd=self.home,
+                                text=True, capture_output=True)
+        if check:
+            self.assertEqual(result.returncode, 0, result.stderr)
+        return result
+
+    def write(self, path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data) if not isinstance(data, str) else data)
+
+    def read(self, path):
+        return json.loads(path.read_text())
+
+    def install(self, plugins, marketplace, source_repo, plugin, version="1.0.0"):
+        """Lay out a profile's plugins folder the way the official CLI writes it."""
+        (plugins / "marketplaces" / marketplace / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+        (plugins / "marketplaces" / marketplace / ".claude-plugin/marketplace.json").write_text(source_repo)
+        folder = plugins / "cache" / marketplace / plugin / version
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "plugin.md").write_text(plugin + version)
+        known = self.read(plugins / "known_marketplaces.json") if (plugins / "known_marketplaces.json").exists() else {}
+        known[marketplace] = {"source": {"source": "github", "repo": source_repo},
+                              "installLocation": str(plugins / "marketplaces" / marketplace), "lastUpdated": "2026-11-01T00:00:00.000Z"}
+        self.write(plugins / "known_marketplaces.json", known)
+        installed = self.read(plugins / "installed_plugins.json") if (plugins / "installed_plugins.json").exists() else {"version": 2, "plugins": {}}
+        installed["plugins"][plugin + "@" + marketplace] = [{"scope": "user", "installPath": str(folder), "version": version}]
+        self.write(plugins / "installed_plugins.json", installed)
+
+    def test_private_plugin_entries_and_identity_files_never_become_links(self):
+        self.assertFalse(helper.PRIVATE_PLUGIN_ENTRIES & {name for name, _ in helper.SHARED_PLUGIN_FOLDERS})
+        self.assertTrue({"synced", "store", "data", "installed_plugins.json", "known_marketplaces.json"} <= helper.PRIVATE_PLUGIN_ENTRIES)
+        base, config = self.profile(FIRST)
+        identity = {".credentials.json": "credential", ".claude.json": json.dumps({"oauthAccount": {"accountUuid": "a"}, "userID": "u"}),
+                    "plugins/synced/org_account/x.json": "synced", "plugins/store/s.json": "store", "plugins/data/p/state": "data",
+                    "telemetry/t.json": "t", "statsig/s": "s", "history.jsonl": "h", "projects/p/s.jsonl": "{}",
+                    "sessions/1.json": "{}", "todos/t.json": "[]", "file-history/s/b": "b", "shell-snapshots/s.sh": "s"}
+        for name, text in identity.items():
+            (config / name).parent.mkdir(parents=True, exist_ok=True)
+            (config / name).write_text(text)
+        self.share(FIRST)
+        allowed = {"commands", "agents", "rules", "agent-memory", "CLAUDE.md", "AGENTS.md", "plugins/marketplaces", "plugins/cache"}
+        for path in config.rglob("*"):
+            relative = str(path.relative_to(config))
+            if path.is_symlink():
+                self.assertTrue(relative in allowed or relative.startswith("skills/") or
+                                relative.startswith("projects/") and relative.endswith("/memory"), relative)
+        for name, text in identity.items():
+            self.assertFalse(any(parent.is_symlink() for parent in [config / name, *(config / name).parents] if parent != config and config in parent.parents or parent == config / name), name)
+            self.assertEqual((config / name).read_text(), text)
+        self.assertFalse((self.common / "plugins/synced").exists())
+        self.assertFalse((self.common / ".credentials.json").exists())
+
+    def test_existing_private_plugins_migrate_and_choices_flow_between_accounts(self):
+        self.install(self.common / "plugins", "team", "example/team", "lint")
+        self.write(self.common / "settings.json", {"enabledPlugins": {"lint@team": True}, "theme": "dark"})
+        first, config = self.profile(FIRST)
+        plugins = config / "plugins"
+        self.install(plugins, "official", "example/official", "review")
+        self.install(plugins, "team", "example/team", "lint")
+        (plugins / "cache/team/lint/1.0.0/.in_use").write_text("account copy")
+        self.write(config / "settings.json", {"enabledPlugins": {"review@official": True}})
+        self.share(FIRST)
+        for name in ("marketplaces", "cache"):
+            self.assertTrue((plugins / name).is_symlink())
+        self.assertTrue((self.common / "plugins/cache/official/review/1.0.0/plugin.md").exists())
+        # The redundant copy of an already shared version is kept, not deleted.
+        kept = list((self.home / ".local/share/workbench/claude-shared/backups" / FIRST / "plugins").rglob(".in_use"))
+        self.assertEqual([path.read_text() for path in kept], ["account copy"])
+        common_installed = self.read(self.common / "plugins/installed_plugins.json")["plugins"]
+        self.assertEqual(common_installed["review@official"][0]["installPath"], str(self.common / "plugins/cache/official/review/1.0.0"))
+        self.assertEqual(self.read(self.common / "settings.json")["enabledPlugins"], {"lint@team": True, "review@official": True})
+        self.assertEqual(self.read(self.common / "settings.json")["theme"], "dark")
+        second, other = self.profile(SECOND)
+        self.share(SECOND)
+        installed = self.read(other / "plugins/installed_plugins.json")["plugins"]
+        # A new registry uses the neutral profile path (or its runtime alias if
+        # an outer path happens to contain the product name).
+        with patch.object(helper.tempfile, "tempdir", str(self.home)):
+            preferred = helper.plugin_root_forms(other)[0]
+        self.assertNotIn("cage", preferred.lower())
+        self.assertEqual(installed["review@official"][0]["installPath"], preferred + "cache/official/review/1.0.0")
+        self.assertTrue((other / "plugins/cache/official/review/1.0.0/plugin.md").exists())
+        known = self.read(other / "plugins/known_marketplaces.json")
+        self.assertEqual(known["official"]["installLocation"], preferred + "marketplaces/official")
+        # A registry written in the real spelling keeps it.
+        first_installed = self.read(plugins / "installed_plugins.json")["plugins"]
+        self.assertEqual(first_installed["lint@team"][0]["installPath"], str(plugins / "cache/team/lint/1.0.0"))
+        self.assertEqual(self.read(other / "settings.json")["enabledPlugins"], {"lint@team": True, "review@official": True})
+        # The second account uninstalls; the removal reaches the first one.
+        installed.pop("review@official")
+        self.write(other / "plugins/installed_plugins.json", {"version": 2, "plugins": installed})
+        settings = self.read(other / "settings.json"); settings["enabledPlugins"].pop("review@official")
+        self.write(other / "settings.json", settings)
+        self.share(SECOND)
+        self.share(FIRST)
+        self.assertNotIn("review@official", self.read(plugins / "installed_plugins.json")["plugins"])
+        self.assertEqual(self.read(config / "settings.json")["enabledPlugins"], {"lint@team": True})
+        # Repeated runs change nothing further.
+        before = {path: path.read_bytes() for path in (plugins / "installed_plugins.json", config / "settings.json", self.common / "settings.json")}
+        self.share(FIRST)
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+
+    def test_plugin_conflict_keeps_profile_plugins_private_and_launch_continues(self):
+        self.install(self.common / "plugins", "tools", "example/upstream", "a")
+        first, config = self.profile(FIRST)
+        self.install(config / "plugins", "tools", "someone/fork", "a")
+        (self.common / "CLAUDE.md").write_text("shared")
+        result = self.share(FIRST)
+        self.assertIn("插件继续按账号分开", result.stderr)
+        self.assertFalse((config / "plugins/marketplaces").is_symlink())
+        self.assertEqual((config / "plugins/marketplaces/tools/.claude-plugin/marketplace.json").read_text(), "someone/fork")
+        self.assertEqual(self.read(self.common / "plugins/known_marketplaces.json")["tools"]["source"]["repo"], "example/upstream")
+        self.assertTrue((config / "CLAUDE.md").is_symlink())
+
+    def test_interrupted_plugin_migration_resumes_without_losing_files(self):
+        first, config = self.profile(FIRST)
+        for plugin in ("a", "b", "c"):
+            self.install(config / "plugins", "tools", "example/tools", plugin)
+        files = sorted(str(path.relative_to(config / "plugins")) for path in (config / "plugins").rglob("*") if path.is_file())
+        real, calls = Path.rename, []
+        def failing(path, target):
+            calls.append(path)
+            if len(calls) == 2:
+                raise OSError("interrupted")
+            return real(path, target)
+        with patch.object(helper.Path, "rename", failing), self.assertRaises(OSError):
+            helper.share_plugin_folders(first, helper.shared_root())
+        self.assertTrue(helper.share_plugin_folders(first, helper.shared_root()))
+        self.assertTrue((config / "plugins/cache").is_symlink())
+        found = sorted(str(path.relative_to(config / "plugins")) for path in (config / "plugins").rglob("*") if path.is_file())
+        found += sorted("cache/" + str(path.relative_to(self.common / "plugins/cache")) for path in (self.common / "plugins/cache").rglob("*") if path.is_file())
+        found += sorted("marketplaces/" + str(path.relative_to(self.common / "plugins/marketplaces")) for path in (self.common / "plugins/marketplaces").rglob("*") if path.is_file())
+        self.assertEqual(sorted(set(found)), files)
+
+    def test_shared_mcp_servers_reach_terminals_and_desktop_without_account_fields(self):
+        self.write(self.home / ".claude.json", {"oauthAccount": {"emailAddress": "default@example.test"}, "userID": "default-user",
+                                               "mcpServers": {"notes": {"command": "notes-server"}, "search": {"command": "shared-search"}}})
+        first, config = self.profile(FIRST)
+        own = {"oauthAccount": {"emailAddress": "first@example.test"}, "userID": "first-user", "mcpServers": {"search": {"command": "own-search"}}}
+        self.write(config / ".claude.json", own)
+        flags = helper.shared_mcp_arguments(first, ["--settings", "x", "prompt"])
+        self.assertEqual(flags[0], "--mcp-config")
+        offered = Path(flags[1]).read_text()
+        self.assertEqual(json.loads(offered), {"mcpServers": {"notes": {"command": "notes-server"}}})
+        self.assertNotIn("default", offered)
+        joined = helper.shared_mcp_arguments(first, ["--settings", "x", "--mcp-config", "channel.json", "--dangerously-load-development-channels", "c"])
+        self.assertEqual(joined[:4], ["--settings", "x", "--mcp-config", flags[1]])
+        self.assertEqual(joined[4], "channel.json")
+        self.assertEqual(helper.shared_mcp_arguments(first, ["--strict-mcp-config", "--settings", "x"]), ["--strict-mcp-config", "--settings", "x"])
+        self.share(FIRST)
+        stored = self.read(config / ".claude.json")
+        self.assertEqual(stored["mcpServers"], {"search": {"command": "own-search"}, "notes": {"command": "notes-server"}})
+        self.assertEqual((stored["oauthAccount"], stored["userID"]), (own["oauthAccount"], own["userID"]))
+        self.assertEqual(helper.shared_mcp_arguments(first, ["--settings", "x"]), ["--settings", "x"])
+        self.write(self.home / ".claude.json", {"oauthAccount": {}, "mcpServers": {"search": {"command": "shared-search"}}})
+        self.share(FIRST)
+        self.assertEqual(self.read(config / ".claude.json"), own)
+
+    def test_project_key_matches_the_official_cli_and_old_memory_moves(self):
+        self.assertEqual(helper.project_key("/home/u/my repo"), "-home-u-my-repo")
+        self.assertEqual(helper.project_key("/p/\U0001F600"), "-p---")
+        long = "/w/" + "x" * 230
+        # (h << 5) - h + code over UTF-16 units, as a signed 32-bit value, base 36.
+        value = 0
+        for code in long.encode("utf-16-le")[::2]:
+            value = (value * 31 + code) & 0xFFFFFFFF
+        value = abs(value - (1 << 32) if value >= 1 << 31 else value)
+        self.assertEqual(helper.project_key(long), ("-w-" + "x" * 230)[:200] + "-" + numpy_base36(value))
+        first, config = self.profile(FIRST)
+        project = self.home / ("p" * 190)
+        project.mkdir()
+        old = self.common / "projects" / helper.legacy_project_key(project) / "memory"
+        old.mkdir(parents=True)
+        (old / "MEMORY.md").write_text("long project note")
+        with patch.object(helper.Path, "cwd", return_value=project):
+            flags = helper.shared_launch_arguments(first, [])
+        memory = Path(json.loads(Path(flags[1]).read_text())["autoMemoryDirectory"])
+        self.assertEqual(memory.resolve(), (self.common / "projects" / helper.project_key(project) / "memory").resolve())
+        self.assertEqual((memory / "MEMORY.md").read_text(), "long project note")
+        self.assertTrue(old.is_symlink())
+
+    def test_desktop_share_links_known_project_memory_before_any_terminal(self):
+        first, config = self.profile(FIRST)
+        shared = self.common / "projects/-work-app/memory"
+        shared.mkdir(parents=True)
+        (shared / "MEMORY.md").write_text("from another account")
+        own = config / "projects/-work-lib/memory"
+        own.mkdir(parents=True)
+        (own / "MEMORY.md").write_text("only here")
+        self.share(FIRST)
+        self.assertEqual((config / "projects/-work-app/memory/MEMORY.md").read_text(), "from another account")
+        self.assertTrue((config / "projects/-work-lib/memory").is_symlink())
+        self.assertEqual((self.common / "projects/-work-lib/memory/MEMORY.md").read_text(), "only here")
+
+    def test_atomically_saved_instructions_fold_back_into_the_shared_file(self):
+        (self.common / "CLAUDE.md").write_text("v1")
+        first, config = self.profile(FIRST)
+        second, other = self.profile(SECOND)
+        self.share(FIRST); self.share(SECOND)
+        # The CLI saved through rename: the link became a private copy.
+        (config / "CLAUDE.md").unlink()
+        (config / "CLAUDE.md").write_text("v2 from first")
+        self.share(FIRST)
+        self.assertTrue((config / "CLAUDE.md").is_symlink())
+        self.assertEqual((other / "CLAUDE.md").read_text(), "v2 from first")
+        backups = list((self.home / ".local/share/workbench/claude-shared/backups/common").glob("CLAUDE.md-*"))
+        self.assertEqual([path.read_text() for path in backups], ["v1"])
+        # Both sides changed: nothing is chosen and the launch reports it.
+        (other / "CLAUDE.md").unlink(); (other / "CLAUDE.md").write_text("second's edit")
+        (self.common / "CLAUDE.md").write_text("edited elsewhere")
+        failure = self.share(SECOND, check=False)
+        self.assertIn("同名冲突", failure.stderr)
+        self.assertEqual((other / "CLAUDE.md").read_text(), "second's edit")
+        self.assertEqual((self.common / "CLAUDE.md").read_text(), "edited elsewhere")
+
+    def test_interrupted_settings_record_still_withdraws_its_additions(self):
+        self.write(self.common / "settings.json", {"theme": "dark"})
+        first, config = self.profile(FIRST)
+        real, calls = helper.write_record, []
+        def crash(base, record):
+            calls.append(record)
+            if "pending" not in record:
+                raise OSError("crash before the record is final")
+            return real(base, record)
+        with patch.object(helper, "write_record", crash), self.assertRaises(OSError):
+            helper.shared_profile_resources(first, desktop=True)
+        self.assertEqual(self.read(config / "settings.json"), {"theme": "dark"})
+        self.write(self.common / "settings.json", {})
+        self.share(FIRST)
+        self.assertEqual(self.read(config / "settings.json"), {})
+
+    def test_status_line_keeps_the_users_command_and_quota_reading(self):
+        self.write(self.common / "settings.json", {"statusLine": {"type": "command", "command": "cat > /dev/null; printf mine", "padding": 1}})
+        first, config = self.profile(FIRST)
+        self.assertFalse(helper.has_status_line(first))
+        self.assertEqual(helper.status_line("cage-line")["padding"], 1)
+        shown = subprocess.run([sys.executable, str(source), "statusline", FIRST], env=self.env, cwd=self.home,
+                               input=json.dumps({"session_id": "s"}), text=True, capture_output=True)
+        self.assertEqual(shown.stdout, "mine")
+        self.write(config / "settings.json", {"statusLine": {"type": "command", "command": "own"}})
+        self.assertTrue(helper.has_status_line(first))
+
+
+def numpy_base36(value):
+    digits = ""
+    while True:
+        value, rest = divmod(value, 36)
+        digits = "0123456789abcdefghijklmnopqrstuvwxyz"[rest] + digits
+        if not value:
+            return digits
 
 
 if __name__ == "__main__":

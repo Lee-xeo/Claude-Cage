@@ -9,6 +9,7 @@ if (args is ["smoke-wait", var smokeRelease])
 
 if (args is ["app-update", "check" or "download"])
 {
+    if (AppUpdaterTests.BackendFixture(args[1])) return;
     File.AppendAllText(Path.Combine(Backend.Root, "retry-invocations"), "x");
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { phase = "failed", message = "limited", retryable = true, retryAt = Environment.GetEnvironmentVariable("CAGE_UPDATE_RETRY_AT") }));
     Environment.Exit(1);
@@ -28,6 +29,9 @@ if (args is ["prepare-update", "--json", "--stop"])
         ? "{\"status\":\"stop_required\"}" : "{\"status\":\"prepared\"}");
     return;
 }
+
+await AppUpdaterTests.Run();
+if (args is ["--app-updater-only"]) return;
 
 #if WINDOWS
 NativeInputTests.Run();
@@ -249,7 +253,7 @@ try
         Environment.SetEnvironmentVariable("CAGE_UPDATE_RETRY_AT", retryAt);
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var failures = 0;
-        using var updater = new AppUpdater(state => { if (state.GetValueOrDefault("phase") as string == "failed" && Interlocked.Increment(ref failures) == 2) completion.TrySetResult(); }, () => throw new Exception("unexpected installation"), () => {});
+        using var updater = new AppUpdater(state => { if (state.GetValueOrDefault("phase") as string == "failed" && Interlocked.Increment(ref failures) == 2) completion.TrySetResult(); }, () => throw new Exception("unexpected installation"), () => {}, () => "fixture-publisher");
         updater.Handle("check");
         await completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Check(updater.Handle("status").GetValueOrDefault("retryAt") as string == retryAt, "process-exit path lost retry deadline");

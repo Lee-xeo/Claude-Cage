@@ -43,7 +43,11 @@ type gateCommand struct {
 // StartGateControl publishes an authenticated Unix endpoint in host-private
 // storage. It creates no TCP listener or guest-visible control credential.
 func StartGateControl(configPath, instanceDir string, gate *EgressGate) (func(), error) {
-	dir, err := os.MkdirTemp(gateTempDir(), "cage-gate-")
+	base, err := gateSocketBase(filepath.Dir(configPath))
+	if err != nil {
+		return nil, err
+	}
+	dir, err := os.MkdirTemp(base, "cage-gate-")
 	if err != nil {
 		return nil, err
 	}

@@ -40,11 +40,11 @@ node agent-bootstrap.mjs download --platform darwin-arm64 \
   --version v0.1.6-alpha-preview --destination /absolute/path/downloads
 ```
 
-Windows 可用 PowerShell 下载脚本后执行 `node .\agent-bootstrap.mjs plan --platform win32-amd64`；Linux 的平台参数为 `linux-amd64`。省略平台时自动识别当前 Node 进程的平台和架构。指定 `--version` 会固定发行标签；省略时查询 GitHub 的 latest Release，它可能不包含预发行版，也可能缺少某个平台的附件。
+Windows 可用 PowerShell 下载脚本后执行 `node .\agent-bootstrap.mjs plan --platform win32-amd64`；Linux 的平台参数为 `linux-amd64`。省略平台时自动识别当前 Node 进程的平台和架构。指定 `--version` 会固定发行标签，只读取该 Release 的静态附件与 `SHA256SUMS`，不经 GitHub API；省略时查询 GitHub 的 latest Release，它可能不包含预发行版，也可能缺少某个平台的附件。API 被限流时改由 Release 页面的 latest 跳转确定标签，仍无法确定则返回 `rate_limited`，请从发行页选定标签并用 `--version` 重试。
 
 助手从同一标签读取安装包与 `SHA256SUMS`，拒绝不完整附件、重复校验项、HTTP 降级和校验不符。下载使用独立临时文件，成功后才生成目标文件；目标已存在时保留它并报错。失败后可以重新下载到新的目标目录。Windows 只有未签名预览包时，返回 `unsigned_package_requires_consent`；用户明确选择该预览后才添加 `--allow-unsigned`。
 
-下载使用主机网络，需能访问 GitHub API 与 Release 附件。Node 24 支持通过 `node --use-env-proxy agent-bootstrap.mjs ...` 使用用户明确配置的 `HTTPS_PROXY` / `HTTP_PROXY`；也可使用用户现有的主机 TUN。不要回显代理凭据。较旧 Node 的 fetch 不自动采用这些环境代理；连接失败时先排查主机下载网络，避免反复重建 Cage 配置。
+下载使用主机网络，需能访问 GitHub 与 Release 附件；指定 `--version` 时不需要 GitHub API。Node 24 支持通过 `node --use-env-proxy agent-bootstrap.mjs ...` 使用用户明确配置的 `HTTPS_PROXY` / `HTTP_PROXY`；也可使用用户现有的主机 TUN。不要回显代理凭据。较旧 Node 的 fetch 不自动采用这些环境代理；连接失败时先排查主机下载网络，避免反复重建 Cage 配置。
 
 | 平台 | 安装与验证 |
 | --- | --- |
@@ -80,7 +80,7 @@ cage agent call account.create --input /private/path/account.json
 cage agent call account.unlock --input -
 ```
 
-`--input -` 读取一个完整 JSON 对象后等待 EOF。Agent 应通过子进程的标准输入传递凭据，或使用访问受限的临时文件并及时清理。不要把含密码的示例值、订阅链接或节点密钥写进共享日志、提交记录、聊天回显和 shell 历史。这个接口面向用户授权、在主机同一操作系统账户下运行的 Agent，权限与本机工作台一致；它不是给不受信任插件使用的受限远程接口。
+`--input -` 读取一个完整 JSON 对象后等待 EOF。`call` 只经 `--input` 读取输入；未传 `--input` 时标准输入不会被读取，若标准输入里已有数据则返回 `invalid_input`，不会按空输入执行。Agent 应通过子进程的标准输入传递凭据，或使用访问受限的临时文件并及时清理。不要把含密码的示例值、订阅链接或节点密钥写进共享日志、提交记录、聊天回显和 shell 历史。这个接口面向用户授权、在主机同一操作系统账户下运行的 Agent，权限与本机工作台一致；它不是给不受信任插件使用的受限远程接口。
 
 ### 导入代理并确认出口
 

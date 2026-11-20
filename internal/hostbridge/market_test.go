@@ -203,3 +203,38 @@ func TestPluginIcons(t *testing.T) {
 		}
 	}
 }
+
+func TestMarketShowsOnlyWellFormedSources(t *testing.T) {
+	good := packTar(t, tarFile{name: "notes/plugin.json", body: marketManifest})
+	sources := map[string]*Source{
+		"notes":   {Project: "example/notes-server", Version: "2.3.1", License: "Apache-2.0 OR MIT", URL: "https://github.com/example/notes-server"},
+		"bare":    {Project: "notes-server"},
+		"plain":   {Project: "notes", URL: "http://example.com/notes"},
+		"spoofed": {Project: "notes", URL: "https://user@example.com/"},
+		"license": {Project: "notes", License: "MIT; see <a>"},
+		"blank":   {Project: " "},
+		"control": {Project: "notes\nserver"},
+	}
+	market, client := serveMarket(t, nil, func(base string) []MarketEntry {
+		var list []MarketEntry
+		for name, source := range sources {
+			entry := entryFor(base, "notes-1.2.0.tar.gz", good)
+			entry.Name, entry.Source = name, source
+			list = append(list, entry)
+		}
+		// An index written before sources existed still reads.
+		older := entryFor(base, "notes-1.2.0.tar.gz", good)
+		older.Name = "older"
+		return append(list, older)
+	})
+	entries, err := market.Fetch(context.Background(), client)
+	if err != nil || len(entries) != len(sources)+1 {
+		t.Fatalf("entries %+v: %v", entries, err)
+	}
+	for _, entry := range entries {
+		kept := entry.Name == "notes" || entry.Name == "bare"
+		if (entry.Source != nil) != kept {
+			t.Errorf("%s: source %+v, want kept=%v", entry.Name, entry.Source, kept)
+		}
+	}
+}

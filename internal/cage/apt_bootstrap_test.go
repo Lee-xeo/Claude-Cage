@@ -61,6 +61,9 @@ esac
 				if err == nil {
 					t.Fatalf("failure continued: %s", out)
 				}
+				if mode == "download-failure" && !strings.Contains(string(out), "APT_FAILED exit=100 command=apt-get ") {
+					t.Fatalf("failed bootstrap did not report its APT command: %s", out)
+				}
 				if _, err := os.Stat(filepath.Join(dir, "continued")); !os.IsNotExist(err) {
 					t.Fatal("continued after failed bootstrap")
 				}

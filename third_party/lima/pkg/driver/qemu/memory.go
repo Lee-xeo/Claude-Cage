@@ -30,7 +30,7 @@ func (l *LimaQemuDriver) SetMemoryTarget(ctx context.Context, target uint64) err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(l.Instance.Dir, filenames.QMPSock))
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(socketDir(l.Instance.Dir), filenames.QMPSock))
 	if err != nil {
 		return err
 	}

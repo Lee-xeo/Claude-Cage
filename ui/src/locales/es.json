@@ -2417,5 +2417,12 @@
   "颜色须为六位十六进制值，例如 #fdf6e3": "Los colores deben ser valores hexadecimales de seis dígitos, por ejemplo #fdf6e3",
   "高对比": "Alto contraste",
   "黄色": "Amarillo",
-  "黑色": "Negro"
+  "黑色": "Negro",
+  "上游项目": "Proyecto original",
+  "许可证": "Licencia",
+  "复制项目地址": "Copiar la dirección del proyecto",
+  "停止任务已结束，但环境仍显示在运行，无法确认已安全停止。可以重试停止，或仅退出桌面应用。": "La tarea de detención terminó, pero el entorno sigue apareciendo en ejecución y no se puede confirmar que se haya detenido de forma segura. Puedes reintentar la detención o salir solo de la aplicación de escritorio.",
+  "后台未报告本次停止任务的结果，无法确认环境已停止。可以重试停止，或仅退出桌面应用。": "El servicio en segundo plano no informó el resultado de esta detención, por lo que no se puede confirmar que el entorno se haya detenido. Puedes reintentar la detención o salir solo de la aplicación de escritorio.",
+  "停止请求未返回任务编号，请重试。": "La solicitud de detención no devolvió un número de tarea. Inténtalo de nuevo.",
+  "当前 Windows 程序未签名或签名无法验证，请从官方发布页下载安装包，退出 Cage 后安装到原位置；配置、凭据、项目和虚拟机磁盘会保留。": "Este programa de Windows no está firmado o su firma no se puede verificar. Descarga el instalador desde la página oficial de versiones, sal de Cage e instálalo en la misma ubicación; se conservan la configuración, las credenciales, los proyectos y los discos de la máquina virtual."
 }

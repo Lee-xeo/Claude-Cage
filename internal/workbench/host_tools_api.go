@@ -475,6 +475,8 @@ type hostMarketEntryView struct {
 	Update           bool   `json:"update"`
 	// Icon says the list has a picture for the plugin.
 	Icon bool `json:"icon,omitempty"`
+	// Source is the open-source project the plugin is built on.
+	Source *hostbridge.Source `json:"source,omitempty"`
 }
 
 const (
@@ -539,7 +541,7 @@ func (s *Server) getHostMarket(w http.ResponseWriter, r *http.Request) {
 		unavailable := hostbridge.Manifest{Kind: entry.Kind, Engines: entry.Engines, Contributes: entry.Contributes}.Unavailable(version.Version, true)
 		item := hostMarketEntryView{Name: entry.Name, DisplayName: entry.DisplayName, Version: entry.Version, Description: entry.Description,
 			Permissions: entry.Permissions, Categories: hostbridge.ShownCategories(entry.Categories), Kind: entry.Kind, Contributes: hostContributes(entry.Contributes), Problem: hostPluginUnavailable(unavailable),
-			Supported: entry.Supported() && unavailable == "", Bytes: entry.Bytes, Icon: entry.Icon != ""}
+			Supported: entry.Supported() && unavailable == "", Bytes: entry.Bytes, Icon: entry.Icon != "", Source: entry.Source}
 		if manifest, err := hostbridge.LoadManifest(filepath.Join(s.hostPluginDir(), entry.Name)); err == nil {
 			item.InstalledVersion = manifest.Version
 			item.Update = manifest.Version != entry.Version

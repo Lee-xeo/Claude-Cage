@@ -83,11 +83,11 @@ type usernetSockets struct {
 }
 
 func newUsernetSockets(inst *limatype.Instance) (*usernetSockets, error) {
-	endpoint, err := usernet.SockWithDirectory(inst.Dir, "", usernet.EndpointSock)
+	endpoint, err := usernet.SockWithDirectory(socketDir(inst.Dir), "", usernet.EndpointSock)
 	if err != nil {
 		return nil, err
 	}
-	qemu, err := usernet.SockWithDirectory(inst.Dir, "", usernet.QEMUSock)
+	qemu, err := usernet.SockWithDirectory(socketDir(inst.Dir), "", usernet.QEMUSock)
 	if err != nil {
 		return nil, err
 	}
@@ -728,7 +728,7 @@ func checkBinarySignature(ctx context.Context, vmArch string) error {
 // sendEnter sends a Return (Enter) key to QEMU through QMP.
 // This method is for proceeding UEFI boot forcefully.
 func (l *LimaQemuDriver) sendEnter() error {
-	qmpSockPath := filepath.Join(l.Instance.Dir, filenames.QMPSock)
+	qmpSockPath := filepath.Join(socketDir(l.Instance.Dir), filenames.QMPSock)
 	err := waitFileExists(qmpSockPath, 30*time.Second)
 	if err != nil {
 		return err
@@ -761,7 +761,7 @@ func (l *LimaQemuDriver) sendEnter() error {
 }
 
 func (l *LimaQemuDriver) changeVNCPassword(password string) error {
-	qmpSockPath := filepath.Join(l.Instance.Dir, filenames.QMPSock)
+	qmpSockPath := filepath.Join(socketDir(l.Instance.Dir), filenames.QMPSock)
 	err := waitFileExists(qmpSockPath, 30*time.Second)
 	if err != nil {
 		return err
@@ -783,7 +783,7 @@ func (l *LimaQemuDriver) changeVNCPassword(password string) error {
 }
 
 func (l *LimaQemuDriver) getVNCDisplayPort() (string, error) {
-	qmpSockPath := filepath.Join(l.Instance.Dir, filenames.QMPSock)
+	qmpSockPath := filepath.Join(socketDir(l.Instance.Dir), filenames.QMPSock)
 	qmpClient, err := qmp.NewSocketMonitor("unix", qmpSockPath, 5*time.Second)
 	if err != nil {
 		return "", err
@@ -871,7 +871,7 @@ func (l *LimaQemuDriver) shutdownQEMU(ctx context.Context, timeout time.Duration
 			logrus.Warnf("Failed to remove SSH binding for port %d", l.SSHLocalPort)
 		}
 	}
-	qmpSockPath := filepath.Join(l.Instance.Dir, filenames.QMPSock)
+	qmpSockPath := filepath.Join(socketDir(l.Instance.Dir), filenames.QMPSock)
 	qmpClient, err := qmp.NewSocketMonitor("unix", qmpSockPath, 5*time.Second)
 	if err != nil {
 		logrus.WithError(err).Warnf("failed to open the QMP socket %#q, forcibly killing QEMU", qmpSockPath)
@@ -979,7 +979,7 @@ func (l *LimaQemuDriver) ListSnapshots(ctx context.Context) (string, error) {
 
 func (l *LimaQemuDriver) GuestAgentConn(ctx context.Context) (net.Conn, string, error) {
 	var d net.Dialer
-	dialContext, err := d.DialContext(ctx, "unix", filepath.Join(l.Instance.Dir, filenames.GuestAgentSock))
+	dialContext, err := d.DialContext(ctx, "unix", filepath.Join(socketDir(l.Instance.Dir), filenames.GuestAgentSock))
 	return dialContext, "unix", err
 }
 
@@ -1134,7 +1134,7 @@ func (l *LimaQemuDriver) CaptureScreenshot(format string) ([]byte, error) {
 		return nil, fmt.Errorf("%w (set video.display to \"default\" or a VNC display to enable screenshots)", driver.ErrNoDisplay)
 	}
 
-	qmpSockPath := filepath.Join(l.Instance.Dir, filenames.QMPSock)
+	qmpSockPath := filepath.Join(socketDir(l.Instance.Dir), filenames.QMPSock)
 	err := waitFileExists(qmpSockPath, 30*time.Second)
 	if err != nil {
 		return nil, err

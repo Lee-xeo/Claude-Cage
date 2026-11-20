@@ -579,6 +579,8 @@ function Detail({ model, name, onConfirm, onPage }) {
   const tools = plugin?.tools || [];
   const declared = (plugin || offer).permissions || [];
   const added = contributions(plugin || offer);
+  // The open-source project the market says the plugin is built on.
+  const upstream = (offer || entry.listing)?.source;
   const separator = view.directory.includes("\\") ? "\\" : "/";
   const installing = busy === `install:${name}`, removing = busy === `remove:${name}`, switching = busy === `switch:${name}`;
   const on = plugin?.enabled !== false;
@@ -672,6 +674,16 @@ function Detail({ model, name, onConfirm, onPage }) {
             <div><dt>{tr("状态")}</dt><dd>{plugin ? tr(info.state.label) : offer.supported ? tr("未安装") : unsupportedLabel(offer)}</dd></div>
             {!plugin && offer?.bytes > 0 && <div><dt>{tr("大小")}</dt><dd>{size(offer.bytes)}</dd></div>}
           </dl>
+          {upstream && <>
+            <h3>{tr("上游项目")}</h3>
+            <dl>
+              <div><dt>{tr("项目")}</dt><dd>{upstream.project}</dd></div>
+              {upstream.version && <div><dt>{tr("版本")}</dt><dd>{upstream.version}</dd></div>}
+              {upstream.license && <div><dt>{tr("许可证")}</dt><dd>{upstream.license}</dd></div>}
+            </dl>
+            {/* Shown as text to copy: the app opens no address a list names. */}
+            {upstream.url && <CopyField value={upstream.url} label={tr("复制项目地址")} />}
+          </>}
           {plugin && !plugin.built_in && <>
             <h3>{tr("位置")}</h3>
             <CopyField value={`${view.directory}${separator}${name}`} label={tr("复制插件位置")} />
