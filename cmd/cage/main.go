@@ -95,6 +95,8 @@ func run() int {
 	// The shared commands otherwise name agent-vm and suggest its installer.
 	cli.Command = "claude-cage"
 	cli.UpdateHint = "update Cage from the app, or with the installer or package that installed it"
+	// --reset deletes the environment's disk with the user's files and logins.
+	cli.StaleBaseHint = "提示：Cage 的基础镜像比当前环境新。当前环境的磁盘会保留，不需要重建；请在 Cage 的“设置 > 环境与恢复”中更新环境组件或环境工具，也可以运行 cage update-tools。"
 	args := os.Args[1:]
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		fmt.Print(help)

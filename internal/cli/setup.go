@@ -543,7 +543,7 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 	}
 	// Only worth saying to someone with a VM to re-clone.
 	if vms, err := e.agentVMs(ctx); err == nil && len(vms) > 1 {
-		fmt.Fprint(e.io.Stdout, "\nNote: Existing VMs were not updated. Use --reset to re-clone them from the new base.\n")
+		fmt.Fprint(e.io.Stdout, "\n"+staleBaseHint(true)+"\n")
 	}
 	return 0
 }

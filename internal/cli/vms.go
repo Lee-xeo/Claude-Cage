@@ -44,10 +44,10 @@ func (e *app) target(ctx context.Context, verb string, args []string) (name stri
 		return name, 0
 	case errors.Is(err, vm.ErrNotFound) && len(args) == 0:
 		fmt.Fprintln(e.io.Stderr, "No VM found for this directory.")
-		fmt.Fprintf(e.io.Stderr, "Run 'agent-vm list' to see existing VMs, then 'agent-vm %s <vm-name>'.\n", verb)
+		fmt.Fprintf(e.io.Stderr, "Run '%s list' to see existing VMs, then '%s %s <vm-name>'.\n", Command, Command, verb)
 	case errors.Is(err, vm.ErrNotFound):
 		fmt.Fprintf(e.io.Stderr, "Error: no such VM: %s\n", name)
-		fmt.Fprintln(e.io.Stderr, "Run 'agent-vm list' to see existing VMs.")
+		fmt.Fprintf(e.io.Stderr, "Run '%s list' to see existing VMs.\n", Command)
 	default:
 		fmt.Fprintf(e.io.Stderr, "Error: could not query Lima: %v\n", err)
 	}
@@ -61,7 +61,7 @@ func (e *app) stopCmd(ctx context.Context, args []string) int {
 	}
 	fmt.Fprintf(e.io.Stdout, "Stopping VM '%s'...\n", name)
 	if !e.stopVM(ctx, name) {
-		fmt.Fprintf(e.io.Stderr, "Error: VM '%s' is still running, or Lima cannot say. See 'agent-vm list'.\n", name)
+		fmt.Fprintf(e.io.Stderr, "Error: VM '%s' is still running, or Lima cannot say. See '%s list'.\n", name, Command)
 		return 1
 	}
 	fmt.Fprintln(e.io.Stdout, "VM stopped.")
@@ -124,7 +124,7 @@ func (e *app) deleteVM(ctx context.Context, name string) bool {
 		_, err = b.Get(ctx, name)
 	}
 	if !errors.Is(err, vm.ErrNotFound) {
-		fmt.Fprintf(e.io.Stderr, "Error: could not delete VM '%s'. See 'agent-vm list', then retry.\n", name)
+		fmt.Fprintf(e.io.Stderr, "Error: could not delete VM '%s'. See '%s list', then retry.\n", name, Command)
 		return false
 	}
 	if err := e.state.Forget(name, vmname.Template); err != nil {

@@ -521,7 +521,7 @@ func (s *start) ensureRunningLocked() error {
 		}
 	}
 	if s.staleState(s.name) == "1" {
-		s.warnf("Warning: Base VM has been updated since this VM was cloned. Use --reset to re-clone from the new base.")
+		s.warnf("%s", staleBaseHint(false))
 	}
 
 	// The shares Lima has, against those asked: a stopped VM is changed
