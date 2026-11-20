@@ -11,7 +11,9 @@ import (
 )
 
 func TestAboutUsesLocalBuildAndAuthenticatedUpdateEgress(t *testing.T) {
+	// Proxy lookup prefers the lowercase name, so isolate both spellings from the host.
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	t.Setenv("https_proxy", "http://127.0.0.1:1")
 	t.Setenv("NO_PROXY", "")
 	t.Setenv("no_proxy", "")
 	s := testServer(t)
