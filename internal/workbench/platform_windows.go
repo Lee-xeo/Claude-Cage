@@ -3,7 +3,6 @@ package workbench
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"syscall"
 
@@ -37,9 +36,17 @@ func processExists(pid int) bool {
 func terminateLegacy(pid int) error {
 	return errors.New("Windows 不支持接管未验证的旧版后台")
 }
-func detachController(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW}
+func detachedProcessAttributes(breakaway bool) *syscall.SysProcAttr {
+	flags := uint32(windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW)
+	if breakaway {
+		flags |= windows.CREATE_BREAKAWAY_FROM_JOB
+	}
+	return &syscall.SysProcAttr{HideWindow: true, CreationFlags: flags}
 }
+
+// CreateProcess fails with access denied when the caller's job does not
+// permit CREATE_BREAKAWAY_FROM_JOB.
+func breakawayRefused(err error) bool { return errors.Is(err, windows.ERROR_ACCESS_DENIED) }
 func sshExecutable() string {
 	exe, _ := os.Executable()
 	bundled := filepath.Join(filepath.Dir(exe), "runtime", "openssh", "ssh.exe")

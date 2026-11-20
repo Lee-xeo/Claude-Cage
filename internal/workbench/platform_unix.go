@@ -5,7 +5,6 @@ package workbench
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"runtime"
 	"syscall"
 )
@@ -22,9 +21,10 @@ func processExists(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || err != syscall.ESRCH
 }
-func terminateLegacy(pid int) error  { return syscall.Kill(pid, syscall.SIGTERM) }
-func detachController(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }
-func sshExecutable() string          { return "/usr/bin/ssh" }
+func terminateLegacy(pid int) error                       { return syscall.Kill(pid, syscall.SIGTERM) }
+func detachedProcessAttributes(bool) *syscall.SysProcAttr { return &syscall.SysProcAttr{Setsid: true} }
+func breakawayRefused(error) bool                         { return false }
+func sshExecutable() string                               { return "/usr/bin/ssh" }
 func sshEnvironment() []string {
 	return []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "LANG=C", "LC_ALL=C", "TERM=xterm-256color"}
 }

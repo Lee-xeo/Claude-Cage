@@ -533,12 +533,29 @@ func startControllerExecutable(configPath, exe string, extraEnv ...string) error
 	if err := host.EnsurePrivateDir(profile); err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "log-relay", "controller")
-	cmd.Dir = profile
-	cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+configPath)
-	cmd.Env = append(cmd.Env, extraEnv...)
-	detachController(cmd)
-	if err := cmd.Start(); err != nil {
+	return startDetached(func() *exec.Cmd {
+		cmd := exec.Command(exe, "log-relay", "controller")
+		cmd.Dir = profile
+		cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+configPath)
+		cmd.Env = append(cmd.Env, extraEnv...)
+		return cmd
+	})
+}
+
+// startDetached starts a background service that must outlive its caller.
+// Windows first asks to leave the caller's job, which automation shells may
+// close with kill-on-close; a job that forbids leaving refuses the start, so
+// it is retried inside the job with the previous behaviour.
+func startDetached(newCommand func() *exec.Cmd) error {
+	cmd := newCommand()
+	cmd.SysProcAttr = detachedProcessAttributes(true)
+	err := cmd.Start()
+	if err != nil && breakawayRefused(err) {
+		cmd = newCommand()
+		cmd.SysProcAttr = detachedProcessAttributes(false)
+		err = cmd.Start()
+	}
+	if err != nil {
 		return err
 	}
 	return cmd.Process.Release()
