@@ -189,6 +189,27 @@ func (t *terminalSession) enqueueInput(ctx context.Context, input string) error 
 	}
 }
 
+// terminalInputWait bounds how long a burst of client input, such as a
+// terminal answering many queries at once, may wait for the PTY writer.
+const terminalInputWait = 2 * time.Second
+
+// enqueueInputWait retries a full queue until the writer drains it, keeping
+// input order; it fails only when the PTY stays blocked or the request ends.
+func (t *terminalSession) enqueueInputWait(ctx context.Context, input string, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
+	for {
+		err := t.enqueueInput(ctx, input)
+		if !errors.Is(err, errTerminalInputFull) || !time.Now().Before(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 func (t *terminalSession) writeInput() {
 	for {
 		select {

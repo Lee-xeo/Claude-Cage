@@ -432,6 +432,9 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       ws.send(JSON.stringify({ type: "input", data }));
     };
     terminal.onData((data) => {
+      // Replayed history can contain DA/DSR/OSC queries; xterm's answers to
+      // them belong to a past screen and would flood the shell's input.
+      if (disposed || replayingHistory) return;
       if (emittingPaste) send(data);
       else void enqueue(() => send(data)).catch(() => {});
     });
