@@ -82,7 +82,7 @@ Cage 支持含中文的安装目录。启动时优先读取随附 QEMU 的 UEFI 
 | [WebView2 Evergreen 运行时](https://developer.microsoft.com/microsoft-edge/webview2/) | 本机需安装此运行时，构建完成后会启动工作台进行自检。 |
 | [MSYS2](https://www.msys2.org/)、NSIS | MSYS2 的 UCRT64 环境用于编译 QEMU。生成安装包还需要 NSIS。 |
 
-把 MSYS2 安装到简短、只含 ASCII 且无空格的本地路径，例如 `C:\msys64`。打开 **MSYS2 UCRT64**，运行 `pacman -Syu` 更新。若更新时终端关闭，重新打开 UCRT64 再运行一次。更新完成后安装下列依赖，包清单与 CI 一致。[Windows CI 工具配置](../.github/actions/windows-toolchain/action.yml)
+把 MSYS2 安装到简短、只含 ASCII 且无空格的本地路径，例如 `C:\msys64`。打开 **MSYS2 UCRT64**，运行 `pacman -Syu` 更新。若更新时终端关闭，重新打开 UCRT64 再运行一次。若 `pacman` 长时间没有进度，日志反复出现 `gpg: waiting for lock` 或 `starting migration from earlier GnuPG versions`，可能是 gpg-agent 无法建立本机套接字（目前见于部分 Windows 11 预览版本）。结束 MSYS2 中残留的 `gpg`、`gpg-agent`、`dirmngr` 和 `pacman` 进程，删除 `/etc/pacman.d/gnupg/` 下的 `.#lk*`、`*.lock` 和 `S.gpg-agent*` 后重试；仍然卡住时先排查 Windows 更新或安全软件对 AF_UNIX 套接字的影响，不建议关闭软件包签名校验。更新完成后安装下列依赖，包清单与 CI 一致。[Windows CI 工具配置](../.github/actions/windows-toolchain/action.yml)
 
 ```bash
 pacman -S --needed make patch diffutils git tar gzip findutils curl \
@@ -102,7 +102,7 @@ QEMU 下载前会分别编译、链接并运行最小 C 和 C++ 程序。默认 
 
 依赖默认缓存到 `_output/windows-deps`，可给构建和打包命令传入相同的 `-DependencyCache` 复用缓存。QEMU 按源码、构建脚本和 `CC`/`CXX` 分目录缓存。完整运行时通过加载及哈希校验后才写入缓存，失败后可以直接重试。云部署包的 Linux Mihomo 归档缓存在 `_output/linux-deps`，下载完成并通过 SHA-256 校验后才写入缓存。也可先运行 `.\scripts\fetch-windows-dependencies.ps1` 预取。若公司网络要求代理，在当前构建会话按需设置 `HTTPS_PROXY`、`HTTP_PROXY` 和获准使用的 `GOPROXY`，再重试 NuGet、Go 或构建依赖下载。保留原有证书与哈希校验。
 
-NuGet 报 `Central Directory corrupt` 时，检查代理是否截断了运行时包的下载。可通过 `NuGet.Config` 配置本地包源，补入从官方来源下载的完整同版本 `.nupkg`，再重试还原。
+NuGet 报 `Central Directory corrupt` 或 `Received an unexpected EOF or 0 bytes from the transport stream` 时，检查代理是否截断了运行时包的下载。已完成的 QEMU、前端和 NuGet 全局包缓存可以保留。从官方来源下载完整的同版本 `.nupkg`，与 NuGet 官方目录记录的 `packageHash` 核对一致后放入本地目录，再保留 `--locked-mode` 重试还原。命令行同时指定官方源和本地目录时，把 HTTPS 源写在前面，例如 `dotnet restore .\desktop\windows\Cage.Windows.csproj --locked-mode -r win-x64 -p:Configuration=Release --source https://api.nuget.org/v3/index.json --source C:\CageNuGetFeed`；本地目录在前时，部分 SDK 会把后面的地址当作文件路径并报 `NU1301`。也可通过 `NuGet.Config` 配置本地包源。
 
 应用输出到 `_output/windows-amd64/app`。本地默认自检目录是仓库内的 `_output/workbench-smoke`。源码如果检出到 AppData 或重解析到其他私有目录，构建会在开始前提示把 `RUNNER_TEMP` 指向 AppData 外的普通本地目录，例如 `D:\CageBuildTemp`。若自检失败，构建输出会显示已识别的共享目录错误、候选应用目录和诊断路径。可查看 `smoke.json` 和 `profile/logs/events.jsonl`。`prepareStatus=prepared` 是自检结束时后台的停止确认。
 
