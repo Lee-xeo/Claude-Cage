@@ -461,6 +461,23 @@ printf '%s\\n' "$@"
             (common/"skills/local-skill/SKILL.md").write_text("updated once")
             self.assertEqual((helper.config_directory(helper.profile(FIRST))/"skills/local-skill/SKILL.md").read_text(),"updated once")
 
+    def test_shared_hooks_combine_with_project_and_launch_hooks(self):
+        with patch.dict(os.environ,self.env,clear=True),patch.object(helper.Path,"cwd",return_value=self.home/"project"):
+            common=self.home/".claude";common.mkdir()
+            shared={"type":"command","command":"shared-hook"}
+            (common/"settings.json").write_text(json.dumps({"model":"opus","hooks":{"Stop":[{"hooks":[shared]}]}}))
+            project=self.home/"project/.claude";project.mkdir(parents=True)
+            (project/"settings.json").write_text(json.dumps({"model":"sonnet","hooks":{"Stop":[{"hooks":[{"type":"command","command":"project-hook"}]}]}}))
+            launch={"type":"command","command":"launch-hook"}
+            supplied={"hooks":{"Stop":[{"hooks":[launch]}],"SessionStart":[{"hooks":[launch]}]},"statusLine":{"type":"command","command":"status"}}
+            flags=helper.shared_launch_arguments(helper.profile(FIRST),["--settings",json.dumps(supplied),"--model","haiku"])
+            settings=json.loads(Path(flags[1]).read_text())
+            # The CLI reads project hooks itself and combines every source.
+            self.assertEqual(settings["hooks"],{"Stop":[{"hooks":[shared]},{"hooks":[launch]}],"SessionStart":[{"hooks":[launch]}]})
+            self.assertNotIn("model",settings)
+            self.assertEqual(settings["statusLine"],supplied["statusLine"])
+            self.assertEqual(flags[2:],["--model","haiku"])
+
     def test_conflicting_shared_resource_preserves_both_versions(self):
         with patch.dict(os.environ,self.env,clear=True):
             base=helper.profile(FIRST);config=helper.config_directory(base);config.mkdir(parents=True)

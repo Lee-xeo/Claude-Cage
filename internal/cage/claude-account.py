@@ -574,6 +574,18 @@ def shared_memory_path(memory):
     return _runtime["path"](memory)
 
 
+def merged_hooks(shared, supplied):
+    """Run launch-specific hooks in addition to the shared user hooks."""
+    if not isinstance(shared, dict) or not isinstance(supplied, dict):
+        return None
+    result = {event: list(groups) for event, groups in shared.items() if isinstance(groups, list)}
+    for event, groups in supplied.items():
+        if not isinstance(groups, list):
+            return None
+        result[event] = result.get(event, []) + groups
+    return result
+
+
 def shared_launch_arguments_locked(base, args, settings_fd):
     directory = Path.cwd().resolve()
     try:
@@ -635,7 +647,9 @@ def shared_launch_arguments_locked(base, args, settings_fd):
         if path != Path.home() / ".claude/settings.json" and isinstance(stored, dict):
             # Let the CLI's normal profile/project precedence decide these
             # values. A shared default must not turn into a command-line override.
-            for key in shared_keys & stored.keys():
+            # The CLI combines hooks from every source instead of choosing one,
+            # so project or account hooks must not disable the shared ones.
+            for key in shared_keys & stored.keys() - {"hooks"}:
                 settings.pop(key, None)
         if isinstance(stored, dict) and "autoMemoryDirectory" in stored:
             settings["autoMemoryDirectory"] = stored["autoMemoryDirectory"]
@@ -647,7 +661,10 @@ def shared_launch_arguments_locked(base, args, settings_fd):
         if arg == "--settings" or arg.startswith("--settings="):
             value = next(iterator) if arg == "--settings" else arg.split("=", 1)[1]
             supplied = json.loads(value) if value.lstrip().startswith("{") else json.loads(Path(value).read_text())
+            hooks = merged_hooks(settings.get("hooks"), supplied.get("hooks")) if isinstance(supplied, dict) else None
             settings.update(supplied)
+            if hooks is not None:
+                settings["hooks"] = hooks
         else:
             result.append(arg)
     data = json.dumps(settings, separators=(",", ":")).encode()
