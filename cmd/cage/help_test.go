@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -38,6 +39,21 @@ func TestSubcommandHelpText(t *testing.T) {
 	for _, args := range [][]string{{"run", "--help"}, {"claude", "-h"}, {"agent", "--help"}, {"run", "ls", "-h"}, {"init"}, {"init", "--force", "--help"}} {
 		if _, ok := subcommandHelp(args); ok {
 			t.Fatalf("%v must not be answered as Cage help", args)
+		}
+	}
+}
+
+func TestSetupPreinstallKeepsWorkbenchTools(t *testing.T) {
+	for _, c := range []struct{ in, want []string }{
+		{[]string{"--preinstall=default"}, []string{"--preinstall=default,chromium,code-server"}},
+		{[]string{"--preinstall=python,code-server", "--disk", "30"}, []string{"--preinstall=python,code-server,chromium", "--disk", "30"}},
+		{[]string{"--preinstall", "--disk", "30"}, []string{"--preinstall=default,chromium,code-server", "--disk", "30"}},
+		{[]string{"--preinstall", "none"}, []string{"--preinstall=none,chromium,code-server"}},
+		{[]string{"--preinstall="}, []string{"--preinstall=default,chromium,code-server"}},
+		{[]string{"--disk", "30"}, []string{"--disk", "30"}},
+	} {
+		if got := requireWorkbenchTools(c.in); !slices.Equal(got, c.want) {
+			t.Errorf("%q -> %q, want %q", c.in, got, c.want)
 		}
 	}
 }
