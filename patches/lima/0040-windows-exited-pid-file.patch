@@ -1,0 +1,59 @@
+diff --git a/pkg/store/instance.go b/pkg/store/instance.go
+index e62f745f..72be9a0d 100644
+--- a/pkg/store/instance.go
++++ b/pkg/store/instance.go
+@@ -227,7 +227,12 @@ func ReadPIDFile(path string) (int, error) {
+ 	proc, err := os.FindProcess(pid)
+ 	if runtime.GOOS == "windows" {
+ 		// On Windows, os.FindProcess will fail if the process does not exist.
++		// It succeeds for an exited process that another handle keeps open.
+ 		if err == nil {
++			if processExited(pid) {
++				_ = os.Remove(path)
++				return 0, nil
++			}
+ 			return pid, nil
+ 		}
+ 		var errno syscall.Errno
+diff --git a/pkg/store/process_others.go b/pkg/store/process_others.go
+new file mode 100644
+index 00000000..650342d5
+--- /dev/null
++++ b/pkg/store/process_others.go
+@@ -0,0 +1,9 @@
++// SPDX-FileCopyrightText: Copyright The Lima Authors
++// SPDX-License-Identifier: Apache-2.0
++
++//go:build !windows
++
++package store
++
++// processExited is only needed on Windows; elsewhere signal 0 answers it.
++func processExited(int) bool { return false }
+diff --git a/pkg/store/process_windows.go b/pkg/store/process_windows.go
+new file mode 100644
+index 00000000..1a532c6e
+--- /dev/null
++++ b/pkg/store/process_windows.go
+@@ -0,0 +1,21 @@
++// SPDX-FileCopyrightText: Copyright The Lima Authors
++// SPDX-License-Identifier: Apache-2.0
++
++package store
++
++import "golang.org/x/sys/windows"
++
++// processExited reports whether pid names a process that has already exited.
++// Windows keeps an exited process openable while any handle to it remains, so
++// a successful os.FindProcess does not mean the process is still running. The
++// PID cannot be reused while that handle exists, so the object is the recorded
++// process. Any failure to tell is reported as still running.
++func processExited(pid int) bool {
++	handle, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))
++	if err != nil {
++		return false
++	}
++	defer windows.CloseHandle(handle)
++	event, err := windows.WaitForSingleObject(handle, 0)
++	return err == nil && event == windows.WAIT_OBJECT_0
++}
