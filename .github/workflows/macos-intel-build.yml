@@ -94,7 +94,8 @@ jobs:
           test -x "$runtime/qemu-system-x86_64"
           export PATH="$runtime:$PATH"
           make test-go
-          go test -race ./internal/cage ./internal/managedproxy ./internal/workbench
+          # The race detector run of these packages is done once, on Apple
+          # Silicon (macos-build.yml); they have no amd64-only source files.
           go vet ./cmd/cage ./internal/cage ./internal/managedproxy ./internal/workbench
       - name: Native application updater
         run: bash scripts/test-app-updates.sh
