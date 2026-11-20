@@ -22,7 +22,7 @@ def copy_to_workspace(source, size, workspace, name):
     parent = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     destination = None
     published = None
-    temporary = '.cage-download-' + secrets.token_hex(12) + '.part'
+    temporary = '.download-' + secrets.token_hex(12) + '.part'
     try:
         try:
             os.mkdir('Downloads', mode=0o755, dir_fd=parent)

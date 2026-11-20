@@ -21,7 +21,7 @@ def launch():
     port = (Path(os.environ['XDG_RUNTIME_DIR']) / 'proxy').read_text()
     browser = '/usr/bin/chromium'
     os.execv(browser, ['chromium', '--user-data-dir=' + str(Path.home() / 'LoginProfile'),
-        '--class=CagePhoneLogin', '--no-first-run', '--no-default-browser-check', '--disable-extensions',
+        '--class=DesktopAuth', '--no-first-run', '--no-default-browser-check', '--disable-extensions',
         '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
         '--proxy-server=socks5://127.0.0.1:' + str(int(port)), '--proxy-bypass-list=<-loopback>',
         '--disable-dev-shm-usage', '--lang=' + os.environ.get('BROWSER_LANG', 'en-US'), '--app=' + value])

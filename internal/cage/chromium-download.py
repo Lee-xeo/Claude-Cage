@@ -18,13 +18,17 @@ except ImportError:
 SECURITY_LIST = Path("/etc/apt/mirrors/debian-security.list")
 
 
+MANAGED_HEADERS = ("# Managed Debian mirrors", "# Cage managed Debian mirrors")
+
+
 def stock_security_uri(uri):
     # The Debian cloud image delegates this URI to a separate security list.
     # A customized list or other repository keeps its own download routes.
     if uri.startswith("mirror+file:" + str(SECURITY_LIST) + "/"):
         if not SECURITY_LIST.is_file():
             return False
-        return SECURITY_LIST.read_text().startswith("# Cage managed Debian mirrors\n")
+        first = SECURITY_LIST.read_text().splitlines()[:1]
+        return bool(first) and first[0] in MANAGED_HEADERS
     return False
 
 
@@ -32,7 +36,7 @@ def security_mirrors():
     if not SECURITY_LIST.is_file():
         return []
     lines = SECURITY_LIST.read_text().splitlines()
-    if not lines or lines[0] != "# Cage managed Debian mirrors":
+    if not lines or lines[0] not in MANAGED_HEADERS:
         return []
     # Reuse only mirrors selected by the bounded reachability probe. Explicit
     # official preference and custom sources never cause hidden mirror requests.
@@ -61,7 +65,7 @@ class Progress(AcquireProgress):
 def fetch(package, version, target):
     hashes = apt_pkg.HashStringList()
     hashes.append(apt_pkg.HashString("SHA256", version.sha256))
-    partial = target.parent / "partial" / (target.name + ".cage")
+    partial = target.parent / "partial" / (target.name + ".part")
     for mirror in security_mirrors():
         print(f"Downloading {package} {version.version} from {mirror}", flush=True)
         progress = Progress(package, version.size)

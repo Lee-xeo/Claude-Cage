@@ -47,7 +47,7 @@ async function inner() {
   });
   await new Promise(resolve => fixture.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${fixture.address().port}`;
-  await writeFile("/etc/claude-cage/browser-control.json", JSON.stringify({ token }));
+  await writeFile("/etc/workbench/browser-control.json", JSON.stringify({ token }));
   await writeFile("/home/cage-browser/homepage.json", JSON.stringify({ url: origin + "/older" }));
   const agent = spawn(process.execPath, ["/project/internal/cage/browser-agent.mjs"], { stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
@@ -139,7 +139,7 @@ if (process.argv.includes("--linux-inner")) {
       "--dir", "/run", "--ro-bind", "/usr/bin", "/run/host-bin", "--tmpfs", "/usr/bin", ...hostBinaries,
       "--ro-bind", wrapper, "/usr/bin/chromium", ...browserMount,
       "--dir", "/etc", "--ro-bind", "/etc/fonts", "/etc/fonts", "--ro-bind", "/etc/passwd", "/etc/passwd",
-      "--ro-bind", "/etc/group", "/etc/group", "--bind", path.join(scratch, "config"), "/etc/claude-cage",
+      "--ro-bind", "/etc/group", "/etc/group", "--bind", path.join(scratch, "config"), "/etc/workbench",
       "--bind", path.join(scratch, "home"), "/home/cage-browser", "--ro-bind", root, "/project",
       "--ro-bind", process.execPath, "/runtime/node",
       "--tmpfs", "/usr/local/lib", "--dir", "/usr/local/lib/cage-split",

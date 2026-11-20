@@ -39,7 +39,7 @@ export class BrowserExtensions {
   path(entry) { return join(this.root, 'packages', entry.package, entry.relative); }
   async management(input) {
     const evaluate = async repair => this.cdp('Runtime.evaluate', {
-      expression: `manageCageExtensions(${JSON.stringify(input)})`, awaitPromise: true,
+      expression: `manageExtensions(${JSON.stringify(input)})`, awaitPromise: true,
       returnByValue: true, userGesture: true,
     }, await this.control(repair), 15000);
     let response;

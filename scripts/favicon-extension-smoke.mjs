@@ -58,12 +58,12 @@ async function setupController() {
   await page.goto(`chrome-extension://${extensionId}/control.html`);
   await page.evaluate(() => {
     globalThis.faviconEvents = [];
-    globalThis.cageFaviconChanged = target => faviconEvents.push(target);
+    globalThis.paneFaviconChanged = target => faviconEvents.push(target);
   });
   return page;
 }
 async function read(page, target) {
-  return page.evaluate(id => readCageFavicon(id), target);
+  return page.evaluate(id => readPaneFavicon(id), target);
 }
 try {
   context = await launch();
@@ -106,7 +106,7 @@ try {
       await decode.call(this);
       await new Promise(resolve => { globalThis.releaseFaviconDecode = resolve; });
     };
-    globalThis.pendingFaviconRead = readCageFavicon(id);
+    globalThis.pendingFaviconRead = readPaneFavicon(id);
   }, target);
   await controller.waitForFunction(() => typeof releaseFaviconDecode === "function");
   await page.goto(origin + "/blocked-race");
@@ -121,7 +121,7 @@ try {
       await originalFaviconDecode.call(this);
       await new Promise(resolve => { globalThis.releaseFaviconDecode = resolve; });
     };
-    globalThis.pendingFaviconRead = readCageFavicon(id);
+    globalThis.pendingFaviconRead = readPaneFavicon(id);
   }, target);
   await controller.waitForFunction(() => typeof releaseFaviconDecode === "function");
   await page.close();

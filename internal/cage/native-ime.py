@@ -97,7 +97,7 @@ probe_ready = prepare_probe()
 
 
 class Engine(IBus.Engine):
-    __gtype_name__ = 'CageInputEngine'
+    __gtype_name__ = 'BridgeInputEngine'
 
     def __init__(self, **args):
         super().__init__(**args)

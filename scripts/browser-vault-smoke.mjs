@@ -36,7 +36,8 @@ try {
   let state = await status();
   assert.equal(state.origin, "https://mail.example.test");
   assert.ok(state.document);
-  assert.equal(await page.evaluate(() => typeof globalThis.cageVaultSubmitted), "undefined", "page gained vault binding");
+  assert.equal(await page.evaluate(() => typeof globalThis.credentialFormSubmitted), "undefined", "page gained vault binding");
+  assert.equal(await page.evaluate(() => typeof globalThis.credentialHelper), "undefined", "page gained vault helper");
   await page.getByLabel("Email").fill("alice@example.test");
   await page.getByLabel("Password").fill("first-secret");
   await page.evaluate(() => document.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true })));

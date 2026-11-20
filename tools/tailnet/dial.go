@@ -56,7 +56,7 @@ func (n *node) serveDial(listener net.Listener) error {
 		standardProxy := subtle.ConstantTimeCompare([]byte(r.Header.Get("Proxy-Authorization")), []byte(proxyAuth)) == 1
 		controlClient := r.Method == "CONNECT" && r.Header.Get("Origin") == "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+record.Token)) == 1
 		if !standardProxy && !controlClient {
-			w.Header().Set("Proxy-Authenticate", `Basic realm="Cage Tailscale"`)
+			w.Header().Set("Proxy-Authenticate", `Basic realm="Tailscale"`)
 			http.Error(w, "Proxy authentication required", http.StatusProxyAuthRequired)
 			return
 		}

@@ -192,8 +192,9 @@ const downloads = new DownloadManager({
     return JSON.parse(output);
   },
 });
-const uploadDirectory = "/home/cage-browser/.cage-uploads";
+const uploadDirectory = "/home/cage-browser/.uploads";
 rmSync(uploadDirectory, { recursive: true, force: true });
+rmSync("/home/cage-browser/.cage-uploads", { recursive: true, force: true });
 const uploadSessions = new Map();
 const uploads = new UploadManager({ directory: uploadDirectory, cdp, changed: () => broadcastState() });
 function cdp(method, params = {}, sessionId, timeout = 4500) {
@@ -290,16 +291,16 @@ chrome.stdio[4].on("data", (chunk) => {
     const p = event.params || {};
     browserClipboard.event(event);
     if (event.sessionId === splitSession && event.method === "Runtime.bindingCalled" &&
-        p.name === "cageFaviconChanged") refreshFavicon(p.payload);
+        p.name === "paneFaviconChanged") refreshFavicon(p.payload);
     if (event.sessionId === splitSession && event.method === "Runtime.bindingCalled" &&
-        p.name === "cagePaneActivated" && splitView &&
+        p.name === "paneActivated" && splitView &&
         [splitView.left, splitView.right].includes(p.payload) && p.payload !== activeId) {
       activeId = p.payload;
       rememberSelection();
       broadcastState(true);
     }
     if (event.sessionId === splitSession && event.method === "Runtime.bindingCalled" &&
-        p.name === "cagePaneSeparated" && splitView && [splitView.left, splitView.right].includes(p.payload)) {
+        p.name === "paneSeparated" && splitView && [splitView.left, splitView.right].includes(p.payload)) {
       splitView = null;
       broadcastState();
     }
@@ -458,12 +459,12 @@ async function openSplitController() {
   try {
     const { sessionId } = await cdp("Target.attachToTarget", { targetId, flatten: true });
     await cdp("Runtime.enable", {}, sessionId);
-    await cdp("Runtime.addBinding", { name: "cagePaneActivated" }, sessionId);
-    await cdp("Runtime.addBinding", { name: "cagePaneSeparated" }, sessionId);
-    await cdp("Runtime.addBinding", { name: "cageFaviconChanged" }, sessionId);
+    await cdp("Runtime.addBinding", { name: "paneActivated" }, sessionId);
+    await cdp("Runtime.addBinding", { name: "paneSeparated" }, sessionId);
+    await cdp("Runtime.addBinding", { name: "paneFaviconChanged" }, sessionId);
     const loaded = await cdp("Runtime.evaluate", { awaitPromise: true, returnByValue: true,
       expression: `new Promise(resolve => {
-        const ready = () => resolve(typeof setCageSplit === "function");
+        const ready = () => resolve(typeof setSplitPanes === "function");
         document.readyState !== "complete" ? addEventListener("DOMContentLoaded", ready, { once: true }) : ready();
       })` }, sessionId);
     if (!loaded.result.value) throw new Error("Split controller unavailable");
@@ -482,7 +483,7 @@ function refreshFavicon(id) {
   const request = {};
   faviconRequests.set(id, request);
   void cdp("Runtime.evaluate", {
-    expression: `readCageFavicon(${JSON.stringify(id)})`, awaitPromise: true, returnByValue: true,
+    expression: `readPaneFavicon(${JSON.stringify(id)})`, awaitPromise: true, returnByValue: true,
   }, splitSession).then(({ result }) => {
     if (faviconRequests.get(id) !== request) return;
     const icon = result.value;
@@ -507,7 +508,7 @@ async function setSplit({ left, right, id }) {
     throw new Error("设置页请在单个浏览器窗格内使用");
   const sid = await splitController();
   const result = await cdp("Runtime.evaluate", { awaitPromise: true, returnByValue: true,
-    expression: `setCageSplit(${JSON.stringify(left || "")}, ${JSON.stringify(right || "")})`,
+    expression: `setSplitPanes(${JSON.stringify(left || "")}, ${JSON.stringify(right || "")})`,
   }, sid);
   splitView = null;
   if (result.exceptionDetails) {
@@ -722,7 +723,7 @@ async function resizeDisplay(width, height, density) {
   )
     throw new Error("Invalid display size");
   const result = { ok: true, ...(displaySettings.available ? { scale: displaySettings.set(scale) } : {}) };
-  const name = `cage-${width}x${height}`;
+  const name = `mode-${width}x${height}`;
   if (displaySize === name) {
     // A viewer attaching at an unchanged size still restores the full rate.
     await runFile("/usr/bin/xrandr", ["--output", "VNC-0", "--mode", name]).catch(() => {});
@@ -750,7 +751,7 @@ async function resizeDisplay(width, height, density) {
   }
   await runFile("/usr/bin/xrandr", ["--output", "VNC-0", "--mode", name]);
   displaySize = name;
-  for (const old of stdout.matchAll(/^\s+(cage-\d+x\d+)/gm))
+  for (const old of stdout.matchAll(/^\s+((?:mode|cage)-\d+x\d+)/gm))
     if (old[1] !== name) {
       await runFile("/usr/bin/xrandr", ["--delmode", "VNC-0", old[1]]).catch(
         () => {},

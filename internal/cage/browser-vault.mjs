@@ -1,19 +1,19 @@
 import { randomUUID } from "node:crypto";
 
-const world = "cage-password-vault";
-const binding = "cageVaultSubmitted";
+const world = "credential-autofill";
+const binding = "credentialFormSubmitted";
 
 // This function executes in an isolated world. Page scripts cannot invoke its
 // binding or replace its built-ins. Only the top document participates.
 export function vaultPage() {
-  if (window !== window.top || globalThis.cageVault) return;
+  if (window !== window.top || globalThis.credentialHelper) return;
   const visible = el => el instanceof HTMLInputElement && !el.disabled && !el.readOnly &&
     el.type !== "hidden" && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
   const fields = root => [...root.querySelectorAll("input")].filter(visible);
   const username = list => list.find(el => el.autocomplete === "username") ||
     list.find(el => el.type === "email") || list.find(el =>
       ["text", "tel"].includes(el.type) && !/one-time-code|otp|search|captcha/i.test(`${el.autocomplete} ${el.name} ${el.id}`));
-  const state = globalThis.cageVault = {
+  const state = globalThis.credentialHelper = {
     document: crypto.randomUUID(), deadline: 0, lease: "", previousUsername: "", previousAt: 0,
     fill(value) {
       if (Date.now() >= state.deadline || value.lease !== state.lease || location.origin !== value.origin ||
@@ -56,7 +56,7 @@ export function vaultPage() {
     const signature = `${state.document}:${account}:${password.length}`;
     if (signature === last && Date.now() - lastAt < 800) return;
     last = signature; lastAt = Date.now();
-    globalThis.cageVaultSubmitted(payload);
+    globalThis.credentialFormSubmitted(payload);
   }
   document.addEventListener("submit", event => { if (event.isTrusted) capture(event.target); }, true);
   document.addEventListener("click", event => {
@@ -176,7 +176,7 @@ export class BrowserVault {
       await Promise.all([...this.sessions.values()].map(async entry => {
         try {
           const value = await this.evaluate(entry, `(() => {
-            const v = globalThis.cageVault;
+            const v = globalThis.credentialHelper;
             if (!v || location.protocol !== 'https:') return null;
             if (v.lease !== ${JSON.stringify(this.lease)}) { v.previousUsername = ""; v.previousAt = 0; }
             v.lease = ${JSON.stringify(this.lease)}; v.deadline = Date.now() + 6500;
@@ -199,7 +199,7 @@ export class BrowserVault {
     if (input.action === "fill") {
       const entry = [...this.sessions.values()].find(value => value.tab === input.tab);
       if (!entry || input.tab !== this.active() || (this.tab(input.tab)?.login || this.tab(input.tab)?.incognito)) throw new Error("当前网页已切换");
-      const filled = await this.evaluate(entry, `globalThis.cageVault?.fill(${JSON.stringify(input)}) === true`);
+      const filled = await this.evaluate(entry, `globalThis.credentialHelper?.fill(${JSON.stringify(input)}) === true`);
       if (filled) this.usernames.set(entry.tab, { origin: input.origin, username: input.username, expires: this.now() + 120000 });
       if (!filled) throw new Error("未找到可填写的登录框，或页面已变化");
       return { ok: true };

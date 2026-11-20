@@ -19,7 +19,7 @@ PASSIVE_RATE = 30
 IDLE_RATE = 20
 ACTIVE_HOLD = 3.0
 IDLE_AFTER = 180.0
-# Size owners name their modes cage-<w>x<h> and cage-phone-<w>x<h>, and remove
+# Size owners name their modes mode-<w>x<h> and phone-<w>x<h> (legacy cage-*), and remove
 # only those. This prefix keeps the two sets of modes apart.
 PREFIX = 'fps'
 PROBE_KEYSYM = 0xffd5  # F24, injected by the input bridge to refresh a caret.

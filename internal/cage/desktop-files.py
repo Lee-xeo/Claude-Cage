@@ -449,7 +449,7 @@ class Portal:
             title, options = self.child(parameters, 1), self.child(parameters, 2)
             try:
                 directory = self.option(options, 'directory', False)
-                token = self.option(options, 'handle_token', 'cage_' + uuid.uuid4().hex)
+                token = self.option(options, 'handle_token', 'req_' + uuid.uuid4().hex)
                 if not re.fullmatch(r'[A-Za-z0-9_]+', token):
                     raise ValueError('文件窗口标识无效')
                 handle = ROOT + '/request/' + sender.decode().lstrip(':').replace('.', '_') + '/' + token

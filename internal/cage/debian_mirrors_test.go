@@ -109,16 +109,16 @@ exit 0
 				}
 			case "ustc", "host-ustc":
 				// The mirror measured fastest comes first, not a fixed order.
-				if got != "# Cage managed Debian mirrors\nhttps://mirrors.ustc.edu.cn/debian\tpriority:1\nhttps://mirrors.nju.edu.cn/debian\tpriority:2\nhttps://deb.debian.org/debian\tpriority:3\n" {
+				if got != "# Managed Debian mirrors\nhttps://mirrors.ustc.edu.cn/debian\tpriority:1\nhttps://mirrors.nju.edu.cn/debian\tpriority:2\nhttps://deb.debian.org/debian\tpriority:3\n" {
 					t.Fatal(got)
 				}
 			case "ustc-nju-failure":
-				if got != "# Cage managed Debian mirrors\nhttps://mirrors.ustc.edu.cn/debian\tpriority:1\nhttps://deb.debian.org/debian\tpriority:2\n" {
+				if got != "# Managed Debian mirrors\nhttps://mirrors.ustc.edu.cn/debian\tpriority:1\nhttps://deb.debian.org/debian\tpriority:2\n" {
 					t.Fatal(got)
 				}
 			default:
 				// official-failure and nju: nju, ustc, then the official source.
-				if got != "# Cage managed Debian mirrors\n"+old {
+				if got != "# Managed Debian mirrors\n"+old {
 					t.Fatal(got)
 				}
 			}

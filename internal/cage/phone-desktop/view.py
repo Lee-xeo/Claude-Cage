@@ -79,7 +79,7 @@ def save_layout(layout):
 
 
 def display_size(width, height):
-    name = f'cage-phone-{width}x{height}'
+    name = f'phone-{width}x{height}'
     modes = run('xrandr', '--query')
     if name not in modes:
         run('xrandr', '--newmode', name, f'{(width+32)*(height+8)*60/1000000:.3f}',
@@ -88,7 +88,7 @@ def display_size(width, height):
     run('xrandr', '--output', 'VNC-0', '--mode', name)
     for line in modes.splitlines():
         fields = line.split()
-        if fields and fields[0].startswith('cage-phone-') and fields[0] != name:
+        if fields and fields[0].startswith(('phone-', 'cage-phone-')) and fields[0] != name:
             run('xrandr', '--delmode', 'VNC-0', fields[0])
             run('xrandr', '--rmmode', fields[0])
 

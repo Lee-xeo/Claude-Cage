@@ -2,7 +2,7 @@
 // The debugger permission maps CDP target IDs to Chrome tab IDs. We never
 // attach a debugger through the extension or accept messages from webpages.
 const targetsByTab = new Map();
-globalThis.manageCageExtensions = async function (input) {
+globalThis.manageExtensions = async function (input) {
   const items = (await chrome.management.getAll()).filter(item => item.id !== chrome.runtime.id && item.type === 'extension');
   if (input.mode === 'list') return { items: items.map(({ id, name, description, version, enabled, mayDisable, optionsUrl, permissions, hostPermissions, installType }) =>
     ({ id, name, description, version, enabled, mayDisable, optionsUrl, permissions, hostPermissions, installType })) };
@@ -21,14 +21,14 @@ chrome.tabs.onUpdated.addListener((tabId, changes) => {
   faviconVersions.set(tabId, (faviconVersions.get(tabId) || 0) + 1);
   void chrome.debugger.getTargets().then(targets => {
     const target = targets.find(item => item.tabId === tabId);
-    if (target) globalThis.cageFaviconChanged?.(target.id);
+    if (target) globalThis.paneFaviconChanged?.(target.id);
   }).catch(() => {});
 });
 chrome.tabs.onRemoved.addListener(tabId => faviconVersions.delete(tabId));
 
 // Read Chromium's decoded favicon cache. The extension never requests a site's
 // icon URL, so its permissions cannot bypass the webpage's image policy.
-globalThis.readCageFavicon = async function (targetId) {
+globalThis.readPaneFavicon = async function (targetId) {
   try {
     const targets = await chrome.debugger.getTargets();
     const tabId = targets.find(target => target.id === targetId)?.tabId;
@@ -57,7 +57,7 @@ globalThis.readCageFavicon = async function (targetId) {
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   const target = targetsByTab.get(tabId);
-  if (target) globalThis.cagePaneActivated?.(target);
+  if (target) globalThis.paneActivated?.(target);
 });
 
 chrome.tabs.onUpdated.addListener((id, changes) => {
@@ -65,11 +65,11 @@ chrome.tabs.onUpdated.addListener((id, changes) => {
   if (target && "splitViewId" in changes && changes.splitViewId !== managedSplit) {
     targetsByTab.clear();
     managedSplit = null;
-    globalThis.cagePaneSeparated?.(target);
+    globalThis.paneSeparated?.(target);
   }
 });
 
-globalThis.setCageSplit = async function (left, right) {
+globalThis.setSplitPanes = async function (left, right) {
   if (!chrome.tabs.createSplit) throw new Error("Chromium 155 or later is required");
   const targets = await chrome.debugger.getTargets();
   const findTab = id => targets.find(t => t.id === id)?.tabId;

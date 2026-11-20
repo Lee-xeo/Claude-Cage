@@ -85,8 +85,8 @@ const inspectFocus = `(() => {
     (node.isContentEditable || node instanceof HTMLTextAreaElement ||
       (input && ["text","email","search","url","tel","password","number"].includes(node.type)));
   if (!editable) return { focus: "", password: false };
-  const ids = globalThis.cageInputs ??= new WeakMap();
-  if (!ids.has(node)) ids.set(node, String(globalThis.cageSequence = (globalThis.cageSequence || 0) + 1));
+  const ids = globalThis.__focusIds ??= new WeakMap();
+  if (!ids.has(node)) ids.set(node, String(globalThis.__focusSeq = (globalThis.__focusSeq || 0) + 1));
   return { focus: ids.get(node), password: input && node.type === "password" };
 })()`;
 
@@ -239,7 +239,7 @@ export class PhoneBrowser {
     return { url, token, failed, scale: viewport.scale, frameId: frame.id, loaderId: frame.loaderId };
   }
   async focus(s, { frameId, loaderId }) {
-    const { executionContextId } = await s.send("Page.createIsolatedWorld", { frameId, worldName: "CagePhone" });
+    const { executionContextId } = await s.send("Page.createIsolatedWorld", { frameId, worldName: "RemoteInput" });
     const result = await s.send("Runtime.evaluate", { expression: inspectFocus, contextId: executionContextId, returnByValue: true });
     const field = result.result.value;
     if (!field?.focus) return { focus: "", password: false };

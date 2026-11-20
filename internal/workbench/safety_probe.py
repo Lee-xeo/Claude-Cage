@@ -149,8 +149,8 @@ if args["stage"] == "boundary":
         result["ipv6_global_addresses"] = sum(len(link.get("addr_info", [])) for link in ip_json("-6", "addr", "show", "scope", "global"))
     except (OSError, ValueError, subprocess.SubprocessError, AttributeError):
         result["ipv6_global_addresses"] = -1
-    result["udp_attempted"] = udp_attempted(("1.1.1.1", 3478), b"Cage network boundary probe")
-    result["dns_udp_attempted"] = udp_attempted(("1.1.1.1", 53), b"Cage DNS boundary probe")
+    result["udp_attempted"] = udp_attempted(("1.1.1.1", 3478), b"udp probe")
+    result["dns_udp_attempted"] = udp_attempted(("1.1.1.1", 53), b"dns probe")
     result["dns_tcp_connected"] = connected(("1.1.1.1", 53))
     result["dot_connected"] = connected(("1.1.1.1", 853))
     result["resolvers"] = resolver_observation(args["management_host"])

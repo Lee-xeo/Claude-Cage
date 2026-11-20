@@ -39,7 +39,7 @@ legacy_directories='
 if [ -f /etc/zsh/zshenv ] && grep -qx '\. /etc/profile\.d/claude-cage\.sh' /etc/zsh/zshenv; then
   sudo sed -i '/^\. \/etc\/profile\.d\/claude-cage\.sh$/d' /etc/zsh/zshenv
 fi
-sudo rm -f /etc/profile.d/claude-cage.sh
+sudo rm -f /etc/profile.d/claude-cage.sh /etc/chromium/policies/managed/cage-password-vault.json
 # The browser account's services were restarted with the current programs and
 # rules; the work account keeps its own administrator rights.
 for former in /etc/sudoers.d/cage-claude-desktop /etc/sudoers.d/cage-download /etc/sudoers.d/cage-editor /etc/sudoers.d/cage-input /etc/sudoers.d/cage-phone-desktop; do

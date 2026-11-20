@@ -12,8 +12,8 @@ sudo install -d -m 0755 /etc/workbench /usr/local/lib
 # New website passwords belong to the host vault. Keep existing browser data.
 cage_browser_policy_dir=/etc/chromium/policies/managed
 sudo install -d -m 0755 "$cage_browser_policy_dir"
-printf '%s\n' '{"PasswordManagerEnabled":false}' | sudo tee "$cage_browser_policy_dir/cage-password-vault.json" >/dev/null
-sudo chmod 0644 "$cage_browser_policy_dir/cage-password-vault.json"
+printf '%s\n' '{"PasswordManagerEnabled":false}' | sudo tee "$cage_browser_policy_dir/password-manager.json" >/dev/null
+sudo chmod 0644 "$cage_browser_policy_dir/password-manager.json"
 # Resolve Tailscale application links in the workbench browser's user session.
 if ! command -v xdg-mime >/dev/null; then
   sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends xdg-utils </dev/null

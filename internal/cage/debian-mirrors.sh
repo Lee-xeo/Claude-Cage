@@ -40,13 +40,13 @@ for repository in debian debian-security; do
   official="https://deb.debian.org/$repository"
   old=$(printf '%s\tpriority:%s\n' "https://mirrors.nju.edu.cn/$repository" 1 "https://mirrors.ustc.edu.cn/$repository" 2 "$official" 3)
   case "$content" in
-    "$official"|"$old"|'# Cage managed Debian mirrors'*) ;;
+    "$official"|"$old"|'# Managed Debian mirrors'*|'# Cage managed Debian mirrors'*) ;;
     *) continue;;
   esac
   stage=$(mktemp "$list.XXXXXX")
   probe=$(mktemp)
   trap 'rm -f "$stage" "$probe"' EXIT
-  printf '# Cage managed Debian mirrors\n' > "$stage"
+  printf '# Managed Debian mirrors\n' > "$stage"
   suite=$(. /etc/os-release; printf '%s' "${VERSION_CODENAME:-trixie}")
   [ "$repository" != debian-security ] || suite="$suite-security"
   priority=0

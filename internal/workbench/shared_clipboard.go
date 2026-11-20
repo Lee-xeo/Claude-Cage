@@ -40,7 +40,7 @@ func compressedClipboardCommand(script string) (string, error) {
 		return "", err
 	}
 	// 移除载荷参数后，辅助脚本仍收到原有操作参数，stdin 也仍用于剪贴板协议。
-	const bootstrap = `import base64,sys,zlib; exec(compile(zlib.decompress(base64.b64decode(sys.argv.pop(1))), '<cage-shared-clipboard>', 'exec'))`
+	const bootstrap = `import base64,sys,zlib; exec(compile(zlib.decompress(base64.b64decode(sys.argv.pop(1))), '<clipboard-bridge>', 'exec'))`
 	return "exec sudo -n /usr/bin/python3 -c " + shellescape.Quote(bootstrap) + " " +
 		base64.StdEncoding.EncodeToString(compressed.Bytes()), nil
 }

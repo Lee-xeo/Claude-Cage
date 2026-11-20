@@ -674,7 +674,7 @@ def plugin_root_forms(config):
 
 
 def legacy_plugin_root_forms(config):
-    """Older plugin spellings from before ~/.local/share/cage moved to workbench."""
+    """Older plugin spellings from before the user data directory moved to workbench."""
     if os.name == "nt":
         return []
     workbench = Path.home() / ".local/share/workbench/claude-accounts"
