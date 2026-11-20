@@ -48,6 +48,7 @@ $go = $tools['Go']
 $dotnet = $tools['.NET SDK']
 $node = $tools['Node.js']
 $sevenZip = $tools['7-Zip']
+Assert-SevenZipFormats $sevenZip
 $dependencies = Get-Content -LiteralPath (Join-Path $repository 'packaging/windows/dependencies.json') -Raw | ConvertFrom-Json
 $stage = Join-Path $repository ("_output/windows-build-" + [guid]::NewGuid().ToString('N'))
 $retainStage = $false

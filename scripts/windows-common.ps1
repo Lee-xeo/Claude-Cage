@@ -277,6 +277,17 @@ function Get-VerifiedDependency {
     return $path
 }
 
+function Assert-SevenZipFormats {
+    param([string]$SevenZip)
+    # Minimal builds named 7z.exe can lack the PE/NSIS handlers needed for the
+    # pinned QEMU installer; find out before the long QEMU compile.
+    $info = (& $SevenZip 'i' 2>&1 | Out-String)
+    $missing = @(@('PE', 'Nsis') | Where-Object { $info -cnotmatch "(?m)\s$_\s" })
+    if ($LASTEXITCODE -ne 0 -or $missing.Count) {
+        throw "7-Zip at $SevenZip does not list the $($missing -join ', ') archive formats. Install the full 7-Zip and put its directory first on PATH. See docs/windows.md#windows-源码构建."
+    }
+}
+
 function Expand-BuildArchive {
     param([string]$Archive, [string]$Destination, [string]$SevenZip)
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null

@@ -52,6 +52,12 @@ function Build-WindowsQemuRuntime {
         try { $stage = (New-Item -Path $candidate -ItemType Directory -Force -ErrorAction Stop).FullName; break }
         catch [UnauthorizedAccessException], [IO.IOException] { continue }
     }
+    # QEMU configure installs Python packages through pip, whose nested wheel
+    # cache paths below this directory can exceed MAX_PATH. SUBST drives do not
+    # help because Python expands them to the physical path.
+    if ($stage -and $stage.Length -gt 48) {
+        Write-Warning "QEMU build directory $stage is long; pip may fail with 'The filename or extension is too long'. Set CAGE_QEMU_BUILD_ROOT to a short physical path such as C:\CageBuildTemp."
+    }
     if (-not $stage) {
         throw 'QEMU needs a writable, short local build path with ASCII characters and no spaces. Create one and set CAGE_QEMU_BUILD_ROOT to it.'
     }
