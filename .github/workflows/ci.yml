@@ -23,7 +23,11 @@ permissions:
   contents: read
 concurrency:
   group: cage-ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer pull request or manual run replaces the older one. On main every
+  # merge already passed its pull request checks, so a running push check is
+  # allowed to finish (its packages may feed platform-preview.yml); GitHub
+  # still replaces a queued, not yet started main run with the newest push.
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 jobs:
   workflow-checks:
     runs-on: ubuntu-24.04
