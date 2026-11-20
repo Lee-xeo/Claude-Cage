@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Packaged files must stay readable by every user, whatever the caller's umask.
+umask 022
 cd "$(dirname "$0")/.."
 [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] || { echo 'Build on x86_64 Linux (Ubuntu 22.04 baseline).' >&2; exit 1; }
 case "${1:-}" in ''|--prebuilt-backend) ;; *) echo 'Usage: scripts/build-linux.sh [--prebuilt-backend]' >&2; exit 2 ;; esac
