@@ -27,6 +27,8 @@ import { LanguageSettings } from "./language-settings";
 
 const Navigation = createContext(null);
 export const useSSHNavigation = () => useContext(Navigation);
+const windowHidden = () =>
+  document.visibilityState === "hidden" || window.cageWindowVisible === false;
 const identity = (context) =>
   `${context.mode}:${context.connection_id || "disconnected"}`;
 const occupied = (status) =>
@@ -62,6 +64,7 @@ export function ClientRoot({ children }) {
   const [context, setContext] = useState(null);
   const [error, setError] = useState("");
   const currentIdentity = useRef(null);
+  const currentText = useRef("");
   const mounted = useRef(false);
   const serial = useRef(0);
   const refresh = useCallback(async () => {
@@ -78,21 +81,38 @@ export function ClientRoot({ children }) {
     }
     currentIdentity.current = next;
     setClientContext(value);
-    setContext(value);
+    // Most polls return the same context; keep the object so the environment
+    // shell does not re-render every two seconds.
+    const text = JSON.stringify(value);
+    if (text !== currentText.current) {
+      currentText.current = text;
+      setContext(value);
+    }
     setError("");
     return value;
   }, []);
   useEffect(() => {
     mounted.current = true;
-    let timer;
+    let timer, started = false, polling = false;
     async function poll() {
+      if (polling) return;
+      polling = true;
+      clearTimeout(timer);
       try {
         await refresh();
       } catch (e) {
         if (mounted.current) setError(e.message);
       }
-      if (mounted.current) timer = setTimeout(poll, 2000);
+      polling = false;
+      // A hidden window only needs to notice a switched connection eventually;
+      // returning to the window refreshes at once.
+      if (mounted.current) timer = setTimeout(poll, windowHidden() ? 10000 : 2000);
     }
+    const shown = () => {
+      if (started && mounted.current && !windowHidden()) void poll();
+    };
+    document.addEventListener("visibilitychange", shown);
+    window.addEventListener("cage-window-visibility", shown);
     (async () => {
       if (location.hash) {
         await api("/session", { token: location.hash.slice(1) });
@@ -106,11 +126,14 @@ export function ClientRoot({ children }) {
       if (!mounted.current) return;
       setLanguageReady(true);
       window.dispatchEvent(new Event("cage-session-ready"));
+      started = true;
       await poll();
     })().catch((e) => { setError(e.message); setLanguageReady(true); });
     return () => {
       mounted.current = false;
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", shown);
+      window.removeEventListener("cage-window-visibility", shown);
     };
   }, [refresh]);
   if (!languageReady) return null;
