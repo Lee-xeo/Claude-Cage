@@ -577,7 +577,7 @@ def prepare_account_switch(request):
     if any(row.get("sessionId") != sid and live(row.get("pid")) for row in json.loads(listing.stdout)):
         raise ValueError("原账号仍有其他执行任务，请结束后台任务后再交接")
     for row in rows:
-        if row.get("cwd") != workspace or row.get("status") != "idle" or row.get("kind") != "interactive":
+        if not workspace_within(row.get("cwd") or "", workspace) or row.get("status") != "idle" or row.get("kind") != "interactive":
             raise ValueError("原 Claude Code 尚未安全停止，请先结束本轮任务")
     pid = state.get("pid")
     fingerprint = process_fingerprint(pid) if live(pid) else ""
@@ -615,7 +615,10 @@ def prepare_account_switch(request):
         row = json.loads(line)
         if row.get("isSidechain"):
             continue
-        if row.get("cwd") and row["cwd"] != workspace:
+        # Claude Code records the current directory per message. Worktrees it
+        # creates (.claude/worktrees/<name>) and subdirectories stay inside the
+        # project; history from an unrelated project is still refused.
+        if row.get("cwd") and not workspace_within(row["cwd"], workspace):
             raise ValueError("历史项目与当前项目不一致")
         blocks = (row.get("message") or {}).get("content", [])
         if not isinstance(blocks, list):

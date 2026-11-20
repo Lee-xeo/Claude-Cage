@@ -46,6 +46,12 @@ else
   config="$HOME/.local/share/cage/claude-accounts/$code/config"
 fi
 mkdir -p "$config"
+# Desktop's Code tab starts the CLI without Cage's launch flags. Link the
+# shared skills and instructions and add shared settings first; a conflict
+# keeps the original files, is logged by this unit and does not block Desktop.
+if [[ $code != default ]]; then
+  /usr/local/bin/cage-claude-account share "$code" >/dev/null || :
+fi
 # client_runtime creates temporary compatibility aliases. Resolve the path
 # inside the service's private /tmp so it also exists for the Code tab.
 export CLAUDE_CONFIG_DIR

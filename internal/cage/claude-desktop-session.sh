@@ -104,6 +104,10 @@ if [[ -s "$XDG_RUNTIME_DIR/account-scope" ]]; then
   if [[ $code =~ ^[a-f0-9]{24}$ ]]; then
     export CLAUDE_CONFIG_DIR="$HOME/.local/share/cage/claude-accounts/$code/config"
     mkdir -p "$CLAUDE_CONFIG_DIR"
+    # Desktop's Code tab starts the CLI without Cage's launch flags. Link the
+    # shared skills and instructions and add shared settings first; a conflict
+    # keeps the original files, is logged by this unit and does not block Desktop.
+    /usr/local/bin/cage-claude-account share "$code" >/dev/null || :
     if [[ $subject =~ ^[a-f0-9]{64}$ ]]; then
       history_args=("$CLAUDE_CONFIG_DIR" "$subject")
     fi
