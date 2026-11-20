@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -62,6 +63,17 @@ func (r *Runtime) ensureSSHKey() ([]byte, error) {
 	return ssh.MarshalAuthorizedKey(key), nil
 }
 
+// waitForSSHService lets a cold-started container finish starting ssh.service
+// before the account step validates and reloads it; reloading an inactive unit
+// fails. It exits 75 when the service stays inactive for 30 seconds.
+const waitForSSHService = `cage_ssh_wait=0
+until systemctl is-active --quiet ssh; do
+  cage_ssh_wait=$((cage_ssh_wait + 1))
+  if [ "$cage_ssh_wait" -gt 30 ]; then exit 75; fi
+  sleep 1
+done
+`
+
 // InstallAccess provisions only this runtime's generated public key. Private
 // SSH keys stay in the host profile. It does not expose a container port.
 func (r *Runtime) InstallAccess(ctx context.Context) error {
@@ -79,8 +91,7 @@ func (r *Runtime) InstallAccess(ctx context.Context) error {
 	if profile != nil {
 		// Only a newly created container has this profile. Never rename an
 		// existing legacy environment or provide compatibility account aliases.
-		script := `set -eu
-if ! id "$1" >/dev/null 2>&1; then
+		script := "set -eu\n" + waitForSSHService + `if ! id "$1" >/dev/null 2>&1; then
   test "$(id -u cage)" = 1000
   usermod -l "$1" -d "$3" -m cage
 fi
@@ -99,6 +110,13 @@ sshd -t
 systemctl reload ssh
 `
 		if _, err = r.output(ctx, "exec", "--user", "0", inspection.State.ContainerID, "/bin/sh", "-c", script, "sh", profile.Username, profile.BrowserUsername, profile.WorkHomePath(), profile.BrowserHomePath()); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 75 {
+				return errors.New("容器 SSH 服务 30 秒内未就绪，请稍后重试启动；原容器文件已保留")
+			}
 			return errors.New("无法初始化新容器账户；原容器文件已保留")
 		}
 	}
