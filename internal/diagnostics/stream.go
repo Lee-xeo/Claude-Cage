@@ -130,6 +130,10 @@ func (s *Stream) outputLevel(line string) string {
 			entry.Level = match[1]
 		}
 	}
+	// Mihomo -t prints its plain success line on stderr.
+	if entry.Level == "" && s.source == "proxy-validation" && strings.HasSuffix(strings.TrimSpace(line), "test is successful") {
+		return "info"
+	}
 	switch entry.Level {
 	case "trace", "debug":
 		return "debug"
