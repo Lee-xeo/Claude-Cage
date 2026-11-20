@@ -511,7 +511,9 @@ def handoff_session(request):
     if live(state.get("pid")) and live(state.get("channel_pid")) and not state.get("closed"):
         return {"running": True, "channel_ready": True}
     for row in rows:
-        if row.get("cwd") != workspace:
+        # A session working in one of the project's worktrees or subfolders
+        # still belongs to it, as for account handoff (#322).
+        if not workspace_within(row.get("cwd") or "", workspace):
             raise ValueError("原会话的项目已变化，请重新读取会话列表")
         # A waiting CLI has no executing tool. Resume its task on the shared
         # channel so any permission decision is requested again on the phone.
@@ -521,7 +523,7 @@ def handoff_session(request):
         # Refresh the supported CLI registry immediately before signalling so
         # stale discovery data cannot select a different process or workspace.
         current = active_sessions(session_id, config)
-        matched = next((item for item in current if item.get("pid") == row["pid"] and item.get("cwd") == workspace and item.get("kind") == "interactive" and item.get("status") in ("idle", "waiting")), None)
+        matched = next((item for item in current if item.get("pid") == row["pid"] and workspace_within(item.get("cwd") or "", workspace) and item.get("kind") == "interactive" and item.get("status") in ("idle", "waiting")), None)
         if matched is None:
             return {"running": bool(current)}
         if matched["status"] == "waiting":
@@ -631,6 +633,9 @@ def prepare_account_switch(request):
     if pending:
         raise ValueError("历史仍有结果未确认的工具，不能自动接续")
     folder.mkdir(mode=PRIVATE_MODE, parents=True, exist_ok=True)
+    # Rewind checkpoints live beside the account's history. Freeze them too so
+    # the target account's CLI can carry them into the forked session.
+    freeze_file_history(config / "file-history" / sid, folder / "file-history" / sid)
     target = folder / "history.jsonl"
     with tempfile.NamedTemporaryFile(dir=folder, delete=False) as stream:
         stream.write(path.read_bytes())
@@ -640,6 +645,30 @@ def prepare_account_switch(request):
     with state_file(connection) as state:
         state["closed"] = True
     return {"transcript": str(target)}
+
+
+def freeze_file_history(source, destination):
+    """Copy a session's rewind backups without following links or replacing files."""
+    if not source.is_dir() or source.is_symlink():
+        return
+    destination.mkdir(mode=PRIVATE_MODE, parents=True, exist_ok=True)
+    for item in source.iterdir():
+        target = destination / item.name
+        if item.is_symlink() or target.exists() or target.is_symlink():
+            continue
+        if item.is_dir():
+            freeze_file_history(item, target)
+        elif item.is_file():
+            with tempfile.NamedTemporaryFile(dir=destination, delete=False) as stream:
+                with item.open("rb") as data:
+                    shutil.copyfileobj(data, stream)
+                temporary = stream.name
+            try:
+                os.link(temporary, target)
+            except FileExistsError:
+                pass
+            finally:
+                os.unlink(temporary)
 
 
 def cancel_account_switch(request):
@@ -748,7 +777,8 @@ def launch(request):
     elif len(prefix) == 5 and Path(prefix[2]).name == "cage-claude-account" and prefix[3] == "run":
         account = runpy.run_path(prefix[2])
         if not account["has_status_line"](account["profile"](prefix[4])):
-            settings["statusLine"] = {"type": "command", "command": _runtime["command_text"](prefix[2], ["statusline", prefix[4]])}
+            command = _runtime["command_text"](prefix[2], ["statusline", prefix[4]])
+            settings["statusLine"] = account["status_line"](command) if "status_line" in account else {"type": "command", "command": command}
     save(folder / "settings.json", settings)
     argv = _runtime["command"](__file__, ["serve", connection])
     config = {"mcpServers": {connection: {"command": argv[0], "args": argv[1:]}}}
@@ -791,6 +821,14 @@ def launch(request):
         expected = ROOT.parent / "cli-account-switches" / identifier(request["switch_id"]) / "history.jsonl"
         if Path(request["resume_transcript"]) != expected or not expected.is_file():
             raise ValueError("账号交接历史无效")
+        # The CLI copies a resumed session's rewind backups from its own
+        # configuration into the fork; place the frozen ones there first.
+        frozen = expected.parent / "file-history"
+        target_config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+        if frozen.is_dir():
+            for session in frozen.iterdir():
+                if re.fullmatch(r"[0-9a-f-]{36}", session.name) and session.is_dir() and not session.is_symlink():
+                    freeze_file_history(session, target_config / "file-history" / session.name)
         args += ["--resume", _runtime["path"](expected), "--fork-session", "--session-id", session_id]
     else:
         args += ["--resume", session_id] if request.get("resume") else ["--session-id", session_id]
