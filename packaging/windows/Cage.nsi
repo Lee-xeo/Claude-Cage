@@ -516,13 +516,36 @@ Section "Cage" Main
       SetErrors
     ${EndIf}
   ${Else}
-    Rename "$StageDir" "$INSTDIR"
+    ; Security software can briefly hold files just extracted to the staging
+    ; folder, which denies renaming it. Retry for up to ten seconds and record
+    ; the last Win32 error in the diagnostic instead of the previous helper's.
+    StrCpy $2 0
+    publish_retry:
+    System::Call 'kernel32::MoveFileExW(w "$StageDir", w "$INSTDIR", i 0) i .r0 ?e'
+    Pop $1
+    ${If} $0 == 0
+      IntOp $2 $2 + 1
+      ${If} $2 < 20
+        Sleep 500
+        Goto publish_retry
+      ${EndIf}
+      StrCpy $HelperExit "win32:$1"
+      Call WriteInstallDiagnostic
+      SetErrors
+    ${EndIf}
   ${EndIf}
   ${If} ${Errors}
     ${If} $BackupDir != ""
       Call RestorePreservedFiles
     ${EndIf}
     RMDir /r "$StageDir"
+    ${If} $BackupDir == ""
+      ; A first installation has nothing to restore: remove its receipt so a
+      ; retry is not refused. The helper keeps it if any entry was involved.
+      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation abandon -Target "$INSTDIR" -Receipt "$TransactionRecord" $DiagnosticArguments'
+      Pop $0
+      Pop $1
+    ${EndIf}
     SetErrorLevel 2
     Abort "$(CageSetupRestore)"
   ${EndIf}
