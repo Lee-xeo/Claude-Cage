@@ -19,7 +19,7 @@ PLIST
     ;;
   *) echo 'Usage: scripts/test-account-device.sh [--biometric]' >&2; exit 2 ;;
 esac
-swiftc -O -parse-as-library -framework Security -framework LocalAuthentication \
+xcrun swiftc -O -parse-as-library -framework Security -framework LocalAuthentication \
   desktop/AccountDevice.swift desktop/AccountDeviceTests.swift -o "$binary"
 if [[ "${1:-}" == --biometric ]]; then
   codesign --force --sign "$CAGE_SIGNING_IDENTITY" --timestamp=none "$binary"
