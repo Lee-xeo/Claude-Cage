@@ -50,7 +50,7 @@ mkdir -p "$config"
 # shared skills and instructions and add shared settings first; a conflict
 # keeps the original files, is logged by this unit and does not block Desktop.
 if [[ $code != default ]]; then
-  /usr/local/bin/cage-claude-account share "$code" >/dev/null || :
+  /usr/local/libexec/claude-account share "$code" >/dev/null || :
 fi
 # client_runtime creates temporary compatibility aliases. Resolve the path
 # inside the service's private /tmp so it also exists for the Code tab.

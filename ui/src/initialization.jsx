@@ -287,7 +287,7 @@ function Initialization({ initial, onComplete }) {
           <table className="mirror-samples"><tbody>{mirrors.samples.map(sample => <tr key={sample.id}><td>{tr(sample.name)}</td><td><code>{sample.host}</code></td><td>{sample.error ? <span className="mirror-error">{tr(sample.error)}</span> : formatSpeed(sample.bytes_per_second)}</td></tr>)}</tbody></table>
           <label className="mirror-option"><input type="radio" name="debian-mirror" value="auto" checked={mirrorChoice === "auto"} onChange={() => setMirrorChoice("auto")} />{tr("Debian 官方源优先（deb.debian.org，不可达时改用国内镜像）")}{mirrors.recommended === "auto" && <em>{tr("推荐")}</em>}</label>
           <label className="mirror-option"><input type="radio" name="debian-mirror" value={mirrors.domestic} checked={mirrorChoice === mirrors.domestic} onChange={() => setMirrorChoice(mirrors.domestic)} />{tr("国内镜像优先（{0}首选，另一镜像其次，都不可达时用官方源）", tr(mirrorNames[mirrors.domestic] ?? mirrors.domestic))}{mirrors.recommended === mirrors.domestic && <em>{tr("推荐")}</em>}</label>
-          <p>{tr("选择保存在设置中，之后的安装、更新和维护沿用；也可以在环境的") + " "}<code>/etc/claude-cage/debian-mirror</code>{" " + tr("中修改。")}</p>
+          <p>{tr("选择保存在设置中，之后的安装、更新和维护沿用；也可以在环境的") + " "}<code>/etc/workbench/debian-mirror</code>{" " + tr("中修改。")}</p>
           <button className="primary" disabled={busy || !mirrorChoice || Boolean(connectionError)} onClick={() => install(mirrorChoice)}>{tr("使用所选软件源并开始安装")}</button></section>}
         {error && <p className="initialization-notice" role="alert"><SafetyMessage message={error} /></p>}
         <footer className="initialization-actions">
