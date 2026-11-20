@@ -34,45 +34,118 @@ func ProbeExitIP(ctx context.Context, cfg Config) (string, error) {
 	return probeExitIP(ctx, e)
 }
 
+// exitProbeService is a fixed public IPv4 echo endpoint. Each one is reached
+// only through the selected proxy, so any of them measures the same egress.
+type exitProbeService struct {
+	id, name, endpoint string
+	// trace marks Cloudflare's key=value trace format, which carries the
+	// client address on a single "ip=" line.
+	trace bool
+}
+
+// The proxy resolves the names remotely. IPv4-only endpoints measure the same
+// address family as the guest policy even when the proxy is dual-stack; the
+// trace endpoint is an IPv4 literal, so its "ip=" line is the IPv4 exit.
+var exitProbeServices = []exitProbeService{
+	{id: "icanhazip", name: "主检测服务", endpoint: "https://ipv4.icanhazip.com/"},
+	{id: "ipify", name: "备用检测服务", endpoint: "https://api.ipify.org/"},
+	{id: "cftrace", name: "第三检测服务", endpoint: "https://1.1.1.1/cdn-cgi/trace", trace: true},
+}
+
+// A slow service does not hold back the next one. Each service starts when
+// every earlier one has failed or after this delay, whichever comes first.
+const exitProbeStagger = 1500 * time.Millisecond
+
 func probeExitIP(ctx context.Context, e *Egress) (string, error) {
 	transport := &http.Transport{Proxy: nil, DialContext: e.DialContext, DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("probe redirect refused") }}
-	// The proxy resolves this name remotely. An IPv4-only service measures the
-	// same address family as the guest policy even when the proxy is dual-stack.
+	return probeExitIPServices(ctx, client, exitProbeServices, exitProbeStagger)
+}
+
+type exitProbeResult struct {
+	index    int
+	ip       string
+	err      error
+	duration time.Duration
+}
+
+// probeExitIPServices returns the first valid public IPv4 reported by any
+// service. Every request uses the same proxied client; no result is accepted
+// unless it passes the same validation, so a fallback never widens the check.
+func probeExitIPServices(ctx context.Context, client *http.Client, services []exitProbeService, stagger time.Duration) (string, error) {
+	requestCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan exitProbeResult, len(services))
+	start := func(index int) {
+		go func() {
+			started := time.Now()
+			ip, err := queryExitIPService(requestCtx, client, services[index])
+			results <- exitProbeResult{index: index, ip: ip, err: err, duration: time.Since(started)}
+		}()
+	}
+	failures := make([]string, len(services))
 	allTimedOut := true
-	var failures []string
-	for _, service := range []struct{ id, name, endpoint string }{
-		{"icanhazip", "主检测服务", "https://ipv4.icanhazip.com/"},
-		{"ipify", "备用检测服务", "https://api.ipify.org/"},
-	} {
-		started := time.Now()
-		ip, err := queryExitIP(ctx, client, service.endpoint)
-		if err == nil {
-			return ip, nil
+	started, pending := 1, 1
+	start(0)
+	timer := time.NewTimer(stagger)
+	defer timer.Stop()
+	for pending > 0 {
+		var result exitProbeResult
+		select {
+		case result = <-results:
+		case <-timer.C:
+			if started < len(services) && ctx.Err() == nil {
+				start(started)
+				started, pending = started+1, pending+1
+				timer.Reset(stagger)
+			}
+			continue
+		case <-ctx.Done():
+			// Wait for started requests so diagnostics stay complete; their
+			// shared context is already canceled.
+			cancel()
+			result = <-results
 		}
+		pending--
+		if result.err == nil {
+			return result.ip, nil
+		}
+		service := services[result.index]
 		// Fixed service IDs survive URL redaction in exported diagnostics.
-		diagnostics.Log("warn", "exit-probe", fmt.Sprintf("service=%s duration_ms=%d error=%v cause=%v", service.id, time.Since(started).Milliseconds(), err, errors.Unwrap(err)))
-		failures = append(failures, service.name+"："+err.Error())
+		diagnostics.Log("warn", "exit-probe", fmt.Sprintf("service=%s duration_ms=%d error=%v cause=%v", service.id, result.duration.Milliseconds(), result.err, errors.Unwrap(result.err)))
+		failures[result.index] = service.name + "：" + result.err.Error()
 		var networkError net.Error
-		if !errors.Is(err, context.DeadlineExceeded) && !(errors.As(err, &networkError) && networkError.Timeout()) {
+		if !errors.Is(result.err, context.DeadlineExceeded) && !(errors.As(result.err, &networkError) && networkError.Timeout()) {
 			allTimedOut = false
 		}
-		if ctx.Err() != nil {
-			break
+		if pending == 0 && started < len(services) && ctx.Err() == nil {
+			start(started)
+			started, pending = started+1, pending+1
+			timer.Reset(stagger)
+		}
+	}
+	var reported []string
+	for _, failure := range failures {
+		if failure != "" {
+			reported = append(reported, failure)
 		}
 	}
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return "", usererror.Wrap("通过所选代理查询出口 IP", ctx.Err(), "外网保持关闭。")
 	}
 	if allTimedOut {
-		return "", usererror.New("通过所选代理查询出口 IP", strings.Join(failures, "；"), "出口检测超时，请稍后重试。", context.DeadlineExceeded)
+		return "", usererror.New("通过所选代理查询出口 IP", strings.Join(reported, "；"), "出口检测超时，请稍后重试。", context.DeadlineExceeded)
 	}
-	return "", errors.New("通过所选代理查询出口 IP 失败：" + strings.Join(failures, "；") + "。未能确认出口时，外网保持关闭。")
+	return "", errors.New("通过所选代理查询出口 IP 失败：" + strings.Join(reported, "；") + "。未能确认出口时，外网保持关闭。")
 }
 
 func queryExitIP(ctx context.Context, client *http.Client, endpoint string) (string, error) {
-	req, _ := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	return queryExitIPService(ctx, client, exitProbeService{endpoint: endpoint})
+}
+
+func queryExitIPService(ctx context.Context, client *http.Client, service exitProbeService) (string, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", service.endpoint, nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		var requestError *url.Error
@@ -92,11 +165,31 @@ func queryExitIP(ctx context.Context, client *http.Client, endpoint string) (str
 	if len(body) > 4096 {
 		return "", errors.New("查询出口 IP 失败：检测服务没有返回有效的 IP 记录。请更换可用节点或稍后重新检测；外网保持关闭。")
 	}
-	ip, err := netip.ParseAddr(strings.TrimSpace(string(body)))
+	text := strings.TrimSpace(string(body))
+	if service.trace {
+		text = traceIP(string(body))
+	}
+	ip, err := netip.ParseAddr(text)
 	if err != nil || !ip.Is4() || !ip.IsGlobalUnicast() || ip.IsPrivate() {
 		return "", errors.New("出口检测结果不是有效公网 IPv4 地址")
 	}
 	return ip.String(), nil
+}
+
+// traceIP returns the value of the single "ip=" line, or "" when the line is
+// missing or repeated. Other trace fields are ignored and never reported.
+func traceIP(body string) string {
+	var ip string
+	found := 0
+	for _, line := range strings.Split(body, "\n") {
+		if value, ok := strings.CutPrefix(strings.TrimRight(line, "\r"), "ip="); ok {
+			ip, found = strings.TrimSpace(value), found+1
+		}
+	}
+	if found != 1 {
+		return ""
+	}
+	return ip
 }
 
 func probeDNS(ctx context.Context, e *Egress) error {

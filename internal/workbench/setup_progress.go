@@ -77,6 +77,8 @@ func parseSetupProgress(line string) *SetupProgress {
 			p.Label = "正在下载网页编辑器 code-server"
 		case "chromium.deb":
 			p.Phase, p.Label = "packages", "正在下载 Chromium 浏览器"
+		case "gh.deb":
+			p.Phase, p.Label = "packages", "正在下载 GitHub CLI"
 		case "chromium-common.deb":
 			p.Phase, p.Label = "packages", "正在下载 Chromium 公共资源"
 		case "claude-code-linux-x64.tgz", "claude-code-linux-arm64.tgz":
@@ -99,6 +101,8 @@ func parseSetupProgress(line string) *SetupProgress {
 		return &SetupProgress{Phase: "packages", Label: "正在安装 Chromium 浏览器"}
 	case "Installing Node.js 24...":
 		return &SetupProgress{Phase: "packages", Label: "正在安装 Node.js 24"}
+	case "Installing GitHub CLI...":
+		return &SetupProgress{Phase: "packages", Label: "正在安装 GitHub CLI"}
 	case "Installing mise...":
 		return &SetupProgress{Phase: "packages", Label: "正在安装 mise"}
 	case "Installing Claude Code...":

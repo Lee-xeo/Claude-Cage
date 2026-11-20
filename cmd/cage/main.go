@@ -577,19 +577,13 @@ func run() int {
 	}
 
 	if args[0] == "check" {
-		e, err := cage.NewEgress(cfg)
+		// Use the same fixed exit services as the network check, so one
+		// blocked endpoint does not fail this check on its own.
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		_, err := cage.ProbeExitIP(ctx, cfg)
+		cancel()
 		if err != nil {
-			return fail(err)
-		}
-		client := &http.Client{Timeout: 25 * time.Second, Transport: &http.Transport{DialContext: e.DialContext, Proxy: nil}}
-		req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://1.1.1.1/cdn-cgi/trace", nil)
-		r, err := client.Do(req)
-		if err != nil {
-			return fail(fmt.Errorf("proxy transport check failed (no direct fallback)"))
-		}
-		r.Body.Close()
-		if r.StatusCode != 200 {
-			return fail(fmt.Errorf("proxy check returned HTTP %d", r.StatusCode))
+			return fail(fmt.Errorf("proxy transport check failed (no direct fallback): %w", err))
 		}
 		fmt.Println("Proxy transport OK. Guest traffic still requires VM acceptance checks.")
 		return 0

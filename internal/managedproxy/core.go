@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,8 +27,9 @@ import (
 // Preserve causes for errors.Is/As without exposing private socket paths,
 // request URLs, credentials or response contents in displayed/logged errors.
 type coreError struct {
-	stage string
-	err   error
+	stage  string
+	err    error
+	status int // HTTP status from the core API, 0 when no response arrived
 }
 
 func (e *coreError) Error() string {
@@ -136,7 +138,7 @@ func API(ctx context.Context, profile, method, path string, body any, reply any)
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return &coreError{stage: fmt.Sprintf("api.http-%d", res.StatusCode)}
+		return &coreError{stage: fmt.Sprintf("api.http-%d", res.StatusCode), status: res.StatusCode}
 	}
 	if reply != nil {
 		if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(reply); err != nil {
@@ -145,6 +147,32 @@ func API(ctx context.Context, profile, method, path string, body any, reply any)
 	}
 	return nil
 }
+
+// DelayError explains a failed /proxies/{id}/delay call. The core answers 404
+// for a node it has not loaded, 504 when the test URL timed out and 503 when the
+// node failed to connect or respond. Only fixed text and the API stage are
+// reported; node addresses and core output stay out of the message.
+func DelayError(err error) error {
+	var core *coreError
+	if !errors.As(err, &core) {
+		return fmt.Errorf("测速失败：%w", err)
+	}
+	switch {
+	case core.status == http.StatusNotFound:
+		return errors.New("节点未载入核心；请先应用节点以载入当前列表")
+	case core.status == http.StatusGatewayTimeout || core.status == http.StatusRequestTimeout:
+		return errors.New("测速超时：节点已载入核心，但 5 秒内没有收到测速地址的响应；请检查节点或上游代理")
+	case core.status == http.StatusServiceUnavailable:
+		return errors.New("测速失败：节点已载入核心，但连接节点或上游代理时出错；请检查节点或上游代理")
+	case core.status != 0:
+		return fmt.Errorf("测速失败：代理核心返回 HTTP %d", core.status)
+	case strings.HasPrefix(core.stage, "api.transport"):
+		return fmt.Errorf("代理核心未运行或无法连接；请先应用节点。%w", err)
+	default:
+		return fmt.Errorf("测速失败：%w", err)
+	}
+}
+
 func Running(ctx context.Context, profile string, s Store) bool {
 	return checkRunning(ctx, profile, s) == nil
 }

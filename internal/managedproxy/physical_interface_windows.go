@@ -15,11 +15,6 @@ const windowsHardwareInterface = 1 << 0 // MIB_IF_ROW2.InterfaceAndOperStatusFla
 
 var errNoWindowsInterface = errors.New("未找到可用的物理 IPv4 网卡。请连接以太网或 Wi-Fi；仅有虚拟网卡的 Windows 虚拟机和云主机暂不可用。Cage 外网保持关闭")
 
-type windowsPhysicalAdapter struct {
-	name   string
-	metric uint32
-}
-
 func windowsPhysicalInterface(ctx context.Context) (string, error) {
 	// IP Helper calls are synchronous. Check the deadline between calls and
 	// reject late results when a call returns.
@@ -64,7 +59,9 @@ func windowsPhysicalAdapters(ctx context.Context) (map[uint32]windowsPhysicalAda
 		}
 		buffer = make([]byte, size)
 		first = (*windows.IpAdapterAddresses)(unsafe.Pointer(&buffer[0]))
-		err := windows.GetAdaptersAddresses(windows.AF_INET, flags, 0, first, &size)
+		// AF_UNSPEC also lists hardware adapters whose IPv4 binding moved to a
+		// Hyper-V external switch; IPv4 eligibility is checked per adapter.
+		err := windows.GetAdaptersAddresses(windows.AF_UNSPEC, flags, 0, first, &size)
 		if errors.Is(err, windows.ERROR_BUFFER_OVERFLOW) && size > uint32(len(buffer)) && attempts < 3 {
 			continue
 		}
@@ -77,31 +74,36 @@ func windowsPhysicalAdapters(ctx context.Context) (map[uint32]windowsPhysicalAda
 		break
 	}
 
-	adapters := make(map[uint32]windowsPhysicalAdapter)
+	var list []windowsAdapterInfo
 	for adapter := first; adapter != nil; adapter = adapter.Next {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if adapter.IfIndex == 0 || adapter.OperStatus != windows.IfOperStatusUp || !hasPreferredWindowsIPv4(adapter.FirstUnicastAddress) {
+		if adapter.IfIndex == 0 || adapter.OperStatus != windows.IfOperStatusUp {
 			continue
 		}
 		row := windows.MibIfRow2{InterfaceIndex: adapter.IfIndex}
 		// WithoutStatistics avoids asking the driver for counters that we do not need.
 		if err := windows.GetIfEntry2Ex(windows.MibIfEntryNormalWithoutStatistics, &row); err != nil ||
-			row.InterfaceAndOperStatusFlags&windowsHardwareInterface == 0 ||
 			row.OperStatus != windows.IfOperStatusUp {
 			continue
 		}
-		if adapter.FriendlyName == nil {
-			continue
+		info := windowsAdapterInfo{
+			index:    adapter.IfIndex,
+			metric:   adapter.Ipv4Metric,
+			hardware: row.InterfaceAndOperStatusFlags&windowsHardwareInterface != 0,
+			ipv4:     hasPreferredWindowsIPv4(adapter.FirstUnicastAddress),
 		}
-		name := windows.UTF16PtrToString(adapter.FriendlyName)
-		if name != "" {
-			adapters[adapter.IfIndex] = windowsPhysicalAdapter{name: name, metric: adapter.Ipv4Metric}
+		if n := min(int(adapter.PhysicalAddressLength), len(adapter.PhysicalAddress)); n > 0 {
+			info.mac = append([]byte(nil), adapter.PhysicalAddress[:n]...)
 		}
+		if adapter.FriendlyName != nil {
+			info.name = windows.UTF16PtrToString(adapter.FriendlyName)
+		}
+		list = append(list, info)
 	}
 	runtime.KeepAlive(buffer)
-	return adapters, nil
+	return windowsUplinkAdapters(list), nil
 }
 
 func hasPreferredWindowsIPv4(first *windows.IpAdapterUnicastAddress) bool {

@@ -36,8 +36,10 @@ func parseNodes(data []byte, sourceID string) ([]Node, []NodeIssue, error) {
 		return nil, nil, errors.New("配置为空或超过 8 MiB")
 	}
 	var input struct {
-		Proxies []map[string]any `yaml:"proxies"`
-		Payload []map[string]any `yaml:"payload"`
+		Proxies   []map[string]any `yaml:"proxies"`
+		Payload   []map[string]any `yaml:"payload"`
+		Groups    []map[string]any `yaml:"proxy-groups"`
+		Providers yaml.Node        `yaml:"proxy-providers"`
 	}
 	if yaml.Unmarshal(data, &input) != nil {
 		return nil, nil, errors.New("无法读取 YAML，请导入 Clash/Mihomo 节点订阅或配置；暂不支持 Base64 列表或分享链接")
@@ -46,6 +48,10 @@ func parseNodes(data []byte, sourceID string) ([]Node, []NodeIssue, error) {
 	if len(proxies) == 0 {
 		proxies = input.Payload
 	}
+	inline, inlineReasons := inlineProviderNodes(&input.Providers)
+	presetReasons := make([]string, len(proxies), len(proxies)+len(inline))
+	proxies = append(proxies, inline...)
+	presetReasons = append(presetReasons, inlineReasons...)
 	if len(proxies) == 0 || len(proxies) > 3000 {
 		return nil, nil, errors.New("配置需要包含 1–3000 个 proxies 节点；仅含远程 provider 的配置请改为导入节点订阅链接")
 	}
@@ -78,6 +84,8 @@ func parseNodes(data []byte, sourceID string) ([]Node, []NodeIssue, error) {
 			issue.Type = typ
 		}
 		switch {
+		case presetReasons[i] != "":
+			issue.Reason = presetReasons[i]
 		case keyErrors[i] != nil:
 			issue.Reason = keyErrors[i].Error()
 		case strings.TrimSpace(name) == "" || len(name) > 240:
@@ -110,12 +118,16 @@ func parseNodes(data []byte, sourceID string) ([]Node, []NodeIssue, error) {
 		names[name], indexes[id] = id, i
 		candidates = append(candidates, Node{ID: id, Name: name, Type: typ, Config: p})
 	}
+	groups := singleNodeGroups(input.Groups)
 	byID := map[string]Node{}
 	for _, n := range candidates {
 		p := n.Config
 		p["name"], p["udp"] = n.ID, false
 		if v, exists := p["dialer-proxy"]; exists {
 			target, ok := v.(string)
+			if ok && names[target] == "" {
+				target = resolveGroupNode(target, groups, names)
+			}
 			if !ok || names[target] == "" {
 				issues[indexes[n.ID]].Reason = "代理链必须引用同一来源中成功导入的具体节点，不能引用 DIRECT 或选择分组"
 			} else {
@@ -170,6 +182,102 @@ func parseNodes(data []byte, sourceID string) ([]Node, []NodeIssue, error) {
 		return nil, skipped, fmt.Errorf("没有可导入的节点，已跳过 %d 个；%s", len(skipped), strings.Join(details, "；"))
 	}
 	return out, skipped, nil
+}
+
+// singleNodeGroups maps each proxy group to its members when the group lists
+// them explicitly. Groups that add members from providers or filters are left
+// out, so their membership is never guessed.
+func singleNodeGroups(groups []map[string]any) map[string][]string {
+	out := map[string][]string{}
+	for _, g := range groups {
+		name, _ := g["name"].(string)
+		raw, _ := g["proxies"].([]any)
+		if name == "" || len(raw) == 0 {
+			continue
+		}
+		dynamic := false
+		for key := range g {
+			switch optionKey(key) {
+			case "use", "include-all", "include-all-proxies", "include-all-providers", "filter", "exclude-filter", "exclude-type":
+				dynamic = true
+			}
+		}
+		if dynamic {
+			continue
+		}
+		members := make([]string, 0, len(raw))
+		for _, m := range raw {
+			member, ok := m.(string)
+			if !ok {
+				members = nil
+				break
+			}
+			members = append(members, member)
+		}
+		if members != nil {
+			if _, duplicate := out[name]; duplicate {
+				out[name] = nil
+				continue
+			}
+			out[name] = members
+		}
+	}
+	return out
+}
+
+// resolveGroupNode follows a dialer-proxy that names a group with exactly one
+// member until it reaches a node of this source. Groups with several members,
+// DIRECT, missing members and cycles are not resolved: the chosen hop of such a
+// group depends on runtime selection, which an imported node cannot carry.
+func resolveGroupNode(target string, groups map[string][]string, names map[string]string) string {
+	for range 8 {
+		members, ok := groups[target]
+		if !ok || len(members) != 1 {
+			return ""
+		}
+		target = members[0]
+		if names[target] != "" {
+			return target
+		}
+	}
+	return ""
+}
+
+// inlineProviderNodes reads nodes from inline proxy-providers in file order.
+// Remote and file providers are not fetched. An inline provider whose override
+// or filters would rewrite or drop its nodes is reported instead of imported,
+// because Cage would otherwise apply them differently from the source client.
+func inlineProviderNodes(node *yaml.Node) ([]map[string]any, []string) {
+	if node.Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	var nodes []map[string]any
+	var reasons []string
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		var provider struct {
+			Type    string           `yaml:"type"`
+			Payload []map[string]any `yaml:"payload"`
+			Rest    map[string]any   `yaml:",inline"`
+		}
+		if node.Content[i+1].Decode(&provider) != nil || !strings.EqualFold(provider.Type, "inline") {
+			continue
+		}
+		reason := ""
+		for key := range provider.Rest {
+			switch optionKey(key) {
+			case "override", "filter", "exclude-filter", "exclude-type":
+				reason = "inline provider 设置了 override 或过滤规则，暂不支持；请展开为顶层 proxies 后再导入"
+			}
+		}
+		for _, p := range provider.Payload {
+			if p == nil {
+				p = map[string]any{}
+			}
+			nodes = append(nodes, p)
+			reasons = append(reasons, reason)
+		}
+	}
+	return nodes, reasons
 }
 
 // Mihomo's decoder matches keys case-insensitively and treats '_' as '-'.

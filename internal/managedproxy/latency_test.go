@@ -2,6 +2,7 @@ package managedproxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -152,5 +154,28 @@ func TestCoreLatencyExcludesProxyHandshake(t *testing.T) {
 	}
 	if Running(ctx, profile, s) {
 		t.Fatal("core using the old latency metric was accepted for reuse")
+	}
+}
+
+func TestDelayErrorKeepsCoreFailureClass(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{&coreError{stage: "api.http-404", status: 404}, "节点未载入核心"},
+		{&coreError{stage: "api.http-504", status: 504}, "测速超时"},
+		{&coreError{stage: "api.http-408", status: 408}, "测速超时"},
+		{&coreError{stage: "api.http-503", status: 503}, "连接节点或上游代理时出错"},
+		{&coreError{stage: "api.http-500", status: 500}, "HTTP 500"},
+		{&coreError{stage: "api.transport", err: syscall.ECONNREFUSED}, "代理核心未运行"},
+		{&coreError{stage: "api.decode", err: errors.New("bad json")}, "api.decode"},
+	} {
+		got := DelayError(tc.err).Error()
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("DelayError(%v) = %q, want %q", tc.err, got, tc.want)
+		}
+		if tc.want != "节点未载入核心" && strings.Contains(got, "请先应用节点以载入当前列表") {
+			t.Errorf("a loaded node failure still blamed loading: %q", got)
+		}
 	}
 }
