@@ -28,7 +28,7 @@ func executionFailure(action string, err error, output string) error {
 		{[]string{"curl: (7)", "connection refused"}, "目标服务没有接受连接", "请确认环境及所选代理已启动；文件传递时请重新打开接收文件的应用，再重试。"},
 		{[]string{"no space left on device", "not enough space on the disk"}, "磁盘空间不足，无法继续写入", "请释放环境所在磁盘的空间后继续；不要删除 Cage 的个人数据目录。"},
 		{[]string{"could not get lock", "unable to acquire the dpkg", "another process using it"}, "环境中已有另一个软件安装或更新进程", "请等待当前安装结束后再继续；不要手动删除安装锁文件。"},
-		{[]string{"temporary failure resolving", "could not resolve host", "curl: (6)"}, "下载服务器的域名解析失败", "请在网络与代理设置中检查所选节点和 DNS，再继续安装。"},
+		{[]string{"temporary failure resolving", "could not resolve host", "curl: (6)", "something wicked happened resolving", "no address associated with hostname"}, "下载服务器的域名解析失败", "请在网络与代理设置中检查所选节点和 DNS，再继续安装。"},
 		{[]string{"curl: (28)", "connection timed out", "operation timed out"}, "下载或环境连接等待超时", "请检查所选代理是否可用，再继续；已保存的下载会尝试续传。"},
 		{[]string{"curl: (60)", "certificate verify failed", "certificate verification failed"}, "下载服务器的证书验证未通过", "请检查电脑时间和所选代理；仍失败时导出诊断包，不要关闭证书验证。"},
 		{[]string{"407 proxy authentication", "proxy authentication required"}, "代理服务器拒绝了当前登录凭据", "请在网络与代理设置中更新代理账号或订阅，再应用节点。"},

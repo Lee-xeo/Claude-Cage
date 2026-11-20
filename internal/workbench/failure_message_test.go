@@ -17,3 +17,15 @@ func TestExecutionFailureNamesWindowsHypervisorPreflight(t *testing.T) {
 		}
 	}
 }
+
+func TestExecutionFailureNamesAPTResolverVariants(t *testing.T) {
+	for _, line := range []string{
+		"E: Failed to fetch http://deb.debian.org/debian/dists/trixie/InRelease  Something wicked happened resolving 'deb.debian.org:http' (-5 - No address associated with hostname)",
+		"W: Unable to fetch: No address associated with hostname",
+	} {
+		message := executionFailure("准备 Debian 13 镜像", errors.New("exit status 1"), line).Error()
+		if !strings.Contains(message, "域名解析失败") {
+			t.Fatalf("%q -> %q", line, message)
+		}
+	}
+}
