@@ -375,12 +375,12 @@ func TestClaudeToolsUpdateRepairsExistingNPMPrefixWithoutReinstalling(t *testing
 			cmd := exec.Command("bash", "-c", ToolInstallPrelude()+`
 set -euo pipefail
 unset npm_config_prefix NPM_CONFIG_PREFIX npm_config_userconfig NPM_CONFIG_USERCONFIG
-export PREFIX=/usr npm_config_userconfig="$HOME/.npmrc" npm_config_globalconfig="$HOME/global-npmrc"
+export npm_config_userconfig="$HOME/.npmrc" npm_config_globalconfig="$HOME/global-npmrc"
 export PATH="$HOME/.local/bin:$PATH"
 package="$HOME/.local/lib/node_modules/@anthropic-ai/claude-code/bin"
 mkdir -p "$HOME/.local/bin" "$package"
 printf 'fund=false\n' > "$HOME/.npmrc"
-printf 'fetch-retries=1\n' > "$HOME/global-npmrc"
+printf 'prefix=/usr\nfetch-retries=1\n' > "$HOME/global-npmrc"
 printf '#!/bin/sh\nprintf "9.9.9 (Claude Code)\\n"\n' > "$package/claude.exe"
 chmod +x "$package/claude.exe"
 if [ "$TEST_INSTALL" = npm ]; then
@@ -402,7 +402,7 @@ test "$(npm prefix --global)" = /usr
 cage_install_tool claude
 cage_install_tool claude
 grep -qx 'fund=false' "$HOME/.npmrc"
-test "$(cat "$HOME/global-npmrc")" = 'fetch-retries=1'
+test "$(cat "$HOME/global-npmrc")" = $'prefix=/usr\nfetch-retries=1'
 if [ "$TEST_INSTALL" = npm ]; then
   grep -qx "prefix=$HOME/.local" "$HOME/.npmrc"
   test "$(npm prefix --global)" = "$HOME/.local"
