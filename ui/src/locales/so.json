@@ -2420,5 +2420,9 @@
   "黑色": "Madow",
   "上游项目": "Mashruuca asalka ah",
   "许可证": "Shatiga",
-  "复制项目地址": "Koobiyee cinwaanka mashruuca"
+  "复制项目地址": "Koobiyee cinwaanka mashruuca",
+  "停止任务已结束，但环境仍显示在运行，无法确认已安全停止。可以重试停止，或仅退出桌面应用。": "Hawshii joojinta way dhammaatay, laakiin deegaanku wali wuxuu u muuqdaa mid shaqaynaya, lamana xaqiijin karo in si ammaan ah loo joojiyay. Isku day joojinta mar kale ama xir barnaamijka desktop-ka oo keliya.",
+  "后台未报告本次停止任务的结果，无法确认环境已停止。可以重试停止，或仅退出桌面应用。": "Adeegga gadaashu ma soo sheegin natiijada joojintan, lamana xaqiijin karo in deegaanku joogsaday. Isku day joojinta mar kale ama xir barnaamijka desktop-ka oo keliya.",
+  "停止请求未返回任务编号，请重试。": "Codsiga joojintu ma soo celin lambar hawleed. Mar kale isku day.",
+  "当前 Windows 程序未签名或签名无法验证，请从官方发布页下载安装包，退出 Cage 后安装到原位置；配置、凭据、项目和虚拟机磁盘会保留。": "Barnaamijka Windows ee hadda ma saxeexna ama saxeexiisa lama xaqiijin karo. Ka soo deji rakibaha bogga rasmiga ah ee sii-deynta, xir Cage kadibna ku rakib isla goobtii; habaynta, aqoonsiyada, mashaariicda iyo saxanadaha mashiinka farsamada waa la ilaalinayaa."
 }

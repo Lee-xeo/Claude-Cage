@@ -12,10 +12,11 @@ export function stopExitState(status, jobId) {
 // this stop, cannot be confirmed; report it instead of waiting forever.
 export const stopConfirmationGraceMs = 20000;
 
-export function stopUnconfirmedMessage(status, jobId) {
+// tr is the caller's translator; the literals stay in tr() for the catalogs.
+export function stopUnconfirmedMessage(status, jobId, tr = (text) => text) {
   if (status.job?.id === jobId)
-    return "停止任务已结束，但环境仍显示在运行，无法确认已安全停止。可以重试停止，或仅退出桌面应用。";
-  return "后台未报告本次停止任务的结果，无法确认环境已停止。可以重试停止，或仅退出桌面应用。";
+    return tr("停止任务已结束，但环境仍显示在运行，无法确认已安全停止。可以重试停止，或仅退出桌面应用。");
+  return tr("后台未报告本次停止任务的结果，无法确认环境已停止。可以重试停止，或仅退出桌面应用。");
 }
 
 // Exit owns its wait loop: boot failures and a stopped UI poll must not strand it.
@@ -28,9 +29,10 @@ export async function stopAndExit({
   delay = () => new Promise((resolve) => setTimeout(resolve, 350)),
   now = () => Date.now(),
   confirmationGraceMs = stopConfirmationGraceMs,
+  tr = (text) => text,
 }) {
   const job = await stop();
-  if (!job.id) throw new Error("停止请求未返回任务编号，请重试。");
+  if (!job.id) throw new Error(tr("停止请求未返回任务编号，请重试。"));
   let idleSince = null;
   while (!isCancelled()) {
     const status = await readStatus();
@@ -45,7 +47,7 @@ export async function stopAndExit({
     if (status.job?.running) idleSince = null;
     else if (idleSince === null) idleSince = now();
     else if (now() - idleSince >= confirmationGraceMs)
-      throw new Error(stopUnconfirmedMessage(status, job.id));
+      throw new Error(stopUnconfirmedMessage(status, job.id, tr));
     await delay();
   }
   return false;

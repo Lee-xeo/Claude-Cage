@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { parseArgs, selectAsset, checksumFor, makePlan, downloadPlan, httpsResponse } from '../www/public/agent-bootstrap.mjs';
+import { parseArgs, selectAsset, selectStaticAsset, checksumFor, makePlan, downloadPlan, httpsResponse } from '../www/public/agent-bootstrap.mjs';
 
 const tag = 'v0.1.0-test';
 const prefix = `https://github.com/Lee-xeo/Claude-Cage/releases/download/${tag}/`;
@@ -39,9 +39,10 @@ test('checksum manifest must identify exactly one package', () => {
 test('plan pins metadata and sums to one release; downloads are verified and exclusive', async t => {
   const options = parseArgs(['plan', '--platform', 'linux-amd64', '--version', tag]);
   const metadata = release(options.platform);
-  const fetchFixture = async url => {
-    if (String(url).startsWith('https://api.github.com/')) return new Response(JSON.stringify(metadata));
+  const fetchFixture = async (url, init = {}) => {
+    if (String(url).startsWith('https://api.github.com/')) assert.fail('an explicit version must not use the REST API');
     if (String(url).endsWith('SHA256SUMS')) return new Response(`${hash}  ${metadata.assets[0].name}\n`);
+    if (init.method === 'HEAD') return new Response(null, { headers: { 'content-length': String(data.length) } });
     return new Response(data);
   };
   const plan = await makePlan(options, fetchFixture);
@@ -62,4 +63,35 @@ test('plan pins metadata and sums to one release; downloads are verified and exc
 test('refuse HTTP redirects and redact transport failures at the CLI boundary', async () => {
   await assert.rejects(httpsResponse('https://example.org/', async () => new Response(null, { status: 302, headers: { location: 'http://example.org/' } })), { code: 'unsafe_download' });
   await assert.rejects(httpsResponse('https://example.org/', async () => { throw new Error('https://secret.example/private?token=do-not-echo'); }), error => error.code === 'download_connection_failed' && !error.message.includes('do-not-echo'));
+});
+
+test('static release files select the package, its checksum and unsigned consent', () => {
+  const manifest = `${hash}  Cage-0.1.0-test-windows-amd64-setup-unsigned.exe\n${hash} *Cage-0.1.0-test-linux-amd64.deb\n`;
+  assert.equal(selectStaticAsset(tag, manifest, { platform: 'linux-amd64' }).name, 'Cage-0.1.0-test-linux-amd64.deb');
+  assert.throws(() => selectStaticAsset(tag, manifest, { platform: 'win32-amd64' }), { code: 'unsigned_package_requires_consent' });
+  assert.equal(selectStaticAsset(tag, manifest, { platform: 'win32-amd64', allowUnsigned: true }).unsigned, true);
+  assert.throws(() => selectStaticAsset(tag, manifest, { platform: 'darwin-arm64' }), { code: 'asset_unavailable' });
+  assert.throws(() => selectStaticAsset('../x', manifest, { platform: 'linux-amd64' }), { code: 'invalid_release' });
+});
+
+test('a rate-limited latest lookup falls back to the release redirect and static files', async () => {
+  const options = parseArgs(['plan', '--platform', 'linux-amd64']);
+  const name = 'Cage-0.1.0-test-linux-amd64.deb';
+  const seen = [];
+  const fetchFixture = async (url, init = {}) => {
+    seen.push(`${init.method ?? 'GET'} ${url}`);
+    if (String(url).startsWith('https://api.github.com/')) return new Response('limit', { status: 403 });
+    if (String(url).endsWith('/releases/latest')) return new Response(null, { status: 302, headers: { location: `https://github.com/Lee-xeo/Claude-Cage/releases/tag/${tag}` } });
+    if (String(url).endsWith('SHA256SUMS')) return new Response(`${hash}  ${name}\n`);
+    if (init.method === 'HEAD') return new Response(null, { headers: { 'content-length': String(data.length) } });
+    return assert.fail(`unexpected ${url}`);
+  };
+  const plan = await makePlan(options, fetchFixture);
+  assert.equal(plan.release, tag);
+  assert.equal(plan.url, prefix + name);
+  assert.equal(plan.size, data.length);
+  assert.equal(plan.sha256, hash);
+  assert.ok(seen.some(line => line.startsWith('HEAD https://github.com/Lee-xeo/Claude-Cage/releases/latest')));
+  const unresolved = async url => String(url).startsWith('https://api.github.com/') ? new Response('limit', { status: 429 }) : new Response('page', { status: 200 });
+  await assert.rejects(makePlan(options, unresolved), error => error.code === 'rate_limited' && error.next_action === 'choose_version' && error.message.includes('--version'));
 });

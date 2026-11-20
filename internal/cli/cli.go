@@ -145,6 +145,21 @@ var Command = "agent-vm"
 // `version --min`: a program that embeds this package knows how it updates.
 var UpdateHint string
 
+// StaleBaseHint, when set, replaces the advice to re-clone a VM whose base
+// was rebuilt. A program whose VM disk holds the user's data, such as Cage,
+// names its own repair path instead of --reset, which deletes that disk.
+var StaleBaseHint string
+
+func staleBaseHint(note bool) string {
+	if StaleBaseHint != "" {
+		return StaleBaseHint
+	}
+	if note {
+		return "Note: Existing VMs were not updated. Use --reset to re-clone them from the new base."
+	}
+	return "Warning: Base VM has been updated since this VM was cloned. Use --reset to re-clone from the new base."
+}
+
 // `version [--min X.Y.Z]`: silent and 0 when this agent-vm is at least
 // X.Y.Z, an error and 1 when older, 2 when the call itself is wrong.
 func versionCmd(args []string, io IO) int {
