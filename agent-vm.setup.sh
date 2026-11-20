@@ -317,11 +317,13 @@ if [[ "$INSTALL_CHROMIUM" == "1" ]]; then
 fi
 
 if [[ "$INSTALL_GH" == "1" ]]; then
+  # Announce the stage before downloading so a download failure is not
+  # attributed to the previous component.
+  echo "Installing GitHub CLI..."
   if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
     cage_install_tool gh
   else
     # Install GitHub CLI from official repo
-    echo "Installing GitHub CLI..."
     sudo mkdir -p -m 755 /etc/apt/keyrings
     install_repository_key https://cli.github.com/packages/githubcli-archive-keyring.gpg /etc/apt/keyrings/githubcli-archive-keyring.gpg
     sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg

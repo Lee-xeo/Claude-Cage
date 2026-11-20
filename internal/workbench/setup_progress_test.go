@@ -123,6 +123,14 @@ func TestToolProgressUsesOnlyKnownPackageNames(t *testing.T) {
 	if p := parseSetupProgress("CAGE_TOOL_BYTES chromium-common.deb 5 10"); p == nil || p.Total != 10 || *p.Received != 5 {
 		t.Fatalf("missing Chromium progress from signed index: %+v", p)
 	}
+	// A GitHub CLI download after Chromium must replace the Chromium label,
+	// or its failure is reported as a Chromium installation failure.
+	if p := parseSetupProgress("CAGE_TOOL_BYTES gh.deb 0"); p == nil || p.Label != "正在下载 GitHub CLI" {
+		t.Fatalf("missing GitHub CLI download progress: %+v", p)
+	}
+	if p := parseSetupProgress("Installing GitHub CLI..."); p == nil || p.Label != "正在安装 GitHub CLI" {
+		t.Fatalf("missing GitHub CLI stage: %+v", p)
+	}
 	if p := parseSetupProgress("CAGE_TOOL_BYTES chromium.deb 12 10"); p != nil {
 		t.Fatalf("excess bytes entered UI: %+v", p)
 	}
