@@ -99,6 +99,10 @@ func run() int {
 		fmt.Print(help)
 		return 0
 	}
+	if text, ok := subcommandHelp(args); ok {
+		fmt.Print(text)
+		return 0
+	}
 	// These read only this build's own metadata. Answering them before the
 	// profile is opened keeps `cage version --min` usable on a fresh install.
 	if args[0] == "version" || args[0] == "--version" || args[0] == "-V" || args[0] == "licenses" {
@@ -672,6 +676,40 @@ func containerInstallScript(kind string) (string, error) {
 func runGuestServiceStart(script string, stdio cli.IO, invoke func([]string, cli.IO) int) int {
 	stdio.Stdin = strings.NewReader(script)
 	return invoke([]string{"run", "bash", "-s"}, stdio)
+}
+
+// Commands whose remaining arguments belong to a program in the environment,
+// such as `cage run ls -h`, or that answer --help themselves.
+var helpPassthrough = map[string]bool{
+	"agent": true, "run": true, "shell": true, "sh": true, "claude": true, "code": true,
+	"opencode": true, "codex": true, "vibe": true, "pi": true,
+}
+
+// subcommandHelp answers `cage COMMAND --help` before the command opens or
+// creates a profile, so asking for help never runs it. It prints the
+// command's lines from the overview, or the overview when it has none.
+func subcommandHelp(args []string) (string, bool) {
+	if len(args) < 2 || args[1] != "--help" && args[1] != "-h" || helpPassthrough[args[0]] {
+		return "", false
+	}
+	var lines []string
+	matched := false
+	for _, line := range strings.Split(help, "\n") {
+		switch {
+		case strings.HasPrefix(line, "cage "):
+			fields := strings.Fields(line)
+			matched = len(fields) > 1 && fields[1] == args[0]
+		case !strings.HasPrefix(line, " "):
+			matched = false
+		}
+		if matched {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return help, true
+	}
+	return strings.Join(lines, "\n") + "\n\nRun 'cage --help' for all commands.\n", true
 }
 
 func fail(err error) int {
