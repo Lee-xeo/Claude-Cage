@@ -1,8 +1,12 @@
 name: Main pull request checks
 on:
+  # Title and description edits do not change the code under test, and with
+  # cancel-in-progress they restarted a running check (typically right after
+  # opening). A pull request retargeted to main has no Main PR CI result until
+  # its next push or a reopen, so the required check keeps it unmergeable.
   pull_request:
     branches: [main]
-    types: [opened, reopened, synchronize, edited, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review]
 permissions:
   contents: read
 concurrency:
