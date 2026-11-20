@@ -2420,5 +2420,6 @@
   "黑色": "Noir",
   "停止任务已结束，但环境仍显示在运行，无法确认已安全停止。可以重试停止，或仅退出桌面应用。": "La tâche d’arrêt est terminée, mais l’environnement apparaît toujours en cours d’exécution ; impossible de confirmer un arrêt sûr. Vous pouvez relancer l’arrêt ou quitter uniquement l’application de bureau.",
   "后台未报告本次停止任务的结果，无法确认环境已停止。可以重试停止，或仅退出桌面应用。": "Le service d’arrière-plan n’a pas signalé le résultat de cet arrêt ; impossible de confirmer que l’environnement est arrêté. Vous pouvez relancer l’arrêt ou quitter uniquement l’application de bureau.",
-  "停止请求未返回任务编号，请重试。": "La demande d’arrêt n’a renvoyé aucun numéro de tâche. Veuillez réessayer."
+  "停止请求未返回任务编号，请重试。": "La demande d’arrêt n’a renvoyé aucun numéro de tâche. Veuillez réessayer.",
+  "当前 Windows 程序未签名或签名无法验证，请从官方发布页下载安装包，退出 Cage 后安装到原位置；配置、凭据、项目和虚拟机磁盘会保留。": "Ce programme Windows n’est pas signé ou sa signature ne peut pas être vérifiée. Téléchargez le programme d’installation depuis la page officielle des versions, quittez Cage puis installez-le au même emplacement ; la configuration, les identifiants, les projets et les disques de la machine virtuelle sont conservés."
 }

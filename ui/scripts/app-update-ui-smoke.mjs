@@ -135,8 +135,14 @@ try {
   for (let attempt = 0; attempt < 50 && !references.length; attempt++) await new Promise(resolve => setTimeout(resolve, 100));
   assert.deepEqual(references, ["releases"], "a system package update opens the release page");
   assert.equal(count("install"), installs, "a system package update must not start an automatic installation");
+  await publish({ phase: "manual", currentVersion: "0.1.8-rc", latestVersion: "0.1.8", message: "当前 Windows 程序未签名或签名无法验证，请从官方发布页下载安装包。" });
+  assert.match(await view.getAttribute("title"), /0.1.8.*Windows.*未签名.*官方发布页/);
+  await view.click();
+  for (let attempt = 0; attempt < 50 && references.length < 2; attempt++) await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(references, ["releases", "releases"], "an unsigned Windows build opens the release page");
+  assert.equal(count("install"), installs, "an unsigned Windows build must not start an automatic installation");
   assert.deepEqual(errors, []);
-  const result = { checks: ["automatic startup and periodic checks", "failed background check retry", "latest version hidden", "download before confirmation", "ring and percentage", "indeterminate progress", "manual stop card, cancellation and resume without download", "stop failure blocks install; retry waits for shutdown", "visible failure and retry", "collapsed sidebar", "Linux manual update remains separate", "Linux newer package opens the release page"], calls };
+  const result = { checks: ["automatic startup and periodic checks", "failed background check retry", "latest version hidden", "download before confirmation", "ring and percentage", "indeterminate progress", "manual stop card, cancellation and resume without download", "stop failure blocks install; retry waits for shutdown", "visible failure and retry", "collapsed sidebar", "Linux manual update remains separate", "Linux newer package opens the release page", "unsigned Windows build opens the release page without installation"], calls };
   await fs.writeFile(`${output}/checks.json`, JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
 } finally { await browser.close(); }
