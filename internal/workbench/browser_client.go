@@ -134,6 +134,11 @@ func (c *browserClient) request(ctx context.Context, token, method, path string,
 			"无痕标签暂不支持双网页分屏":                                              "无痕标签暂不支持双网页分屏。请使用普通标签页。",
 			"设置页请在单个浏览器窗格内使用":                                            "设置页请在单个浏览器窗格内使用。请先退出分屏。",
 			"扩展 ZIP 不能超过 32 MB":                                          "扩展 ZIP 不能超过 32 MB。请缩小扩展包后重新导入。",
+			"网页已切换，请重新打开 Cookie 管理":                                      "网页已切换。请重新打开 Cookie 管理。",
+			"当前标签不可管理 Cookie":                                            "当前标签不可管理 Cookie。请切换到普通网页标签。",
+			"当前页面没有网站 Cookie，请选择所有网站":                                    "当前页面没有网站 Cookie。请选择所有网站。",
+			"Cookie 操作无效":                                                "Cookie 操作参数无效。请核对 mode、scope、query 与 page。",
+			"请选择要删除的 Cookie":                                             "请选择要删除的 Cookie。",
 		}
 		if reason := known[result.Error]; reason != "" {
 			return nil, errors.New(browserOperation(path) + "失败：" + reason)
