@@ -285,8 +285,8 @@ func agentRequest(ctx context.Context, configPath, method, path string, input js
 
 func (s *Server) agentRoutes(mux routeRegistrar) {
 	mux.HandleFunc("GET /api/agent/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
-		job := s.jobs.snapshot()
-		if job.ID == "" || job.ID != r.PathValue("id") {
+		job, ok := s.jobs.find(r.PathValue("id"))
+		if !ok {
 			http.Error(w, "Original job no longer available", http.StatusGone)
 			return
 		}

@@ -15,6 +15,7 @@ func TestBrowserFailureExplainsOperationAndKnownCause(t *testing.T) {
 		body, want string
 	}{
 		{400, `{"error":"Tab no longer exists"}`, "标签页已关闭"},
+		{400, `{"error":"网页已切换，请重新打开 Cookie 管理"}`, "请重新打开 Cookie 管理"},
 		{401, `{"error":"private token=do-not-display"}`, "授权"},
 		{503, `{"error":"private token=do-not-display"}`, "尚未就绪"},
 		{500, `{"error":"private token=do-not-display"}`, "HTTP 500"},

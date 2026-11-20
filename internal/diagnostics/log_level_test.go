@@ -27,12 +27,14 @@ func TestStreamPreservesManagedProducerSeverity(t *testing.T) {
 	proxy.Close()
 	validation := store.Stream("proxy-validation", "error")
 	validation.Write([]byte("time=\"2026-11-08T00:00:00Z\" level=info msg=\"configuration valid\"\n"))
+	validation.Write([]byte("configuration file /private/config.yaml test is successful\n"))
+	validation.Write([]byte("Parse config error: unsupported type\n"))
 	validation.Close()
 	ordinary := store.Stream("task", "error")
 	ordinary.Write([]byte("{\"level\":\"debug\",\"msg\":\"not a managed log producer\"}\n"))
 	ordinary.Close()
 	events := readEvents(t, store)
-	want := []string{"debug", "info", "error", "error", "warn", "info", "error"}
+	want := []string{"debug", "info", "error", "error", "warn", "info", "info", "error", "error"}
 	if len(events) != len(want) {
 		t.Fatalf("unexpected records: %+v", events)
 	}

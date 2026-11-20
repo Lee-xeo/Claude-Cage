@@ -81,6 +81,14 @@ func TestJobManagerStopPreemptsAndFencesOldExecution(t *testing.T) {
 	if state.ID != stop.ID || state.Error != "" || state.Log != "" || state.Message != "已完成" || state.SettingsSaved {
 		t.Fatalf("old execution changed stop result: %+v", state)
 	}
+	// The preempted job stays queryable as canceled and names its successor.
+	replaced, ok := manager.find(first.ID)
+	if !ok || replaced.Running || !replaced.Canceled || replaced.SupersededBy != stop.ID || replaced.Kind != "start" || replaced.Error != "" || !strings.Contains(replaced.Message, "停止环境") {
+		t.Fatalf("preempted job lost its record: %+v %v", replaced, ok)
+	}
+	if _, ok := manager.find(""); ok {
+		t.Fatal("empty id matched a job")
+	}
 
 	// Retained writers must stay tied to their original job after later work
 	// starts. Looking up the current execution on every Write would fail here.

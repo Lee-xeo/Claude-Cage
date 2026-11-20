@@ -11,7 +11,8 @@ const forHost = (cookie, hostname) => cookie.domain.startsWith(".")
 
 export async function browserCookies(cdp, session, tab, input) {
   if (!tab || tab.login) throw new Error("当前标签不可管理 Cookie");
-  if (input.url !== undefined && input.url !== tab.url) throw new Error("网页已切换，请重新打开 Cookie 管理");
+  // The host always forwards "url"; an empty value means the caller named no page.
+  if (input.url !== undefined && input.url !== "" && input.url !== tab.url) throw new Error("网页已切换，请重新打开 Cookie 管理");
   const { mode = "list", scope = "site", query = "", page = 0 } = input;
   if (!["list", "details", "delete", "delete-selected", "clear"].includes(mode) || !["site", "all"].includes(scope) ||
       typeof query !== "string" || query.length > 200 || !Number.isInteger(page) || page < 0)

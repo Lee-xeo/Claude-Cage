@@ -186,6 +186,15 @@ func label(profile string) string {
 	h := sha256.Sum256([]byte(profile))
 	return fmt.Sprintf("local.claude-cage.managed-proxy.%x", h[:8])
 }
+// coreReadyTimeout matches Linux and Windows; a freshly signed core can take
+// several seconds on its first launch.
+const coreReadyTimeout = 15 * time.Second
+
+// launchdStartArgs registers the per-profile job and then starts that job.
+func launchdStartArgs(uid int, label, plist string) (bootstrap, kickstart []string) {
+	domain := "gui/" + strconv.Itoa(uid)
+	return []string{"bootstrap", domain, plist}, []string{"kickstart", domain + "/" + label}
+}
 func servicePath(profile string) string { return filepath.Join(Dir(profile), "managed-service.plist") }
 func Stop(profile string) error {
 	if runtime.GOOS == "windows" {
@@ -276,12 +285,19 @@ func Start(ctx context.Context, profile string, s Store) error {
 	if err = Write(servicePath(profile), []byte(plist)); err != nil {
 		return err
 	}
-	if exec.CommandContext(ctx, "launchctl", "bootstrap", "gui/"+strconv.Itoa(os.Getuid()), servicePath(profile)).Run() != nil {
+	bootstrap, kickstart := launchdStartArgs(os.Getuid(), label(profile), servicePath(profile))
+	if exec.CommandContext(ctx, "launchctl", bootstrap...).Run() != nil {
 		return errors.New("无法启动 Cage 自带代理核心")
+	}
+	// RunAtLoad is only a request: a GUI domain in on-demand-only mode keeps
+	// the job pending. Start it explicitly; without -k a running job is kept.
+	// The readiness wait below still decides whether the core is usable.
+	if err := exec.CommandContext(ctx, "launchctl", kickstart...).Run(); err != nil {
+		diagnostics.Log("warn", "proxy", "launchd kickstart failed; waiting for RunAtLoad")
 	}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-	deadline := time.NewTimer(10 * time.Second)
+	deadline := time.NewTimer(coreReadyTimeout)
 	defer deadline.Stop()
 	for {
 		select {

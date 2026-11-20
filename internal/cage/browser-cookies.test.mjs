@@ -115,6 +115,12 @@ test('stale page or authorization tabs cannot reach cookie storage', async () =>
   await assert.rejects(browserCookies(cdp, null, { ...tab, login: true }, { mode: 'list', scope: 'all' }), /不可管理/);
 });
 
+test('an omitted page address forwarded as empty still lists cookies', async () => {
+  const cdp = async () => ({ cookies: [cookie('sub.example.test')] });
+  const data = await browserCookies(cdp, null, tab, { url: '', mode: 'list', scope: 'all', query: '', page: 0 });
+  assert.equal(data.cookies.length, 1);
+});
+
 test('vault never attaches credential observers to private or authorization tabs', async () => {
   for (const mode of ['incognito', 'login']) {
     const vault = new BrowserVault({ cdp: () => { throw new Error('must not install credential observer'); }, active: () => 'tab', tab: () => ({ [mode]: true }) });

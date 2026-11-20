@@ -24,6 +24,9 @@ type Job struct {
 	Recovery      string         `json:"recovery,omitempty"`
 	Workspace     string         `json:"workspace,omitempty"`
 	Log           string         `json:"log,omitempty"`
+	// SupersededBy names the job that replaced this one; a running job
+	// replaced by a stop is recorded as canceled.
+	SupersededBy string `json:"superseded_by,omitempty"`
 }
 
 var (
@@ -36,6 +39,7 @@ var (
 type jobManager struct {
 	mu           sync.Mutex
 	state        Job
+	previous     Job
 	cancel       context.CancelFunc
 	active       *jobExecution
 	afterSuccess func() error
@@ -76,7 +80,9 @@ func (m *jobManager) submit(operation sync.Locker, kind string, pauseVersion uin
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	m.afterSuccess = afterSuccess
+	previous := m.state
 	m.state = Job{ID: randomToken()[:12], Kind: kind, Running: true, Message: "正在准备…"}
+	m.previous = supersededJob(previous, m.state)
 	execution := &jobExecution{owner: m, id: m.state.ID, ctx: ctx, pauseVersion: pauseVersion}
 	execution.log = diagnostics.NewStreamWithConsumer(diagnostics.Default(), "task/"+kind, "info", func(line string) {
 		if m.state.ID == execution.id {
@@ -200,6 +206,38 @@ func jobName(kind string) string {
 		return name
 	}
 	return "本次操作"
+}
+
+// supersededJob keeps the replaced job queryable, so a caller polling its own
+// job learns that another submission replaced it instead of losing the record.
+func supersededJob(previous, next Job) Job {
+	if previous.ID == "" {
+		return Job{}
+	}
+	previous.SupersededBy = next.ID
+	if previous.Running {
+		previous.Running = false
+		previous.Canceled = true
+		previous.SetupProgress = nil
+		previous.Message = "已取消：已被" + jobName(next.Kind) + "替换"
+		if previous.SettingsSaved {
+			previous.Message = "设置已保存，后续操作已被" + jobName(next.Kind) + "取消"
+		}
+		diagnostics.Log("info", "task", previous.Kind+" canceled; superseded by "+next.Kind)
+	}
+	return previous
+}
+
+// find returns the latest job or the job it replaced.
+func (m *jobManager) find(id string) (Job, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, job := range []Job{m.state, m.previous} {
+		if id != "" && job.ID == id {
+			return job, true
+		}
+	}
+	return Job{}, false
 }
 
 func (m *jobManager) snapshot() Job {
