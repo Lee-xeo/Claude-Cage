@@ -43,10 +43,6 @@ var identityMarkerAllowed = map[string]string{
 	"/etc/claude-cage/debian-mirror": "read of a user preference before it is copied",
 }
 
-// Persistent user data under ~/.local/share moves in a separate, verified
-// migration step; until then its readers keep the existing location.
-var identityMarkerDeferredPrefixes = []string{".local/share/cage"}
-
 func identityMarkers(script string, p *guestprofile.Profile) []string {
 	for _, oneOff := range []string{guestMigrationScript, guestLegacyCleanup} {
 		script = strings.ReplaceAll(script, p.Linux(oneOff), "")
@@ -57,13 +53,7 @@ func identityMarkers(script string, p *guestprofile.Profile) []string {
 			if _, ok := identityMarkerAllowed[match]; ok {
 				continue
 			}
-			deferred := false
-			for _, prefix := range identityMarkerDeferredPrefixes {
-				deferred = deferred || strings.HasPrefix(match, prefix)
-			}
-			if !deferred {
-				found[match] = true
-			}
+			found[match] = true
 		}
 	}
 	result := make([]string, 0, len(found))

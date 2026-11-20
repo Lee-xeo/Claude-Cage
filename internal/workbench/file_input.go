@@ -334,7 +334,9 @@ func (s *Server) fileInputUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if target == "terminal" {
 		path, _ := result["path"].(string)
-		valid := s.linuxPathHasPrefix(path, "/home/cage/.local/share/cage/attachments/files/") && !strings.ContainsAny(path, "\x00\r\n")
+		// A desktop helper started before the environment was updated still
+		// answers with the former data directory.
+		valid := (s.linuxPathHasPrefix(path, "/home/cage/.local/share/workbench/attachments/files/") || s.linuxPathHasPrefix(path, "/home/cage/.local/share/cage/attachments/files/")) && !strings.ContainsAny(path, "\x00\r\n")
 		if !valid {
 			http.Error(w, "文件保存路径无效", 502)
 			return

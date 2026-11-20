@@ -18,6 +18,14 @@ import threading
 import time
 import uuid
 
+
+def data_root(home):
+    # Environments whose components predate the current names keep the data
+    # under the former one until their next update moves it.
+    current = home / ".local/share/workbench"
+    former = home / ".local/share/cage"
+    return former if not os.path.lexists(current) and former.is_dir() else current
+
 _controller_context = {**os.environ, **globals().get("_controller_context", {})}
 PRIVATE_MODE = 0o777 if os.name == "nt" and _controller_context.get("CAGE_REMOTE_APP_CONTAINER") == "1" else 0o700
 _runtime = None
@@ -54,7 +62,7 @@ def terminate_cli(pid, force=False):
         return _platform["terminate_cli"](pid, force)
     return os.kill(int(pid), signal.SIGKILL if force else signal.SIGTERM)
 
-ROOT = Path(_controller_context["CAGE_CLI_STATE_ROOT"]) if os.name == "nt" else Path.home() / ".local/share/cage/cli-channels"
+ROOT = Path(_controller_context["CAGE_CLI_STATE_ROOT"]) if os.name == "nt" else data_root(Path.home()) / "cli-channels"
 PROMPT_LIMIT = 32 << 10
 REPLY_LIMIT = 128 << 10
 HISTORY_LIMIT = 448 << 10
@@ -109,7 +117,7 @@ def config_directory(account):
         return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").resolve()
     if not re.fullmatch(r"[0-9a-f]{24}", account):
         raise ValueError("invalid account")
-    root = Path(_controller_context["CAGE_CLI_ACCOUNT_ROOT"]) if os.name == "nt" else Path.home() / ".local/share/cage/claude-accounts"
+    root = Path(_controller_context["CAGE_CLI_ACCOUNT_ROOT"]) if os.name == "nt" else data_root(Path.home()) / "claude-accounts"
     return root / account / "config"
 
 

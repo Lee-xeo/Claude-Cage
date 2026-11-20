@@ -626,7 +626,7 @@ def main():
         return
     if len(sys.argv) == 3 and sys.argv[1] == '--save-file':
         # Terminal attachments are independent of the graphical session.
-        root = Path.home() / '.local/share/cage/attachments/files'
+        root = Path.home() / '.local/share/workbench/attachments/files'
         broker = Broker(root)
         key = broker.start()['id']
         try:

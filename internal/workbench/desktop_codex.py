@@ -12,6 +12,14 @@ import sys
 import threading
 import uuid
 
+
+def data_root(home):
+    # Environments whose components predate the current names keep the data
+    # under the former one until their next update moves it.
+    current = home / ".local/share/workbench"
+    former = home / ".local/share/cage"
+    return former if not os.path.lexists(current) and former.is_dir() else current
+
 ROOT = Path.home() / ".local/share/project-collaboration"
 NAME = "codex"
 
@@ -73,7 +81,7 @@ def sync(bindings):
         if account == "default":
             config = Path.home() / ".claude"
         elif len(account) == 24 and all(c in "0123456789abcdef" for c in account):
-            config = Path.home() / ".local/share/cage/claude-accounts" / account / "config"
+            config = data_root(Path.home()) / "claude-accounts" / account / "config"
         else:
             continue
         config = config.resolve()

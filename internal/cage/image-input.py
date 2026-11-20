@@ -13,7 +13,7 @@ import tempfile
 
 
 def save_image(data):
-    directory = Path.home() / '.local/share/cage/attachments'
+    directory = Path.home() / '.local/share/workbench/attachments'
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, path = tempfile.mkstemp(prefix='image-', suffix='.png', dir=directory)
     try:

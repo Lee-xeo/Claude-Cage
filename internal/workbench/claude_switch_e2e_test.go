@@ -96,7 +96,7 @@ func testClaudeAccountSwitchThroughSharedSession(t *testing.T, automatic bool) {
 	for _, id := range []string{strings.Repeat("a", 24), strings.Repeat("b", 24)} {
 		email := id[:1] + "@example.invalid"
 		list.Accounts = append(list.Accounts, claudeAccount{ID: id, Label: id[:1], Email: email, Enabled: true, Status: "ready", HandoffGroup: "test"})
-		config := filepath.Join(home, ".local/share/cage/claude-accounts", id, "config")
+		config := filepath.Join(home, ".local/share/workbench/claude-accounts", id, "config")
 		if err := writePrivate(filepath.Join(config, ".claude.json"), map[string]any{"hasCompletedOnboarding": true, "cachedGrowthBookFeatures": features, "cachedGrowthBookFeaturesAt": time.Now().UnixMilli(), "oauthAccount": map[string]string{"accountUuid": uuid.NewString(), "emailAddress": email}, "projects": map[string]any{project: map[string]bool{"hasTrustDialogAccepted": true}}}); err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func testClaudeAccountSwitchThroughSharedSession(t *testing.T, automatic bool) {
 	}
 	t.Cleanup(func() {
 		if t.Failed() {
-			states, _ := filepath.Glob(filepath.Join(home, ".local/share/cage/cli-channels/*/state.json"))
+			states, _ := filepath.Glob(filepath.Join(home, ".local/share/workbench/cli-channels/*/state.json"))
 			for _, path := range states {
 				b, _ := os.ReadFile(path)
 				t.Log(string(b))
@@ -229,7 +229,7 @@ func testClaudeAccountSwitchThroughSharedSession(t *testing.T, automatic bool) {
 		if record.SwitchPolicy != "allow" {
 			t.Fatal("startup did not persist automatic handoff", record.SwitchPolicy)
 		}
-		statePath := filepath.Join(home, ".local/share/cage/cli-channels", record.Connection, "state.json")
+		statePath := filepath.Join(home, ".local/share/workbench/cli-channels", record.Connection, "state.json")
 		data, err := os.ReadFile(statePath)
 		if err != nil {
 			t.Fatal(err)

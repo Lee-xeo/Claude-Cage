@@ -258,7 +258,7 @@ printf '%s\\n' "$@"
         args = self.run_helper("run", FIRST, "--model", "sonnet").stdout.splitlines()
         self.assertEqual(args[-2:], ["--model", "sonnet"])
         self.assertIn("autoMemoryDirectory", json.loads(Path(args[1]).read_text()))
-        config = self.home / ".local/share/cage/claude-accounts" / FIRST / "config"
+        config = self.home / ".local/share/workbench/claude-accounts" / FIRST / "config"
         original = '{"statusLine":{"type":"command","command":"my-original-status"}}'
         (config / "settings.json").write_text(original)
         args = self.run_helper("run", FIRST, "--model", "sonnet").stdout.splitlines()
@@ -288,7 +288,7 @@ printf '%s\\n' "$@"
         self.assertEqual((target / "existing.md").read_text(), "original memory")
         self.assertEqual((alias / "new.md").read_text(), "new memory")
         self.assertEqual((target / "nested/detail.md").read_text(), "nested memory")
-        backups = list((self.home / ".local/share/cage/claude-shared/backups/runtime-memory").glob("*/new.md"))
+        backups = list((self.home / ".local/share/workbench/claude-shared/backups/runtime-memory").glob("*/new.md"))
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(), "new memory")
         self.run_helper("run", FIRST, cwd=project)
@@ -420,7 +420,7 @@ printf '%s\\n' "$@"
         history.write_text("previous conversation")
         snap = lambda env: json.loads(self.run_helper("snapshot", "default", env=env).stdout)
         self.assertEqual(snap(self.env)["email"], self.email)
-        self.assertFalse((self.home / ".local/share/cage/claude-accounts/default").exists())
+        self.assertFalse((self.home / ".local/share/workbench/claude-accounts/default").exists())
         payload = {"rate_limits": {"five_hour": {"used_percentage": 10, "resets_at": int(time.time()) + 3600}}}
         self.run_helper("statusline", "default", data=payload)
         self.assertIn("quota", snap(self.env))
@@ -498,7 +498,7 @@ printf '%s\\n' "$@"
         def share():
             self.run_helper("share",FIRST)
             return json.loads((config/"settings.json").read_text())
-        backups=lambda:sorted((self.home/".local/share/cage/claude-shared/backups"/FIRST).glob("settings.json-*"))
+        backups=lambda:sorted((self.home/".local/share/workbench/claude-shared/backups"/FIRST).glob("settings.json-*"))
         stored=share()
         self.assertEqual(stored,{"model":"sonnet","custom":1,"theme":"dark","hooks":{"Stop":[user,shared]}})
         self.assertTrue((config/"skills/local").is_symlink())
@@ -577,7 +577,7 @@ printf '%s\\n' "$@"
             memory=Path(json.loads(Path(flags[1]).read_text())["autoMemoryDirectory"])
             self.assertEqual((memory/"MEMORY.md").read_text(),"account learning")
             self.assertTrue(original.is_symlink())
-            backup=self.home/".local/share/cage/claude-shared/backups"/FIRST/"projects"/key/"memory/MEMORY.md"
+            backup=self.home/".local/share/workbench/claude-shared/backups"/FIRST/"projects"/key/"memory/MEMORY.md"
             self.assertEqual(backup.read_text(),"account learning")
             self.assertTrue(Path(flags[1]).resolve().is_relative_to(base.resolve()))
 
@@ -679,7 +679,7 @@ else:
         self.assertEqual(first["quota"]["five_hour"]["resets_at"], 0)
         # A passive redraw doesn't refresh either age. A completed control
         # query refreshes only the window actually returned by the CLI.
-        path = self.home / ".local/share/cage/claude-accounts/default/quota.json"
+        path = self.home / ".local/share/workbench/claude-accounts/default/quota.json"
         stored = json.loads(path.read_text())
         old = int(time.time()) - 300
         stored["observed_at"] = stored["five_hour"]["observed_at"] = stored["seven_day"]["observed_at"] = old

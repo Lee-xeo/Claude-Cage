@@ -103,7 +103,10 @@ func cliChannelCommand(mode, argument string) string {
 	// rebuilt host begins new sessions. No account configuration is overwritten.
 	digest := sha256.Sum256([]byte(cliChannelHelper + cliResumePrompt + claudeAccountResumePrompt))
 	bootstrap := fmt.Sprintf(`import base64,os,pathlib,sys,tempfile
-d=pathlib.Path.home()/".local/share/cage/cli-channel-code"
+h=pathlib.Path.home()/".local/share"
+d=h/"workbench"
+if not os.path.lexists(d) and (h/"cage").is_dir():d=h/"cage"
+d=d/"cli-channel-code"
 d.mkdir(parents=True,exist_ok=True,mode=0o700)
 n="%x"
 p=d/(n+".py")

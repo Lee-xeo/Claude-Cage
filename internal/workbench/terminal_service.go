@@ -559,7 +559,9 @@ func managedClaudeTerminalScript(workspace, command, accountID, subject string, 
 	env := `export ACCOUNT_PROFILE_ID=` + shellescape.Quote(accountID) +
 		` ACCOUNT_SUBJECT=` + shellescape.Quote(subject) + "; "
 	if accountID != "default" {
-		env += `export CLAUDE_CONFIG_DIR="$HOME/.local/share/cage/claude-accounts/$ACCOUNT_PROFILE_ID/config"; `
+		// An environment whose components predate the current names keeps its
+		// data under the former one until the update moves it.
+		env += `account_data="$HOME/.local/share/workbench"; if [ ! -e "$account_data" ] && [ ! -L "$account_data" ] && [ -d "$HOME/.local/share/cage" ]; then account_data="$HOME/.local/share/cage"; fi; export CLAUDE_CONFIG_DIR="$account_data/claude-accounts/$ACCOUNT_PROFILE_ID/config"; unset account_data; `
 	}
 	env += `export PATH="/usr/local/libexec/claude-wrapper:$PATH"; `
 	body := env + `eval "$TERMINAL_COMMAND"; unset TERMINAL_COMMAND; exec bash -i`

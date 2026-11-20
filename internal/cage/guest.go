@@ -212,7 +212,16 @@ var editorTheme string
 // the current names. It is the only place those names remain.
 //
 //go:embed guest-migrate.sh
-var guestMigrationScript string
+var guestMigrate string
+
+// dataRelocation gives the user's data directory its current name. It runs
+// as the work account, first, so that a failure stops the update before
+// anything else changes.
+//
+//go:embed data-relocate.py
+var dataRelocation string
+
+var guestMigrationScript = "python3 -I - \"$HOME\" \"$(date -u +%Y%m%dT%H%M%SZ)\" <<'DATA_RELOCATE'\n" + dataRelocation + "\nDATA_RELOCATE\n" + guestMigrate
 
 // guestLegacyCleanup removes what earlier versions installed under former
 // names once no process started before the update can still use it.

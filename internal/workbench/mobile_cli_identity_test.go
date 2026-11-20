@@ -70,7 +70,7 @@ with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"HOME":
             ns["official_turn"]("unused", "default", args, snapshot, sid, resume)
     turn(False)
     turn(True)
-    binding = json.loads((home / ".local/share/cage/mobile-cli-identities" / sid).read_text())
+    binding = json.loads((home / ".local/share/workbench/mobile-cli-identities" / sid).read_text())
     assert binding[1], "standard Cage settings must support continuation"
     (managed / "managed-settings.json").write_text(json.dumps({**policy, "channelsEnabled": False}))
     turn(True)
@@ -192,7 +192,7 @@ fi
 				configDir = filepath.Join(home, ".claude")
 				if mode == "official-managed" {
 					slot = "1234567890abcdef12345678"
-					configDir = filepath.Join(home, ".local/share/cage/claude-accounts", slot, "config")
+					configDir = filepath.Join(home, ".local/share/workbench/claude-accounts", slot, "config")
 				}
 				settings = filepath.Join(configDir, "settings.json")
 				email, organization := "synthetic@example.invalid", uuid.NewString()
@@ -319,7 +319,7 @@ fi
 			if result, err := run("changed credential", true); err == nil || result.Started {
 				t.Fatalf("new credential accepted: %#v %v", result, err)
 			}
-			binding := filepath.Join(home, ".local/share/cage/mobile-cli-identities", id)
+			binding := filepath.Join(home, ".local/share/workbench/mobile-cli-identities", id)
 			state, err := os.ReadFile(binding)
 			if err != nil {
 				t.Fatal(err)

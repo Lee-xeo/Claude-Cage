@@ -43,7 +43,11 @@ code=$2
 if [[ $code == default ]]; then
   config="$base/code"
 else
-  config="$HOME/.local/share/cage/claude-accounts/$code/config"
+  # Components older than the current names keep the data under the former
+  # one until the update moves it.
+  data="$HOME/.local/share/workbench"
+  if [[ ! -e $data && ! -L $data && -d $HOME/.local/share/cage ]]; then data="$HOME/.local/share/cage"; fi
+  config="$data/claude-accounts/$code/config"
 fi
 mkdir -p "$config"
 # Desktop's Code tab starts the CLI without Cage's launch flags. Link the

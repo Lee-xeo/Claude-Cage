@@ -65,7 +65,7 @@ func TestSharedSendReceiptSurvivesReadFailure(t *testing.T) {
 	}
 	// Keep the real host SSH/bootstrap/RPC path; replace only the guest
 	// operation boundary to lose the read immediately after an admitted send.
-	helper := filepath.Join(home, ".local/share/cage/cli-channel-code", fmt.Sprintf("%x.py", sha256.Sum256([]byte(cliChannelHelper+cliResumePrompt+claudeAccountResumePrompt))))
+	helper := filepath.Join(home, ".local/share/workbench/cli-channel-code", fmt.Sprintf("%x.py", sha256.Sum256([]byte(cliChannelHelper+cliResumePrompt+claudeAccountResumePrompt))))
 	if err = os.MkdirAll(filepath.Dir(helper), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestDiscoveryRunningStateUpdatesCatalogAndClearsMissingHistory(t *testing.T
 	}
 	// Keep the host bootstrap and SSH path; substitute the guest's observation.
 	observation := filepath.Join(home, "observation.json")
-	helper := filepath.Join(home, ".local/share/cage/cli-channel-code", fmt.Sprintf("%x.py", sha256.Sum256([]byte(cliChannelHelper+cliResumePrompt+claudeAccountResumePrompt))))
+	helper := filepath.Join(home, ".local/share/workbench/cli-channel-code", fmt.Sprintf("%x.py", sha256.Sum256([]byte(cliChannelHelper+cliResumePrompt+claudeAccountResumePrompt))))
 	if err := os.MkdirAll(filepath.Dir(helper), 0700); err != nil {
 		t.Fatal(err)
 	}

@@ -26,7 +26,7 @@ class DesktopConnectorTests(unittest.TestCase):
                     "pid": os.getpid(), "sessionId": session, "cwd": cwd,
                     "entrypoint": entrypoint, "kind": "interactive"}))
             account = "a" * 24
-            config = home / ".local/share/cage/claude-accounts" / account / "config"
+            config = home / ".local/share/workbench/claude-accounts" / account / "config"
             live_record(home / ".claude", "claude-desktop", project)
             live_record(config, "cli", project)
             with patch.object(adapter, "register", return_value=True) as add:

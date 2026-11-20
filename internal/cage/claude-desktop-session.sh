@@ -107,7 +107,7 @@ history_args=()
 if [[ -s "$XDG_RUNTIME_DIR/account-scope" ]]; then
   read -r _ _ code subject < "$XDG_RUNTIME_DIR/account-scope"
   if [[ $code =~ ^[a-f0-9]{24}$ ]]; then
-    export CLAUDE_CONFIG_DIR="$HOME/.local/share/cage/claude-accounts/$code/config"
+    export CLAUDE_CONFIG_DIR="$HOME/.local/share/workbench/claude-accounts/$code/config"
     mkdir -p "$CLAUDE_CONFIG_DIR"
     # Desktop's Code tab starts the CLI without Cage's launch flags. Link the
     # shared skills and instructions and add shared settings first; a conflict

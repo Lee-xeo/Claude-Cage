@@ -10,9 +10,17 @@ import tempfile
 from pathlib import Path
 
 
+def data_root(home):
+    # Environments whose components predate the current names keep the data
+    # under the former one until their next update moves it.
+    current = home / ".local/share/workbench"
+    former = home / ".local/share/cage"
+    return former if not os.path.lexists(current) and former.is_dir() else current
+
+
 def profile_files(home):
     files = [home / ".claude.json"]
-    accounts = home / ".local/share/cage/claude-accounts"
+    accounts = data_root(home) / "claude-accounts"
     files += [d / ".claude.json" for d in sorted(accounts.glob("*/config")) if d.is_dir()]
     return files
 

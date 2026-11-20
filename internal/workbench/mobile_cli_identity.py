@@ -13,6 +13,14 @@ import tempfile
 import uuid
 from urllib.parse import urlsplit
 
+
+def data_root(home):
+    # Environments whose components predate the current names keep the data
+    # under the former one until their next update moves it.
+    current = home / ".local/share/workbench"
+    former = home / ".local/share/cage"
+    return former if not os.path.lexists(current) and former.is_dir() else current
+
 # Variables the workbench sets for its own helpers; the CLI never receives them.
 CONTROLLER_VARIABLES = frozenset(("ACCOUNT_PROFILE_ID", "ACCOUNT_SUBJECT", "ACCOUNT_BROWSER", "LOGIN_ID",
                                   "LOGIN_CONNECTION", "LOGIN_OWNER", "WORKBENCH_TERMINAL", "TERMINAL_COMMAND"))
@@ -52,6 +60,7 @@ def read_settings(path):
 # Its stdout is captured privately inside the guest, never forwarded over SSH.
 CCS_PROBE = """
 import json, os, sys
+
 args = sys.argv[1:]
 if os.environ['CAGE_CAPTURE_ID'] not in args:
     sys.exit(1)
@@ -372,7 +381,7 @@ def official_turn(helper_path, account, args, snapshot, sid, resume, verify_only
 
 
 def bind(session_id, resume, material):
-    directory = Path(os.environ["CAGE_CLI_STATE_ROOT"]).parent / "mobile-cli-identities" if os.name == "nt" else Path.home() / ".local/share/cage/mobile-cli-identities"
+    directory = Path(os.environ["CAGE_CLI_STATE_ROOT"]).parent / "mobile-cli-identities" if os.name == "nt" else data_root(Path.home()) / "mobile-cli-identities"
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = directory / session_id
     serialized = json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()

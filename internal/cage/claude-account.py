@@ -40,7 +40,7 @@ DEFAULT = "default"
 
 
 def shared_root():
-    return Path(_controller_context["CAGE_CLI_SHARED_ROOT"]) if os.name == "nt" else Path.home() / ".local/share/cage/claude-shared"
+    return Path(_controller_context["CAGE_CLI_SHARED_ROOT"]) if os.name == "nt" else Path.home() / ".local/share/workbench/claude-shared"
 
 
 class SharedResourceConflict(ValueError):
@@ -58,7 +58,7 @@ class SubscriptionStatusTimeout(SubscriptionStatusError):
 def profile(account_id):
     if account_id != DEFAULT and not re.fullmatch("[0-9a-f]{24}", account_id):
         raise ValueError("invalid account ID")
-    root = Path(_controller_context["CAGE_CLI_ACCOUNT_ROOT"]) if os.name == "nt" else Path.home() / ".local/share/cage/claude-accounts"
+    root = Path(_controller_context["CAGE_CLI_ACCOUNT_ROOT"]) if os.name == "nt" else Path.home() / ".local/share/workbench/claude-accounts"
     return root / account_id
 
 

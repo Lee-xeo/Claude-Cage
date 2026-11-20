@@ -260,7 +260,10 @@ func (s *Server) guestImage(ctx context.Context, target string, data []byte) (ma
 	}
 	if target == "terminal" {
 		path, ok := result["path"].(string)
-		if !ok || !s.linuxPathHasPrefix(path, "/home/cage/.local/share/cage/attachments/image-") || strings.ContainsAny(path, "'\r\n\x00") {
+		// A helper started before the environment was updated still answers with
+		// the former data directory.
+		inAttachments := s.linuxPathHasPrefix(path, "/home/cage/.local/share/workbench/attachments/image-") || s.linuxPathHasPrefix(path, "/home/cage/.local/share/cage/attachments/image-")
+		if !ok || !inAttachments || strings.ContainsAny(path, "'\r\n\x00") {
 			return nil, errors.New("图片保存路径无效")
 		}
 	}

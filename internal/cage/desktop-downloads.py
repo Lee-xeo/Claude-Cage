@@ -182,4 +182,4 @@ def create_downloads():
     helper = SourceFileLoader('cage_download_copy', '/usr/local/libexec/save-download').load_module()
     with open('/etc/workbench/desktop-downloads.json') as config:
         workspace = json.load(config)['workspace']
-    return Downloads(Path.home() / '.local/share/cage/desktop-downloads', workspace, helper.copy_to_workspace)
+    return Downloads(Path.home() / '.local/share/workbench/desktop-downloads', workspace, helper.copy_to_workspace)

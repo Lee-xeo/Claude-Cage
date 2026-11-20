@@ -31,7 +31,7 @@ class ChannelTests(unittest.TestCase):
         environment = patch.dict(os.environ, self.env)
         environment.start()
         self.addCleanup(environment.stop)
-        self.root = self.home / ".local/share/cage/cli-channels"
+        self.root = self.home / ".local/share/workbench/cli-channels"
         root_patch = patch.object(channel, "ROOT", self.root)
         root_patch.start()
         self.addCleanup(root_patch.stop)

@@ -16,6 +16,14 @@ import sys
 import time
 import uuid
 
+
+def data_root(home):
+    # Environments whose components predate the current names keep the data
+    # under the former one until their next update moves it.
+    current = home / ".local/share/workbench"
+    former = home / ".local/share/cage"
+    return former if not os.path.lexists(current) and former.is_dir() else current
+
 LIMIT = 50000
 ID = re.compile(r"[a-z0-9-]{1,80}\Z")
 BATCH = re.compile(r"[0-9a-f]{32}\Z")
@@ -434,13 +442,13 @@ def production(request):
         home = Path("/home/cage")
         browser = Path("/home/cage-browser/profile/Default")
         desktop = home / ".config/Claude"
-        accounts = home / ".local/share/cage/claude-accounts"
+        accounts = data_root(home) / "claude-accounts"
     else:
         home = Path.home()
         if system == "macos":
             browser = home / "Library/Application Support/Cage/Browser/Default"
             desktop = home / "Library/Application Support/Claude"
-            accounts = home / ".local/share/cage/claude-accounts"
+            accounts = data_root(home) / "claude-accounts"
         else:
             profile = request.get("profile", "")
             if not re.fullmatch(r"[0-9a-f]{16}", profile):

@@ -10,6 +10,14 @@ import stat
 import sys
 import time
 
+
+def data_root(home):
+    # Environments whose components predate the current names keep the data
+    # under the former one until their next update moves it.
+    current = home / ".local/share/workbench"
+    former = home / ".local/share/cage"
+    return former if not os.path.lexists(current) and former.is_dir() else current
+
 FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
 MAX_LINE = 4 << 20
 MAX_BYTES = 32 << 20
@@ -260,8 +268,8 @@ def main():
         root = Path(os.environ["CAGE_CLI_STATE_ROOT"]).parent / "token-usage"
         accounts = Path(os.environ["CAGE_CLI_ACCOUNT_ROOT"])
     else:
-        root = home / ".local/share/cage/token-usage"
-        accounts = home / ".local/share/cage/claude-accounts"
+        root = data_root(home) / "token-usage"
+        accounts = data_root(home) / "claude-accounts"
     print(json.dumps(collect(root, home, accounts, cutoff, request.get("scan", True)), separators=(",", ":")))
 
 

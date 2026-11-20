@@ -28,7 +28,7 @@ await page.route("**/api/input/image", async (route) => {
       ? { status: 502, contentType: "text/plain; charset=utf-8", body: "测试：图片传递失败" }
       : {
           json: {
-            path: "/home/cage/.local/share/cage/attachments/image-test.png",
+            path: "/home/cage/.local/share/workbench/attachments/image-test.png",
             ok: true,
           },
         },
@@ -211,7 +211,7 @@ try {
   assert.deepEqual(
     messages.filter((m) => m.type === "input").map((m) => m.data),
     [
-      "\x1b[200~'/home/cage/.local/share/cage/attachments/image-test.png' \x1b[201~",
+      "\x1b[200~'/home/cage/.local/share/workbench/attachments/image-test.png' \x1b[201~",
       "\r",
     ],
   );

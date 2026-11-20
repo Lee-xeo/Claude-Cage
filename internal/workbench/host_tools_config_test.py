@@ -23,7 +23,7 @@ class HostToolsConfigTests(unittest.TestCase):
         self.home = Path(temporary.name)
 
     def test_every_profile_is_found(self):
-        account = self.home / ".local/share/cage/claude-accounts/work/config"
+        account = self.home / ".local/share/workbench/claude-accounts/work/config"
         account.mkdir(parents=True)
         self.assertEqual(config.profile_files(self.home), [self.home / ".claude.json", account / ".claude.json"])
 
