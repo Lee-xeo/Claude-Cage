@@ -38,9 +38,18 @@ func resumeChannelRequest(record *mobileRecord) map[string]any {
 var cliChannelEncoded = sync.OnceValue(func() string {
 	var helper strings.Builder
 	for _, line := range strings.Split(cliChannelHelper, "\n") {
-		if strings.TrimSpace(line) != "" && !strings.HasPrefix(strings.TrimSpace(line), "#") {
-			helper.WriteString(line + "\n")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
 		}
+		// Collapse standard 4-space Python indentation to 1 space so the
+		// compressed bootstrap stays comfortably under Windows' CreateProcessW
+		// command-line budget without altering behavior.
+		trimmedLeft := strings.TrimLeft(line, " ")
+		if lead := len(line) - len(trimmedLeft); lead > 0 && lead%4 == 0 {
+			line = strings.Repeat(" ", lead/4) + trimmedLeft
+		}
+		helper.WriteString(line + "\n")
 	}
 	bundle := []byte(helper.String())
 	var compressed bytes.Buffer
