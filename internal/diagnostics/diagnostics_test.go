@@ -270,3 +270,35 @@ func TestCrossDayRotatesSmallActiveFile(t *testing.T) {
 		t.Fatal("small active file did not rotate across days")
 	}
 }
+
+func TestRotatedBirthCacheFollowsFileChanges(t *testing.T) {
+	s := New(t.TempDir())
+	now := time.Now().UTC()
+	s.now = func() time.Time { return now }
+	if err := s.Record("info", "test", "seed"); err != nil {
+		t.Fatal(err)
+	}
+	rotated := filepath.Join(s.dir, "events-1-1.jsonl")
+	line := func(at time.Time) []byte {
+		return []byte(fmt.Sprintf("{\"time\":%q,\"level\":\"info\",\"source\":\"t\",\"message\":\"m\",\"pid\":1}\n", at.Format(time.RFC3339Nano)))
+	}
+	if err := os.WriteFile(rotated, line(now.Add(-time.Hour)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Record("info", "test", "cached"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(rotated); err != nil {
+		t.Fatal("recent rotated log removed")
+	}
+	// A replaced file with an expired first record must not keep its cached age.
+	if err := os.WriteFile(rotated, append(line(now.Add(-15*24*time.Hour)), line(now)...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Record("info", "test", "changed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(rotated); !os.IsNotExist(err) {
+		t.Fatal("expired rotated log retained from a stale cache entry")
+	}
+}

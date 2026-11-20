@@ -127,18 +127,11 @@ func (s *Store) cleanLocked(reserve int64) error {
 	}
 	var size int64
 	var live []os.FileInfo
+	seen := make(map[string]bool, len(files))
 	for _, f := range files {
-		born := f.ModTime()
-		if first, err := privateFile(filepath.Join(s.dir, f.Name()), os.O_RDONLY); err == nil {
-			line, _ := bufio.NewReader(io.LimitReader(first, MaxMessage*8)).ReadBytes('\n')
-			first.Close()
-			var event Event
-			if json.Unmarshal(line, &event) == nil {
-				if stamp, err := time.Parse(time.RFC3339Nano, event.Time); err == nil && stamp.Before(born) {
-					born = stamp
-				}
-			}
-		}
+		path := filepath.Join(s.dir, f.Name())
+		seen[path] = true
+		born := s.born(path, f)
 		if s.now().Sub(born) > s.retention {
 			if err := os.Remove(filepath.Join(s.dir, f.Name())); err != nil {
 				return err
@@ -157,7 +150,47 @@ func (s *Store) cleanLocked(reserve int64) error {
 		}
 		size -= f.Size()
 	}
+	for path := range rotatedBirths {
+		if filepath.Dir(path) == s.dir && !seen[path] {
+			delete(rotatedBirths, path)
+		}
+	}
 	return nil
+}
+
+// Rotated files are never written again, so their first record's time stays
+// valid while name, size and modification time match. Every append runs a
+// cleanup; caching avoids reopening each rotated file (and, on Windows,
+// rewriting its ACL) for every monitor record. Guarded by storeMu.
+type rotatedBirth struct {
+	size      int64
+	mod, born time.Time
+}
+
+var rotatedBirths = map[string]rotatedBirth{}
+
+func (s *Store) born(path string, f os.FileInfo) time.Time {
+	rotated := f.Name() != "events.jsonl"
+	if cached, ok := rotatedBirths[path]; rotated && ok && cached.size == f.Size() && cached.mod.Equal(f.ModTime()) {
+		return cached.born
+	}
+	born := f.ModTime()
+	first, err := privateFile(path, os.O_RDONLY)
+	if err != nil {
+		return born
+	}
+	line, _ := bufio.NewReader(io.LimitReader(first, MaxMessage*8)).ReadBytes('\n')
+	first.Close()
+	var event Event
+	if json.Unmarshal(line, &event) == nil {
+		if stamp, err := time.Parse(time.RFC3339Nano, event.Time); err == nil && stamp.Before(born) {
+			born = stamp
+		}
+	}
+	if rotated {
+		rotatedBirths[path] = rotatedBirth{size: f.Size(), mod: f.ModTime(), born: born}
+	}
+	return born
 }
 func (s *Store) Clean() error { return s.withLock(func() error { return s.cleanLocked(0) }) }
 func (s *Store) Info() (info Info, err error) {
