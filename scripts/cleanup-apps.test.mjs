@@ -7,6 +7,7 @@ import {
   access,
   rm,
   copyFile,
+  chmod,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -101,5 +102,30 @@ test(
     await assert.rejects(cleanupApps({ keep: [], roots: [directory] }));
     await assert.rejects(cleanupApps({ keep: [foreign], roots: [directory] }));
     await access(old);
+  },
+);
+
+test(
+  "cleanup skips directories the current user cannot read",
+  { skip: process.platform !== "darwin" || process.getuid?.() === 0 },
+  async (t) => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "cage-cleanup-"));
+    const root = path.join(directory, "output");
+    const latest = await app(path.join(root, "Cage.app"));
+    const old = await app(path.join(root, "previous-Cage.app"));
+    const unreadable = path.join(root, "private installer data");
+    await mkdir(unreadable);
+    await chmod(unreadable, 0o000);
+    t.after(async () => {
+      await chmod(unreadable, 0o700);
+      await rm(directory, { recursive: true, force: true });
+    });
+    const skipped = [];
+    assert.deepEqual(
+      await cleanupApps({ keep: [latest], roots: [root], onUnreadable: (entry) => skipped.push(entry) }),
+      [old],
+    );
+    assert.deepEqual(skipped, [unreadable]);
+    await access(latest);
   },
 );
