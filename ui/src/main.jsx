@@ -1955,7 +1955,7 @@ function App() {
             />
             <NetworkSpeed
               key={`speed:${proxy?.selected}:${proxy?.revision}:${running}:${busy}:${Boolean(connectionError)}`}
-              enabled={running && !busy && !connectionError}
+              enabled={running && !busy && !connectionError && windowVisible}
             />
             <span className="status-spacer" />
             <AudioControls audio={audio} />
