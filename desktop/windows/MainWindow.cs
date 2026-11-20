@@ -226,6 +226,10 @@ internal sealed class MainWindow : Form
     {
         if (Program.SmokeOutput == null || completingSmoke) return;
         completingSmoke = true;
+        // Navigation hides the status panel but keeps its last text. Report it
+        // only while visible, so a recovered error never enters a success report.
+        // A hidden window hides every child, so keep the old text there.
+        var nativeStatus = status.Visible || !Visible ? message.Text : "";
         JsonElement? page = null;
         var pageURL = web.Source?.GetLeftPart(UriPartial.Path);
         var environment = web.CoreWebView2?.Environment;
@@ -294,7 +298,7 @@ internal sealed class MainWindow : Form
             if (nativeBridgeReady && errors.Count == 0) smokePhase = "completed";
             File.WriteAllText(Program.SmokeOutput, JsonSerializer.Serialize(new {
                 success = nativeBridgeReady && errors.Count == 0, nativeBridgeReady, version = AppUpdater.Version,
-                phase = smokePhase, nativeStatus = message.Text, prepareExit, prepareStatus, prepareMessage, errors, page,
+                phase = smokePhase, nativeStatus, prepareExit, prepareStatus, prepareMessage, errors, page,
                 pageURL, webviewVersion,
                 windowBounds = Bounds, workingArea = Screen.FromHandle(Handle).WorkingArea, deviceDpi = DeviceDpi,
                 nativeMenuBar = MainMenuStrip != null,
