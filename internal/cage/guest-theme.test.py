@@ -3,13 +3,16 @@
 
 from __future__ import annotations
 
+from http.client import parse_headers
 import importlib.util
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -247,6 +250,40 @@ class GuestThemeTests(unittest.TestCase):
             self.assertEqual(bad.read_text(encoding="utf-8"), "{corrupt")
             if symlink_created:
                 self.assertEqual(secret.read_text(encoding="utf-8"), '{"keep":true}')
+
+    def test_notify_desktop_portal_posts_variant_over_unix_socket(self) -> None:
+        af_unix = getattr(socket, "AF_UNIX", None)
+        if af_unix is None:
+            self.skipTest("AF_UNIX unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sock_path = root / "files.sock"
+            received = []
+            with socket.socket(af_unix, socket.SOCK_STREAM) as srv:
+                try:
+                    srv.bind(str(sock_path))
+                    srv.listen(1)
+                except OSError as exc:
+                    self.skipTest(f"AF_UNIX bind unavailable: {exc}")
+                srv.settimeout(3)
+
+                def accept_one() -> None:
+                    conn, _ = srv.accept()
+                    with conn:
+                        conn.settimeout(3)
+                        with conn.makefile("rb") as request:
+                            method, path, _ = request.readline().split()
+                            headers = parse_headers(request)
+                            body = json.loads(request.read(int(headers["Content-Length"])))
+                            received.append((method, path, body))
+                        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}")
+
+                worker = threading.Thread(target=accept_one, daemon=True)
+                worker.start()
+                with mock.patch.dict(os.environ, {"CAGE_THEME_RUNTIME_DIRS": str(root)}):
+                    guest_theme.apply_theme("dark", home=root)
+                worker.join(timeout=4)
+            self.assertEqual(received, [(b"POST", b"/appearance", {"variant": "dark"})])
 
 
 if __name__ == "__main__":

@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -320,7 +322,11 @@ def update_gsettings(runtime_dir: Path, variant: str) -> None:
     if not binary:
         return
     gtk_theme, _, color_scheme = GTK_THEME[variant]
-    env = {**os.environ, "DBUS_SESSION_BUS_ADDRESS": bus_addr}
+    env = {
+        **os.environ,
+        "DBUS_SESSION_BUS_ADDRESS": bus_addr,
+        "XDG_RUNTIME_DIR": str(runtime_dir),
+    }
     for key, value in (("color-scheme", color_scheme), ("gtk-theme", gtk_theme)):
         try:
             subprocess.run(
@@ -334,6 +340,49 @@ def update_gsettings(runtime_dir: Path, variant: str) -> None:
             )
         except (OSError, subprocess.SubprocessError):
             pass
+
+
+class _UnixHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, socket_path: Path, timeout: float = 2.0) -> None:
+        super().__init__("localhost", timeout=timeout)
+        self._socket_path = str(socket_path)
+
+    def connect(self) -> None:
+        af_unix = getattr(socket, "AF_UNIX", None)
+        if af_unix is None:
+            raise OSError("unix sockets unavailable")
+        sock = socket.socket(af_unix, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(self.timeout)
+            sock.connect(self._socket_path)
+        except OSError:
+            sock.close()
+            raise
+        self.sock = sock
+
+
+def notify_desktop_portal(runtime_dir: Path, variant: str) -> None:
+    sock_path = runtime_dir / "files.sock"
+    try:
+        if sock_path.is_symlink() or not sock_path.is_socket():
+            return
+    except OSError:
+        return
+    conn = _UnixHTTPConnection(sock_path, timeout=2.0)
+    try:
+        body = json.dumps({"variant": variant}).encode("utf-8")
+        conn.request(
+            "POST",
+            "/appearance",
+            body=body,
+            headers={"Content-Type": "application/json"},
+        )
+        resp = conn.getresponse()
+        resp.read()
+    except (OSError, http.client.HTTPException):
+        pass
+    finally:
+        conn.close()
 
 
 def update_desktop_runtimes(variant: str) -> None:
@@ -352,7 +401,7 @@ def update_desktop_runtimes(variant: str) -> None:
         conf_file = runtime_dir / "xsettings.conf"
         has_runtime = any(
             (runtime_dir / name).exists()
-            for name in ("xsettings.conf", "xsettings.pid", "bus-address")
+            for name in ("xsettings.conf", "xsettings.pid", "bus-address", "files.sock")
         )
         if not has_runtime:
             continue
@@ -368,6 +417,7 @@ def update_desktop_runtimes(variant: str) -> None:
         if conf_file.exists() and rewrite_xsettings_file(conf_file, variant):
             reload_xsettingsd(runtime_dir)
         update_gsettings(runtime_dir, variant)
+        notify_desktop_portal(runtime_dir, variant)
 
 
 def update_claude_cli(home: Path, variant: str) -> None:
