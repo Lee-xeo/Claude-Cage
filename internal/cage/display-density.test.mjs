@@ -21,6 +21,47 @@ test("densities are bounded and take Chromium's 1/64 steps", () => {
   assert.equal(displayDensity(0.75), 0.75);
   for (const value of [0.74, 4.01, NaN, Infinity, "2", undefined, null]) assert.equal(displayDensity(value), null);
   assert.equal(densitySettings(1.5), "Xft/DPI 147456\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI 147456\n");
+  assert.equal(
+    densitySettings(1.5, "dark"),
+    'Xft/DPI 147456\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI 147456\nNet/ThemeName "Adwaita-dark"\nGtk/ApplicationPreferDarkTheme 1\n',
+  );
+  assert.equal(
+    densitySettings(1.5, "light"),
+    'Xft/DPI 147456\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI 147456\nNet/ThemeName "Adwaita"\nGtk/ApplicationPreferDarkTheme 0\n',
+  );
+});
+
+test("theme updates write xsettings theme lines and clear them when reset", t => {
+  const directory = mkdtempSync(join(tmpdir(), "cage-density-theme-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const file = join(directory, "xsettings.conf"), managers = [];
+  const settings = createDisplaySettings({
+    file,
+    initial: 2,
+    initialTheme: "dark",
+    available: true,
+    start: () => { managers.push(fakeManager()); return managers.at(-1); },
+  });
+  assert.equal(settings.theme, "dark");
+  assert.equal(readFileSync(file, "utf8"), densitySettings(2, "dark"));
+  assert.equal(settings.setTheme("light"), "light");
+  assert.equal(readFileSync(file, "utf8"), densitySettings(2, "light"));
+  assert.deepEqual(managers[0].signals, ["SIGHUP"]);
+  assert.equal(settings.setTheme("light"), "light");
+  assert.deepEqual(managers[0].signals, ["SIGHUP"]);
+  assert.equal(settings.setTheme(""), "");
+  assert.equal(readFileSync(file, "utf8"), densitySettings(2));
+  assert.deepEqual(managers[0].signals, ["SIGHUP", "SIGHUP"]);
+  settings.close();
+
+  const unavailable = createDisplaySettings({
+    file: join(directory, "unused.conf"),
+    initial: 1.5,
+    initialTheme: "light",
+    available: false,
+    start: () => assert.fail("started"),
+  });
+  assert.equal(unavailable.setTheme("dark"), "light");
 });
 
 test("a change is written before the manager is told to reload", t => {

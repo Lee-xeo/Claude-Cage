@@ -3246,5 +3246,7 @@
   "收起浮窗": "Contraer ventana flotante",
   "浮窗「{0}」": "Ventana flotante «{0}»",
   "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Abre una ventana flotante semitransparente y arrastrable sobre el espacio de trabajo. Se ejecuta en un marco aislado, solo usa las herramientas de este complemento y puede abrir en el navegador integrado: {0}.",
-  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Abre una ventana flotante semitransparente y arrastrable sobre el espacio de trabajo. Se ejecuta en un marco aislado, solo usa las herramientas de este complemento y no puede abrir páginas web."
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Abre una ventana flotante semitransparente y arrastrable sobre el espacio de trabajo. Se ejecuta en un marco aislado, solo usa las herramientas de este complemento y no puede abrir páginas web.",
+  "同步环境内部主题": "Sincronizar tema interno del entorno",
+  "将环境内的浏览器、编辑器、桌面应用与 Claude Code 同步为相同的浅色或深色主题。": "Sincroniza el navegador, el editor, la aplicación de escritorio y Claude Code dentro del entorno con el mismo tema claro u oscuro."
 }
