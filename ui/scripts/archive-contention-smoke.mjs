@@ -27,8 +27,7 @@ const { page, browser, errors } = await createWorkbench({
 try {
   const actions = page.getByRole("group", { name: `${fixture.title} 的操作`, exact: true, includeHidden: true });
   await page.locator(".sidebar-tab").filter({ has: actions }).hover();
-  await actions.getByRole("button", { name: "归档", exact: true }).hover();
-  await actions.locator(".terminal-action-label").filter({ hasText: /^归档$/ }).click();
+  await actions.getByRole("button", { name: "归档", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "归档这段会话？", exact: true });
   await dialog.getByRole("button", { name: "归档会话", exact: true }).click();
   const pending = dialog.getByRole("button", { name: "正在归档…", exact: true });
