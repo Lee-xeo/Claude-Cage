@@ -2765,6 +2765,7 @@
   "环境启动后，Claude 提交的自定义插件草稿会显示在这里。": "Una vez iniciado el entorno, los borradores de complementos personalizados enviados por Claude aparecerán aquí.",
   "暂无待审核草稿": "No hay borradores pendientes",
   "直接告诉环境里的 Claude 你需要什么能力或侧栏页面，它会使用默认的「插件工坊」生成代码、自动测试并提交到这里供你一键安装。": "Indica a Claude en el entorno qué función o página de barra lateral necesitas; generará el código, lo probará y lo enviará aquí para instalarlo con un clic.",
+  "调整侧栏宽度": "Ajustar el ancho de la barra lateral",
   "应用配置并缩小虚拟硬盘？": "¿Aplicar configuración y reducir el disco virtual?",
   "正在运行的命令会结束，环境会重启以安全检查并缩小文件系统、释放多余主机磁盘空间。项目文件、账户和登录数据都会保留，失败会自动恢复原磁盘。": "Los comandos en ejecución se detendrán y el entorno se reiniciará para comprobar y reducir el sistema de archivos de forma segura y liberar espacio en el equipo anfitrión. Se conservarán proyectos, cuentas e inicios de sesión; si falla, se restaurará el disco original.",
   "确认并调整硬盘": "Confirmar y ajustar disco",

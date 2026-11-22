@@ -25,7 +25,12 @@ class HostToolsConfigTests(unittest.TestCase):
     def test_every_profile_is_found(self):
         account = self.home / ".local/share/cage/claude-accounts/work/config"
         account.mkdir(parents=True)
-        self.assertEqual(config.profile_files(self.home), [self.home / ".claude.json", account / ".claude.json"])
+        desktop_code = self.home / ".local/share/desktop-profiles/0123456789abcdef01234567/code"
+        desktop_code.mkdir(parents=True)
+        self.assertEqual(
+            config.profile_files(self.home),
+            [self.home / ".claude.json", account / ".claude.json", desktop_code / ".claude.json"],
+        )
 
     def test_entry_is_added_beside_existing_settings(self):
         path = self.home / ".claude.json"
@@ -112,6 +117,51 @@ class HostToolsConfigTests(unittest.TestCase):
         code.write_text(json.dumps({"mcpServers": {"computer": own}}))
         config.unconfigure(self.home, "computer", ENTRY)
         self.assertEqual(json.loads(code.read_text())["mcpServers"]["computer"], own)
+
+    def test_numbered_desktop_profiles_are_configured_and_cleaned(self):
+        default_desktop = self.home / ".config/Claude"
+        default_desktop.mkdir(parents=True)
+        first = self.home / ".local/share/desktop-profiles/0123456789abcdef01234567/data"
+        second = self.home / ".local/share/desktop-profiles/fedcba9876543210fedcba98/data"
+        first_code = first.parent / "code"
+        first.mkdir(parents=True)
+        second.mkdir(parents=True)
+        first_code.mkdir(parents=True)
+        (first / "claude_desktop_config.json").write_text(json.dumps({"preferences": {"sidebarMode": "chat"}}))
+        own_desktop = {"command": "/usr/local/bin/custom"}
+        (second / "claude_desktop_config.json").write_text(json.dumps({"mcpServers": {"computer": own_desktop}}))
+
+        config.configure(self.home, "computer", ENTRY, "# relay\n")
+        program = self.home / ".local/share/mcp-relay/relay.py"
+        endpoint = self.home / ".config/mcp-relay/computer.json"
+        expected_relay = {"command": "/usr/bin/python3", "args": [str(program), str(endpoint)]}
+        self.assertEqual(json.loads((default_desktop / "claude_desktop_config.json").read_text())["mcpServers"]["computer"], expected_relay)
+        first_data = json.loads((first / "claude_desktop_config.json").read_text())
+        self.assertEqual(first_data["preferences"], {"sidebarMode": "chat"})
+        self.assertEqual(first_data["mcpServers"]["computer"], expected_relay)
+        self.assertEqual(json.loads((second / "claude_desktop_config.json").read_text())["mcpServers"]["computer"], own_desktop)
+        self.assertEqual(json.loads((first_code / ".claude.json").read_text())["mcpServers"]["computer"], ENTRY)
+
+        config.unconfigure(self.home, "computer", ENTRY)
+        self.assertEqual(json.loads((first / "claude_desktop_config.json").read_text()), {"preferences": {"sidebarMode": "chat"}})
+        self.assertEqual(json.loads((second / "claude_desktop_config.json").read_text())["mcpServers"]["computer"], own_desktop)
+        self.assertEqual(json.loads((first_code / ".claude.json").read_text()), {})
+        self.assertFalse((self.home / ".config/mcp-relay").exists())
+        self.assertFalse((self.home / ".local/share/mcp-relay").exists())
+
+    def test_numbered_desktop_alone_installs_relay(self):
+        numbered = self.home / ".local/share/desktop-profiles/0123456789abcdef01234567/data"
+        numbered.mkdir(parents=True)
+        config.configure(self.home, "computer", ENTRY, "# relay\n")
+        program = self.home / ".local/share/mcp-relay/relay.py"
+        endpoint = self.home / ".config/mcp-relay/computer.json"
+        self.assertTrue(program.is_file())
+        self.assertTrue(endpoint.is_file())
+        self.assertEqual(
+            json.loads((numbered / "claude_desktop_config.json").read_text())["mcpServers"]["computer"],
+            {"command": "/usr/bin/python3", "args": [str(program), str(endpoint)]},
+        )
+        self.assertFalse((self.home / ".config/Claude").exists())
 
 
 if __name__ == "__main__":

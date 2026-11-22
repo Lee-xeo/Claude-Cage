@@ -147,9 +147,13 @@ func (s *Server) startClaudeDesktop() error {
 	}
 	script := `test "$(dpkg-query -W -f='${Status}' claude-desktop 2>/dev/null)" = 'install ok installed' || { echo '请先安装 Claude Desktop。'; exit 1; }
 ` + scope + cage.ClaudeDesktopProvisionScript()
+	if s.hostToolsServing() {
+		script += "\nmkdir -p \"$HOME/.config/Claude\"\n"
+	}
 	if err = s.runDesktopScript(script, 20*time.Second); err != nil {
 		return err
 	}
+	s.syncHostToolsConfigNow(s.operationContext())
 	ctx, cancel := context.WithTimeout(s.operationContext(), 55*time.Second)
 	defer cancel()
 	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", "/usr/local/bin/cage-claude-start")

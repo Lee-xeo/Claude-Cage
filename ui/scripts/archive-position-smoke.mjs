@@ -51,7 +51,7 @@ try {
   await page.locator(".sidebar-tab").filter({ has: firstActions }).hover();
   await firstActions.getByRole("button", { name: "归档", exact: true }).hover();
   await page.screenshot({ path: `${output}/${engine}-archive-label.png` });
-  await firstActions.locator(".terminal-action-label").filter({ hasText: /^归档$/ }).click();
+  await firstActions.getByRole("button", { name: "归档", exact: true }).click();
   await dialog.waitFor({ timeout: 2000 });
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   assert.equal(archived, 0, "action text bypassed archive confirmation");
