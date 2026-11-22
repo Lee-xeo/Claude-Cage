@@ -15,7 +15,8 @@ import { api, writeClipboard } from "./api";
 import { Modal } from "./views";
 import { DeviceChecks } from "./device-checks";
 import { networkState, reportForSharing } from "./safety-state.mjs";
-import { useTranslation } from "./interface-language.mjs";
+import { activeInterfaceLanguage, useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 const diagnostics = [
   {
@@ -144,12 +145,16 @@ export function SafetyPanel({
             <h3>{tr(network.label)}</h3>
             <p>
               {busy
-                ? status.job.message
+                ? localizeBackendMessage(status.job.message, tr)
                 : online
-                  ? status.network_error || tr("关键检查已通过，后台继续核对出口规则与环境配置。")
-                  : status.network_error || safety.error ||
-                    safety.gate?.reason ||
-                    tr("完成关键检查后，才允许连接外部网站。")}
+                  ? (status.network_error ? localizeBackendMessage(status.network_error, tr) : tr("关键检查已通过，后台继续核对出口规则与环境配置。"))
+                  : (status.network_error
+                    ? localizeBackendMessage(status.network_error, tr)
+                    : safety.error
+                      ? localizeBackendMessage(safety.error, tr)
+                      : safety.gate?.reason
+                        ? localizeBackendMessage(safety.gate.reason, tr)
+                        : tr("完成关键检查后，才允许连接外部网站。"))}
             </p>
           </div>
           <button className="text-button" onClick={() => onSettings("network")}>
@@ -162,7 +167,7 @@ export function SafetyPanel({
             role="status"
             className={error ? "error-message" : "inline-info"}
           >
-            {error || notice}
+            {localizeBackendMessage(error || notice, tr)}
           </div>
         )}
         <div className="safety-section-heading">
@@ -178,7 +183,7 @@ export function SafetyPanel({
         {report ? (
           <>
             <p className="safety-timestamp">
-              {tr("检测于") + " "}{new Date(report.created_at).toLocaleString("zh-CN")} ·{" "}
+              {tr("检测于") + " "}{new Date(report.created_at).toLocaleString(activeInterfaceLanguage())} ·{" "}
               {online ? tr("当前运行实例") : tr("报告不代表当前已放行")}
             </p>
             <div className="safety-checks">
@@ -249,16 +254,16 @@ export function SafetyPanel({
         <div className="diagnostic-sites">
           {diagnostics.map((site) => (
             <div key={site.url}>
-              <strong>{site.name}</strong>
+              <strong>{tr(site.name)}</strong>
               <small>{site.source}</small>
-              <p>{site.description}</p>
+              <p>{tr(site.description)}</p>
               <button disabled={!online || busy} onClick={() => open(site.url)}>
                 {tr("在 Cage 中打开")}
                 <ArrowUpRight size={14} />
               </button>
               {site.attribution && (
                 <div className="safety-scope">
-                  <p>{site.attribution}</p>
+                  <p>{tr(site.attribution)}</p>
                   <div className="safety-sources">
                     {site.links.map((link) => (
                       <button
@@ -267,7 +272,7 @@ export function SafetyPanel({
                         disabled={!online || busy}
                         onClick={() => open(link.url)}
                       >
-                        {link.label}
+                        {tr(link.label)}
                         <ArrowUpRight size={12} />
                       </button>
                     ))}

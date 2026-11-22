@@ -421,7 +421,7 @@ internal sealed class MainWindow : Form
                         ? new { returnedFocus = accepted && returnedFocus } : accepted;
                     break;
                 case "exportDiagnostics":
-                    using (var picker = new SaveFileDialog { Title = "导出诊断包", Filter = "诊断包 (*.zip)|*.zip", FileName = "cage-diagnostics.zip", DefaultExt = "zip", AddExtension = true })
+                    using (var picker = new SaveFileDialog { Title = InterfaceLanguage.Text("导出诊断包"), Filter = InterfaceLanguage.Text("诊断包 (*.zip)") + "|*.zip", FileName = "cage-diagnostics.zip", DefaultExt = "zip", AddExtension = true })
                     {
                         if (picker.ShowDialog(this) != DialogResult.OK) { result = new { canceled = true }; break; }
                         var connection = request.Text("connection_id");
@@ -435,7 +435,7 @@ internal sealed class MainWindow : Form
                     updater.MarkReady(); result = true; _ = CompleteSmoke(); break;
                 case "appUpdate": result = updater.Handle(request.Text("operation")); break;
                 case "importTheme":
-                    using (var picker = new OpenFileDialog { Filter = "Cage 主题 (*.json)|*.json", Title = "导入主题", Multiselect = false })
+                    using (var picker = new OpenFileDialog { Filter = InterfaceLanguage.Text("Cage 主题 (*.json)") + "|*.json", Title = InterfaceLanguage.Text("导入主题"), Multiselect = false })
                     {
                         if (picker.ShowDialog(this) != DialogResult.OK) { result = ""; break; }
                         using var stream = File.OpenRead(picker.FileName);
@@ -448,7 +448,7 @@ internal sealed class MainWindow : Form
                 {
                     var key = request.Text("key");
                     if (key.Length != 71 || !System.Text.RegularExpressions.Regex.IsMatch(key, "^[A-F0-9]{8}(-[A-F0-9]{8}){7}$")) throw new InvalidDataException("恢复密钥格式无效");
-                    using var picker = new SaveFileDialog { Filter = "文本文件 (*.txt)|*.txt", Title = "保存账户恢复密钥", FileName = "账户恢复密钥.txt", DefaultExt = "txt", AddExtension = true };
+                    using var picker = new SaveFileDialog { Filter = InterfaceLanguage.Text("文本文件 (*.txt)") + "|*.txt", Title = InterfaceLanguage.Text("保存账户恢复密钥"), FileName = "账户恢复密钥.txt", DefaultExt = "txt", AddExtension = true };
                     if (picker.ShowDialog(this) != DialogResult.OK) { result = false; break; }
                     try { File.WriteAllText(picker.FileName, key + "\n", new System.Text.UTF8Encoding(false)); result = true; }
                     catch { throw new IOException("恢复密钥未能保存，请检查保存位置的权限"); }
@@ -459,7 +459,7 @@ internal sealed class MainWindow : Form
                     if (System.Text.Encoding.UTF8.GetByteCount(themeText) > 256 * 1024) throw new InvalidDataException("主题文件不能超过 256 KB");
                     var themeDocument = JsonDocument.Parse(themeText).RootElement;
                     if (themeDocument.Text("format") != "cage-theme" || themeDocument.GetProperty("version").GetInt32() != 1) throw new InvalidDataException("主题文件格式无效");
-                    using (var picker = new SaveFileDialog { Filter = "Cage 主题 (*.json)|*.json", Title = "导出主题", FileName = Path.GetFileName(request.Text("filename")), DefaultExt = "json", AddExtension = true })
+                    using (var picker = new SaveFileDialog { Filter = InterfaceLanguage.Text("Cage 主题 (*.json)") + "|*.json", Title = InterfaceLanguage.Text("导出主题"), FileName = Path.GetFileName(request.Text("filename")), DefaultExt = "json", AddExtension = true })
                     {
                         if (picker.ShowDialog(this) != DialogResult.OK) { result = false; break; }
                         File.WriteAllText(picker.FileName, themeText, new System.Text.UTF8Encoding(false)); result = true;
@@ -471,7 +471,7 @@ internal sealed class MainWindow : Form
                     var accessMode = request.Text("mode");
                     if (connection.Length == 0 || accessMode is not ("read" or "write")) throw new InvalidDataException("请在云端工作台重新选择项目");
                     using var picker = new FolderBrowserDialog {
-                        Description = accessMode == "write" ? "云端 Cage 可以读取、修改和删除所选项目中的文件。" : "云端 Cage 可以读取所选项目中的文件。",
+                        Description = InterfaceLanguage.Text(accessMode == "write" ? "云端 Cage 可以读取、修改和删除所选项目中的文件。" : "云端 Cage 可以读取所选项目中的文件。"),
                         UseDescriptionForTitle = true, ShowNewFolderButton = false
                     };
                     if (picker.ShowDialog(this) != DialogResult.OK) { result = new { canceled = true }; break; }
@@ -480,7 +480,7 @@ internal sealed class MainWindow : Form
                     result = response.Data; break;
                 }
                 case "chooseFolder":
-                    using (var picker = new FolderBrowserDialog { Description = request.Text("purpose") == "environmentStorage" ? "请选择用于保存镜像和虚拟磁盘的空文件夹。" : "仅此文件夹会与 Cage 共享。请选择具体项目。", UseDescriptionForTitle = true, ShowNewFolderButton = true })
+                    using (var picker = new FolderBrowserDialog { Description = InterfaceLanguage.Text(request.Text("purpose") == "environmentStorage" ? "请选择用于保存镜像和虚拟磁盘的空文件夹。" : "仅此文件夹会与 Cage 共享。请选择具体项目。"), UseDescriptionForTitle = true, ShowNewFolderButton = true })
                         result = picker.ShowDialog(this) == DialogResult.OK ? picker.SelectedPath : "";
                     break;
                 case "clipboardRead": result = Clipboard.ContainsText() ? Clipboard.GetText() : ""; break;
@@ -511,7 +511,7 @@ internal sealed class MainWindow : Form
                     {
                         var fileName = Path.GetFileName(request.Text("name"));
                         foreach (var character in Path.GetInvalidFileNameChars()) fileName = fileName.Replace(character, '_');
-                        using var picker = new SaveFileDialog { Title = "将下载另存为到本机", FileName = fileName, OverwritePrompt = true, AddExtension = false };
+                        using var picker = new SaveFileDialog { Title = InterfaceLanguage.Text("将下载另存为到本机"), FileName = fileName, OverwritePrompt = true, AddExtension = false };
                         if (picker.ShowDialog(this) != DialogResult.OK) { result = new { canceled = true }; break; }
                         arguments.Add(picker.FileName);
                     }
@@ -534,7 +534,7 @@ internal sealed class MainWindow : Form
                     else result = new { text = Clipboard.ContainsText() ? Clipboard.GetText() : "" };
                     break;
                 case "chooseGuestMedia":
-                    using (var picker = new OpenFileDialog { Title = "选择 Windows 11 x64 安装镜像", Filter = "Windows ISO (*.iso)|*.iso", Multiselect = false })
+                    using (var picker = new OpenFileDialog { Title = InterfaceLanguage.Text("选择 Windows 11 x64 安装镜像"), Filter = InterfaceLanguage.Text("Windows ISO (*.iso)") + "|*.iso", Multiselect = false })
                         result = picker.ShowDialog(this) == DialogResult.OK ? picker.FileName : "";
                     break;
                 case "appReference":
@@ -554,7 +554,7 @@ internal sealed class MainWindow : Form
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(reference) { UseShellExecute = true });
                     result = true; break;
                 case "chooseUploadFiles":
-                    using (var picker = new OpenFileDialog { Title = "选择本机文件", Multiselect = request.TryGetProperty("multiple", out var multiple) && multiple.ValueKind == JsonValueKind.True, CheckFileExists = true })
+                    using (var picker = new OpenFileDialog { Title = InterfaceLanguage.Text("选择本机文件"), Multiselect = request.TryGetProperty("multiple", out var multiple) && multiple.ValueKind == JsonValueKind.True, CheckFileExists = true })
                         result = picker.ShowDialog(this) == DialogResult.OK ? RememberFiles(picker.FileNames) : new { canceled = true };
                     break;
                 case "uploadHostFiles":

@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
 import "./about-settings.css";
-import { useTranslation } from "./interface-language.mjs";
+import { activeInterfaceLanguage, useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 const repository = "https://github.com/Lee-xeo/Claude-Cage";
 const sourceMessages = {
@@ -36,9 +37,11 @@ function CheckResult({ label, item, source, onError }) {
     <h4>{tr(label)}</h4>
     {!item ? <p className="footnote">{tr("尚未检查")}</p> : <>
       <p className={item.error ? "error-message" : "about-result-status"}>
-        {item.error || (source ? sourceMessages : releaseMessages)[item.status]}
+        {item.error
+          ? localizeBackendMessage(item.error, tr)
+          : tr((source ? sourceMessages : releaseMessages)[item.status])}
       </p>
-      {item.retryAt && <p className="footnote">{tr("可于") + " "}{new Date(item.retryAt).toLocaleString()}{" " + tr("后重试")}</p>}
+      {item.retryAt && <p className="footnote">{tr("可于") + " "}{new Date(item.retryAt).toLocaleString(activeInterfaceLanguage())}{" " + tr("后重试")}</p>}
       {source && item.commit && <p className="about-result-detail">{tr("主分支提交") + " "}<code title={item.commit}>{item.commit.slice(0, 12)}</code></p>}
       {source && item.status === "available" && item.aheadBy > 0 && <p className="footnote">{tr("主分支新增") + " "}{item.aheadBy}{" " + tr("个提交")}</p>}
       {!source && item.version && <p className="about-result-detail">{item.version} · {item.prerelease ? tr("预发行版") : tr("正式版")}</p>}
@@ -96,11 +99,11 @@ export function AboutSettings() {
         {busy ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}
         {busy ? tr("正在检查…") : coolingDown ? tr("等待重试") : tr("检测更新")}
       </button>
-      {result?.checkedAt && <span className="footnote">{tr("检查时间：")}{new Date(result.checkedAt).toLocaleString()}</span>}
+      {result?.checkedAt && <span className="footnote">{tr("检查时间：")}{new Date(result.checkedAt).toLocaleString(activeInterfaceLanguage())}</span>}
     </div>
     <p className="footnote">{tr("优先通过主机网络与系统代理检查主分支提交和最新发行版，包含预发行版；主机连接失败时尝试 Cage 所选代理。检查后可前往发布页下载。")}</p>
     {busy && <p role="status">{tr("正在核对源码提交与发行版…")}</p>}
-    {error && <p className="error-message" role="alert">{tr(error)}</p>}
+    {error && <p className="error-message" role="alert">{localizeBackendMessage(error, tr)}</p>}
     <div className="about-results" aria-live="polite" aria-busy={busy}>
       <CheckResult label={tr("源码更新")} item={result?.source} source onError={setError} />
       <CheckResult label={tr("发行版更新（含预发行）")} item={result?.release} onError={setError} />

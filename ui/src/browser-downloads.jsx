@@ -369,7 +369,7 @@ export function BrowserDownloads({
                       <span className="download-state">
                         {item.localSaved
                           ? tr("已保存到本机")
-                          : labels[item.state] || tr("状态待确认")}
+                          : labels[item.state] ? tr(labels[item.state]) : tr("状态待确认")}
                         {item.state === "downloading" &&
                           item.totalBytes > 0 &&
                           ` · ${Math.min(100, Math.floor((item.receivedBytes / item.totalBytes) * 100))}%`}
@@ -432,8 +432,8 @@ export function BrowserDownloads({
                                   : "icon-button download-reveal"
                               }
                               key={operation}
-                              aria-label={label}
-                              title={label}
+                              aria-label={tr(label)}
+                              title={tr(label)}
                               onClick={async () => {
                                 try {
                                   await native("browserDownloadAction", {
@@ -448,7 +448,7 @@ export function BrowserDownloads({
                               {operation === "reveal" ? (
                                 <FolderOpen size={16} />
                               ) : (
-                                label
+                                tr(label)
                               )}
                             </button>
                           ))}

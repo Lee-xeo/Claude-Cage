@@ -117,7 +117,7 @@ export function TerminalMenu({ choice, busy, atLimit = false, profiles, usesOffi
       </label>
       <label className="check-line"><input type="checkbox" checked={handoff} disabled={busy}
         onChange={e => { manualHandoff.current = true; setHandoff(e.target.checked); }} />{tr("额度用尽后自动接续")}</label>
-      {handoff && <small>{handoffNote}</small>}
+      {handoff && <small>{tr(handoffNote)}</small>}
       <button className="primary" disabled={busy || (autoDisabled && account === "auto")} onClick={() => onSelect("claude", account, handoff)}>{tr("创建 Claude Code 终端")}</button>
     </div>;
   }

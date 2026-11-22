@@ -2,11 +2,27 @@ import { InlineSelect } from "./inline-select";
 import React from "react";
 import { Globe2, LoaderCircle } from "lucide-react";
 import { canonicalExitPolicy } from "./safety-state.mjs";
-import { useTranslation } from "./interface-language.mjs";
+import { activeInterfaceLanguage, useTranslation } from "./interface-language.mjs";
 
 const countries =
   "US GB CA DE FR NL SE FI IE CH AU NZ JP SG KR HK MO TW IN BR".split(" ");
-const names = new Intl.DisplayNames(["zh-CN"], { type: "region" });
+const regionNamesCache = new Map();
+function regionName(code, locale) {
+  let formatter = regionNamesCache.get(locale);
+  if (!formatter) {
+    try {
+      formatter = new Intl.DisplayNames([locale], { type: "region" });
+    } catch {
+      formatter = new Intl.DisplayNames(["zh-CN"], { type: "region" });
+    }
+    regionNamesCache.set(locale, formatter);
+  }
+  try {
+    return formatter.of(code) || code;
+  } catch {
+    return code;
+  }
+}
 
 export function ExitPolicyFields({
   value,
@@ -95,7 +111,7 @@ export function ExitPolicyFields({
                 >
                   {countries.map((code) => (
                     <option key={code} value={code}>
-                      {names.of(code)}
+                      {regionName(code, activeInterfaceLanguage())}
                     </option>
                   ))}
                 </InlineSelect>
@@ -161,7 +177,7 @@ export function ExitPolicyFields({
           <code>{observation.ip}</code>
           <small>
             {observation.country_code} ·{" "}
-            {new Date(observation.checked_at).toLocaleTimeString("zh-CN")}
+            {new Date(observation.checked_at).toLocaleTimeString(activeInterfaceLanguage())}
           </small>
         </div>
       )}

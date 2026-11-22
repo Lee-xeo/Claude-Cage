@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { api, writeClipboard } from "./api";
 import { QrCode } from "lucide-react";
 import { useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 export function MobilePairSettings({ relay, savedRelay, onChange, onConfirm }) {
   const tr = useTranslation();
@@ -179,7 +180,7 @@ export function MobilePairSettings({ relay, savedRelay, onChange, onConfirm }) {
             {tr("只将二维码或配对码交给你希望授权的手机。")}
           </p>
         )}
-        {notice && <p role="status">{tr(notice)}</p>}
+        {notice && <p role="status">{localizeBackendMessage(notice, tr)}</p>}
       </section>
       <section className="remote-relay-settings" aria-label={tr("中继设置")}>
         <div className="remote-relay-row">

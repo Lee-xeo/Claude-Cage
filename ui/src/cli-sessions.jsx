@@ -3,11 +3,20 @@ import { Folder, ListFilter, RefreshCw, Search, Trash2 } from "lucide-react";
 import { api } from "./api";
 import { InlineSelect } from "./inline-select";
 import "./cli-sessions.css";
-import { translate, useTranslation } from "./interface-language.mjs";
+import { activeInterfaceLanguage, translate, useTranslation } from "./interface-language.mjs";
 
 export const desktopSessionRequest = (path, options = {}) => api("/cli" + path, options.body);
 export const sessionsChanged = () => window.dispatchEvent(new Event("cage-cli-sessions-changed"));
-const archiveDate = new Intl.DateTimeFormat("zh-CN", {year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false});
+const archiveDateCache = new Map();
+function formatArchiveDate(date) {
+  const lang = activeInterfaceLanguage();
+  let formatter = archiveDateCache.get(lang);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(lang, {year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false});
+    archiveDateCache.set(lang, formatter);
+  }
+  return formatter.format(date);
+}
 const projectLabel = path => path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) || path;
 const archiveFilters = {all:"全部会话",pinned:"已置顶",deleting:"删除未完成"};
 
@@ -145,8 +154,8 @@ export function ArchivedSessions({ request = desktopSessionRequest, ready, onRes
         <input className="archive-search-input" type="search" aria-label={tr("搜索已归档的会话")} placeholder={tr("搜索已归档的会话")} value={query} disabled={busy} onChange={event => resetSelection(setQuery, event.target.value)} />
       </div>
       <InlineSelect aria-label={tr("会话筛选")} value={filter} disabled={busy} onValueChange={value => resetSelection(setFilter, value)}
-        displayLabel={<span className="archive-filter-label"><ListFilter size={17}/><span>{archiveFilters[filter]}</span></span>}>
-        {Object.entries(archiveFilters).map(([value,label]) => <option key={value} value={value}>{label}</option>)}
+        displayLabel={<span className="archive-filter-label"><ListFilter size={17}/><span>{tr(archiveFilters[filter])}</span></span>}>
+        {Object.entries(archiveFilters).map(([value,label]) => <option key={value} value={value}>{tr(label)}</option>)}
       </InlineSelect>
       <InlineSelect aria-label={tr("项目筛选")} value={selectedProject} disabled={busy} onValueChange={value => resetSelection(setProject, value)}
         displayLabel={<span className="archive-filter-label"><Folder size={17}/><span>{selectedProject ? projectLabel(selectedProject) : tr("所有项目")}</span></span>}>
@@ -185,9 +194,9 @@ export function ArchivedSessions({ request = desktopSessionRequest, ready, onRes
         const date = new Date(session.updated_at);
         return <article className="archived-session" key={session.id}>
           <div className="archived-session-row">
-            <ArchiveSelection items={[session]} selected={selected} onToggle={toggleSelection} disabled={busy} label={tr("选择会话 {0}", (session.title || "新会话"))} />
+            <ArchiveSelection items={[session]} selected={selected} onToggle={toggleSelection} disabled={busy} label={tr("选择会话 {0}", (session.title || tr("新会话")))} />
             <div className="archived-session-title"><h4>{session.title || tr("新会话")}</h4>
-              {!Number.isNaN(date.valueOf()) && <time dateTime={session.updated_at}>{archiveDate.format(date)}</time>}
+              {!Number.isNaN(date.valueOf()) && <time dateTime={session.updated_at}>{formatArchiveDate(date)}</time>}
             </div>
             <div className="archived-session-actions">
               <button className="archive-icon-button" aria-label={session.deleting ? tr("重试删除") : tr("删除会话")} title={session.deleting ? tr("重试删除") : tr("删除会话")}

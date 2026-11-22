@@ -315,9 +315,9 @@ export function WorkspaceTabs({
           const title = tabName(tab, saved, undefined, tr);
           const opening = Boolean(openingSession) && openingSession === tab.cli_session_id;
           const runningElsewhere = tab.sessionRunningElsewhere;
-          const runningNotice = tab.sessionClaudeDesktop
+          const runningNotice = tr(tab.sessionClaudeDesktop
             ? "Claude Desktop 占用中，请先在 Claude Desktop 中退出此会话再接续"
-            : "其他窗口占用中，退出原会话后可接续";
+            : "其他窗口占用中，退出原会话后可接续");
           const OwnerIcon = tab.sessionClaudeDesktop ? Monitor : TerminalSquare;
           const openError = tab.historySession && sessionOpenError?.id === tab.cli_session_id ? sessionOpenError.message : "";
           const errorID = `session-open-error-${tab.cli_session_id}`;

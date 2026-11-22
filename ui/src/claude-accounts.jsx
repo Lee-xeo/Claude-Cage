@@ -4,7 +4,7 @@ import { api } from "./api";
 import { InlineSelect } from "./inline-select";
 import crabIcon from "./claude-account-crab.svg";
 import "./claude-accounts.css";
-import { translate, useTranslation } from "./interface-language.mjs";
+import { activeInterfaceLanguage, translate, useTranslation } from "./interface-language.mjs";
 
 // Ordinary reads never start an upstream usage query.
 export function useClaudeAccounts() {
@@ -45,10 +45,18 @@ const statusLabels = {
   pending: "等待登录", ready: "已登录", signed_out: "需要登录",
   duplicate: "账号已在列表中", changed: "登录身份已改变",
 };
-const localTimestamp = new Intl.DateTimeFormat(undefined, {
-  month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
-});
-const timeLabel = (seconds) => localTimestamp.format(seconds * 1000);
+const localTimestampCache = new Map();
+const timeLabel = (seconds) => {
+  const lang = activeInterfaceLanguage();
+  let formatter = localTimestampCache.get(lang);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(lang, {
+      month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+    localTimestampCache.set(lang, formatter);
+  }
+  return formatter.format(seconds * 1000);
+};
 
 const usageUpdatedAt = (profile) => Math.max(profile.quota?.five_hour?.observed_at || 0,
   profile.quota?.seven_day?.observed_at || 0) || profile.usage_checked_at || 0;
@@ -151,8 +159,8 @@ function QuotaWindow({ label, snapshot, state }) {
   const lastSeen = snapshot?.observed_at;
   const stale = known && (!lastSeen || now - lastSeen > 15 * 60 ||
     !["reported", "partial"].includes(state));
-  const countdown = expired ? "等待更新" : remaining !== null ? resetCountdown(remaining) :
-    known ? "重置时间未知" : state === "checking" ? "查询中" : "暂无读数";
+  const countdown = expired ? tr("等待更新") : remaining !== null ? resetCountdown(remaining) :
+    known ? tr("重置时间未知") : state === "checking" ? tr("查询中") : tr("暂无读数");
   return <div className="claude-quota-row" role="group" aria-label={label + " " + tr("额度")}>
     <span className="claude-quota-period">{label}</span>
     {known
@@ -183,7 +191,7 @@ function UsageNote({ profile, state }) {
   const tr = useTranslation();
   const now = useContext(QuotaTime);
   const updated = usageUpdatedAt(profile);
-  const statusText = usageLabels[state] || tr("暂无额度信息");
+  const statusText = usageLabels[state] ? tr(usageLabels[state]) : tr("暂无额度信息");
   return <small className="claude-quota-age" title={updated > 0 ? `${statusText} · ${timeLabel(updated)}` : statusText}>
     {updated > 0 ? <time dateTime={new Date(updated * 1000).toISOString()}>{relativeTimeLabel(updated, now)}</time> : <span>{statusText}</span>}
   </small>;
@@ -262,7 +270,7 @@ function ProfileCard({ proxySources, desktopNetwork, profile, environment, usage
   const isDraft = !fromTerminal && !profile.email && ["pending", "signed_out", "duplicate"].includes(profile.status);
   const savedLabel = label.trim() || profile.email;
   const usage = useUsageCheck(profile, usageEnvironment, perform, change);
-  const codeStatusTitle = profile.code_unlinked ? tr("Code 待授权") : "Code · " + (statusLabels[profile.status] || tr("状态未知"));
+  const codeStatusTitle = profile.code_unlinked ? tr("Code 待授权") : "Code · " + (statusLabels[profile.status] ? tr(statusLabels[profile.status]) : tr("状态未知"));
   const desktopStatusTitle = profile.desktop_status === "ready" ? tr("Desktop 已授权") : profile.desktop_instance_id ? tr("Desktop 待登录") : tr("Desktop 首次使用时授权");
   const boundNodeName = useMemo(() => {
     if (!profile.proxy_node_id) return profile.desktop_dedicated_network ? tr("已有手动网络") : "";

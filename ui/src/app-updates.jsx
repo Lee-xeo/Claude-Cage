@@ -4,7 +4,8 @@ import { api, native, nativeAvailable } from "./api";
 import { getClientContext } from "./client-context.mjs";
 import { Modal } from "./modal";
 import { stopAndExit } from "./quit";
-import { useTranslation } from "./interface-language.mjs";
+import { activeInterfaceLanguage, useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 const activePhases = new Set(["checking", "downloading", "downloaded", "verifying", "installing"]);
 const checkInterval = 6 * 60 * 60 * 1000;
@@ -191,10 +192,10 @@ export function AppUpdateButton({ updates }) {
     : state.phase === "installing" ? tr("正在安装更新，完成后自动重启")
     : state.phase === "checking" ? tr("正在准备更新")
     : coolingDown ? tr("等待重试更新") : failed ? tr("重试更新") : manual ? tr("查看新版本") : state.phase === "ready" ? tr("安装已下载的更新") : tr("下载更新");
-  const hint = coolingDown ? tr("{0}，可于 {1} 后重试", state.message ? tr(state.message) : tr("更新源请求受限"), new Date(state.retryAt).toLocaleString())
-    : failed ? tr("{0}，点击重试", state.message ? tr(state.message) : tr("更新未完成"))
+  const hint = coolingDown ? tr("{0}，可于 {1} 后重试", state.message ? localizeBackendMessage(state.message, tr) : tr("更新源请求受限"), new Date(state.retryAt).toLocaleString(activeInterfaceLanguage()))
+    : failed ? tr("{0}，点击重试", state.message ? localizeBackendMessage(state.message, tr) : tr("更新未完成"))
     : busy ? label
-    : manual ? tr("新版本 {0} 已发布。{1}点击打开发布页面。", state.latestVersion, state.message ? tr(state.message) + " " : "")
+    : manual ? tr("新版本 {0} 已发布。{1}点击打开发布页面。", state.latestVersion, state.message ? localizeBackendMessage(state.message, tr) + " " : "")
     : tr("更新至 {0}。先下载并验证，安装前会提示你保存工作并手动停止环境。", state.latestVersion);
   const circumference = 2 * Math.PI * 15;
   return (

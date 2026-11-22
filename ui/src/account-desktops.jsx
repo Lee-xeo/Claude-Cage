@@ -22,6 +22,7 @@ import { installRemoteInput } from "./remote-input";
 import { guestKeys } from "./guest-keys.mjs";
 import { runtimeSocketURL } from "./client-context.mjs";
 import { translate, useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 import {
   desktopClipboardState,
   desktopMergeNoticeTarget,
@@ -540,7 +541,7 @@ function DesktopPane({
       <div className="account-desktop-screen" ref={box} />
       {message && (
         <div className="account-desktop-message" role="status">
-          {message}{" "}
+          {localizeBackendMessage(message, tr)}{" "}
           {message !== "正在连接…" && (
             <button onClick={() => retry(attempt + 1)}>{tr("重新连接")}</button>
           )}

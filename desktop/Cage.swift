@@ -473,7 +473,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             }
         case "exportDiagnostics":
             guard !nativeFilePanelOpen else { replyHandler(nil,"请先完成当前文件窗口"); return }
-            let panel = NSSavePanel(); panel.title = "导出诊断包"; panel.nameFieldStringValue = "cage-diagnostics.zip"
+            let panel = NSSavePanel(); panel.title = CageLanguage.text("导出诊断包"); panel.nameFieldStringValue = "cage-diagnostics.zip"
             panel.allowedContentTypes = [.zip]; nativeFilePanelOpen = true
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
@@ -599,7 +599,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             let panel = NSOpenPanel()
             panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
             panel.allowedContentTypes = [UTType(filenameExtension: "ipsw") ?? .data]
-            panel.title = "选择 Apple 恢复镜像"; nativeFilePanelOpen = true
+            panel.title = CageLanguage.text("选择 Apple 恢复镜像"); nativeFilePanelOpen = true
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
                 replyHandler(response == .OK ? (panel.url?.path ?? "") : "", nil)
@@ -609,7 +609,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             let panel = NSOpenPanel()
             panel.canChooseDirectories = false; panel.canChooseFiles = true
             panel.allowsMultipleSelection = body["multiple"] as? Bool ?? false
-            panel.title = "选择本机文件"; panel.prompt = "选择"
+            panel.title = CageLanguage.text("选择本机文件"); panel.prompt = CageLanguage.text("选择")
             nativeFilePanelOpen = true
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
@@ -632,7 +632,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             guard !nativeFilePanelOpen, let id = body["id"] as? String, UUID(uuidString:id) != nil else { replyHandler(nil,"请先完成当前文件窗口"); return }
             let panel = NSSavePanel(); panel.canCreateDirectories = true
             panel.nameFieldStringValue = ((body["name"] as? String ?? "download") as NSString).lastPathComponent
-            panel.prompt = "保存"; panel.title = "将下载另存为到本机"
+            panel.prompt = CageLanguage.text("保存"); panel.title = CageLanguage.text("将下载另存为到本机")
             nativeFilePanelOpen = true
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
@@ -648,7 +648,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         case "importTheme":
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
-            panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.prompt = "导入主题"
+            panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.prompt = CageLanguage.text("导入主题")
             nativeFilePanelOpen = true
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
@@ -666,7 +666,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                   key.range(of: "^[A-F0-9]{8}(-[A-F0-9]{8}){7}$", options: .regularExpression) != nil,
                   let data = (key + "\n").data(using: .utf8) else { replyHandler(nil, "恢复密钥格式无效"); return }
             let panel = NSSavePanel(); panel.allowedContentTypes = [.plainText]; panel.canCreateDirectories = true
-            panel.nameFieldStringValue = "账户恢复密钥.txt"; panel.prompt = "保存"; panel.title = "保存账户恢复密钥"
+            panel.nameFieldStringValue = "账户恢复密钥.txt"; panel.prompt = CageLanguage.text("保存"); panel.title = CageLanguage.text("保存账户恢复密钥")
             nativeFilePanelOpen = true
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
@@ -682,7 +682,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                   let document = try? JSONSerialization.jsonObject(with: data) as? [String: Any], document["format"] as? String == "cage-theme", document["version"] as? Int == 1 else { replyHandler(nil, "主题文件格式无效"); return }
             let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.canCreateDirectories = true
             let filename = (body["filename"] as? String ?? "Cage.cage-theme.json") as NSString
-            panel.nameFieldStringValue = filename.lastPathComponent; panel.prompt = "导出主题"
+            panel.nameFieldStringValue = filename.lastPathComponent; panel.prompt = CageLanguage.text("导出主题")
             nativeFilePanelOpen = true
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
@@ -697,8 +697,8 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true; panel.canChooseFiles = false
             panel.canCreateDirectories = false; panel.allowsMultipleSelection = false
-            panel.prompt = mode == "write" ? "允许云端读写" : "允许云端读取"
-            panel.message = mode == "write" ? "云端 Cage 可以读取、修改和删除所选项目中的文件。" : "云端 Cage 可以读取所选项目中的文件。"
+            panel.prompt = CageLanguage.text(mode == "write" ? "允许云端读写" : "允许云端读取")
+            panel.message = CageLanguage.text(mode == "write" ? "云端 Cage 可以读取、修改和删除所选项目中的文件。" : "云端 Cage 可以读取所选项目中的文件。")
             nativeFilePanelOpen = true
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
@@ -708,8 +708,8 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         case "chooseFolder":
             let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
             let storage = (body["purpose"] as? String) == "environmentStorage"
-            panel.prompt = storage ? "选择文件夹" : "共享此项目"
-            panel.message = storage ? "请选择用于保存镜像和虚拟磁盘的空文件夹。" : "仅此文件夹会与 Cage 共享。请选择具体项目。"
+            panel.prompt = CageLanguage.text(storage ? "选择文件夹" : "共享此项目")
+            panel.message = CageLanguage.text(storage ? "请选择用于保存镜像和虚拟磁盘的空文件夹。" : "仅此文件夹会与 Cage 共享。请选择具体项目。")
             nativeFilePanelOpen = true
             panel.beginSheetModal(for:window) { response in self.nativeFilePanelOpen = false; replyHandler(response == .OK ? panel.url?.path : "",nil) }
         case "notificationStatus":
@@ -744,7 +744,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         guard frame.isMainFrame, origin.protocol == "http", origin.host == "localhost", origin.port == expectedPort, !nativeFilePanelOpen else { completionHandler(nil); return }
         let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.canChooseDirectories = false
         panel.allowsMultipleSelection = parameters.allowsMultipleSelection
-        panel.title = "选择本机文件"; nativeFilePanelOpen = true
+        panel.title = CageLanguage.text("选择本机文件"); nativeFilePanelOpen = true
         panel.beginSheetModal(for: window) { response in
             self.nativeFilePanelOpen = false
             completionHandler(response == .OK ? panel.urls : nil)

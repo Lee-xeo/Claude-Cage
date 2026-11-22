@@ -27,7 +27,7 @@ async function renewSession() {
       const entry = new URL(url);
       if (entry.origin !== location.origin) {
         await native("reconnect");
-        throw new Error("工作台地址已更新，连接恢复后请重试刚才的操作。");
+        throw new Error(translate("工作台地址已更新，连接恢复后请重试刚才的操作。"));
       }
       const response = await fetch("/api/session", {
         method: "POST",
@@ -78,7 +78,7 @@ export async function uploadFile(path, file, { signal, onProgress } = {}) {
   const headers = connectionHeaders(path);
   const connection = getClientContext().connection_id;
   const send = () => new Promise((resolve, reject) => {
-    if (signal?.aborted) { reject(new DOMException("上传已取消", "AbortError")); return; }
+    if (signal?.aborted) { reject(new DOMException(translate("上传已取消"), "AbortError")); return; }
     const request = new XMLHttpRequest();
     const abort = () => request.abort();
     const cleanup = () => signal?.removeEventListener("abort", abort);
@@ -86,8 +86,8 @@ export async function uploadFile(path, file, { signal, onProgress } = {}) {
     request.setRequestHeader("Content-Type", "application/octet-stream");
     for (const [name, value] of Object.entries(headers)) request.setRequestHeader(name, value);
     request.upload.onprogress = event => onProgress?.(event.loaded, event.total || file.size);
-    request.onerror = () => { cleanup(); reject(new Error("上传文件失败：与 Cage 后台的连接中断。请恢复连接后核对目标是否已收到文件，再重新选择文件。")); };
-    request.onabort = () => { cleanup(); reject(new DOMException("上传已取消", "AbortError")); };
+    request.onerror = () => { cleanup(); reject(new Error(translate("上传文件失败：与 Cage 后台的连接中断。请恢复连接后核对目标是否已收到文件，再重新选择文件。"))); };
+    request.onabort = () => { cleanup(); reject(new DOMException(translate("上传已取消"), "AbortError")); };
     request.onload = () => {
       cleanup();
       if (request.status === 423) window.dispatchEvent(new Event("cage-account-locked"));
@@ -98,7 +98,7 @@ export async function uploadFile(path, file, { signal, onProgress } = {}) {
       try { assertConnection(connection); }
       catch (error) { reject(error); return; }
       try { resolve(JSON.parse(request.responseText)); }
-      catch { reject(new Error("上传文件后未收到有效确认。请先核对目标是否已收到文件，避免重复上传；仍失败时导出诊断包。")); }
+      catch { reject(new Error(translate("上传文件后未收到有效确认。请先核对目标是否已收到文件，避免重复上传；仍失败时导出诊断包。"))); }
     };
     signal?.addEventListener("abort", abort, { once: true });
     request.send(file);
@@ -163,7 +163,7 @@ export function normalizeURL(text) {
   if (!value || value === "about:blank") return "about:blank";
   if (/^https?:\/\//i.test(value)) return new URL(value).href;
   if (/^[a-z][a-z\d+.-]*:/i.test(value) && !/^localhost:\d+/i.test(value))
-    throw new Error("地址仅支持 http 或 https");
+    throw new Error(translate("地址仅支持 http 或 https"));
   if (
     !/\s/.test(value) &&
     (value.includes(".") || /^localhost(?::\d+)?(?:\/|$)/i.test(value))

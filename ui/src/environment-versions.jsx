@@ -39,10 +39,10 @@ export function EnvironmentVersions({ status, onConfirm }) {
     <section className="environment-versions" aria-label={tr("环境版本")}>
       <h4>{tr("版本与组件")}</h4>
       <div className="setting-summary-row"><span>{tr("控制服务")}</span><strong>{data?.controller?.version || "—"}</strong></div>
-      <div className="setting-summary-row"><span>{tr("环境组件")}</span><strong>{componentLabels[data?.components?.status] || (loading ? tr("正在读取…") : tr("暂时无法确认"))}</strong></div>
+      <div className="setting-summary-row"><span>{tr("环境组件")}</span><strong>{componentLabels[data?.components?.status] ? tr(componentLabels[data.components.status]) : (loading ? tr("正在读取…") : tr("暂时无法确认"))}</strong></div>
       {data?.tools && <table className="environment-tool-table">
         <thead><tr><th>{tr("工具")}</th><th>{tr("当前版本")}</th><th>{tr("受管版本")}</th></tr></thead>
-        <tbody>{Object.entries(toolNames).filter(([key]) => data.tools[key]).map(([key, name]) => <tr key={key}><td>{name}</td><td>{data.tools[key]?.current || "—"}</td><td>{data.tools[key]?.required || "—"}</td></tr>)}</tbody>
+        <tbody>{Object.entries(toolNames).filter(([key]) => data.tools[key]).map(([key, name]) => <tr key={key}><td>{tr(name)}</td><td>{data.tools[key]?.current || "—"}</td><td>{data.tools[key]?.required || "—"}</td></tr>)}</tbody>
       </table>}
       {(error || data?.error) && <p role="alert" className="error-message"><SafetyMessage message={error || data.error} /></p>}
       <div className="environment-version-actions">

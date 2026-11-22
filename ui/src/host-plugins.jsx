@@ -10,6 +10,7 @@ import { sameState } from "./workspace-state.mjs";
 import "./host-plugins.css";
 import { activeInterfaceLanguage, translate, useTranslation } from "./interface-language.mjs";
 import { formatMarketAuthor, localizedPluginText } from "./plugin-i18n.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 const permissions = {
   files: { title: "读写文件", text: "读取或修改这台电脑上的文件。", icon: FolderOpen },
@@ -579,13 +580,13 @@ function Market({ model, onConfirm, onPage }) {
             <RefreshCw size={15} className={market.loading ? "spin" : undefined} />{tr("刷新")}
           </button>}
         </div>
-        {fetched && !Number.isNaN(fetched.getTime()) && <small className="plugin-market-fetched">{tr("更新于") + " "}{fetched.toLocaleString()}</small>}
+        {fetched && !Number.isNaN(fetched.getTime()) && <small className="plugin-market-fetched">{tr("更新于") + " "}{fetched.toLocaleString(activeInterfaceLanguage())}</small>}
       </header>
       {sections.length > 0 && <div className="plugin-categories" role="group" aria-label={tr("按分类查看")}>
         <button type="button" aria-pressed={!chosen} onClick={() => setCategory("")}>{tr("全部")}</button>
-        {sections.map(name => <button key={name} type="button" aria-pressed={chosen === name} onClick={() => setCategory(name)}>{categoryNames[name]}</button>)}
+        {sections.map(name => <button key={name} type="button" aria-pressed={chosen === name} onClick={() => setCategory(name)}>{tr(categoryNames[name])}</button>)}
       </div>}
-      {market.error && <div className="plugin-banner problem" role="alert"><TriangleAlert size={17} /><div><strong>{tr("暂时无法读取社区插件")}</strong><p>{market.error}</p></div>
+      {market.error && <div className="plugin-banner problem" role="alert"><TriangleAlert size={17} /><div><strong>{tr("暂时无法读取社区插件")}</strong><p>{localizeBackendMessage(market.error, tr)}</p></div>
         <button type="button" onClick={() => model.loadMarket(true)}>{tr("重试")}</button></div>}
       {updates.length > 0 && <section className="plugin-market-section">
         <h3>{tr("可更新")}<em>{updates.length}</em></h3>
@@ -616,7 +617,7 @@ function CopyField({ value, label }) {
   return (
     <div className="plugin-copy-field">
       <code>{value}</code>
-      <button type="button" onClick={copy} aria-label={label}>{copied === "已复制" ? <Check size={15} /> : <Copy size={15} />}{copied || tr("复制")}</button>
+      <button type="button" onClick={copy} aria-label={label}>{copied === "已复制" ? <Check size={15} /> : <Copy size={15} />}{copied ? tr(copied) : tr("复制")}</button>
     </div>
   );
 }

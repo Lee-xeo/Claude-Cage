@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { InlineSelect } from "./inline-select";
 import { SafetyMessage } from "./safety-message";
-import { translate, useTranslation } from "./interface-language.mjs";
+import { activeInterfaceLanguage, translate, useTranslation } from "./interface-language.mjs";
 import "./environment-device-reset.css";
 
 const customTextFields = [
@@ -500,7 +500,7 @@ export function EnvironmentDeviceReset({ status, onConfirm, onOpenProxy }) {
                   ? tr("已完成彻底换新机")
                   : tr("已完成原地快速换机")}
                 {" · "}
-                {new Date(info.last_result.completed_at * 1000).toLocaleString()}
+                {new Date(info.last_result.completed_at * 1000).toLocaleString(activeInterfaceLanguage())}
               </strong>
               <div className="device-reset-diff">
                 <div className="device-reset-diff-row">
@@ -541,7 +541,7 @@ export function EnvironmentDeviceReset({ status, onConfirm, onOpenProxy }) {
               {(info.archives || []).map((archive) => (
                 <div className="setting-summary-row" key={archive.id}>
                   <span>
-                    {new Date(archive.created_at * 1000).toLocaleString()} · {archive.previous_hostname || archive.id} ·{" "}
+                    {new Date(archive.created_at * 1000).toLocaleString(activeInterfaceLanguage())} · {archive.previous_hostname || archive.id} ·{" "}
                     {formatBytes(archive.bytes)}
                   </span>
                   <span className="device-reset-archive-actions">
@@ -560,7 +560,7 @@ export function EnvironmentDeviceReset({ status, onConfirm, onOpenProxy }) {
               {(info.recovery_batches || []).map((batch) => (
                 <div className="setting-summary-row" key={batch.id}>
                   <span>
-                    {new Date(batch.created_at * 1000).toLocaleString()} · {batch.count}{" " + tr("项重置前资料")} ·{" "}
+                    {new Date(batch.created_at * 1000).toLocaleString(activeInterfaceLanguage())} · {batch.count}{" " + tr("项重置前资料")} ·{" "}
                     {formatBytes(batch.bytes)}
                   </span>
                   <span className="device-reset-archive-actions">

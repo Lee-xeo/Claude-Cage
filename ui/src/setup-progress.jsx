@@ -3,6 +3,7 @@ import { SafetyMessage } from "./safety-message";
 import { ArrowDownToLine, Box, Layers3, PackageOpen, SlidersHorizontal } from "lucide-react";
 import "./setup-progress.css";
 import { useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 const stages = [
   ["image", "系统镜像", ArrowDownToLine],
@@ -31,19 +32,19 @@ export function SetupProgress({ job, onDetails, onStop, onRetry, disconnected })
   const meter = knownSize ? `${bytes(received)} / ${bytes(total)}` : hasBytes ? tr("已接收 {0}", bytes(received)) : "";
   return <section className={`setup-progress${failed ? " setup-progress-failed" : ""}`} aria-label={tr("环境安装进度")}>
     <ol className="setup-stages" aria-label={tr("安装阶段")}>
-      {stages.map(([key, name]) => <li key={key} aria-current={key === phase ? "step" : undefined}>{native && key === "image" ? tr("安装材料") : native && key === "packages" ? tr("系统安装") : name}</li>)}
+      {stages.map(([key, name]) => <li key={key} aria-current={key === phase ? "step" : undefined}>{native && key === "image" ? tr("安装材料") : native && key === "packages" ? tr("系统安装") : tr(name)}</li>)}
     </ol>
     <div className="setup-transfer">
       <div className="setup-transfer-heading">
         <span className="setup-transfer-icon"><Icon size={19} aria-hidden="true" /></span>
         <div className="setup-transfer-description">
-          <h2>{label || stage?.[1] || tr("正在准备环境")}</h2>
+          <h2>{label ? localizeBackendMessage(label, tr) : stage?.[1] ? tr(stage[1]) : tr("正在准备环境")}</h2>
           {meter && <span className="setup-transfer-bytes">{meter}</span>}
           {hasBytes && operation !== "verify" && Number.isFinite(bytes_per_second) && bytes_per_second > 0 && <span className="setup-transfer-bytes"> · {bytes(bytes_per_second)}/s</span>}
         </div>
         {knownSize && <strong className="setup-transfer-number">{percent}<small>%</small></strong>}
       </div>
-      {!failed && <div role="progressbar" aria-label={label || stage?.[1] || tr("当前操作")}
+      {!failed && <div role="progressbar" aria-label={label ? localizeBackendMessage(label, tr) : stage?.[1] ? tr(stage[1]) : tr("当前操作")}
         aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent ?? undefined}
         aria-valuetext={knownSize ? `${percent}%，${meter}` : meter || undefined}
         className={knownSize ? "setup-meter" : "setup-meter setup-meter-active"}>

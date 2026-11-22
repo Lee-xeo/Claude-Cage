@@ -256,6 +256,7 @@ export function detectNodeRegion(name) {
 }
 
 export function groupNodesByRegion(nodes, locale) {
+  const lang = locale || (typeof document !== "undefined" && document.documentElement.lang) || "zh-CN";
   const buckets = new Map();
   for (const node of nodes) {
     const code = detectNodeRegion(node.name);
@@ -264,7 +265,7 @@ export function groupNodesByRegion(nodes, locale) {
       bucket = {
         code,
         flag: regionFlag(code),
-        label: regionLabel(code, locale),
+        label: regionLabel(code, lang),
         nodes: [],
       };
       buckets.set(code, bucket);
@@ -275,6 +276,6 @@ export function groupNodesByRegion(nodes, locale) {
     if (a.code === "ZZ") return 1;
     if (b.code === "ZZ") return -1;
     if (b.nodes.length !== a.nodes.length) return b.nodes.length - a.nodes.length;
-    return a.label.localeCompare(b.label, locale || "zh-CN");
+    return a.label.localeCompare(b.label, lang);
   });
 }

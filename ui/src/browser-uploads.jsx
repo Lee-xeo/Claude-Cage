@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { api, uploadFile, native, nativeAvailable } from "./api";
 import { Modal } from "./views";
 import { useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 export function BrowserUploads({ requests = [], onStatus }) {
   const tr = useTranslation();
@@ -63,7 +64,7 @@ export function BrowserUploads({ requests = [], onStatus }) {
         setProgress("");
         // A failed batch must not retain half of the selected files.
         await api(action("cancel"), body).catch(() => {});
-        onStatus(tr("{0}；请重新点击上传按钮", error.message));
+        onStatus(tr("{0}；请重新点击上传按钮", localizeBackendMessage(error.message, tr)));
       }
     }
   };
@@ -80,7 +81,7 @@ export function BrowserUploads({ requests = [], onStatus }) {
     } catch (error) {
       setError(error.message); setProgress("");
       await api(action("cancel"), body).catch(() => {});
-      onStatus(tr("{0}；请重新点击上传按钮", error.message));
+      onStatus(tr("{0}；请重新点击上传按钮", localizeBackendMessage(error.message, tr)));
     }
   };
   return (
@@ -108,12 +109,12 @@ export function BrowserUploads({ requests = [], onStatus }) {
         {progress && (
           <>
             <p role="status">
-              {progress}{nativeAvailable() ? "" : ` · ${percent}%`}
+              {tr(progress)}{nativeAvailable() ? "" : ` · ${percent}%`}
             </p>
             <progress aria-label={tr("文件传递进度")} max="100" value={nativeAvailable() ? undefined : percent} />
           </>
         )}
-        {error && <p role="alert">{tr(error)}</p>}
+        {error && <p role="alert">{localizeBackendMessage(error, tr)}</p>}
       </div>
     </Modal>
   );

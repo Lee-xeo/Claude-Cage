@@ -26,13 +26,13 @@ export function activeInterfaceLanguage() {
 export async function prepareInterfaceLanguage(active) {
   if (active === defaultLanguage) return {};
   const load = catalogs[`./locales/${active}.json`];
-  if (!load) throw new Error("请选择支持的界面语言。");
+  if (!load) throw new Error(translate("请选择支持的界面语言。"));
   return load();
 }
 
 export async function applyInterfaceLanguage(preference, catalog) {
   const language = languages.find(item => item.id === preference.active);
-  if (!language) throw new Error("请选择支持的界面语言。");
+  if (!language) throw new Error(translate("请选择支持的界面语言。"));
   setMessages(catalog ?? await prepareInterfaceLanguage(language.id));
   document.documentElement.lang = language.id;
   document.documentElement.dir = language.rtl ? "rtl" : "ltr";

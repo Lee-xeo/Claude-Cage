@@ -4,6 +4,7 @@ import { api, uploadFile } from './api';
 import { assertConnection, getClientContext } from './client-context.mjs';
 import { InlineSelect } from './inline-select';
 import { useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 function Permissions({ item, expanded = false }) {
   const tr = useTranslation();
@@ -52,7 +53,7 @@ function LocalExtensionImport({ existing, onUpdated, onClose }) {
         if (alive.current) { onUpdated(next.items); setResults(previous => ({ ...previous, [item.id]: item.state_known && item.enabled ? '已导入并启用' : '已导入，保持停用' })); }
       } catch (error) {
         if (pending && getClientContext().connection_id === connection) await api('/browser/extensions', { mode: 'cancel', session: pending.session }).catch(() => {});
-        if (alive.current) setResults(previous => ({ ...previous, [item.id]: tr("导入失败：{0}", error.message) }));
+        if (alive.current) setResults(previous => ({ ...previous, [item.id]: tr("导入失败：{0}", localizeBackendMessage(error.message, tr)) }));
         if (getClientContext().connection_id !== connection) break;
       }
     }
@@ -61,7 +62,7 @@ function LocalExtensionImport({ existing, onUpdated, onClose }) {
   return <section className="extension-import" aria-label={tr("从本机导入扩展")}>
     <div className="browser-setting-heading"><h3>{tr("从本机浏览器导入")}</h3><button className="icon-button" aria-label={tr("关闭本机导入")} disabled={busy} onClick={onClose}><X size={16} /></button></div>
     <p>{tr("一次复制所选扩展及启停状态。浏览器账户、Cookie 和扩展登录数据保留在本机浏览器中。")}</p>
-    {error && <p className="browser-settings-error" role="alert">{tr(error)}</p>}
+    {error && <p className="browser-settings-error" role="alert">{localizeBackendMessage(error, tr)}</p>}
     {!profiles && !error && <p role="status">{tr("正在查找本机浏览器配置…")}</p>}
     {profiles?.length === 0 && <p>{tr("未找到 Edge、Chrome、Brave 或 Chromium 的扩展配置。")}</p>}
     {Boolean(profiles?.length) && <>
@@ -74,7 +75,7 @@ function LocalExtensionImport({ existing, onUpdated, onClose }) {
       {profile?.extensions.map(item => <article className="extension-import-row" key={item.id}>
         <label><input type="checkbox" disabled={busy || !eligible(item)} checked={selected.has(item.id)} onChange={event => setSelected(previous => { const next = new Set(previous); if (event.target.checked) next.add(item.id); else next.delete(item.id); return next; })} />
           <strong>{item.name}</strong><span>{item.version}</span></label>
-        <p className="extension-import-state" role={results[item.id] ? 'status' : undefined}>{results[item.id] || (!item.compatible ? tr("不支持此扩展版本，仅支持 Manifest V3") : installed.has(`${profileID}:${item.id}`) ? tr("已导入") : !item.state_known ? tr("未能读取启停状态，导入后停用") : item.enabled ? tr("本机已启用") : tr("本机已停用"))}</p>
+        <p className="extension-import-state" role={results[item.id] ? 'status' : undefined}>{results[item.id] ? tr(results[item.id]) : (!item.compatible ? tr("不支持此扩展版本，仅支持 Manifest V3") : installed.has(`${profileID}:${item.id}`) ? tr("已导入") : !item.state_known ? tr("未能读取启停状态，导入后停用") : item.enabled ? tr("本机已启用") : tr("本机已停用"))}</p>
         {item.compatible && !item.identity_preserved && <p>{tr("此扩展的标识可能变化，依赖浏览器身份或授权的功能可能需要重新配置。")}</p>}
         <Permissions item={item} />
       </article>)}
@@ -136,7 +137,7 @@ export function BrowserExtensions({ onOpenPage, onInternal, onConfirm }) {
     </div>
     <input ref={file} type="file" accept=".zip,application/zip" hidden onChange={select} aria-label={tr("选择扩展 ZIP")} />
     <p>{tr("支持 Chromium Manifest V3 扩展。扩展运行在 Cage 环境中，并按声明的权限访问网站。")}</p>
-    {error && <p className="browser-settings-error" role="alert">{tr(error)}</p>}
+    {error && <p className="browser-settings-error" role="alert">{localizeBackendMessage(error, tr)}</p>}
     {busy === 'upload' && <p role="status">{tr("正在读取扩展包…")}</p>}
     {preview && <section className="extension-install-preview" aria-label={tr("确认扩展安装")}>
       <h3>{tr("确认安装") + " "}{preview.name}</h3><p>{tr("版本") + " "}{preview.version}</p><p>{preview.description}</p>

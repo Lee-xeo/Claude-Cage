@@ -24,6 +24,7 @@ import "./account.css";
 import { Modal } from "./modal";
 import { TokenUsagePanel } from "./token-usage.jsx";
 import { translate, useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 import { LanguageSettings } from "./language-settings";
 
 const AccountContext = createContext(null);
@@ -347,7 +348,7 @@ export function AccountGate({ children }) {
               )}
               {(error || connectionError) && (
                 <p className="account-error" role="alert">
-                  {error || connectionError}
+                  {localizeBackendMessage(error || connectionError, tr)}
                 </p>
               )}
               {!creating && Object.values(deviceSupport?.device_status || {}).includes("missing") && (
@@ -745,7 +746,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty, onConfirm }) {
     <>
       {error && (
         <p className="account-error" role="alert">
-          {tr(error)}
+          {localizeBackendMessage(error, tr)}
         </p>
       )}
       {message && (

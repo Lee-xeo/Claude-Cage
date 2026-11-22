@@ -327,8 +327,8 @@ static void reply_error(WebKitScriptMessageReply *reply, const char *message) {
 static char *choose_file(GtkFileChooserAction kind, const char *title, const char *filename) {
     if (app.picker_open) return NULL;
     app.picker_open = TRUE;
-    GtkWidget *dialog = gtk_file_chooser_dialog_new(title, GTK_WINDOW(app.window), kind,
-        "取消", GTK_RESPONSE_CANCEL, kind == GTK_FILE_CHOOSER_ACTION_SAVE ? "保存" : "选择", GTK_RESPONSE_ACCEPT, NULL);
+    GtkWidget *dialog = gtk_file_chooser_dialog_new(ui_text(title), GTK_WINDOW(app.window), kind,
+        ui_text("取消"), GTK_RESPONSE_CANCEL, ui_text(kind == GTK_FILE_CHOOSER_ACTION_SAVE ? "保存" : "选择"), GTK_RESPONSE_ACCEPT, NULL);
     gtk_file_chooser_set_local_only(GTK_FILE_CHOOSER(dialog), TRUE);
     if (kind == GTK_FILE_CHOOSER_ACTION_SAVE) {
         char *base = g_path_get_basename(filename && *filename ? filename : "Cage.cage-theme.json");
@@ -339,7 +339,7 @@ static char *choose_file(GtkFileChooserAction kind, const char *title, const cha
     if (kind != GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER) {
         GtkFileFilter *filter = gtk_file_filter_new();
         gboolean diagnostic = filename && g_str_has_suffix(filename, ".zip");
-        gtk_file_filter_set_name(filter, diagnostic ? "诊断包 (*.zip)" : "Cage 主题 (*.json)");
+        gtk_file_filter_set_name(filter, ui_text(diagnostic ? "诊断包 (*.zip)" : "Cage 主题 (*.json)"));
         gtk_file_filter_add_pattern(filter, diagnostic ? "*.zip" : "*.json");
         gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
     }
@@ -1138,8 +1138,8 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
             char *path = NULL;
             if (!strcmp(operation,"save")) {
                 app.picker_open = TRUE;
-                GtkWidget *dialog = gtk_file_chooser_dialog_new("将下载另存为到本机", GTK_WINDOW(app.window), GTK_FILE_CHOOSER_ACTION_SAVE,
-                    "取消", GTK_RESPONSE_CANCEL, "保存", GTK_RESPONSE_ACCEPT, NULL);
+                GtkWidget *dialog = gtk_file_chooser_dialog_new(ui_text("将下载另存为到本机"), GTK_WINDOW(app.window), GTK_FILE_CHOOSER_ACTION_SAVE,
+                    ui_text("取消"), GTK_RESPONSE_CANCEL, ui_text("保存"), GTK_RESPONSE_ACCEPT, NULL);
                 char *base = g_path_get_basename(text_member(request,"name"));
                 gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), *base ? base : "download");
                 gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dialog), TRUE);
@@ -1230,8 +1230,8 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
         if (app.picker_open) reply_error(reply, "请先完成当前文件窗口。");
         else {
             app.picker_open = TRUE;
-            GtkWidget *dialog = gtk_file_chooser_dialog_new("选择本机文件", GTK_WINDOW(app.window), GTK_FILE_CHOOSER_ACTION_OPEN,
-                "取消", GTK_RESPONSE_CANCEL, "选择", GTK_RESPONSE_ACCEPT, NULL);
+            GtkWidget *dialog = gtk_file_chooser_dialog_new(ui_text("选择本机文件"), GTK_WINDOW(app.window), GTK_FILE_CHOOSER_ACTION_OPEN,
+                ui_text("取消"), GTK_RESPONSE_CANCEL, ui_text("选择"), GTK_RESPONSE_ACCEPT, NULL);
             JsonNode *multiple = json_object_get_member(request, "multiple");
             gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), multiple && JSON_NODE_HOLDS_VALUE(multiple) && json_node_get_value_type(multiple) == G_TYPE_BOOLEAN && json_node_get_boolean(multiple));
             gtk_file_chooser_set_local_only(GTK_FILE_CHOOSER(dialog), TRUE);

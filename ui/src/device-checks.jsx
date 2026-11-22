@@ -3,7 +3,7 @@ import { api } from "./api";
 import { Modal } from "./modal";
 import { SafetyMessage } from "./safety-message";
 import "./device-checks.css";
-import { useTranslation } from "./interface-language.mjs";
+import { activeInterfaceLanguage, useTranslation } from "./interface-language.mjs";
 
 const labels = { passed: "通过", failed: "未通过", unknown: "未观测", warning: "需关注", observed: "已观测" };
 const renderers = { software: "软件渲染", "virtual-gpu": "虚拟 GPU", "driver-reported": "驱动报告的渲染器", unobserved: "未观测" };
@@ -28,15 +28,15 @@ export function DeviceChecks({ target, disabled = false }) {
     </div>
     {error && <p role="alert"><SafetyMessage message={error} /></p>}
     {report && <div aria-live="polite">
-      <p>{report.target === "desktop" ? "Claude Desktop" : tr("浏览器")} · {new Date(report.checked_at).toLocaleString()}</p>
-      {report.renderer_class && <p>{tr("实际图形环境：")}{renderers[report.renderer_class] || tr("未观测")}</p>}
+      <p>{report.target === "desktop" ? "Claude Desktop" : tr("浏览器")} · {new Date(report.checked_at).toLocaleString(activeInterfaceLanguage())}</p>
+      {report.renderer_class && <p>{tr("实际图形环境：")}{renderers[report.renderer_class] ? tr(renderers[report.renderer_class]) : tr("未观测")}</p>}
       {report.browser && <details><summary>{tr("浏览器实际观测值")}</summary><dl>
         <dt>User Agent</dt><dd>{report.browser.user_agent}</dd>
         <dt>{tr("图形渲染器")}</dt><dd>{report.browser.webgl.renderer || tr("未观测")}</dd>
         <dt>{tr("显示尺寸")}</dt><dd>{report.browser.screen.width} × {report.browser.screen.height}{tr("，像素比") + " "}{report.browser.screen.pixel_ratio}</dd>
         <dt>{tr("诊断文档视口")}</dt><dd>{report.browser.viewport.width} × {report.browser.viewport.height}</dd>
       </dl></details>}
-      <ul className="device-check-results">{report.checks.map(check => <li key={check.id} data-state={check.state}><strong>{check.title}</strong><span>{labels[check.state] || tr("未观测")}</span><p>{check.evidence}</p></li>)}</ul>
+      <ul className="device-check-results">{report.checks.map(check => <li key={check.id} data-state={check.state}><strong>{check.title}</strong><span>{labels[check.state] ? tr(labels[check.state]) : tr("未观测")}</span><p>{check.evidence}</p></li>)}</ul>
     </div>}
   </section>;
 }

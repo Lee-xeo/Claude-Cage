@@ -6,6 +6,7 @@ import { BrowserCookies } from './browser-cookies';
 import { BrowserExtensions } from './browser-extensions';
 import './browser-settings.css';
 import { useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 const sections = [
   { id: 'general', title: '新标签页', icon: Globe2, search: '启动 新标签页 主页 默认 地址 网址' },
@@ -38,23 +39,23 @@ export function BrowserSettingsPage({ tab, tabs, currentHome, layout, onLayoutCh
   };
   const privateTab = tabs.find(item => item.incognito && !item.login);
   const cookieTab = cookieSession === 'private' && privateTab ? privateTab : tab;
-  const visible = query.trim() ? sections.filter(item => `${item.title} ${item.search}`.toLowerCase().includes(query.trim().toLowerCase())) : sections.filter(item => item.id === section);
+  const visible = query.trim() ? sections.filter(item => `${item.title} ${item.search} ${tr(item.title)} ${tr(item.search)}`.toLowerCase().includes(query.trim().toLowerCase())) : sections.filter(item => item.id === section);
   return <section className="browser-settings-page" aria-label={tr("浏览器设置")}>
     <header className="browser-settings-top"><h1>{tr("设置")}</h1><label className="browser-settings-search"><Search size={16} /><input aria-label={tr("搜索浏览器设置")} placeholder={tr("搜索设置")} value={query} onChange={event => setQuery(event.target.value)} /></label></header>
     <div className="browser-settings-layout">
-      <nav className="browser-settings-nav" aria-label={tr("浏览器设置分类")}>{sections.map(({ id, title, icon: Icon }) => <button key={id} aria-label={title} aria-description={id === 'general' && home !== savedHome ? tr("有未保存的更改") : undefined} aria-current={!query && section === id ? 'page' : undefined} onClick={() => changeSection(id)}><Icon size={17} /><span>{title}</span>{id === 'general' && home !== savedHome && <span className="settings-unsaved-dot" title={tr("有未保存的更改")} />}</button>)}</nav>
+      <nav className="browser-settings-nav" aria-label={tr("浏览器设置分类")}>{sections.map(({ id, title, icon: Icon }) => <button key={id} aria-label={tr(title)} aria-description={id === 'general' && home !== savedHome ? tr("有未保存的更改") : undefined} aria-current={!query && section === id ? 'page' : undefined} onClick={() => changeSection(id)}><Icon size={17} /><span>{tr(title)}</span>{id === 'general' && home !== savedHome && <span className="settings-unsaved-dot" title={tr("有未保存的更改")} />}</button>)}</nav>
       <div className="browser-settings-compact-nav"><InlineSelect aria-label={tr("浏览器设置分类")} value={section} onValueChange={changeSection}>
-        {sections.map(item => <option value={item.id} key={item.id}>{item.title}</option>)}
+        {sections.map(item => <option value={item.id} key={item.id}>{tr(item.title)}</option>)}
       </InlineSelect></div>
       <div className="browser-settings-content">
         {visible.length === 0 && <div className="browser-settings-no-results"><Search size={24} /><h2>{tr("没有找到相关设置")}</h2><p>{tr("试试“标签页”“Cookie”或“扩展”。")}</p></div>}
-        {visible.map(item => <section key={item.id} className="browser-settings-section" aria-label={item.title}>
-          <h2>{item.title}</h2>
+        {visible.map(item => <section key={item.id} className="browser-settings-section" aria-label={tr(item.title)}>
+          <h2>{tr(item.title)}</h2>
           {item.id === 'general' && <><p>{tr("设置打开新网页时访问的网站。")}</p><form className="browser-setting-form" onSubmit={save}>
             <label className="browser-setting-field">{tr("新标签页地址")}<input type="url" aria-label={tr("新标签页地址")} required maxLength={8192} value={home} disabled={saving || loading} spellCheck="false" autoComplete="off" onChange={event => { setHome(event.target.value); setSaved(false); }} /></label>
             <p>{tr("普通标签与无痕标签使用同一默认地址。保存后，新建网页立即生效。")}</p>
             <div className="browser-setting-actions"><button className="primary" disabled={saving || loading || home === savedHome}>{saving ? tr("正在保存…") : tr("保存地址")}</button>{saved && <span role="status">{tr("已保存")}</span>}</div>
-            {error && <p className="browser-settings-error" role="alert">{tr(error)}</p>}
+            {error && <p className="browser-settings-error" role="alert">{localizeBackendMessage(error, tr)}</p>}
           </form></>}
           {item.id === 'appearance' && <><p>{tr("调整网页与文件编辑器的标签栏。")}</p><div className="browser-setting-row"><div><h3>{tr("标签栏布局")}</h3><p>{tr("立即生效，保存在本机。")}</p></div><InlineSelect aria-label={tr("标签栏布局")} value={layout} onValueChange={onLayoutChange}><option value="horizontal">{tr("横排（顶部）")}</option><option value="vertical">{tr("竖排（左侧）")}</option></InlineSelect></div><p>{tr("浏览器设置页跟随 Cage 当前的字体与配色。")}</p></>}
           {item.id === 'privacy' && <><p>{tr("管理网站保存在当前浏览会话中的数据和访问权限。")}</p>

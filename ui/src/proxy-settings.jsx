@@ -27,7 +27,8 @@ import { LocalConfigImport } from "./local-config-import";
 import { getClientContext } from "./client-context.mjs";
 import { useWindowVisibility } from "./window-visibility";
 import "./proxy.css";
-import { translate, useTranslation } from "./interface-language.mjs";
+import { activeInterfaceLanguage, translate, useTranslation } from "./interface-language.mjs";
+import { localizeBackendMessage } from "./backend-message.mjs";
 
 const bytes = (v) => {
   const n = Math.max(0, Number(v) || 0);
@@ -44,7 +45,7 @@ function usageLabel(raw) {
   return [
     values.total ? `${bytes(used)} / ${bytes(values.total)}` : "",
     Number(values.expire) > 0
-      ? translate("到期 {0}", new Date(Number(values.expire) * 1000).toLocaleDateString())
+      ? translate("到期 {0}", new Date(Number(values.expire) * 1000).toLocaleDateString(activeInterfaceLanguage()))
       : "",
   ]
     .filter(Boolean)
@@ -201,7 +202,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
         await new Promise((resolve) => setTimeout(resolve, 500));
         current = (await api("/status")).job;
         if (current.id !== job.id)
-          throw new Error("操作已被其他任务替代，请查看当前状态");
+          throw new Error(tr("操作已被其他任务替代，请查看当前状态"));
       } while (current.running);
       portDirty.current = false;
       const updated = await reload();
@@ -231,7 +232,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
         );
         setDelays({});
         if (action === "import" && needsMigration) setTab("nodes");
-        if (action === "import-local") { setTab("nodes"); setSearch(""); setSource(""); setRegion(""); setNotice("配置已导入。请在下方选择出口，再点击“应用代理”。"); }
+        if (action === "import-local") { setTab("nodes"); setSearch(""); setSource(""); setRegion(""); setNotice(tr("配置已导入。请在下方选择出口，再点击“应用代理”。")); }
       }
       return true;
     } catch (e) {
@@ -387,7 +388,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
   const routeValid =
     route.every((id) => usableNodes.some((n) => n.id === id)) &&
     new Set(route).size === route.length;
-  const routeName = (id) => allNodes.find((n) => n.id === id)?.name || "待选择";
+  const routeName = (id) => allNodes.find((n) => n.id === id)?.name || tr("待选择");
   const updateHop = (index, id) =>
     setRouteDraft(route.map((current, i) => (i === index ? id : current)));
   const baseNodes = allNodes.filter(
@@ -418,9 +419,11 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
           route.slice(0, -1).includes(n.id)
         }
         title={
-          n.blocked_reason || (route.slice(0, -1).includes(n.id)
-            ? tr("此节点已用作中转")
-            : tr("选为最终出口，点击应用代理后生效"))
+          n.blocked_reason
+            ? localizeBackendMessage(n.blocked_reason, tr)
+            : (route.slice(0, -1).includes(n.id)
+              ? tr("此节点已用作中转")
+              : tr("选为最终出口，点击应用代理后生效"))
         }
         onClick={() => updateHop(route.length - 1, n.id)}
         aria-pressed={!n.blocked_reason && n.id === route.at(-1)}
@@ -441,8 +444,8 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
           {n.id === proxy.selected ? tr("当前出口") : tr("当前中转")}
         </span>
       )}
-      <span className="proxy-delay" title={n.blocked_reason ? undefined : delayReasons.current[n.id] || undefined}>
-        {!n.blocked_reason && (delays[n.id] || tr("未测速"))}
+      <span className="proxy-delay" title={n.blocked_reason ? undefined : (delayReasons.current[n.id] ? localizeBackendMessage(delayReasons.current[n.id], tr) : undefined)}>
+        {!n.blocked_reason && (delays[n.id] ? tr(delays[n.id]) : tr("未测速"))}
       </span>
       <button
         aria-label={tr("测速 {0}", (n.name))}
@@ -557,7 +560,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
         {needsMigration ? (
           (tab !== "sources" || !form) && <button type="button" disabled={busy} onClick={() => openImport("file")}>{tr("导入节点")}</button>
         ) : <span className={`proxy-badge ${proxy.network_open ? "online" : ""}`}>
-          {proxy.state_label}
+          {tr(proxy.state_label)}
         </span>}
       </div>
       {active && status.location && (
@@ -586,7 +589,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
             aria-selected={tab === id}
             onClick={() => setTab(id)}
           >
-            {label}
+            {tr(label)}
           </button>
         ))}
       </div>
@@ -956,11 +959,11 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
                     : tr("手动更新")}
                 </small>
                 <small>
-                  {tr("更新于 {0}", new Date(s.updated_at).toLocaleString())}
+                  {tr("更新于 {0}", new Date(s.updated_at).toLocaleString(activeInterfaceLanguage()))}
                   {usageLabel(s.usage) && ` · ${usageLabel(s.usage)}`}
                 </small>
                 {s.error && (
-                  <span className="proxy-source-error">{s.error}</span>
+                  <span className="proxy-source-error">{localizeBackendMessage(s.error, tr)}</span>
                 )}
                 {s.skipped?.length > 0 && (
                   <details className="proxy-source-skipped">
@@ -972,7 +975,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
                         <li key={issue.index}>
                           {tr("第 {0} 个节点", issue.index)}
                           {issue.name && `「${issue.name}」`}
-                          {issue.type && `（${issue.type}）`}：{issue.reason}
+                          {issue.type && `（${issue.type}）`}：{localizeBackendMessage(issue.reason, tr)}
                         </li>
                       ))}
                     </ul>
@@ -1101,7 +1104,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
                         [168, "每周"],
                       ].map(([v, label]) => (
                         <option value={v} key={v}>
-                          {label}
+                          {tr(label)}
                         </option>
                       ))}
                     </InlineSelect>
@@ -1451,7 +1454,9 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
           <LoaderCircle size={14} className="spin" />
           {pending === "delay"
             ? tr("正在检测节点延迟…")
-            : status.job?.message || tr("正在处理…")}
+            : status.job?.message
+              ? localizeBackendMessage(status.job.message, tr)
+              : tr("正在处理…")}
         </p>
       )}
       {error && !(tab === "nodes" && allNodes.length > 0) && (
@@ -1462,7 +1467,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
       {notice && (
         <p role="status" className="proxy-notice">
           <Check size={14} />
-          {tr(notice)}
+          {localizeBackendMessage(notice, tr)}
         </p>
       )}
     </div>

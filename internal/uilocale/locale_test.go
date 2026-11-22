@@ -2,9 +2,22 @@ package uilocale
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"unicode"
 )
+
+func containsHan(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
 
 func TestNativeCatalogMatchesSourceKeys(t *testing.T) {
 	var catalogs map[string]map[string]string
@@ -25,6 +38,32 @@ func TestNativeCatalogMatchesSourceKeys(t *testing.T) {
 			}
 			if strings.TrimSpace(text) == "" || strings.Count(text, "{0}") != strings.Count(source, "{0}") {
 				t.Errorf("%s native message %q has a missing translation or placeholder", language, source)
+			}
+			if language != "zh-TW" && containsHan(text) {
+				t.Errorf("%s native message %q contains untranslated Han characters: %q", language, source, text)
+			}
+		}
+	}
+
+	// Verify every native UI string literal in macOS, Windows, and Linux shells is in native.json.
+	callRe := regexp.MustCompile(`\b(?:CageLanguage\.(?:text|format)|InterfaceLanguage\.(?:Text|Format)|ui_text|ui_format)\(\s*("(?:[^"\\]|\\.)*")`)
+	shellFiles := []string{
+		filepath.Join("..", "..", "desktop", "Cage.swift"),
+		filepath.Join("..", "..", "desktop", "windows", "MainWindow.cs"),
+		filepath.Join("..", "..", "desktop", "linux", "cage-desktop.c"),
+	}
+	for _, path := range shellFiles {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, match := range callRe.FindAllSubmatch(data, -1) {
+			var key string
+			if err := json.Unmarshal(match[1], &key); err != nil {
+				t.Fatalf("unquote %s in %s: %v", match[1], path, err)
+			}
+			if _, ok := reference[key]; !ok {
+				t.Errorf("%s references native key %q missing from native.json", path, key)
 			}
 		}
 	}
