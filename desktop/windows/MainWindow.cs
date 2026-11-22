@@ -35,7 +35,10 @@ internal sealed class MainWindow : Form
         Deactivate += (_, _) => { PublishFocus(false); Script("window.dispatchEvent(new Event('cage-window-deactivated'));"); };
         AutoScaleMode = AutoScaleMode.Dpi; AutoScaleDimensions = new SizeF(96, 96);
         Text = "Cage";
-        StartPosition = FormStartPosition.CenterScreen; BackColor = Color.FromArgb(247, 247, 247);
+        chrome = WindowChrome.SystemDefault();
+        StartPosition = FormStartPosition.CenterScreen;
+        BackColor = chrome.Background;
+        message.ForeColor = chrome.Foreground;
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? SystemIcons.Application;
         status.Controls.AddRange([message, retry, existing, complete]);
         Controls.Add(web); Controls.Add(status);
@@ -48,17 +51,17 @@ internal sealed class MainWindow : Form
             if (ConfirmStop()) await Bootstrap("--complete-update");
         };
         var trayMenu = new TrayMenu();
-        AddTrayItem("打开 Cage", (_, _) => RestoreWindow());
-        AddTrayItem("检查应用更新…", (_, _) => updater!.Handle("check"));
-        AddTrayItem("关于 Cage", (_, _) => MessageBox.Show(this,
+        AddTrayItem("打开 Cage", TrayIconKind.Open, (_, _) => RestoreWindow());
+        AddTrayItem("检查应用更新…", TrayIconKind.CheckUpdates, (_, _) => updater!.Handle("check"));
+        AddTrayItem("关于 Cage", TrayIconKind.About, (_, _) => MessageBox.Show(this,
             $"Cage {AppUpdater.Version}\n" + InterfaceLanguage.Text("本机隔离编码工作区"),
             InterfaceLanguage.Text("关于 Cage")));
         trayMenu.Items.Add(new ToolStripSeparator());
-        AddTrayItem("退出 Cage…", (_, _) => RequestQuit());
+        AddTrayItem("退出 Cage…", TrayIconKind.Quit, (_, _) => RequestQuit(), destructive: true);
         trayMenu.Opening += (_, _) => {
             foreach (ToolStripItem item in trayMenu.Items)
-                if (item.Tag is string source) item.Text = InterfaceLanguage.Text(source);
-            (chrome ?? new WindowChrome(BackColor, ForeColor, false)).ApplyMenu(trayMenu);
+                if (item.Tag is TrayItemMetadata meta) item.Text = InterfaceLanguage.Text(meta.SourceKey);
+            (chrome ?? WindowChrome.SystemDefault()).ApplyMenu(trayMenu);
         };
         tray = new NotifyIcon { Icon = Icon, Text = "Cage", Visible = true, ContextMenuStrip = trayMenu };
         tray.DoubleClick += (_, _) => RestoreWindow();
@@ -82,8 +85,9 @@ internal sealed class MainWindow : Form
             if (!allowQuit && e.CloseReason is not (CloseReason.WindowsShutDown or CloseReason.TaskManagerClosing)) { e.Cancel = true; Hide(); }
         };
         FormClosed += (_, _) => { lifetime.Cancel(); updater.Dispose(); tray.Dispose(); trayMenu.Dispose(); web.Dispose(); };
-        void AddTrayItem(string source, EventHandler action) =>
-            trayMenu.Items.Add(InterfaceLanguage.Text(source), null, action).Tag = source;
+        void AddTrayItem(string source, TrayIconKind icon, EventHandler action, bool destructive = false) =>
+            trayMenu.Items.Add(InterfaceLanguage.Text(source), null, action).Tag =
+                new TrayItemMetadata(source, icon, destructive);
     }
 
     protected override void OnLoad(EventArgs e)
@@ -128,6 +132,7 @@ internal sealed class MainWindow : Form
     }
 
     private WindowChrome? chrome;
+    private bool hasWorkbenchAppearance;
 
     private void ApplyWindowChrome()
     {
@@ -146,6 +151,12 @@ internal sealed class MainWindow : Form
     protected override void OnSystemColorsChanged(EventArgs e)
     {
         base.OnSystemColorsChanged(e);
+        if (!hasWorkbenchAppearance)
+        {
+            chrome = WindowChrome.SystemDefault();
+            BackColor = chrome.Background;
+            message.ForeColor = chrome.Foreground;
+        }
         ApplyWindowChrome();
     }
 
@@ -573,13 +584,25 @@ internal sealed class MainWindow : Form
                     result = true; break;
                 case "appearance":
                     var mode = request.Text("mode"); var background = request.Text("background");
-                    if (mode is not ("system" or "light" or "dark") || !System.Text.RegularExpressions.Regex.IsMatch(background, "^#[0-9a-fA-F]{6}$"))
+                    if (mode is not ("system" or "light" or "dark") || !WindowChrome.TryParseHexColor(background, out var bgColor))
                         throw new InvalidDataException("外观参数无效");
                     var foreground = request.Text("foreground");
-                    BackColor = ColorTranslator.FromHtml(background); web.DefaultBackgroundColor = BackColor;
-                    var ink = System.Text.RegularExpressions.Regex.IsMatch(foreground, "^#[0-9a-fA-F]{6}$")
-                        ? ColorTranslator.FromHtml(foreground) : WindowChrome.ContrastingText(BackColor);
-                    chrome = new WindowChrome(BackColor, ink, request.Text("variant") == "dark");
+                    BackColor = bgColor; web.DefaultBackgroundColor = BackColor;
+                    var ink = WindowChrome.TryParseHexColor(foreground, out var fgColor)
+                        ? fgColor : WindowChrome.ContrastingText(BackColor);
+                    this.message.ForeColor = ink;
+                    hasWorkbenchAppearance = true;
+                    chrome = WindowChrome.FromAppearance(
+                        BackColor,
+                        ink,
+                        request.Text("variant") == "dark",
+                        menuBackground: request.Text("menuBackground"),
+                        menuForeground: request.Text("menuForeground"),
+                        muted: request.Text("muted"),
+                        border: request.Text("border"),
+                        hover: request.Text("hover"),
+                        selected: request.Text("selected"),
+                        danger: request.Text("danger"));
                     ApplyWindowChrome();
                     web.CoreWebView2.Profile.PreferredColorScheme = mode == "dark" ? CoreWebView2PreferredColorScheme.Dark : mode == "light" ? CoreWebView2PreferredColorScheme.Light : CoreWebView2PreferredColorScheme.Auto;
                     result = true; break;
