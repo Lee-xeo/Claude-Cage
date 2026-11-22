@@ -155,6 +155,53 @@ func LocationLookupOptions(configPath string) exitpolicy.LookupOptions {
 	return exitpolicy.LookupOptions{IPInfoFallback: prefs.IPInfoFallback}
 }
 
+// NodeLocation records the last verified country and timezone observed for an
+// account-bound proxy node so per-account Desktop/CLI sessions can align their
+// locale and timezone with that node's exit region.
+type NodeLocation struct {
+	CountryCode string `json:"country_code,omitempty"`
+	Timezone    string `json:"timezone,omitempty"`
+}
+
+func nodeLocationPath(policyFile string) string {
+	return strings.TrimSuffix(policyFile, ".json") + ".location.json"
+}
+
+// LoadNodeLocation reads the last verified exit region recorded for node id.
+func LoadNodeLocation(profile, id string) (NodeLocation, bool) {
+	if !validNodeID(id) {
+		return NodeLocation{}, false
+	}
+	file := nodeLocationPath(filepath.Join(managedproxy.Dir(profile), "account-policy", id+".json"))
+	data, err := os.ReadFile(file)
+	if err != nil || len(data) > 64<<10 {
+		return NodeLocation{}, false
+	}
+	var loc NodeLocation
+	if json.Unmarshal(data, &loc) != nil {
+		return NodeLocation{}, false
+	}
+	loc.CountryCode = strings.ToUpper(strings.TrimSpace(loc.CountryCode))
+	loc.Timezone = strings.TrimSpace(loc.Timezone)
+	if loc.CountryCode == "" && loc.Timezone == "" {
+		return NodeLocation{}, false
+	}
+	return loc, true
+}
+
+func saveNodeLocation(policyFile string, loc exitpolicy.Location) {
+	record := NodeLocation{
+		CountryCode: strings.ToUpper(strings.TrimSpace(loc.CountryCode)),
+		Timezone:    strings.TrimSpace(loc.Timezone),
+	}
+	if record.CountryCode == "" && record.Timezone == "" {
+		return
+	}
+	if data, err := json.Marshal(record); err == nil {
+		_ = managedproxy.Write(nodeLocationPath(policyFile), data)
+	}
+}
+
 func verifyNodeExit(ctx context.Context, raw *Egress, cfg Config, file string, options exitpolicy.LookupOptions) error {
 	ip, err := probeExitIP(ctx, raw, exitProbeReachabilityURL)
 	if err != nil {
@@ -197,6 +244,7 @@ func verifyNodeExit(ctx context.Context, raw *Egress, cfg Config, file string, o
 	if result, _ := policy.Evaluate(ip, &loc); result != exitpolicy.Passed {
 		return ErrGateClosed
 	}
+	saveNodeLocation(file, loc)
 	return nil
 }
 

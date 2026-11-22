@@ -128,7 +128,11 @@ if [[ -s "$XDG_RUNTIME_DIR/account-scope" ]]; then
     fi
   fi
 fi
-DESKTOP_LOG_LEVEL=debug CLAUDE_ENABLE_LOGGING=1 DEBUG='*current-account*' /usr/local/bin/cage-input-session /usr/bin/python3 -I /usr/local/bin/client_runtime.py claude-desktop "${scale_args[@]}" --password-store=gnome-libsecret --xdg-portal-required-version=3 > >(/usr/bin/python3 -I /usr/local/lib/desktop-identity.py "$XDG_RUNTIME_DIR/account.json" "${history_args[@]}") &
+lang_args=()
+if [[ "${CAGE_LANGUAGE:-}" =~ ^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$ ]]; then
+  lang_args=("--lang=${CAGE_LANGUAGE}")
+fi
+DESKTOP_LOG_LEVEL=debug CLAUDE_ENABLE_LOGGING=1 DEBUG='*current-account*' /usr/local/bin/cage-input-session /usr/bin/python3 -I /usr/local/bin/client_runtime.py claude-desktop "${scale_args[@]}" ${lang_args[@]+"${lang_args[@]}"} --password-store=gnome-libsecret --xdg-portal-required-version=3 > >(/usr/bin/python3 -I /usr/local/lib/desktop-identity.py "$XDG_RUNTIME_DIR/account.json" "${history_args[@]}") &
 app_pid=$!
 printf '%s\n' "$app_pid" > "$XDG_RUNTIME_DIR/app-pid"
 # The service becomes ready only after the application has opened a window.

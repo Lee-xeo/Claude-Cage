@@ -40,7 +40,7 @@ test -x /usr/bin/claude-desktop
 sudo systemctl reset-failed "$unit.service" 2>/dev/null || :
 # The controller creates node namespaces. Older administrator-managed
 # namespaces keep their Desktop-only binding until the account is changed.
-props=()
+props=("--property=EnvironmentFile=-/etc/claude-cage/environment")
 if [[ $scope == dedicated || $scope == node-* ]]; then
   namespace=$unit
   if [[ $scope == node-* ]]; then route=${scope#node-}; [[ $route =~ ^[0-9a-f]{24}$ ]]; namespace="net-$route"; fi
@@ -50,6 +50,12 @@ if [[ $scope == dedicated || $scope == node-* ]]; then
   props+=("--property=BindReadOnlyPaths=/etc/netns/$namespace/resolv.conf:/etc/resolv.conf"
           "--property=InaccessiblePaths=-/run/systemd/resolve/io.systemd.Resolve -/run/dbus/system_bus_socket -/run/nscd/socket")
 elif [[ $scope != shared ]]; then exit 2; fi
+if [[ "${CAGE_ACCOUNT_TZ:-}" =~ ^[A-Za-z0-9_/+.-]{1,64}$ && "${CAGE_ACCOUNT_TZ}" != *..* ]]; then
+  props+=("--property=Environment=TZ=${CAGE_ACCOUNT_TZ}")
+fi
+if [[ "${CAGE_ACCOUNT_LANGUAGE:-}" =~ ^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$ ]]; then
+  props+=("--property=Environment=CAGE_LANGUAGE=${CAGE_ACCOUNT_LANGUAGE}")
+fi
 program=$(mktemp "$base/session.XXXXXX")
 trap 'rm -f -- "$program"' EXIT
 cat >"$program" <<'SESSION'
@@ -144,7 +150,13 @@ Xtigervnc -displayfd 3 3>"$XDG_RUNTIME_DIR/display" -geometry 1280x800 -depth 24
 for _ in {1..100}; do test -s "$XDG_RUNTIME_DIR/display" && break; sleep .05; done
 export DISPLAY=":$(cat "$XDG_RUNTIME_DIR/display")"
 xauth -f "$XAUTHORITY" add "$DISPLAY" . "$cookie"
-dbus-update-activation-environment DISPLAY XAUTHORITY HOME XDG_RUNTIME_DIR
+desktop_lang=""
+if [[ "${CAGE_LANGUAGE:-}" =~ ^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$ ]]; then
+  desktop_lang="${CAGE_LANGUAGE}"
+  printf '%s\n' "$desktop_lang" > "$XDG_RUNTIME_DIR/browser-language"
+fi
+unset CAGE_LANGUAGE
+dbus-update-activation-environment DISPLAY XAUTHORITY HOME XDG_RUNTIME_DIR TZ LANG LC_ALL
 cat > "$XDG_RUNTIME_DIR/windows.xml" <<'XML'
 <openbox_config xmlns="http://openbox.org/3.4/rc"><desktops><number>1</number></desktops><applications><application type="normal"><decor>no</decor><maximized>yes</maximized></application></applications></openbox_config>
 XML
@@ -192,7 +204,9 @@ cd "$HOME"
 # private, ephemeral runtime directory; no callback or cookie is inspected.
 input_session=()
 if [[ -x /usr/local/bin/cage-input-session ]]; then input_session=(/usr/local/bin/cage-input-session); fi
-DESKTOP_LOG_LEVEL=debug CLAUDE_ENABLE_LOGGING=1 DEBUG='*current-account*' ${input_session[@]+"${input_session[@]}"} claude-desktop "--user-data-dir=$base/data" --password-store=gnome-libsecret --xdg-portal-required-version=3 > >(/usr/bin/python3 -I /usr/local/lib/desktop-identity.py "$XDG_RUNTIME_DIR/account.json") &
+lang_args=()
+if [[ -n "${desktop_lang:-}" ]]; then lang_args=("--lang=${desktop_lang}"); fi
+DESKTOP_LOG_LEVEL=debug CLAUDE_ENABLE_LOGGING=1 DEBUG='*current-account*' ${input_session[@]+"${input_session[@]}"} claude-desktop "--user-data-dir=$base/data" ${lang_args[@]+"${lang_args[@]}"} --password-store=gnome-libsecret --xdg-portal-required-version=3 > >(/usr/bin/python3 -I /usr/local/lib/desktop-identity.py "$XDG_RUNTIME_DIR/account.json") &
 app=$!
 printf '%s\n' "$app" > "$XDG_RUNTIME_DIR/app-pid"
 for _ in {1..250}; do

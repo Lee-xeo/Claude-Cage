@@ -1,6 +1,16 @@
 package workbench
 
-import "github.com/sylvinus/agent-vm/internal/cage"
+import (
+	"regexp"
+	"strings"
+	"time"
+	_ "time/tzdata"
+
+	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
+)
+
+var accountLanguagePattern = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
 
 // These are product defaults for common regions, not a claim that a country
 // has one language. Unlisted regions retain the user's applied language.
@@ -29,4 +39,39 @@ func autoRegionSettings(cfg cage.Config, preferences Preferences, location Locat
 		}
 	}
 	return cfg
+}
+
+func accountRegionOverrides(profile, nodeID string, preferences Preferences) (tz, language string) {
+	if nodeID == "" || (!preferences.AutoTimezone && !preferences.AutoLanguage) {
+		return "", ""
+	}
+	var country, timezone string
+	if loc, ok := cage.LoadNodeLocation(profile, nodeID); ok {
+		country, timezone = loc.CountryCode, loc.Timezone
+	}
+	if country == "" {
+		if store, err := managedproxy.Load(profile); err == nil {
+			if policy, ok := store.ExitPolicies[nodeID]; ok {
+				country = strings.ToUpper(strings.TrimSpace(policy.CountryCode))
+			}
+		}
+	}
+	if preferences.AutoTimezone && timezone != "" && timezone != "Local" {
+		if _, err := time.LoadLocation(timezone); err == nil {
+			tz = timezone
+		}
+	}
+	if preferences.AutoLanguage && country != "" {
+		if _, browser := languageSuggestion(country); accountLanguagePattern.MatchString(browser) {
+			language = browser
+		}
+	}
+	return tz, language
+}
+
+func (s *Server) accountRegionOverrides(nodeID string) (tz, language string) {
+	s.mu.Lock()
+	prefs := s.preferences
+	s.mu.Unlock()
+	return accountRegionOverrides(s.profile, nodeID, prefs)
 }

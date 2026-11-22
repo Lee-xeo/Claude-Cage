@@ -200,7 +200,11 @@ func (s *Server) routeSelected(ctx context.Context, a claudeAccount, command str
 		return "", err
 	}
 	opener := "/usr/local/lib/account-routes/" + a.ID + "/open"
-	return wrapAccountNamespace("ip netns exec net-"+a.ID+" unshare -m", "export CAGE_ACCOUNT_BROWSER="+opener+" BROWSER="+opener+"; "+command), nil
+	regionExports := ""
+	if tz, _ := s.accountRegionOverrides(a.ProxyNodeID); tz != "" {
+		regionExports = " TZ=" + shellescape.Quote(tz)
+	}
+	return wrapAccountNamespace("ip netns exec net-"+a.ID+" unshare -m", "export CAGE_ACCOUNT_BROWSER="+opener+" BROWSER="+opener+regionExports+"; "+command), nil
 }
 
 // No shell supplied by the caller runs before setpriv drops root privileges.

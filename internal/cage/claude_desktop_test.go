@@ -166,3 +166,127 @@ func TestClaudeDesktopScriptsParse(t *testing.T) {
 		})
 	}
 }
+
+func TestDesktopAuthBrowserHardeningAndNoIncognito(t *testing.T) {
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 unavailable")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	home := filepath.Join(dir, "home")
+	runtimeDir := filepath.Join(dir, "runtime")
+	for _, p := range []string{bin, home, runtimeDir} {
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scriptPath := filepath.Join(dir, "desktop-auth-browser.py")
+	if err := os.WriteFile(scriptPath, []byte(desktopAuthBrowser), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "browser-language"), []byte("ja-JP\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	capture := filepath.Join(dir, "capture.json")
+	fakeChromium := "#!" + py + "\nimport json, os, pathlib, sys\n" +
+		"profile = ''\n" +
+		"for arg in sys.argv[1:]:\n" +
+		"    if arg.startswith('--user-data-dir='):\n" +
+		"        profile = arg.split('=', 1)[1]\n" +
+		"prefs = {}\n" +
+		"p = pathlib.Path(profile) / 'Default' / 'Preferences'\n" +
+		"if p.is_file():\n" +
+		"    prefs = json.loads(p.read_text(encoding='utf-8'))\n" +
+		"cage_keys = sorted(k for k in os.environ if k.upper().startswith('CAGE_'))\n" +
+		"pathlib.Path(os.environ['TEST_CAPTURE']).write_text(json.dumps({'args': sys.argv[1:], 'prefs': prefs, 'cage_keys': cage_keys, 'tz': os.environ.get('TZ', '')}), encoding='utf-8')\n"
+	if err := os.WriteFile(filepath.Join(bin, "chromium"), []byte(fakeChromium), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	runCase := func(targetURL string) (args []string, prefs map[string]any, cageKeys []string, tz string) {
+		t.Helper()
+		_ = os.Remove(capture)
+		cmd := exec.Command(py, "-I", scriptPath, targetURL)
+		cmd.Env = []string{
+			"PATH=" + bin + ":/usr/bin:/bin",
+			"HOME=" + home,
+			"XDG_RUNTIME_DIR=" + runtimeDir,
+			"TZ=Asia/Tokyo",
+			"CAGE_LANGUAGE=en-US",
+			"CAGE_INTERNAL_MARKER=leak",
+			"TEST_CAPTURE=" + capture,
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("desktop-auth-browser.py failed: %v\n%s", err, out)
+		}
+		raw, err := os.ReadFile(capture)
+		if err != nil {
+			t.Fatalf("capture missing: %v", err)
+		}
+		var got struct {
+			Args     []string       `json:"args"`
+			Prefs    map[string]any `json:"prefs"`
+			CageKeys []string       `json:"cage_keys"`
+			TZ       string         `json:"tz"`
+		}
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Args, got.Prefs, got.CageKeys, got.TZ
+	}
+
+	// Sign-in URL uses a disposable profile dir in XDG_RUNTIME_DIR, never --incognito,
+	// applies WebRTC/QUIC/AutomationControlled/lang flags, and strips CAGE_* env vars.
+	args, prefs, cageKeys, tz := runCase("https://claude.ai/oauth/authorize?state=test")
+	joined := strings.Join(args, " ")
+	for _, want := range []string{
+		"--disable-quic",
+		"--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+		"--disable-blink-features=AutomationControlled",
+		"--lang=ja-JP",
+		"--accept-lang=ja-JP",
+		"--user-data-dir=" + filepath.Join(runtimeDir, "login-"),
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("sign-in args missing %q: %v", want, args)
+		}
+	}
+	if strings.Contains(joined, "--incognito") {
+		t.Fatalf("sign-in args must not enable --incognito: %v", args)
+	}
+	if len(cageKeys) != 0 {
+		t.Fatalf("CAGE_* env leaked into chromium: %v", cageKeys)
+	}
+	if tz != "Asia/Tokyo" {
+		t.Fatalf("TZ not preserved: %q", tz)
+	}
+	intl, _ := prefs["intl"].(map[string]any)
+	if intl["accept_languages"] != "ja-JP" || intl["selected_languages"] != "ja-JP" {
+		t.Fatalf("unexpected Preferences intl: %+v", prefs)
+	}
+	// Temp profile must be cleaned up after sign-in browser exits.
+	matches, _ := filepath.Glob(filepath.Join(runtimeDir, "login-*"))
+	if len(matches) != 0 {
+		t.Fatalf("temporary sign-in profile was not cleaned up: %v", matches)
+	}
+
+	// Regular URL reuses HOME/.config/chromium with the same hardening flags.
+	regArgs, _, regCageKeys, _ := runCase("https://example.org/docs")
+	regJoined := strings.Join(regArgs, " ")
+	for _, want := range []string{
+		"--user-data-dir=" + filepath.Join(home, ".config/chromium"),
+		"--disable-quic",
+		"--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+		"--disable-blink-features=AutomationControlled",
+		"--lang=ja-JP",
+		"--accept-lang=ja-JP",
+	} {
+		if !strings.Contains(regJoined, want) {
+			t.Fatalf("regular args missing %q: %v", want, regArgs)
+		}
+	}
+	if len(regCageKeys) != 0 {
+		t.Fatalf("CAGE_* env leaked into regular chromium: %v", regCageKeys)
+	}
+}

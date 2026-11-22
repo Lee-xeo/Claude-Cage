@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location("device_reset", Path(__file__).with_name("device_reset.py"))
 MOD = importlib.util.module_from_spec(SPEC)
@@ -30,11 +31,22 @@ class DeviceResetTest(unittest.TestCase):
         # Seed sample files
         (self.browser_home / "profile" / "Default").mkdir(parents=True)
         (self.browser_home / "profile" / "Default" / "Cookies").write_bytes(b"cookie-data")
+        (self.browser_home / "phone-profiles" / ("a" * 64) / "Default").mkdir(parents=True)
+        (self.browser_home / "phone-profiles" / ("a" * 64) / "Default" / "Cookies").write_bytes(b"phone-cookie")
         (self.work_home / ".claude").mkdir()
         (self.work_home / ".claude" / "settings.json").write_text("{}", encoding="utf-8")
         (self.work_home / ".claude.json").write_text('{"userID":"old"}', encoding="utf-8")
+        (self.work_home / ".local" / "share" / "cage" / "claude-accounts" / ("a" * 24) / "config").mkdir(parents=True)
+        (self.work_home / ".local" / "share" / "cage" / "claude-accounts" / ("a" * 24) / "config" / ".claude.json").write_text('{"userID":"acct-old"}', encoding="utf-8")
+        (self.work_home / ".local" / "share" / "cage" / "claude-shared" / "skills").mkdir(parents=True)
+        (self.work_home / ".local" / "share" / "cage" / "claude-shared" / "skills" / "keep.md").write_text("keep", encoding="utf-8")
         (self.work_home / ".config" / "Claude").mkdir(parents=True)
         (self.work_home / ".config" / "Claude" / "state.json").write_text("{}", encoding="utf-8")
+        (self.work_home / ".config" / "Claude" / "ant-did").write_text("old-ant-did", encoding="utf-8")
+        (self.work_home / ".local" / "share" / "desktop-profiles" / ("b" * 24) / "data").mkdir(parents=True)
+        (self.work_home / ".local" / "share" / "desktop-profiles" / ("b" * 24) / "data" / "ant-did").write_text("acct-ant-did", encoding="utf-8")
+        (self.work_home / ".local" / "share" / "keyrings").mkdir(parents=True)
+        (self.work_home / ".local" / "share" / "keyrings" / "login.keyring").write_bytes(b"keyring-secret")
         (self.work_home / ".local" / "share" / "code-server").mkdir(parents=True)
         (self.work_home / ".local" / "share" / "code-server" / "layout.json").write_text("{}", encoding="utf-8")
         (self.work_home / ".bash_history").write_text("ls\n", encoding="utf-8")
@@ -91,9 +103,15 @@ class DeviceResetTest(unittest.TestCase):
         self.assertEqual(res["machine_id_prefix"], "fedcba98")
         # Cleaned items moved away
         self.assertFalse((self.browser_home / "profile").exists())
+        self.assertFalse((self.browser_home / "phone-profiles").exists())
         self.assertFalse((self.work_home / ".claude.json").exists())
+        self.assertFalse((self.work_home / ".local" / "share" / "cage" / "claude-accounts").exists())
+        self.assertFalse((self.work_home / ".config" / "Claude").exists())
+        self.assertFalse((self.work_home / ".local" / "share" / "desktop-profiles").exists())
+        self.assertFalse((self.work_home / ".local" / "share" / "keyrings").exists())
         self.assertFalse((self.work_home / ".bash_history").exists())
-        # Unchecked editor_state & project files preserved
+        # Shared skills, unchecked editor_state & project files preserved
+        self.assertTrue((self.work_home / ".local" / "share" / "cage" / "claude-shared" / "skills" / "keep.md").exists())
         self.assertTrue((self.work_home / ".local" / "share" / "code-server" / "layout.json").exists())
         self.assertEqual((self.work_home / "my-project" / "main.go").read_text(encoding="utf-8"), "package main\n")
         # OS files updated
@@ -108,6 +126,10 @@ class DeviceResetTest(unittest.TestCase):
         restored = self.resetter.restore(res["batch_id"])
         self.assertEqual(restored["status"], "partial")
         self.assertTrue((self.browser_home / "profile" / "Default" / "Cookies").exists())
+        self.assertTrue((self.browser_home / "phone-profiles" / ("a" * 64) / "Default" / "Cookies").exists())
+        self.assertTrue((self.work_home / ".local" / "share" / "cage" / "claude-accounts" / ("a" * 24) / "config" / ".claude.json").exists())
+        self.assertTrue((self.work_home / ".local" / "share" / "desktop-profiles" / ("b" * 24) / "data" / "ant-did").exists())
+        self.assertTrue((self.work_home / ".local" / "share" / "keyrings" / "login.keyring").exists())
         self.assertEqual((self.work_home / ".bash_history").read_text(encoding="utf-8"), "new-history\n")
 
         # Explicit delete removes remaining batch
@@ -147,6 +169,45 @@ class DeviceResetTest(unittest.TestCase):
         res = self.resetter.reset({"items": ["system_traces"], "irreversible": True})
         self.assertEqual(res["status"], "partial")
         self.assertTrue(outside.exists())
+
+    def test_irreversible_removes_readonly_desktop_profile_files(self):
+        locked = self.work_home / ".local" / "share" / "desktop-profiles" / ("b" * 24) / "data" / "locked"
+        locked.write_text("ro", encoding="utf-8")
+        os.chmod(locked, 0o400)
+        res = self.resetter.reset({"items": ["claude_desktop"], "irreversible": True, "rotate_os": False})
+        self.assertEqual(res["status"], "ok")
+        self.assertFalse((self.work_home / ".local" / "share" / "desktop-profiles").exists())
+        self.assertFalse((self.work_home / ".local" / "share" / "keyrings").exists())
+
+    def test_stop_guest_services_includes_claude_desktop_and_account_units(self):
+        live = MOD.DeviceResetter(
+            self.work_home,
+            self.browser_home,
+            etc_dir=self.etc_dir,
+            dbus_dir=self.dbus_dir,
+            ext_root=self.ext_root,
+            live_system=True,
+        )
+        valid_unit = f"desktop-{'a' * 24}.service"
+        invalid_unit = "desktop-not-valid.service"
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd[:2] == ["systemctl", "list-units"]:
+                return mock.Mock(stdout=f"{valid_unit} loaded active running Account Desktop\n{invalid_unit} loaded active running Bad\n")
+            return mock.Mock(stdout="")
+
+        with mock.patch.object(MOD.subprocess, "run", side_effect=fake_run):
+            live.stop_guest_services()
+
+        stop_calls = [c for c in calls if c[:2] == ["systemctl", "stop"]]
+        self.assertEqual(len(stop_calls), 1)
+        stopped = stop_calls[0][2:]
+        self.assertIn("cage-claude-desktop", stopped)
+        self.assertIn(valid_unit, stopped)
+        self.assertNotIn(invalid_unit, stopped)
+        self.assertIn("cage-browser", stopped)
 
 
 if __name__ == "__main__":

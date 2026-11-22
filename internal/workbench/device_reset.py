@@ -19,6 +19,7 @@ HOST_RE = re.compile(r"^[A-Za-z](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?\Z")
 MACHINE_ID_RE = re.compile(r"^[0-9a-f]{32}\Z")
 MAC_RE = re.compile(r"^[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\Z")
 EXT_SUFFIX_RE = re.compile(r"^[a-f0-9]{16}\Z")
+ACCOUNT_DESKTOP_UNIT_RE = re.compile(r"^desktop-[0-9a-f]{24}\.service\Z")
 SCAN_LIMIT = 50000
 
 TARGETS = [
@@ -128,6 +129,7 @@ def target_paths(work_home: Path, browser_home: Path):
         "browser_profile": [
             (browser_home, browser_home / "profile"),
             (browser_home, browser_home / "LoginProfiles"),
+            (browser_home, browser_home / "phone-profiles"),
             (browser_home, browser_home / "workbench-state.json"),
             (browser_home, browser_home / ".cache" / "chromium"),
         ],
@@ -135,6 +137,7 @@ def target_paths(work_home: Path, browser_home: Path):
             (work_home, work_home / ".claude"),
             (work_home, work_home / ".claude.json"),
             (work_home, work_home / ".claude-accounts"),
+            (work_home, work_home / ".local" / "share" / "cage" / "claude-accounts"),
             (work_home, work_home / ".cache" / "claude-cli-nodejs"),
             (work_home, work_home / ".cache" / "claude"),
         ],
@@ -142,6 +145,8 @@ def target_paths(work_home: Path, browser_home: Path):
             (work_home, work_home / ".config" / "Claude"),
             (work_home, work_home / ".cache" / "Claude"),
             (work_home, work_home / ".local" / "share" / "Claude"),
+            (work_home, work_home / ".local" / "share" / "desktop-profiles"),
+            (work_home, work_home / ".local" / "share" / "keyrings"),
         ],
         "editor_state": [
             (work_home, work_home / ".local" / "share" / "code-server"),
@@ -154,6 +159,23 @@ def target_paths(work_home: Path, browser_home: Path):
             (browser_home, browser_home / ".local" / "state"),
         ],
     }
+
+
+def _rmtree_readonly(path: Path):
+    def _handle_error(func, target, _exc):
+        try:
+            parent = os.path.dirname(target)
+            if parent:
+                os.chmod(parent, os.stat(parent).st_mode | stat.S_IWUSR | stat.S_IXUSR)
+            if not os.path.islink(target):
+                mode = os.lstat(target).st_mode
+                extra = stat.S_IWUSR | (stat.S_IXUSR if stat.S_ISDIR(mode) else 0)
+                os.chmod(target, mode | extra)
+        except OSError:
+            pass
+        func(target)
+
+    shutil.rmtree(path, onerror=_handle_error)
 
 
 def read_text_safe(path: Path) -> str:
@@ -247,10 +269,38 @@ class DeviceResetter:
             "batches": self.list_batches(),
         }
 
+    def _list_account_desktop_services(self):
+        try:
+            proc = subprocess.run(
+                [
+                    "systemctl",
+                    "list-units",
+                    "--type=service",
+                    "--state=running,activating,reloading",
+                    "--no-legend",
+                    "--plain",
+                    "desktop-*.service",
+                ],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except OSError:
+            return []
+        units = []
+        for line in (proc.stdout or "").splitlines():
+            parts = line.split()
+            if parts and ACCOUNT_DESKTOP_UNIT_RE.match(parts[0]):
+                units.append(parts[0])
+        return units
+
     def stop_guest_services(self):
         if not self.live_system:
             return
         services = [
+            "cage-claude-desktop",
+            *self._list_account_desktop_services(),
             "cage-browser",
             "cage-window-manager",
             "cage-display",
@@ -400,7 +450,7 @@ class DeviceResetter:
                     st = path.lstat()
                     if irreversible:
                         if stat.S_ISDIR(st.st_mode):
-                            shutil.rmtree(path)
+                            _rmtree_readonly(path)
                         else:
                             path.unlink()
                     else:

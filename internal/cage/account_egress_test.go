@@ -7,8 +7,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/sylvinus/agent-vm/internal/exitpolicy"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
 func TestAccountRouteRequiresBothGateAndNodeEvidence(t *testing.T) {
@@ -76,5 +80,22 @@ func TestLocationLookupOptionsFollowWorkbenchPreference(t *testing.T) {
 		if got := LocationLookupOptions(configPath).IPInfoFallback; got != tc.want {
 			t.Fatalf("%s: IPInfoFallback = %v, want %v", tc.body, got, tc.want)
 		}
+	}
+}
+
+func TestSaveAndLoadNodeLocation(t *testing.T) {
+	profile := t.TempDir()
+	nodeID := strings.Repeat("a", 24)
+	if _, ok := LoadNodeLocation(profile, nodeID); ok {
+		t.Fatal("missing node location reported ok")
+	}
+	if _, ok := LoadNodeLocation(profile, "not-a-valid-node-id"); ok {
+		t.Fatal("invalid node id reported ok")
+	}
+	policyFile := filepath.Join(managedproxy.Dir(profile), "account-policy", nodeID+".json")
+	saveNodeLocation(policyFile, exitpolicy.Location{CountryCode: "jp", Timezone: "Asia/Tokyo"})
+	got, ok := LoadNodeLocation(profile, nodeID)
+	if !ok || got.CountryCode != "JP" || got.Timezone != "Asia/Tokyo" {
+		t.Fatalf("LoadNodeLocation = (%+v, %v), want ({JP Asia/Tokyo}, true)", got, ok)
 	}
 }

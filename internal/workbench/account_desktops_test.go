@@ -11,6 +11,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/sylvinus/agent-vm/internal/exitpolicy"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
 func TestDesktopCatalogUsesStableNumbersWithoutStartingGuest(t *testing.T) {
@@ -286,6 +289,13 @@ func TestLinuxAccountDesktopScriptWiresPortalAndIsolatedInput(t *testing.T) {
 		"--xdg-portal-required-version=3",
 		"/usr/local/bin/cage-input-session",
 		"--property=PrivateTmp=yes",
+		"--property=EnvironmentFile=-/etc/claude-cage/environment",
+		"--property=Environment=TZ=${CAGE_ACCOUNT_TZ}",
+		"--property=Environment=CAGE_LANGUAGE=${CAGE_ACCOUNT_LANGUAGE}",
+		"browser-language",
+		"unset CAGE_LANGUAGE",
+		"dbus-update-activation-environment DISPLAY XAUTHORITY HOME XDG_RUNTIME_DIR TZ LANG LC_ALL",
+		`--lang=${desktop_lang}`,
 	} {
 		if !strings.Contains(linuxAccountDesktop, want) {
 			t.Fatalf("linux-account-desktop.sh missing %q", want)
@@ -293,5 +303,55 @@ func TestLinuxAccountDesktopScriptWiresPortalAndIsolatedInput(t *testing.T) {
 	}
 	if strings.Contains(linuxAccountDesktop, "BindPaths=/tmp/.X11-unix") {
 		t.Fatal("linux-account-desktop.sh must keep /tmp/.X11-unix isolated under PrivateTmp")
+	}
+}
+
+func TestAccountRegionOverridesFollowNodeLocationAndPreferences(t *testing.T) {
+	profile := t.TempDir()
+	nodeID := strings.Repeat("d", 24)
+	policyDir := filepath.Join(managedproxy.Dir(profile), "account-policy")
+	if err := os.MkdirAll(policyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Fallback to ExitPolicies country when node location cache is absent.
+	store := managedproxy.Store{
+		Version: 1,
+		Port:    17896,
+		Auth:    managedproxy.Token(),
+		ExitPolicies: map[string]exitpolicy.Policy{
+			nodeID: {Mode: "dynamic", Scope: "country", CountryCode: "SG"},
+		},
+	}
+	if err := store.Save(profile); err != nil {
+		t.Fatal(err)
+	}
+	tz, lang := accountRegionOverrides(profile, nodeID, Preferences{AutoTimezone: true, AutoLanguage: true})
+	if tz != "" || lang != "en-SG" {
+		t.Fatalf("fallback overrides = (%q, %q), want (\"\", \"en-SG\")", tz, lang)
+	}
+	// Verified node location overrides both timezone and language.
+	if err := os.WriteFile(filepath.Join(policyDir, nodeID+".location.json"), []byte(`{"country_code":"JP","timezone":"Asia/Tokyo"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tz, lang = accountRegionOverrides(profile, nodeID, Preferences{AutoTimezone: true, AutoLanguage: true})
+	if tz != "Asia/Tokyo" || lang != "ja-JP" {
+		t.Fatalf("verified overrides = (%q, %q), want (\"Asia/Tokyo\", \"ja-JP\")", tz, lang)
+	}
+	// Disabled preferences suppress overrides.
+	tz, lang = accountRegionOverrides(profile, nodeID, Preferences{AutoTimezone: false, AutoLanguage: true})
+	if tz != "" || lang != "ja-JP" {
+		t.Fatalf("auto_timezone=false overrides = (%q, %q)", tz, lang)
+	}
+	tz, lang = accountRegionOverrides(profile, nodeID, Preferences{AutoTimezone: true, AutoLanguage: false})
+	if tz != "Asia/Tokyo" || lang != "" {
+		t.Fatalf("auto_language=false overrides = (%q, %q)", tz, lang)
+	}
+	// Invalid or Local timezone is ignored.
+	if err := os.WriteFile(filepath.Join(policyDir, nodeID+".location.json"), []byte(`{"country_code":"US","timezone":"Local"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tz, lang = accountRegionOverrides(profile, nodeID, Preferences{AutoTimezone: true, AutoLanguage: true})
+	if tz != "" || lang != "en-US" {
+		t.Fatalf("Local timezone must be rejected: (%q, %q)", tz, lang)
 	}
 }

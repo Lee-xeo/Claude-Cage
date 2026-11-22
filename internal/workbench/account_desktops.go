@@ -166,7 +166,17 @@ func (s *Server) changeAccountDesktop(parent context.Context, instance string, a
 	}
 	ctx, cancel := context.WithTimeout(parent, 100*time.Second)
 	defer cancel()
-	command := fmt.Sprintf("exec /bin/bash -c %s -- %s %s %s", shellescape.Quote(linuxAccountDesktop), instance, code, scope)
+	envPrefix := ""
+	if action == "start" && account.ProxyNodeID != "" {
+		tz, lang := s.accountRegionOverrides(account.ProxyNodeID)
+		if tz != "" {
+			envPrefix += "CAGE_ACCOUNT_TZ=" + shellescape.Quote(tz) + " "
+		}
+		if lang != "" {
+			envPrefix += "CAGE_ACCOUNT_LANGUAGE=" + shellescape.Quote(lang) + " "
+		}
+	}
+	command := fmt.Sprintf("exec env %s/bin/bash -c %s -- %s %s %s", envPrefix, shellescape.Quote(linuxAccountDesktop), instance, code, scope)
 	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", command)
 	cmd.Stdin = bytes.NewReader(key)
 	output, err := cmd.CombinedOutput()
