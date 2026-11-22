@@ -14,7 +14,19 @@ def profile_files(home):
     files = [home / ".claude.json"]
     accounts = home / ".local/share/cage/claude-accounts"
     files += [d / ".claude.json" for d in sorted(accounts.glob("*/config")) if d.is_dir()]
+    desktops = home / ".local/share/desktop-profiles"
+    files += [d / ".claude.json" for d in sorted(desktops.glob("*/code")) if d.is_dir()]
     return files
+
+
+def desktop_config_dirs(home):
+    dirs = []
+    default = home / ".config/Claude"
+    if default.is_dir():
+        dirs.append(default)
+    desktops = home / ".local/share/desktop-profiles"
+    dirs += [d for d in sorted(desktops.glob("*/data")) if d.is_dir()]
+    return dirs
 
 
 def write_private(path, text, mode=0o600):
@@ -86,14 +98,15 @@ def relay_files(home, name):
 def configure(home, name, entry, relay):
     for file in profile_files(home):
         add_server(file, name, entry, lambda current: isinstance(current, dict) and current.get("url") == entry["url"])
-    desktop = home / ".config/Claude"
-    if not desktop.is_dir():
+    desktops = desktop_config_dirs(home)
+    if not desktops:
         return
     program, endpoint = relay_files(home, name)
     write_private(program, relay)
     write_private(endpoint, json.dumps({"url": entry["url"], "headers": entry.get("headers", {})}))
     local = {"command": "/usr/bin/python3", "args": [str(program), str(endpoint)]}
-    add_server(desktop / "claude_desktop_config.json", name, local, lambda current: isinstance(current, dict) and current.get("args") == local["args"])
+    for desktop in desktops:
+        add_server(desktop / "claude_desktop_config.json", name, local, lambda current: isinstance(current, dict) and current.get("args") == local["args"])
 
 
 def unconfigure(home, name, entry):
@@ -102,7 +115,8 @@ def unconfigure(home, name, entry):
         remove_server(file, name, lambda current: isinstance(current, dict) and current.get("url") == entry["url"])
     program, endpoint = relay_files(home, name)
     args = [str(program), str(endpoint)]
-    remove_server(home / ".config/Claude/claude_desktop_config.json", name, lambda current: isinstance(current, dict) and current.get("args") == args)
+    for desktop in desktop_config_dirs(home):
+        remove_server(desktop / "claude_desktop_config.json", name, lambda current: isinstance(current, dict) and current.get("args") == args)
     # The endpoint file holds the token; the relay program has no other user.
     for file in (endpoint, program):
         try:

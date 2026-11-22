@@ -42,6 +42,7 @@ Cage 的核心路线是把有风险的运行外壳（Claude Code、Claude Deskto
 - **手动安装与调试**：可将插件目录直接放入配置目录的 `plugins/` 下（默认 `~/.claude-cage/plugins/<插件名>/`），再在插件页点击 **重新加载**。环境内插件的文件会在启动与重新加载时同步到环境内的 `~/.local/share/plugins/<插件名>/`。
 - **设置与密钥**：插件可以声明需要填写的设置（如服务地址、访问令牌），在详情页的 **设置** 标签中填写。必填项为空时插件显示「需要配置」且不启动，保存后自动启动。密钥用你的 Cage 账户加密保存，保存后不再显示；Cage 锁定时，用到密钥的插件会停止，解锁后自动恢复。详见[插件文档](../plugins.md#设置与密钥)。
 - **停用与卸载**：每个插件（包括内置的命令插件）都可以单独停用，停用后停止运行且不向 Claude 暴露工具，文件留在原处。卸载或更新插件时，旧目录会移到配置目录的 `plugins-removed/` 下保留，不会直接删除。
+- **在 Claude Code 与 Desktop 中显式调用**：已启用的插件统一通过名为 `computer` 的 MCP 服务提供给 Claude Code、默认 Claude Desktop 以及多账号编号 Desktop。每个提供模型工具的插件（以及插件自身声明的 MCP Prompts）都会暴露为斜杠指令：在 Claude Code 中输入 `/mcp__computer__<插件或指令名>`（例如 `/mcp__computer__commands`），或在 Claude Desktop 输入框的 `/` / `+` 菜单中选用 `computer` 下的对应指令，即可显式指定调用该插件的工具。
 
 ## 主机授权与安全边界
 

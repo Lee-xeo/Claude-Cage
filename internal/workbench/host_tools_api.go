@@ -43,9 +43,10 @@ type hostPluginView struct {
 	Always         bool     `json:"always"`
 	AlwaysProjects []string `json:"always_projects,omitempty"`
 	// Enabled is false for a plugin the user turned off.
-	Enabled bool                  `json:"enabled"`
-	Loaded  bool                  `json:"loaded"`
-	Tools   []hostbridge.ToolInfo `json:"tools,omitempty"`
+	Enabled bool                    `json:"enabled"`
+	Loaded  bool                    `json:"loaded"`
+	Tools   []hostbridge.ToolInfo   `json:"tools,omitempty"`
+	Prompts []hostbridge.PromptInfo `json:"prompts,omitempty"`
 	// Problem is why the plugin's folder cannot be used.
 	Problem string `json:"problem,omitempty"`
 	// MissingProgram names the host program (such as uv, uvx, npx, node or
@@ -168,6 +169,7 @@ func (s *Server) hostToolsView() hostToolsView {
 		view.Folders = []string{}
 	}
 	loaded := map[string][]hostbridge.ToolInfo{}
+	loadedPrompts := map[string][]hostbridge.PromptInfo{}
 	s.pluginSettingsMu.Lock()
 	settings := s.readPluginSettings()
 	s.pluginSettingsMu.Unlock()
@@ -177,13 +179,15 @@ func (s *Server) hostToolsView() hostToolsView {
 			// One waiting for a project folder is kept, not running.
 			if plugin.Running() {
 				loaded[plugin.Manifest.Name] = plugin.ToolList()
+				loadedPrompts[plugin.Manifest.Name] = plugin.PromptList()
 			}
 		}
 	}
 	view.Plugins = []hostPluginView{{Name: hostCommandsPlugin, BuiltIn: true, Supported: true, Enabled: !slices.Contains(off, hostCommandsPlugin),
 		AlwaysProjects: s.hostGrantStore().projects(),
 		Loaded:         tools != nil && tools.serving && !slices.Contains(off, hostCommandsPlugin), Permissions: []string{"commands"},
-		Tools: []hostbridge.ToolInfo{{Name: "run_command"}, {Name: "command_job"}}}}
+		Tools:   []hostbridge.ToolInfo{{Name: "run_command"}, {Name: "command_job"}},
+		Prompts: (hostbridge.Command{}).PromptList()}}
 	entries, _ := os.ReadDir(view.Directory)
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, entry := range entries {
@@ -226,7 +230,7 @@ func (s *Server) hostToolsView() hostToolsView {
 		} else if unavailable != "" {
 			plugin.Problem = hostPluginUnavailable(unavailable)
 		} else if list, ok := loaded[manifest.Name]; ok {
-			plugin.Loaded, plugin.Tools = true, list
+			plugin.Loaded, plugin.Tools, plugin.Prompts = true, list, loadedPrompts[manifest.Name]
 		} else if msg := pluginProblems[manifest.Name]; msg != "" {
 			plugin.Problem = msg
 			plugin.MissingProgram = missingPrograms[manifest.Name]

@@ -143,6 +143,14 @@ func TestHostToolsRelayCarriesAToolCall(t *testing.T) {
 	if !strings.Contains(string(called), "relayed") {
 		t.Fatalf("call: %s", called)
 	}
+	promptsListed, _ := json.Marshal(exchange(`{"jsonrpc":"2.0","id":4,"method":"prompts/list"}`, 4))
+	if !strings.Contains(string(promptsListed), `"commands"`) {
+		t.Fatalf("prompts: %s", promptsListed)
+	}
+	promptGot, _ := json.Marshal(exchange(`{"jsonrpc":"2.0","id":5,"method":"prompts/get","params":{"name":"commands","arguments":{"request":"check pwd"}}}`, 5))
+	if !strings.Contains(string(promptGot), "run_command") || !strings.Contains(string(promptGot), "check pwd") {
+		t.Fatalf("prompt get: %s", promptGot)
+	}
 }
 
 // With the server gone the client gets an error for its request rather
@@ -236,6 +244,9 @@ func TestHostToolsViewListsPluginFolders(t *testing.T) {
 	}
 	if byName["broken"].Problem == "" || byName["renamed"].Problem == "" || !byName["commands"].BuiltIn {
 		t.Fatalf("plugins %+v", view.Plugins)
+	}
+	if len(byName["commands"].Prompts) != 1 || byName["commands"].Prompts[0].Name != "commands" {
+		t.Fatalf("commands prompts %+v", byName["commands"].Prompts)
 	}
 }
 

@@ -238,6 +238,14 @@ Cage 界面会按当前软件界面语言自动展示插件的名称与说明（
 
 工具名不能与已有工具重复。`run_command` 和 `command_job` 由内置的命令插件使用。两个插件的工具重名时，按插件目录名排序在前的那个正常加载，另一个加载失败。
 
+### 提示词与斜杠指令（MCP Prompts）
+
+所有已启用插件的 MCP 能力统一通过名为 `computer` 的 MCP 服务接入环境内的 Claude Code、默认 Claude Desktop 以及多账号编号 Desktop 实例。
+
+- **插件自带 Prompts**：如果插件的 MCP 服务声明了 `prompts` 能力（`prompts/list` 与 `prompts/get`），Cage 会自动聚合转发这些 Prompt。Prompt 的名称、标题、说明、参数说明以及运行时返回的内容同样适用上述保留词规则；`commands` 由内置命令插件保留，重名冲突时后加载的插件会加载失败。
+- **自动斜杠指令**：对于向模型提供了工具但未自带同名 Prompt 的插件，Cage 会自动生成一个与插件同名的 MCP Prompt（带可选 `request` 参数），用于在对话中显式触发该插件的工具。仅提供页面工具（`visibility: ["app"]`）的插件不会生成面向模型的 Prompt。
+- **调用方式**：在 Claude Code 中输入 `/mcp__computer__<指令名>`（例如 `/mcp__computer__clock` 或 `/mcp__computer__commands`），在 Claude Desktop 中通过输入框的 `/` 或 `+` 菜单选用 `computer` 下的指令即可显式触发；工具执行仍遵守原有的授权与审批边界。
+
 ### 工具给谁用
 
 工具默认既提供给 Claude，也可以被插件自己的页面调用。只想给其中一方时，在工具的 `_meta.ui.visibility` 里写明（这是 MCP Apps 定义的字段）：
