@@ -179,6 +179,13 @@ function App() {
     [details, setDetails] = useState(false),
     [safetyOpen, setSafetyOpen] = useState(false),
     [quitting, setQuitting] = useState(null);
+  useEffect(() => {
+    const onResize = () => {
+      setSidebarWidth((current) => clampSidebarWidth(current, window.innerWidth));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   // Keep feedback continuous until polling observes the accepted start job.
   const clientStatus = serverStatus && { ...serverStatus, keyboard: clientKeyboard(serverStatus.keyboard) };
   const status = clientStatus && startRequest
@@ -1664,13 +1671,6 @@ function App() {
       </>
     );
   const currentSidebarMax = maxSidebarWidth(typeof window !== "undefined" ? window.innerWidth : 0);
-  useEffect(() => {
-    const onResize = () => {
-      setSidebarWidth((current) => clampSidebarWidth(current, window.innerWidth));
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
   const startSidebarResize = (event) => {
     if (event.button !== 0) return;
     event.preventDefault();
