@@ -2764,5 +2764,6 @@
   "等待环境启动": "En attente du démarrage de l’environnement",
   "环境启动后，Claude 提交的自定义插件草稿会显示在这里。": "Une fois l’environnement démarré, les brouillons d’extensions personnalisées soumis par Claude s’afficheront ici.",
   "暂无待审核草稿": "Aucun brouillon en attente",
-  "直接告诉环境里的 Claude 你需要什么能力或侧栏页面，它会使用默认的「插件工坊」生成代码、自动测试并提交到这里供你一键安装。": "Indiquez simplement à Claude dans l’environnement la fonctionnalité ou la page latérale souhaitée ; il générera le code, le testera et le soumettra ici pour une installation en un clic."
+  "直接告诉环境里的 Claude 你需要什么能力或侧栏页面，它会使用默认的「插件工坊」生成代码、自动测试并提交到这里供你一键安装。": "Indiquez simplement à Claude dans l’environnement la fonctionnalité ou la page latérale souhaitée ; il générera le code, le testera et le soumettra ici pour une installation en un clic.",
+  "调整侧栏宽度": "Redimensionner la barre latérale"
 }

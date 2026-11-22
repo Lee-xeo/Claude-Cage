@@ -2764,5 +2764,6 @@
   "等待环境启动": "Esperando a que se inicie el entorno",
   "环境启动后，Claude 提交的自定义插件草稿会显示在这里。": "Una vez iniciado el entorno, los borradores de complementos personalizados enviados por Claude aparecerán aquí.",
   "暂无待审核草稿": "No hay borradores pendientes",
-  "直接告诉环境里的 Claude 你需要什么能力或侧栏页面，它会使用默认的「插件工坊」生成代码、自动测试并提交到这里供你一键安装。": "Indica a Claude en el entorno qué función o página de barra lateral necesitas; generará el código, lo probará y lo enviará aquí para instalarlo con un clic."
+  "直接告诉环境里的 Claude 你需要什么能力或侧栏页面，它会使用默认的「插件工坊」生成代码、自动测试并提交到这里供你一键安装。": "Indica a Claude en el entorno qué función o página de barra lateral necesitas; generará el código, lo probará y lo enviará aquí para instalarlo con un clic.",
+  "调整侧栏宽度": "Ajustar el ancho de la barra lateral"
 }

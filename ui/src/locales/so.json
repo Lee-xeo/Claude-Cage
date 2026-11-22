@@ -2764,5 +2764,6 @@
   "等待环境启动": "Sugaya bilaabashada deegaanka",
   "环境启动后，Claude 提交的自定义插件草稿会显示在这里。": "Marka deegaanku bilaabmo, qabyooyinka furayaasha gaarka ah ee uu soo gudbiyo Claude halkan ayay ka soo muuqan doonaan.",
   "暂无待审核草稿": "Ma jiraan qabyooyin sugaya dib-u-eegis",
-  "直接告诉环境里的 Claude 你需要什么能力或侧栏页面，它会使用默认的「插件工坊」生成代码、自动测试并提交到这里供你一键安装。": "U sheeg Claude ee gudaha deegaanka awoodda ama bogga dhinaca ee aad u baahan tahay; wuxuu samaynayaa koodhka, wuu tijaabinayaa, halkan ayuuna u soo gudbinayaa si aad hal gujis ugu rakibto."
+  "直接告诉环境里的 Claude 你需要什么能力或侧栏页面，它会使用默认的「插件工坊」生成代码、自动测试并提交到这里供你一键安装。": "U sheeg Claude ee gudaha deegaanka awoodda ama bogga dhinaca ee aad u baahan tahay; wuxuu samaynayaa koodhka, wuu tijaabinayaa, halkan ayuuna u soo gudbinayaa si aad hal gujis ugu rakibto.",
+  "调整侧栏宽度": "Hagaaji ballaca dhinaca"
 }
