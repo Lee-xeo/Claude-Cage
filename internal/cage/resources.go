@@ -52,6 +52,7 @@ awk '/^(oom_kill|balloon_inflate|balloon_deflate) / {print $1,$2}' /proc/vmstat
 printf 'page_size '; getconf PAGESIZE
 cat /proc/pressure/memory
 head -n 1 /proc/stat
+df -B1 --output=size,used,avail / 2>/dev/null | awk 'NR==2 {print "disk_root",$1,$2,$3}'
 printf 'boot '; cat /proc/sys/kernel/random/boot_id`
 
 type ResourceSample struct {
@@ -62,6 +63,9 @@ type ResourceSample struct {
 	OOMKills          uint64  `json:"oom_kills"`
 	Balloon           uint64  `json:"balloon_bytes"`
 	Stall             float64 `json:"memory_stall_percent"`
+	DiskTotal         uint64  `json:"disk_total_bytes,omitempty"`
+	DiskUsed          uint64  `json:"disk_used_bytes,omitempty"`
+	DiskAvail         uint64  `json:"disk_avail_bytes,omitempty"`
 	Boot              string  `json:"boot_id"`
 	cpuTotal, cpuIdle uint64
 }
@@ -116,6 +120,15 @@ func parseResources(data []byte) (ResourceSample, error) {
 			}
 		case "boot":
 			s.Boot = f[1]
+		case "disk_root":
+			if len(f) >= 4 {
+				total, e1 := strconv.ParseUint(f[1], 10, 64)
+				used, e2 := strconv.ParseUint(f[2], 10, 64)
+				avail, e3 := strconv.ParseUint(f[3], 10, 64)
+				if e1 == nil && e2 == nil && e3 == nil && total > 0 && used <= total {
+					s.DiskTotal, s.DiskUsed, s.DiskAvail = total, used, avail
+				}
+			}
 		case "cpu":
 			// guest/guest_nice are already included in user/nice.
 			for i := 1; i < len(f) && i <= 8; i++ {

@@ -632,7 +632,11 @@ func run() int {
 		if resourceErr != nil {
 			return fail(resourceErr)
 		}
-		args = append([]string{"setup", "--memory", fmt.Sprint(memory), "--cpus", fmt.Sprint(cpus), "--disk", "24", "--preinstall=node,python,chromium,gh,claude,code-server"}, requireWorkbenchTools(args[1:])...)
+		disk, diskErr := cage.ConfiguredDiskLimit(path)
+		if diskErr != nil {
+			return fail(diskErr)
+		}
+		args = append([]string{"setup", "--memory", fmt.Sprint(memory), "--cpus", fmt.Sprint(cpus), "--disk", fmt.Sprint(disk), "--preinstall=node,python,chromium,gh,claude,code-server"}, requireWorkbenchTools(args[1:])...)
 	}
 	if args[0] == "up" || args[0] == "login" {
 		return startEnvironment(args[0], startArgs, cli.Stdio(), cli.Main, func() error {

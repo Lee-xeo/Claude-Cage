@@ -690,7 +690,7 @@ button.large {
 .environment-versions { margin-top: 28px; }
 .resource-settings .resource-intro { margin: 0 0 20px; }
 .resource-allocation { margin: 0; }
-.resource-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.resource-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .resource-fields legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .settings-content .resource-fields label { margin: 0 !important; gap: 8px; min-width: 0; }
 .resource-fields small { color: var(--muted); font-size: 0.8571rem; font-weight: 400; line-height: 1.6; }

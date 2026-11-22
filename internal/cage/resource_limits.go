@@ -14,7 +14,15 @@ type ResourceAllocation struct {
 	Automatic bool `json:"automatic"`
 	MemoryGiB int  `json:"memory_gib"`
 	CPUs      int  `json:"cpus"`
+	DiskGiB   int  `json:"disk_gib,omitempty"`
 }
+
+const (
+	DefaultDiskGiB          = 24
+	MinDiskGiB              = 16
+	MaxDiskCapGiB           = 512
+	DiskShrinkHeadroomBytes = 4 << 30
+)
 
 func ResourceAllocationPath(configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), "resource-limits.json")
@@ -64,4 +72,56 @@ func ConfiguredResourceLimits(configPath string) (int, int, error) {
 		return 0, 0, err
 	}
 	return a.Limits()
+}
+
+// DiskBounds returns the safe [minGiB, maxGiB] range for manual disk sizing.
+// minGiB accounts for observed guest usage plus headroom so a shrink never
+// starves the guest filesystem; maxGiB is bounded by the host volume capacity.
+func DiskBounds(storageDir string, currentDiskBytes, guestUsedBytes uint64) (minGiB, maxGiB int) {
+	minGiB = MinDiskGiB
+	if guestUsedBytes > 0 {
+		need := int((guestUsedBytes + DiskShrinkHeadroomBytes + (1 << 30) - 1) >> 30)
+		if need > minGiB {
+			minGiB = need
+		}
+	}
+	maxGiB = 256
+	if total, err := DiskVolumeTotalBytes(storageDir); err == nil && total > 0 {
+		volGiB := int(total >> 30)
+		maxGiB = min(MaxDiskCapGiB, max(64, volGiB))
+	}
+	currentGiB := int((currentDiskBytes + (1 << 30) - 1) >> 30)
+	if currentGiB > maxGiB {
+		maxGiB = currentGiB
+	}
+	if minGiB > maxGiB {
+		maxGiB = minGiB
+	}
+	return minGiB, maxGiB
+}
+
+// DiskLimit resolves the effective disk ceiling in GiB for this allocation.
+func (a ResourceAllocation) DiskLimit(storageDir string, currentDiskBytes, guestUsedBytes uint64) (int, error) {
+	minGiB, maxGiB := DiskBounds(storageDir, currentDiskBytes, guestUsedBytes)
+	currentGiB := int((currentDiskBytes + (1 << 30) - 1) >> 30)
+	if a.Automatic || a.DiskGiB == 0 {
+		if currentGiB > 0 {
+			return currentGiB, nil
+		}
+		return DefaultDiskGiB, nil
+	}
+	if a.DiskGiB < minGiB || a.DiskGiB > maxGiB {
+		return 0, fmt.Errorf("硬盘上限须为 %d–%d GiB", minGiB, maxGiB)
+	}
+	return a.DiskGiB, nil
+}
+
+// ConfiguredDiskLimit returns the configured disk ceiling for new environment
+// setup (defaulting to DefaultDiskGiB when automatic or unset).
+func ConfiguredDiskLimit(configPath string) (int, error) {
+	a, err := LoadResourceAllocation(configPath)
+	if err != nil {
+		return 0, err
+	}
+	return a.DiskLimit(filepath.Dir(configPath), 0, 0)
 }

@@ -2764,5 +2764,16 @@
   "等待环境启动": "Esperando a que se inicie el entorno",
   "环境启动后，Claude 提交的自定义插件草稿会显示在这里。": "Una vez iniciado el entorno, los borradores de complementos personalizados enviados por Claude aparecerán aquí.",
   "暂无待审核草稿": "No hay borradores pendientes",
-  "直接告诉环境里的 Claude 你需要什么能力或侧栏页面，它会使用默认的「插件工坊」生成代码、自动测试并提交到这里供你一键安装。": "Indica a Claude en el entorno qué función o página de barra lateral necesitas; generará el código, lo probará y lo enviará aquí para instalarlo con un clic."
+  "直接告诉环境里的 Claude 你需要什么能力或侧栏页面，它会使用默认的「插件工坊」生成代码、自动测试并提交到这里供你一键安装。": "Indica a Claude en el entorno qué función o página de barra lateral necesitas; generará el código, lo probará y lo enviará aquí para instalarlo con un clic.",
+  "应用配置并缩小虚拟硬盘？": "¿Aplicar configuración y reducir el disco virtual?",
+  "正在运行的命令会结束，环境会重启以安全检查并缩小文件系统、释放多余主机磁盘空间。项目文件、账户和登录数据都会保留，失败会自动恢复原磁盘。": "Los comandos en ejecución se detendrán y el entorno se reiniciará para comprobar y reducir el sistema de archivos de forma segura y liberar espacio en el equipo anfitrión. Se conservarán proyectos, cuentas e inicios de sesión; si falla, se restaurará el disco original.",
+  "确认并调整硬盘": "Confirmar y ajustar disco",
+  "硬盘上限": "Límite de disco",
+  "硬盘上限（GiB）": "Límite de disco (GiB)",
+  "点击下方按钮后生效。": "Se aplicará al pulsar el botón de abajo.",
+  "立即应用并缩小硬盘": "Aplicar y reducir disco ahora",
+  "立即应用并启动环境": "Aplicar e iniciar entorno",
+  "本次启动的硬盘上限": "Límite de disco de este inicio",
+  "环境硬盘用量": "Uso de disco del entorno",
+  "主机硬盘实际占用": "Espacio real usado en el equipo"
 }

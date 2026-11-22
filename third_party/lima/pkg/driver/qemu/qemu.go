@@ -707,10 +707,10 @@ func cmdline(ctx context.Context, cfg Config, workingDir *string) (exe string, a
 	isoPresent := osutil.FileExists(isoPath)
 	if osutil.FileExists(diskPath) {
 		if isoPresent {
-			args = append(args, "-drive", fmt.Sprintf("file=%s,if=virtio,discard=on", diskPath))
+			args = append(args, "-drive", fmt.Sprintf("file=%s,if=virtio,discard=unmap,detect-zeroes=unmap", diskPath))
 		} else {
 			// bootindex=1 fixes non-deterministic boot order when extra disks are present (#4936)
-			args = append(args, "-drive", fmt.Sprintf("file=%s,if=none,discard=on,id=boot-disk", diskPath))
+			args = append(args, "-drive", fmt.Sprintf("file=%s,if=none,discard=unmap,detect-zeroes=unmap,id=boot-disk", diskPath))
 			args = append(args, "-device", fmt.Sprintf("%s,drive=boot-disk,bootindex=1", virtioBlk))
 		}
 	}

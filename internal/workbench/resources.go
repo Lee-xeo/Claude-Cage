@@ -1,9 +1,12 @@
 package workbench
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/docker/go-units"
 	"github.com/sylvinus/agent-vm/internal/cage"
@@ -16,6 +19,25 @@ func (s *Server) instanceDir() string {
 		return filepath.Join(s.profile, "state", "container", "environment")
 	}
 	return filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, s.environmentDir()))
+}
+
+func (s *Server) configuredInstanceResources() (memoryBytes int64, cpus int, diskBytes int64) {
+	var configured struct {
+		Memory string `yaml:"memory"`
+		CPUs   int    `yaml:"cpus"`
+		Disk   string `yaml:"disk"`
+	}
+	if b, err := os.ReadFile(filepath.Join(s.instanceDir(), "lima.yaml")); err == nil {
+		_ = yaml.Unmarshal(b, &configured)
+	}
+	memoryBytes, _ = units.RAMInBytes(configured.Memory)
+	diskBytes, _ = units.RAMInBytes(configured.Disk)
+	if diskBytes <= 0 {
+		if info, err := cage.DiskImageUsage(s.instanceDir()); err == nil && info.VirtualBytes > 0 {
+			diskBytes = info.VirtualBytes
+		}
+	}
+	return memoryBytes, configured.CPUs, diskBytes
 }
 
 func (s *Server) resourceStatus(w http.ResponseWriter, r *http.Request) {
@@ -51,28 +73,50 @@ func (s *Server) resourceStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	maxMemory, maxCPUs := cage.ResourceLimits()
 	running := s.vmRunning()
-	var configured struct {
-		Memory string `yaml:"memory"`
-		CPUs   int    `yaml:"cpus"`
-	}
-	if b, err := os.ReadFile(filepath.Join(s.instanceDir(), "lima.yaml")); err == nil {
-		_ = yaml.Unmarshal(b, &configured)
-	}
-	maximum, _ := units.RAMInBytes(configured.Memory)
+	maximum, configuredCPUs, configuredDiskBytes := s.configuredInstanceResources()
 	var observation *cage.ResourceStatus
 	status, err := cage.ReadResourceStatus(s.instanceDir())
 	if running && err == nil {
 		observation = &status
 	}
+	var guestDiskUsed uint64
+	if observation != nil && observation.Guest != nil {
+		guestDiskUsed = observation.Guest.DiskUsed
+	}
+	var hostDiskAllocated int64
+	if info, infoErr := cage.DiskImageUsage(s.instanceDir()); infoErr == nil {
+		hostDiskAllocated = info.HostAllocatedBytes
+		if configuredDiskBytes <= 0 {
+			configuredDiskBytes = info.VirtualBytes
+		}
+	}
+	storageProbeDir := filepath.Dir(s.configPath)
+	if st, statErr := os.Stat(s.instanceDir()); statErr == nil && st.IsDir() {
+		storageProbeDir = s.instanceDir()
+	}
+	minDiskGiB, maxDiskGiB := cage.DiskBounds(storageProbeDir, uint64(max(int64(0), configuredDiskBytes)), guestDiskUsed)
+	diskGiB, diskErr := a.DiskLimit(storageProbeDir, uint64(max(int64(0), configuredDiskBytes)), guestDiskUsed)
+	if diskErr != nil {
+		if allocationError == "" {
+			allocationError = diskErr.Error()
+		}
+		diskGiB = a.DiskGiB
+	}
+	diskChanged := configuredDiskBytes > 0 && int64(diskGiB)<<30 != configuredDiskBytes
 	jsonReply(w, map[string]any{
 		"running": running, "automatic": a.Automatic,
-		"memory_gib": memory, "cpus": cpus,
+		"memory_gib": memory, "cpus": cpus, "disk_gib": diskGiB,
 		"max_memory_gib": maxMemory, "max_cpus": maxCPUs,
+		"min_disk_gib": minDiskGiB, "max_disk_gib": maxDiskGiB,
 		"resource_error":           allocationError,
 		"recommended_memory_bytes": uint64(cage.AutomaticMemoryGiB(maxMemory)) << 30, "recommended_cpus": maxCPUs,
-		"configured_memory_bytes": maximum, "configured_cpus": configured.CPUs,
-		"restart_required": running && (maximum != int64(memory)<<30 || configured.CPUs != cpus || observation == nil),
-		"observation":      observation,
+		"recommended_disk_bytes":   uint64(cage.DefaultDiskGiB) << 30,
+		"configured_memory_bytes":  maximum, "configured_cpus": configuredCPUs,
+		"configured_disk_bytes":     configuredDiskBytes,
+		"host_disk_allocated_bytes": hostDiskAllocated,
+		"disk_change_pending":       diskChanged,
+		"restart_required":          running && (maximum != int64(memory)<<30 || configuredCPUs != cpus || diskChanged || observation == nil),
+		"observation":               observation,
 	})
 }
 
@@ -89,6 +133,21 @@ func (s *Server) applyResources(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.Allocation != nil {
 		if _, _, err := input.Allocation.Limits(); err != nil {
+			requestError(w, err)
+			return
+		}
+		_, _, configuredDiskBytes := s.configuredInstanceResources()
+		var guestDiskUsed uint64
+		if s.vmRunning() {
+			if obs, obsErr := cage.ReadResourceStatus(s.instanceDir()); obsErr == nil && obs.Guest != nil {
+				guestDiskUsed = obs.Guest.DiskUsed
+			}
+		}
+		storageProbeDir := filepath.Dir(s.configPath)
+		if st, statErr := os.Stat(s.instanceDir()); statErr == nil && st.IsDir() {
+			storageProbeDir = s.instanceDir()
+		}
+		if _, err := input.Allocation.DiskLimit(storageProbeDir, uint64(max(int64(0), configuredDiskBytes)), guestDiskUsed); err != nil {
 			requestError(w, err)
 			return
 		}
@@ -113,6 +172,19 @@ func (s *Server) applyResources(w http.ResponseWriter, r *http.Request) {
 		if _, _, err := allocation.Limits(); err != nil {
 			return err
 		}
+		_, _, configuredDiskBytes := s.configuredInstanceResources()
+		storageProbeDir := filepath.Dir(s.configPath)
+		if st, statErr := os.Stat(s.instanceDir()); statErr == nil && st.IsDir() {
+			storageProbeDir = s.instanceDir()
+		}
+		targetDiskGiB, err := allocation.DiskLimit(storageProbeDir, uint64(max(int64(0), configuredDiskBytes)), 0)
+		if err != nil {
+			return err
+		}
+		targetDiskBytes := int64(targetDiskGiB) << 30
+		if configuredDiskBytes > 0 && targetDiskBytes < configuredDiskBytes {
+			return s.shrinkEnvironmentDisk(targetDiskGiB)
+		}
 		if s.vmRunning() {
 			if err := s.stopEnvironment(); err != nil {
 				return err
@@ -121,8 +193,82 @@ func (s *Server) applyResources(w http.ResponseWriter, r *http.Request) {
 		if err := s.operationContext().Err(); err != nil {
 			return err
 		}
-		return s.startEnvironment(false)
+		if err := s.startEnvironment(false); err != nil {
+			return err
+		}
+		if configuredDiskBytes > 0 && targetDiskBytes > configuredDiskBytes {
+			growCtx, cancel := context.WithTimeout(s.operationContext(), 60*time.Second)
+			defer cancel()
+			if _, growErr := s.guestControl(growCtx, cage.GuestDiskGrowScript, "disk-grow"); growErr != nil {
+				return fmt.Errorf("虚拟磁盘已扩大，但客机自动扩展分区失败：%w", growErr)
+			}
+		}
+		return nil
 	})
+}
+
+func (s *Server) shrinkEnvironmentDisk(targetDiskGiB int) error {
+	ctx := s.operationContext()
+	if !s.vmRunning() {
+		if err := s.startEnvironment(false); err != nil {
+			return err
+		}
+	}
+	inspectCtx, cancelInspect := context.WithTimeout(ctx, 45*time.Second)
+	out, err := s.guestControl(inspectCtx, cage.GuestDiskInspectShrinkScript, "disk-shrink")
+	cancelInspect()
+	if err != nil {
+		return fmt.Errorf("检查环境磁盘分区失败，未改动任何数据：%w", err)
+	}
+	insp, err := cage.ParseDiskShrinkInspection(out)
+	if err != nil {
+		return fmt.Errorf("解析环境磁盘分区失败，未改动任何数据：%w", err)
+	}
+	plan, err := cage.PlanDiskShrink(insp, targetDiskGiB)
+	if err != nil {
+		return err
+	}
+	stageCtx, cancelStage := context.WithTimeout(ctx, 3*time.Minute)
+	if _, err := s.guestControl(stageCtx, cage.GuestInstallShrinkHookAndStageScript(plan), "disk-shrink"); err != nil {
+		cancelStage()
+		return fmt.Errorf("准备离线缩小环境文件系统失败，未改动磁盘：%w", err)
+	}
+	cancelStage()
+
+	// Reboot through initramfs so ext4 and partition 1 shrink while unmounted.
+	if err := s.stopEnvironment(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.startEnvironment(false); err != nil {
+		return err
+	}
+
+	relocateCtx, cancelRelocate := context.WithTimeout(ctx, 2*time.Minute)
+	if _, err := s.guestControl(relocateCtx, cage.GuestRelocateGPTAndTrimScript(plan), "disk-shrink"); err != nil {
+		cancelRelocate()
+		return fmt.Errorf("文件系统缩小校验或重定位 GPT 失败，原虚拟磁盘未截断：%w", err)
+	}
+	cancelRelocate()
+
+	if err := s.stopEnvironment(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := cage.ShrinkColdDiskImage(ctx, s.instanceDir(), targetDiskGiB); err != nil {
+		return err
+	}
+	if err := s.startEnvironment(false); err != nil {
+		_ = s.stopEnvironment()
+		_ = cage.RollbackDiskShrink(s.instanceDir())
+		return fmt.Errorf("缩小后启动环境失败，已自动恢复原磁盘备份：%w", err)
+	}
+	cage.CommitDiskShrink(s.instanceDir())
+	return nil
 }
 
 type networkCheckError struct{ error }
