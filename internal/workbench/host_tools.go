@@ -165,7 +165,7 @@ func (s *Server) startHostTools(serving bool) error {
 		}
 	}
 	external, failures := hostbridge.LoadPlugins(ctx, filepath.Join(s.profile, "plugins"), hostbridge.LoadOptions{
-		Taken: []string{"run_command", "command_job"}, Off: off, Version: version.Version,
+		Taken: []string{"run_command", "command_job"}, TakenPrompts: []string{hostCommandsPlugin}, Off: off, Version: version.Version,
 		ProjectDir: s.hostActiveProjectDir(),
 		Approve:    approvals.approveTool, Guest: s.guestPluginCommand, GuestOnly: !serving, Env: s.workspaceControlPluginEnv(control)})
 	var problems []string
@@ -346,6 +346,33 @@ func (s *Server) restartPluginsAfterUnlock() {
 	}()
 }
 
+// hostToolsServing reports whether host tools are currently served to Claude.
+func (s *Server) hostToolsServing() bool {
+	s.mu.Lock()
+	serving := s.hostTools != nil && s.hostTools.serving
+	s.mu.Unlock()
+	return serving
+}
+
+// syncHostToolsConfigNow immediately writes the MCP entry to all existing
+// Claude Code and Desktop profiles when host tools are active, so a newly
+// started Desktop sees the tools on its first launch without waiting for the
+// periodic refresh or requiring a restart.
+func (s *Server) syncHostToolsConfigNow(parent context.Context) {
+	if s.clientOnly || !s.hostToolsServing() {
+		return
+	}
+	token, err := s.hostToolsToken()
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	defer cancel()
+	if err = s.writeHostToolsConfig(ctx, token, "add"); err != nil {
+		diagnostics.Log("warn", "host-tools", fmt.Sprintf("sync error=%v", err))
+	}
+}
+
 // refreshHostToolsConfig gives the entry to profiles created while the
 // environment runs. Unchanged files are not rewritten.
 func (s *Server) refreshHostToolsConfig(tools *hostTools) {
@@ -489,18 +516,26 @@ func (s *Server) restartProjectPlugins() <-chan struct{} {
 }
 
 // checkRestartedToolNames keeps a plugin that first started now from
-// offering a tool name another plugin already offers.
+// offering a tool or prompt name another plugin already offers.
 func (s *Server) checkRestartedToolNames(tools *hostTools, restarted *hostbridge.External) error {
 	taken := []string{"run_command", "command_job"}
+	takenPrompts := []string{hostCommandsPlugin}
 	for _, plugin := range tools.plugins {
 		if plugin != restarted {
 			taken = append(taken, plugin.Tools()...)
+			takenPrompts = append(takenPrompts, plugin.Prompts()...)
 		}
 	}
 	for _, tool := range restarted.Tools() {
 		if slices.Contains(taken, tool) {
 			restarted.Withdraw()
 			return fmt.Errorf("plugin %s: tool name %s is already in use", restarted.Manifest.Name, tool)
+		}
+	}
+	for _, prompt := range restarted.Prompts() {
+		if slices.Contains(takenPrompts, prompt) {
+			restarted.Withdraw()
+			return fmt.Errorf("plugin %s: prompt name %s is already in use", restarted.Manifest.Name, prompt)
 		}
 	}
 	return nil

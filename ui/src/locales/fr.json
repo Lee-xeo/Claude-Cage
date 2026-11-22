@@ -3176,5 +3176,17 @@
   "需要直接使用设备域名、HTTPS 或多个端口时，在 Cage 内的应用中配置 HTTP 代理。仅允许访问此私网中可见的设备，公网继续使用原有出口。": "Si vous devez utiliser directement des noms de domaine d'appareils, HTTPS ou plusieurs ports, configurez le proxy HTTP dans les applications de Cage. Seuls les appareils visibles sur ce réseau privé sont accessibles ; le trafic public continue d'utiliser la sortie existante.",
   "需要迁移代理节点": "Migration des nœuds proxy requise",
   "预览新机配置": "Prévisualiser la configuration de la nouvelle machine",
-  "默认预装": "Préinstallé par défaut"
+  "默认预装": "Préinstallé par défaut",
+  "调整侧栏宽度": "Redimensionner la barre latérale",
+  "应用配置并缩小虚拟硬盘？": "Appliquer la configuration et réduire le disque virtuel ?",
+  "正在运行的命令会结束，环境会重启以安全检查并缩小文件系统、释放多余主机磁盘空间。项目文件、账户和登录数据都会保留，失败会自动恢复原磁盘。": "Les commandes en cours seront arrêtées et l’environnement redémarrera pour vérifier et réduire le système de fichiers en toute sécurité et libérer l’espace disque sur l’hôte. Les projets, comptes et sessions sont conservés ; en cas d’échec, le disque d’origine est restauré automatiquement.",
+  "确认并调整硬盘": "Confirmer et ajuster le disque",
+  "硬盘上限": "Limite du disque",
+  "硬盘上限（GiB）": "Limite du disque (GiB)",
+  "点击下方按钮后生效。": "Prendra effet après avoir cliqué sur le bouton ci-dessous.",
+  "立即应用并缩小硬盘": "Appliquer et réduire le disque",
+  "立即应用并启动环境": "Appliquer et démarrer l’environnement",
+  "本次启动的硬盘上限": "Limite du disque pour ce démarrage",
+  "环境硬盘用量": "Utilisation disque de l’environnement",
+  "主机硬盘实际占用": "Espace réel utilisé sur l’hôte"
 }

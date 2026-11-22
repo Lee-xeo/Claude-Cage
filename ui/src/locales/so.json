@@ -3176,5 +3176,17 @@
   "需要直接使用设备域名、HTTPS 或多个端口时，在 Cage 内的应用中配置 HTTP 代理。仅允许访问此私网中可见的设备，公网继续使用原有出口。": "Marka aad u baahato inaad si toos ah u isticmaasho magaca domain-ka aaladda, HTTPS ama dekedo badan, ku habee wakiilka HTTP barnaamijyada ku dhex jira Cage. Waxaa la oggol yahay oo keliya aaladaha ka muuqda shabakaddan gaarka ah, internetka guudna wuxuu sii adeegsanayaa bixitaankii hore.",
   "需要迁移代理节点": "Waxaa loo baahan yahay in la wareejiyo noodhadhka wakiilka",
   "预览新机配置": "Hore u eegidda habaynta aaladda cusub",
-  "默认预装": "Horay loogu rakibay si caadi ah"
+  "默认预装": "Horay loogu rakibay si caadi ah",
+  "调整侧栏宽度": "Hagaaji ballaca dhinaca",
+  "应用配置并缩小虚拟硬盘？": "Ma la dabaqaa habaynta oo la yareeyaa disk-ka dalwaddan?",
+  "正在运行的命令会结束，环境会重启以安全检查并缩小文件系统、释放多余主机磁盘空间。项目文件、账户和登录数据都会保留，失败会自动恢复原磁盘。": "Amarka socda wuu joogsan doonaa, deegaankuna dib ayuu u bilaabmi doonaa si nabadgelyo leh loogu hubiyo loona yareeyo nidaamka faylasha isla markaana loo fasaxo booska dheeraadka ah ee martigeliyaha. Faylasha mashruuca, akoonnada iyo gelitaannadu way sii jirayaan; haddii ay fashilanto disk-kii hore si toos ah ayaa loo soo celinayaa.",
+  "确认并调整硬盘": "Xaqiiji oo beddel disk-ka",
+  "硬盘上限": "Xadka disk-ka",
+  "硬盘上限（GiB）": "Xadka disk-ka (GiB)",
+  "点击下方按钮后生效。": "Waxay dhaqan geli doontaa marka aad gujiso badhanka hoose.",
+  "立即应用并缩小硬盘": "Dabaq oo yaree disk-ka hadda",
+  "立即应用并启动环境": "Dabaq oo bilow deegaanka",
+  "本次启动的硬盘上限": "Xadka disk-ka ee bilowgan",
+  "环境硬盘用量": "Isticmaalka disk-ka deegaanka",
+  "主机硬盘实际占用": "Booska dhabta ah ee martigeliyaha"
 }

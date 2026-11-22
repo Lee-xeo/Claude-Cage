@@ -151,12 +151,21 @@ func (s *Server) changeAccountDesktop(parent context.Context, instance string, a
 			return err
 		}
 	}
-	ctx, cancel := context.WithTimeout(parent, 100*time.Second)
-	defer cancel()
 	code := account.guestID()
 	if code == "" {
 		code = "default"
 	}
+	if action == "start" && validClaudeID(instance) && s.hostToolsServing() {
+		prep := fmt.Sprintf("umask 077\nmkdir -p \"$HOME/.local/share/desktop-profiles/%s/data\"", instance)
+		if code == "default" {
+			prep += fmt.Sprintf(" \"$HOME/.local/share/desktop-profiles/%s/code\"", instance)
+		}
+		if prepErr := s.runDesktopScript("set -euo pipefail\n"+prep+"\n", 15*time.Second); prepErr == nil {
+			s.syncHostToolsConfigNow(parent)
+		}
+	}
+	ctx, cancel := context.WithTimeout(parent, 100*time.Second)
+	defer cancel()
 	command := fmt.Sprintf("exec /bin/bash -c %s -- %s %s %s", shellescape.Quote(linuxAccountDesktop), instance, code, scope)
 	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", command)
 	cmd.Stdin = bytes.NewReader(key)

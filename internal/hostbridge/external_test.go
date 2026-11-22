@@ -41,6 +41,19 @@ func servePlugin(kind string) {
 		tool.Description = "Repeat text from inside the VM."
 	case "clash":
 		tool.Name = "run_command"
+	case "prompts":
+		tool.Name = "echo_note"
+	case "prompt_override":
+		tool.Name = "override_tool"
+	case "prompt_worded":
+		tool.Name = "worded_prompt_tool"
+	case "prompt_result_worded":
+		tool.Name = "leaky_prompt_tool"
+	case "prompt_clash":
+		tool.Name = "clash_prompt_tool"
+	case "page_only_all":
+		tool.Name = "ui_only_tool"
+		tool.Meta = mcp.Meta{"ui": map[string]any{"visibility": []any{"app"}}}
 	}
 	mcp.AddTool(server, tool, func(_ context.Context, _ *mcp.CallToolRequest, in input) (*mcp.CallToolResult, output, error) {
 		if kind == "dies" && in.Text == "die" {
@@ -48,6 +61,65 @@ func servePlugin(kind string) {
 		}
 		return nil, output{Text: in.Text + in.Text}, nil
 	})
+	switch kind {
+	case "prompts":
+		server.AddPrompt(&mcp.Prompt{
+			Name:        "summarize_note",
+			Description: "Summarize a note cleanly.",
+			Arguments:   []*mcp.PromptArgument{{Name: "topic", Description: "Topic to focus on."}},
+		}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			topic := ""
+			if req != nil && req.Params != nil {
+				topic = req.Params.Arguments["topic"]
+			}
+			return &mcp.GetPromptResult{
+				Description: "Summarize a note cleanly.",
+				Messages: []*mcp.PromptMessage{{
+					Role:    "user",
+					Content: &mcp.TextContent{Text: "Summarize topic: " + topic},
+				}},
+			}, nil
+		})
+	case "prompt_override":
+		server.AddPrompt(&mcp.Prompt{
+			Name:        "custom-prompt",
+			Description: "Plugin-defined slash prompt.",
+		}, func(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return &mcp.GetPromptResult{
+				Description: "Plugin-defined slash prompt.",
+				Messages: []*mcp.PromptMessage{{
+					Role:    "user",
+					Content: &mcp.TextContent{Text: "Custom override message"},
+				}},
+			}, nil
+		})
+	case "prompt_worded":
+		server.AddPrompt(&mcp.Prompt{
+			Name:        "bad_prompt",
+			Description: "Inspect files inside the VM.",
+		}, func(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return &mcp.GetPromptResult{}, nil
+		})
+	case "prompt_result_worded":
+		server.AddPrompt(&mcp.Prompt{
+			Name:        "leaky_prompt",
+			Description: "Inspect files.",
+		}, func(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return &mcp.GetPromptResult{
+				Messages: []*mcp.PromptMessage{{
+					Role:    "user",
+					Content: &mcp.TextContent{Text: "Run inside the guest container."},
+				}},
+			}, nil
+		})
+	case "prompt_clash":
+		server.AddPrompt(&mcp.Prompt{
+			Name:        "commands",
+			Description: "Clashes with built-in prompt.",
+		}, func(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return &mcp.GetPromptResult{}, nil
+		})
+	}
 	if kind == "project" {
 		where := &mcp.Tool{Name: "where_am_i", Description: "Report the folder and process."}
 		mcp.AddTool(server, where, func(_ context.Context, _ *mcp.CallToolRequest, in input) (*mcp.CallToolResult, output, error) {
@@ -521,5 +593,114 @@ func TestRestartRunsThePluginForTheNewProject(t *testing.T) {
 	}
 	if scoped.Running() || len(scoped.Tools()) != 0 {
 		t.Fatalf("still running=%v tools=%v", scoped.Running(), scoped.Tools())
+	}
+}
+
+func TestPluginPromptsAreForwardedAndFallbackGenerated(t *testing.T) {
+	root := t.TempDir()
+	writePlugin(t, root, "plain-helper", "plain")
+	writePlugin(t, root, "notes-helper", "prompts")
+	writePlugin(t, root, "custom-prompt", "prompt_override")
+	writePlugin(t, root, "page-only", "page_only_all")
+	writePlugin(t, root, "bad-prompt", "prompt_worded")
+	writePlugin(t, root, "leaky-prompt", "prompt_result_worded")
+	writePlugin(t, root, "clash-prompt", "prompt_clash")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	plugins, failures := LoadPlugins(ctx, root, LoadOptions{
+		Taken:        []string{"run_command"},
+		TakenPrompts: []string{"commands"},
+	})
+	for _, plugin := range plugins {
+		defer plugin.Close()
+	}
+
+	failureText := ""
+	for _, err := range failures {
+		failureText += err.Error() + "\n"
+	}
+	for _, want := range []string{`prompt bad_prompt mentions "vm"`, "prompt name commands is already in use"} {
+		if !strings.Contains(failureText, want) {
+			t.Errorf("expected failure containing %q, got:\n%s", want, failureText)
+		}
+	}
+	if len(failures) != 2 {
+		t.Fatalf("expected 2 failures, got %d:\n%s", len(failures), failureText)
+	}
+
+	bridgePlugins := []Plugin{Command{Dirs: func() []string { return []string{root} }}}
+	for _, p := range plugins {
+		bridgePlugins = append(bridgePlugins, p)
+	}
+	token, _ := NewToken()
+	bridge, err := Start(token, bridgePlugins...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bridge.Close()
+
+	session, err := bridge.connect(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	listed, err := session.ListPrompts(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promptNames := map[string]*mcp.Prompt{}
+	for _, p := range listed.Prompts {
+		promptNames[p.Name] = p
+		if word, found := CheckPromptWording(p); found {
+			t.Errorf("prompt %s mentions reserved word %q", p.Name, word)
+		}
+	}
+	for _, want := range []string{"commands", "plain-helper", "notes-helper", "summarize_note", "custom-prompt", "leaky-prompt", "leaky_prompt"} {
+		if promptNames[want] == nil {
+			t.Errorf("missing expected prompt %q in %v", want, promptNames)
+		}
+	}
+	if promptNames["page-only"] != nil {
+		t.Error("page-only plugin must not generate a model-facing prompt")
+	}
+
+	// Automatic plugin prompt guides the model to the plugin's tool with the request.
+	autoRes, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
+		Name:      "plain-helper",
+		Arguments: map[string]string{"request": "echo hello"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, ok := autoRes.Messages[0].Content.(*mcp.TextContent); !ok || !strings.Contains(text.Text, "repeat_text") || !strings.Contains(text.Text, "echo hello") {
+		t.Fatalf("unexpected auto prompt body: %#v", autoRes.Messages[0].Content)
+	}
+
+	// Native plugin prompt forwards arguments to the child server.
+	nativeRes, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
+		Name:      "summarize_note",
+		Arguments: map[string]string{"topic": "architecture"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, ok := nativeRes.Messages[0].Content.(*mcp.TextContent); !ok || text.Text != "Summarize topic: architecture" {
+		t.Fatalf("unexpected native prompt body: %#v", nativeRes.Messages[0].Content)
+	}
+
+	// Plugin-supplied prompt with the plugin's own name overrides the automatic fallback.
+	overrideRes, err := session.GetPrompt(ctx, &mcp.GetPromptParams{Name: "custom-prompt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, ok := overrideRes.Messages[0].Content.(*mcp.TextContent); !ok || text.Text != "Custom override message" {
+		t.Fatalf("unexpected override prompt body: %#v", overrideRes.Messages[0].Content)
+	}
+
+	// Runtime prompt output containing a reserved word is rejected.
+	if _, err := session.GetPrompt(ctx, &mcp.GetPromptParams{Name: "leaky_prompt"}); err == nil {
+		t.Fatal("expected leaky_prompt returning reserved wording to be refused")
 	}
 }

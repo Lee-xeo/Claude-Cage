@@ -49,10 +49,16 @@ type exitProbeService struct {
 // The proxy resolves the names remotely. IPv4-only endpoints measure the same
 // address family as the guest policy even when the proxy is dual-stack; the
 // trace endpoint is an IPv4 literal, so its "ip=" line is the IPv4 exit.
+// Services span distinct networks and operators (Cloudflare, AWS, Akamai,
+// IPv4 literal, ipify, GeoJS) so blocking or throttling one provider does not
+// prevent exit sampling.
 var exitProbeServices = []exitProbeService{
 	{id: "icanhazip", name: "主检测服务", endpoint: "https://ipv4.icanhazip.com/"},
-	{id: "ipify", name: "备用检测服务", endpoint: "https://api.ipify.org/"},
-	{id: "cftrace", name: "第三检测服务", endpoint: "https://1.1.1.1/cdn-cgi/trace", trace: true},
+	{id: "amazonaws", name: "AWS 备用服务", endpoint: "https://checkip.amazonaws.com/"},
+	{id: "akamai", name: "Akamai 备用服务", endpoint: "https://whatismyip.akamai.com/"},
+	{id: "cftrace", name: "IP 直连检测服务", endpoint: "https://1.1.1.1/cdn-cgi/trace", trace: true},
+	{id: "ipify", name: "ipify 备用服务", endpoint: "https://api.ipify.org/"},
+	{id: "geojs", name: "GeoJS 备用服务", endpoint: "https://ipv4.geojs.io/v1/ip"},
 }
 
 // exitProbeReachabilityURL is the fixed target of the node latency test. It is
@@ -61,15 +67,24 @@ var exitProbeServices = []exitProbeService{
 // response never supplies an exit IP.
 const exitProbeReachabilityURL = "https://www.gstatic.com/generate_204"
 
-// A slow service does not hold back the next one. Each service starts when
-// every earlier one has failed or after this delay, whichever comes first.
-const exitProbeStagger = 1500 * time.Millisecond
+const (
+	// exitProbeRequestTimeout bounds each individual echo service attempt.
+	exitProbeRequestTimeout = 5 * time.Second
+	// A slow service does not hold back the next one. Each service starts when
+	// every earlier one has failed or after this delay, whichever comes first.
+	// Worst-case all-timeout duration across exitProbeServices stays under
+	// diagnosticProbeTimeout so guest/browser probes receive a 503 instead of
+	// timing out without a status.
+	exitProbeStagger = time.Second
+	// diagnosticProbeTimeout bounds one synthetic guest/browser diagnostic probe.
+	diagnosticProbeTimeout = 14 * time.Second
+)
 
 // An empty reachability URL skips the follow-up request after a timeout.
 func probeExitIP(ctx context.Context, e *Egress, reachability string) (string, error) {
 	transport := &http.Transport{Proxy: nil, DialContext: e.DialContext, DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("probe redirect refused") }}
+	client := &http.Client{Transport: transport, Timeout: exitProbeRequestTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("probe redirect refused") }}
 	return probeExitIPServices(ctx, client, exitProbeServices, exitProbeStagger, reachability)
 }
 
@@ -198,7 +213,7 @@ func probeExitIPServices(ctx context.Context, client *http.Client, services []ex
 			switch reached, timedOut := proxyReaches(ctx, client, reachability); {
 			case reached:
 				title = "实时出口采样超时"
-				next = "所选代理可以访问连通性检查地址，但出口 IP 检测服务均无响应，可能被节点出口按域名屏蔽；请更换节点，或请代理服务商放行 ipv4.icanhazip.com、api.ipify.org 和 1.1.1.1；外网保持关闭。"
+				next = "所选代理可以访问连通性检查地址，但出口 IP 检测服务均无响应，可能被节点出口按域名屏蔽；请更换节点，或请代理服务商放行 ipv4.icanhazip.com、checkip.amazonaws.com、whatismyip.akamai.com、1.1.1.1、api.ipify.org 或 ipv4.geojs.io 中的任一地址；外网保持关闭。"
 				cause = errors.Join(ErrExitProbeBlocked, cause)
 			case timedOut:
 				next = "通过所选代理访问连通性检查地址同样超时，节点可能无法连通；请检查节点地址、端口、账号密码以及本机到节点的网络，或切换节点；若代理链路在 TLS 握手阶段持续超时，也可尝试在“设置 → 网络与代理”开启“TLS ClientHello 分段传输兼容模式”；外网保持关闭。"
@@ -434,8 +449,8 @@ func (g *EgressGate) dialDiagnostic(ctx context.Context) (net.Conn, error) {
 // body or headers. It is not a proxy to allowlisted shared CDN addresses.
 func (g *EgressGate) serveDiagnostic(parent context.Context, conn net.Conn, fault bool) {
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
-	ctx, cancel := context.WithTimeout(parent, 14*time.Second)
+	_ = conn.SetDeadline(time.Now().Add(diagnosticProbeTimeout + time.Second))
+	ctx, cancel := context.WithTimeout(parent, diagnosticProbeTimeout)
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()

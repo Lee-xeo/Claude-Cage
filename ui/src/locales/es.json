@@ -3176,5 +3176,17 @@
   "需要直接使用设备域名、HTTPS 或多个端口时，在 Cage 内的应用中配置 HTTP 代理。仅允许访问此私网中可见的设备，公网继续使用原有出口。": "Cuando necesites usar directamente nombres de dominio de dispositivos, HTTPS o varios puertos, configura el proxy HTTP en las aplicaciones dentro de Cage. Solo permite acceder a los dispositivos visibles en esta red privada; el tráfico público sigue usando la salida original.",
   "需要迁移代理节点": "Es necesario migrar los nodos de proxy",
   "预览新机配置": "Previsualizar configuración del nuevo entorno",
-  "默认预装": "Preinstalado por defecto"
+  "默认预装": "Preinstalado por defecto",
+  "调整侧栏宽度": "Ajustar el ancho de la barra lateral",
+  "应用配置并缩小虚拟硬盘？": "¿Aplicar configuración y reducir el disco virtual?",
+  "正在运行的命令会结束，环境会重启以安全检查并缩小文件系统、释放多余主机磁盘空间。项目文件、账户和登录数据都会保留，失败会自动恢复原磁盘。": "Los comandos en ejecución se detendrán y el entorno se reiniciará para comprobar y reducir el sistema de archivos de forma segura y liberar espacio en el equipo anfitrión. Se conservarán proyectos, cuentas e inicios de sesión; si falla, se restaurará el disco original.",
+  "确认并调整硬盘": "Confirmar y ajustar disco",
+  "硬盘上限": "Límite de disco",
+  "硬盘上限（GiB）": "Límite de disco (GiB)",
+  "点击下方按钮后生效。": "Se aplicará al pulsar el botón de abajo.",
+  "立即应用并缩小硬盘": "Aplicar y reducir disco ahora",
+  "立即应用并启动环境": "Aplicar e iniciar entorno",
+  "本次启动的硬盘上限": "Límite de disco de este inicio",
+  "环境硬盘用量": "Uso de disco del entorno",
+  "主机硬盘实际占用": "Espacio real usado en el equipo"
 }

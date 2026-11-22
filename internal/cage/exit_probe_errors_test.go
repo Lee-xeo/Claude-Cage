@@ -65,7 +65,7 @@ func TestExitProbeProxyFailureKeepsServiceAndHTTPStatusAfterRedaction(t *testing
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	for _, marker := range []string{"service=icanhazip", "service=ipify", "duration_ms=", "HTTP 407"} {
+	for _, marker := range []string{"service=icanhazip", "service=amazonaws", "service=akamai", "service=cftrace", "service=ipify", "service=geojs", "duration_ms=", "HTTP 407"} {
 		if !strings.Contains(string(log), marker) {
 			t.Fatalf("missing diagnostic %q: %s", marker, log)
 		}

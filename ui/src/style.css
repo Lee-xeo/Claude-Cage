@@ -690,7 +690,7 @@ button.large {
 .environment-versions { margin-top: 28px; }
 .resource-settings .resource-intro { margin: 0 0 20px; }
 .resource-allocation { margin: 0; }
-.resource-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.resource-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .resource-fields legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .settings-content .resource-fields label { margin: 0 !important; gap: 8px; min-width: 0; }
 .resource-fields small { color: var(--muted); font-size: 0.8571rem; font-weight: 400; line-height: 1.6; }
@@ -1621,6 +1621,38 @@ svg {
   flex: none;
   display: flex;
 }
+.sidebar-resize-handle {
+  position: relative;
+  flex: none;
+  width: 8px;
+  margin-inline: -4px;
+  z-index: 6;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-start: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle:focus-visible::after,
+.workbench-shell.sidebar-resizing .sidebar-resize-handle::after {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.workbench-shell.sidebar-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+.workbench-shell.sidebar-resizing .workbench-main {
+  pointer-events: none;
+}
 .workspace-sidebar {
   width: var(--sidebar-width);
   flex: none;
@@ -2004,7 +2036,6 @@ svg {
   flex: 0 0 auto;
   width: auto;
   min-width: 25px;
-  gap: 4px;
   min-height: 26px;
   height: 26px;
   padding: 0;
@@ -2016,17 +2047,6 @@ svg {
 }
 .terminal-row-actions > button:focus-visible {
   outline-offset: -2px;
-}
-.terminal-action-label {
-  display: none;
-  margin-left: 4px;
-  color: var(--muted);
-  font-size: 0.7857rem;
-  white-space: nowrap;
-}
-.terminal-row-actions > button:hover .terminal-action-label,
-.terminal-row-actions:not(:has(> button:hover)) > button:focus-visible .terminal-action-label {
-  display: block;
 }
 @media (prefers-reduced-motion: reduce) {
   .terminal-row-actions { transition: none; }

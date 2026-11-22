@@ -22,11 +22,26 @@ type ProxySkipped struct {
 	Reason string `json:"reason"`
 }
 
+// ProxyPromptGroup describes one proxied plugin whose accepted tools can be
+// invoked through a slash prompt.
+type ProxyPromptGroup struct {
+	Name        string
+	DisplayName string
+	Description string
+	Tools       []string
+}
+
+type proxyPromptEntry struct {
+	prompt  *mcp.Prompt
+	handler mcp.PromptHandler
+}
+
 // ProxyPlugin exposes a validated snapshot of model-visible tools provided by
 // a connected desktop client over a reverse tunnel. It never shadows tools
-// already registered by the server's own plugins.
+// or prompts already registered by the server's own plugins.
 type ProxyPlugin struct {
 	tools   []*mcp.Tool
+	prompts []proxyPromptEntry
 	call    ProxyCall
 	skipped []ProxySkipped
 }
@@ -116,12 +131,60 @@ func (p *ProxyPlugin) ToolList() []ToolInfo {
 	return list
 }
 
+// SetPluginPrompts builds slash prompts for proxied plugins whose accepted
+// tools are present in this proxy, skipping any prompt name already taken.
+func (p *ProxyPlugin) SetPluginPrompts(groups []ProxyPromptGroup, taken map[string]bool) {
+	accepted := map[string]bool{}
+	for _, tool := range p.tools {
+		accepted[tool.Name] = true
+	}
+	seen := map[string]bool{}
+	var entries []proxyPromptEntry
+	for _, group := range groups {
+		name := strings.TrimSpace(group.Name)
+		if name == "" || taken[name] || seen[name] {
+			continue
+		}
+		var tools []string
+		for _, toolName := range group.Tools {
+			if accepted[toolName] {
+				tools = append(tools, toolName)
+			}
+		}
+		prompt, handler := buildPluginPrompt(name, group.DisplayName, group.Description, tools)
+		if prompt == nil || handler == nil {
+			continue
+		}
+		seen[prompt.Name] = true
+		entries = append(entries, proxyPromptEntry{prompt: prompt, handler: handler})
+	}
+	p.prompts = entries
+}
+
+// Prompts reports the prompt names registered by this proxy.
+func (p *ProxyPlugin) Prompts() []string {
+	names := make([]string, len(p.prompts))
+	for i, entry := range p.prompts {
+		names[i] = entry.prompt.Name
+	}
+	return names
+}
+
+// PromptList returns summary metadata for the proxy's prompts.
+func (p *ProxyPlugin) PromptList() []PromptInfo {
+	list := make([]PromptInfo, len(p.prompts))
+	for i, entry := range p.prompts {
+		list[i] = PromptInfo{Name: entry.prompt.Name, Description: entry.prompt.Description}
+	}
+	return list
+}
+
 // Skipped returns tools that were filtered out during registration.
 func (p *ProxyPlugin) Skipped() []ProxySkipped {
 	return append([]ProxySkipped(nil), p.skipped...)
 }
 
-// Register adds all accepted proxied tools to server.
+// Register adds all accepted proxied tools and prompts to server.
 func (p *ProxyPlugin) Register(server *mcp.Server) {
 	for _, tool := range p.tools {
 		toolName := tool.Name
@@ -141,5 +204,8 @@ func (p *ProxyPlugin) Register(server *mcp.Server) {
 			}
 			return result, nil
 		})
+	}
+	for _, entry := range p.prompts {
+		server.AddPrompt(entry.prompt, entry.handler)
 	}
 }

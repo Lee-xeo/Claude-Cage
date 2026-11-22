@@ -1,4 +1,12 @@
 import { shortcut, primaryModifier } from "./platform.mjs";
+import {
+  DEFAULT_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  SIDEBAR_WIDTH_STEP,
+  clampSidebarWidth,
+  maxSidebarWidth,
+  nextSidebarWidth,
+} from "./sidebar-width.mjs";
 import logo from "./logo.png";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -142,6 +150,14 @@ function App() {
     [sidebarCollapsed, setSidebarCollapsed] = useState(
       readLocal(clientStorageKey("cage-sidebar-collapsed"), false),
     ),
+    [sidebarWidth, setSidebarWidth] = useState(() =>
+      clampSidebarWidth(
+        readLocal(clientStorageKey("cage-sidebar-width"), DEFAULT_SIDEBAR_WIDTH),
+        typeof window !== "undefined" ? window.innerWidth : 0,
+      ),
+    ),
+    [sidebarResizing, setSidebarResizing] = useState(false),
+    sidebarDrag = useRef(null),
     [browserTabLayout, setBrowserTabLayout] = useState(
       readLocal(clientStorageKey("cage-browser-tab-layout"), "horizontal"),
     ),
@@ -1647,14 +1663,72 @@ function App() {
         {dialogs}
       </>
     );
+  const currentSidebarMax = maxSidebarWidth(typeof window !== "undefined" ? window.innerWidth : 0);
+  useEffect(() => {
+    const onResize = () => {
+      setSidebarWidth((current) => clampSidebarWidth(current, window.innerWidth));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const startSidebarResize = (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const rtl = document.documentElement.dir === "rtl";
+    sidebarDrag.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: sidebarWidth, rtl, latest: sidebarWidth };
+    setSidebarResizing(true);
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* noop */ }
+  };
+  const moveSidebarResize = (event) => {
+    const drag = sidebarDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const width = nextSidebarWidth(drag.startWidth, event.clientX - drag.startX, drag.rtl, window.innerWidth);
+    drag.latest = width;
+    setSidebarWidth(width);
+  };
+  const finishSidebarResize = (event) => {
+    const drag = sidebarDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    sidebarDrag.current = null;
+    setSidebarResizing(false);
+    try {
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch { /* noop */ }
+    persist("cage-sidebar-width", drag.latest, setSidebarWidth);
+  };
+  const resetSidebarWidth = () => {
+    persist("cage-sidebar-width", clampSidebarWidth(DEFAULT_SIDEBAR_WIDTH, window.innerWidth), setSidebarWidth);
+  };
+  const onSidebarResizeKeyDown = (event) => {
+    const rtl = document.documentElement.dir === "rtl";
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      const step = event.key === "ArrowRight" ? SIDEBAR_WIDTH_STEP : -SIDEBAR_WIDTH_STEP;
+      const width = nextSidebarWidth(sidebarWidth, step, rtl, window.innerWidth);
+      persist("cage-sidebar-width", width, setSidebarWidth);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      persist("cage-sidebar-width", MIN_SIDEBAR_WIDTH, setSidebarWidth);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      persist("cage-sidebar-width", maxSidebarWidth(window.innerWidth), setSidebarWidth);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      resetSidebarWidth();
+    }
+  };
   return (
     <SafetyChecklistContext.Provider value={() => setSafetyOpen(true)}>
     <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <div
-        className="workbench-shell"
+        className={`workbench-shell ${sidebarResizing ? "sidebar-resizing" : ""}`}
+        style={{ "--sidebar-width": `${sidebarWidth}px` }}
         inert={settingsOpen || undefined}
       >
         {!sidebarCollapsed && (
+          <>
           <WorkspaceSidebar
             onClaudeAccounts={() => setManagementPage("claude-accounts")}
             claudeAccountsOpen={managementPage === "claude-accounts"}
@@ -1733,6 +1807,23 @@ function App() {
               persist("cage-sidebar-collapsed", true, setSidebarCollapsed)
             }
           />
+          <div
+            className="sidebar-resize-handle"
+            role="separator"
+            tabIndex={0}
+            aria-orientation="vertical"
+            aria-label={tr("调整侧栏宽度")}
+            aria-valuemin={MIN_SIDEBAR_WIDTH}
+            aria-valuemax={currentSidebarMax}
+            aria-valuenow={sidebarWidth}
+            onPointerDown={startSidebarResize}
+            onPointerMove={moveSidebarResize}
+            onPointerUp={finishSidebarResize}
+            onPointerCancel={finishSidebarResize}
+            onDoubleClick={resetSidebarWidth}
+            onKeyDown={onSidebarResizeKeyDown}
+          />
+          </>
         )}
         <div className="workbench-main">
           {!managementPage && showHome && (sidebarCollapsed || busy) && (

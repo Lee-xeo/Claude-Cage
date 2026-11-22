@@ -50,7 +50,6 @@ function DesktopRowAction({ label, icon: Icon, disabled, className = "", onClick
       disabled={disabled}
       onClick={onClick}
     >
-      <span className="terminal-action-label" aria-hidden="true">{label}</span>
       <Icon size={14} />
     </button>
   );

@@ -224,9 +224,10 @@ func (b *serverClientPluginBridge) applyToBridge(bridge *hostbridge.Bridge) ([]h
 			}
 		}
 	}
-	var taken map[string]bool
+	var taken, takenPrompts map[string]bool
 	if bridge != nil {
 		taken = bridge.BaseToolNames()
+		takenPrompts = bridge.BasePromptNames()
 	}
 	proxy, err := hostbridge.NewProxyPlugin(allTools, taken, active.callTool)
 	if err != nil {
@@ -235,9 +236,6 @@ func (b *serverClientPluginBridge) applyToBridge(bridge *hostbridge.Bridge) ([]h
 		}
 		return nil, []hostbridge.ProxySkipped{{Name: "*", Reason: err.Error()}}
 	}
-	if bridge != nil {
-		bridge.SetEphemeral(proxy)
-	}
 	accepted := proxy.ToolList()
 	skipped := proxy.Skipped()
 
@@ -245,6 +243,22 @@ func (b *serverClientPluginBridge) applyToBridge(bridge *hostbridge.Bridge) ([]h
 	for _, item := range accepted {
 		owner := toolOwner[item.Name]
 		acceptedByPlugin[owner] = append(acceptedByPlugin[owner], item)
+	}
+	promptGroups := make([]hostbridge.ProxyPromptGroup, 0, len(specs))
+	for _, spec := range specs {
+		var names []string
+		for _, item := range acceptedByPlugin[spec.Name] {
+			names = append(names, item.Name)
+		}
+		promptGroups = append(promptGroups, hostbridge.ProxyPromptGroup{
+			Name:        spec.Name,
+			DisplayName: spec.DisplayName,
+			Tools:       names,
+		})
+	}
+	proxy.SetPluginPrompts(promptGroups, takenPrompts)
+	if bridge != nil {
+		bridge.SetEphemeral(proxy)
 	}
 	skippedByPlugin := map[string][]hostbridge.ProxySkipped{}
 	for _, item := range skipped {

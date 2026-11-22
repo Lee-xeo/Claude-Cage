@@ -84,7 +84,17 @@ func (c Command) Tools() []string {
 	return []string{"run_command"}
 }
 
-// Register adds the run_command tool.
+// Prompts reports the prompt names registered by Command.
+func (c Command) Prompts() []string {
+	return []string{"commands"}
+}
+
+// PromptList describes the prompts registered by Command.
+func (c Command) PromptList() []PromptInfo {
+	return []PromptInfo{{Name: "commands", Description: "Run a shell command on this computer."}}
+}
+
+// Register adds the run_command tool and its slash prompt.
 func (c Command) Register(server *mcp.Server) {
 	mcp.AddTool(server, c.tool(), func(ctx context.Context, _ *mcp.CallToolRequest, in commandInput) (*mcp.CallToolResult, commandOutput, error) {
 		out, err := c.run(ctx, in)
@@ -92,6 +102,9 @@ func (c Command) Register(server *mcp.Server) {
 	})
 	if c.Jobs != nil {
 		c.Jobs.register(server)
+	}
+	if prompt, handler := buildPluginPrompt("commands", "Run Command", "Run a shell command on this computer.", c.Tools()); prompt != nil {
+		server.AddPrompt(prompt, handler)
 	}
 }
 

@@ -213,6 +213,46 @@ func TestToolsDescribeOnlyWhatTheyDo(t *testing.T) {
 	}
 }
 
+func TestCommandPromptIsOfferedAndNeutral(t *testing.T) {
+	bridge := startBridge(t, t.TempDir())
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	session, err := bridge.connect(ctx, bridge.Token())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	listed, err := session.ListPrompts(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Prompts) != 1 || listed.Prompts[0].Name != "commands" {
+		t.Fatalf("prompts = %+v, want [commands]", listed.Prompts)
+	}
+	if word, found := CheckPromptWording(listed.Prompts[0]); found {
+		t.Fatalf("commands prompt mentions reserved word %q", word)
+	}
+
+	got, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
+		Name:      "commands",
+		Arguments: map[string]string{"request": "list files"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if word, found := CheckPromptResultWording(got); found {
+		t.Fatalf("commands prompt result mentions reserved word %q", word)
+	}
+	if len(got.Messages) != 1 {
+		t.Fatalf("messages = %+v", got.Messages)
+	}
+	text, ok := got.Messages[0].Content.(*mcp.TextContent)
+	if !ok || !strings.Contains(text.Text, "run_command") || !strings.Contains(text.Text, "list files") {
+		t.Fatalf("unexpected prompt body: %#v", got.Messages[0].Content)
+	}
+}
+
 func TestBackgroundCommandIsReadLater(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the commands are for a POSIX shell")

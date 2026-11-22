@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -31,6 +32,10 @@ func TestBridgeEphemeralProxyLifecycleAndCollisionGuard(t *testing.T) {
 	if !taken["run_command"] || !taken["command_job"] {
 		t.Fatalf("expected base tools in taken map, got %v", taken)
 	}
+	takenPrompts := bridge.BasePromptNames()
+	if !takenPrompts["commands"] {
+		t.Fatalf("expected base commands prompt in takenPrompts, got %v", takenPrompts)
+	}
 
 	var calledWith string
 	proxy, err := NewProxyPlugin([]*mcp.Tool{
@@ -45,8 +50,15 @@ func TestBridgeEphemeralProxyLifecycleAndCollisionGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	proxy.SetPluginPrompts([]ProxyPromptGroup{
+		{Name: "commands", DisplayName: "Shadow attempt", Tools: []string{"local_render"}},
+		{Name: "blender", DisplayName: "Blender", Tools: []string{"local_render"}},
+	}, takenPrompts)
 	if got := proxy.Tools(); len(got) != 1 || got[0] != "local_render" {
 		t.Fatalf("unexpected accepted proxy tools: %v", got)
+	}
+	if got := proxy.Prompts(); len(got) != 1 || got[0] != "blender" {
+		t.Fatalf("unexpected accepted proxy prompts: %v", got)
 	}
 	if len(proxy.Skipped()) != 3 {
 		t.Fatalf("expected 3 skipped tools, got %v", proxy.Skipped())
@@ -73,6 +85,28 @@ func TestBridgeEphemeralProxyLifecycleAndCollisionGuard(t *testing.T) {
 		t.Fatalf("unexpected listed tools: %v", names)
 	}
 
+	listedPrompts, err := session.ListPrompts(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promptNames := map[string]bool{}
+	for _, prompt := range listedPrompts.Prompts {
+		promptNames[prompt.Name] = true
+	}
+	if !promptNames["commands"] || !promptNames["blender"] {
+		t.Fatalf("unexpected listed prompts: %v", promptNames)
+	}
+	blenderPrompt, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
+		Name:      "blender",
+		Arguments: map[string]string{"request": "render frame 7"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, ok := blenderPrompt.Messages[0].Content.(*mcp.TextContent); !ok || !strings.Contains(text.Text, "local_render") || !strings.Contains(text.Text, "render frame 7") {
+		t.Fatalf("unexpected proxied prompt body: %#v", blenderPrompt.Messages[0].Content)
+	}
+
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "local_render", Arguments: map[string]any{"frame": 7}})
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +115,7 @@ func TestBridgeEphemeralProxyLifecycleAndCollisionGuard(t *testing.T) {
 		t.Fatalf("unexpected proxy call result: res=%+v called=%q", res, calledWith)
 	}
 
-	// Clearing ephemeral plugins withdraws proxied tools immediately.
+	// Clearing ephemeral plugins withdraws proxied tools and prompts immediately.
 	bridge.SetEphemeral()
 	listedAfter, err := session.ListTools(ctx, nil)
 	if err != nil {
@@ -90,6 +124,15 @@ func TestBridgeEphemeralProxyLifecycleAndCollisionGuard(t *testing.T) {
 	for _, tool := range listedAfter.Tools {
 		if tool.Name == "local_render" {
 			t.Fatal("proxied tool remained visible after SetEphemeral()")
+		}
+	}
+	promptsAfter, err := session.ListPrompts(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, prompt := range promptsAfter.Prompts {
+		if prompt.Name == "blender" {
+			t.Fatal("proxied prompt remained visible after SetEphemeral()")
 		}
 	}
 }

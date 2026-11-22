@@ -740,6 +740,9 @@ func (l *Lima) Start(ctx context.Context, name string, log io.Writer) error {
 		if err != nil {
 			return err
 		}
+		if !allocation.Automatic && allocation.DiskGiB > 0 && int64(allocation.DiskGiB)<<30 > inst.Disk {
+			settings.DiskGiB = allocation.DiskGiB
+		}
 	}
 	if err := l.Edit(ctx, name, settings); err != nil {
 		return err

@@ -12,8 +12,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +36,19 @@ type Plugin interface {
 // shadow base tools.
 type namedPlugin interface {
 	Tools() []string
+}
+
+// namedPromptPlugin is an optional interface implemented by plugins that can
+// report the prompt names they register, so ephemeral bridges never shadow
+// base prompts.
+type namedPromptPlugin interface {
+	Prompts() []string
+}
+
+// PromptInfo is a prompt's name and what it says it does.
+type PromptInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 // Bridge is a running MCP endpoint.
@@ -69,7 +84,12 @@ func Start(token string, plugins ...Plugin) (*Bridge, error) {
 	b := &Bridge{token: token, listener: listener, base: base}
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		// One server per request keeps clients from seeing each other's state.
-		server := mcp.NewServer(&mcp.Implementation{Name: "computer", Version: "1"}, nil)
+		server := mcp.NewServer(&mcp.Implementation{Name: "computer", Version: "1"}, &mcp.ServerOptions{
+			Capabilities: &mcp.ServerCapabilities{
+				Tools:   &mcp.ToolCapabilities{ListChanged: true},
+				Prompts: &mcp.PromptCapabilities{ListChanged: true},
+			},
+		})
 		for _, plugin := range b.base {
 			plugin.Register(server)
 		}
@@ -95,6 +115,19 @@ func (b *Bridge) BaseToolNames() map[string]bool {
 	for _, plugin := range b.base {
 		if named, ok := plugin.(namedPlugin); ok {
 			for _, name := range named.Tools() {
+				taken[name] = true
+			}
+		}
+	}
+	return taken
+}
+
+// BasePromptNames returns the prompt names currently registered by base plugins.
+func (b *Bridge) BasePromptNames() map[string]bool {
+	taken := map[string]bool{}
+	for _, plugin := range b.base {
+		if named, ok := plugin.(namedPromptPlugin); ok {
+			for _, name := range named.Prompts() {
 				taken[name] = true
 			}
 		}
@@ -141,6 +174,29 @@ func (b *Bridge) authorize(next http.Handler) http.Handler {
 // describe this product or where it runs rather than what the tool does.
 var reservedWords = []string{"cage", "guest", "virtual machine", "vm", "虚拟机", "客机"}
 
+// CheckTextWording reports the first reserved word found in text that will be
+// shown to the model. Latin words are matched whole.
+func CheckTextWording(text string) (word string, found bool) {
+	lower := strings.ToLower(text)
+	fields := strings.FieldsFunc(lower, func(r rune) bool {
+		return r < 0x80 && !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	})
+	for _, reserved := range reservedWords {
+		if strings.ContainsRune(reserved, ' ') || reserved[0] >= 0x80 {
+			if strings.Contains(lower, reserved) {
+				return reserved, true
+			}
+			continue
+		}
+		for _, field := range fields {
+			if field == reserved {
+				return reserved, true
+			}
+		}
+	}
+	return "", false
+}
+
 // CheckWording reports the first reserved word found in what a tool shows
 // the model: its name, title and description, and the names and wording of
 // its parameters and results. Latin words are matched whole.
@@ -155,24 +211,128 @@ func CheckWording(tool *mcp.Tool) (word string, found bool) {
 			text += " " + string(data)
 		}
 	}
-	text = strings.ToLower(text)
-	fields := strings.FieldsFunc(text, func(r rune) bool {
-		return r < 0x80 && !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
-	})
-	for _, reserved := range reservedWords {
-		if strings.ContainsRune(reserved, ' ') || reserved[0] >= 0x80 {
-			if strings.Contains(text, reserved) {
-				return reserved, true
-			}
+	return CheckTextWording(text)
+}
+
+// CheckPromptWording reports the first reserved word found in what a prompt
+// shows the model: its name, title, description and arguments.
+func CheckPromptWording(prompt *mcp.Prompt) (word string, found bool) {
+	if prompt == nil {
+		return "", false
+	}
+	text := prompt.Name + " " + prompt.Title + " " + prompt.Description
+	for _, arg := range prompt.Arguments {
+		if arg == nil {
 			continue
 		}
-		for _, field := range fields {
-			if field == reserved {
-				return reserved, true
+		text += " " + arg.Name + " " + arg.Title + " " + arg.Description
+	}
+	return CheckTextWording(text)
+}
+
+// CheckPromptResultWording reports the first reserved word found in the
+// description or text messages returned by prompts/get.
+func CheckPromptResultWording(result *mcp.GetPromptResult) (word string, found bool) {
+	if result == nil {
+		return "", false
+	}
+	if w, ok := CheckTextWording(result.Description); ok {
+		return w, true
+	}
+	for _, message := range result.Messages {
+		if message == nil || message.Content == nil {
+			continue
+		}
+		switch content := message.Content.(type) {
+		case *mcp.TextContent:
+			if w, ok := CheckTextWording(content.Text); ok {
+				return w, true
+			}
+		case *mcp.EmbeddedResource:
+			if content.Resource != nil {
+				if w, ok := CheckTextWording(content.Resource.URI + " " + content.Resource.Text); ok {
+					return w, true
+				}
 			}
 		}
 	}
 	return "", false
+}
+
+// buildPluginPrompt creates an explicit slash-command MCP prompt for a group of
+// model-visible tools so clients can invoke the plugin directly via prompts.
+func buildPluginPrompt(name, title, description string, toolNames []string) (*mcp.Prompt, mcp.PromptHandler) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(toolNames) == 0 {
+		return nil, nil
+	}
+	if _, bad := CheckTextWording(name); bad {
+		return nil, nil
+	}
+	var cleanTools []string
+	for _, toolName := range toolNames {
+		toolName = strings.TrimSpace(toolName)
+		if toolName == "" || slices.Contains(cleanTools, toolName) {
+			continue
+		}
+		if _, bad := CheckTextWording(toolName); bad {
+			continue
+		}
+		cleanTools = append(cleanTools, toolName)
+	}
+	if len(cleanTools) == 0 {
+		return nil, nil
+	}
+	slices.Sort(cleanTools)
+
+	cleanTitle := strings.TrimSpace(title)
+	if cleanTitle == "" {
+		cleanTitle = name
+	} else if _, bad := CheckTextWording(cleanTitle); bad {
+		cleanTitle = name
+	}
+	cleanDesc := strings.Join(strings.Fields(description), " ")
+	if cleanDesc == "" {
+		cleanDesc = fmt.Sprintf("Use the %s tools.", name)
+	} else if _, bad := CheckTextWording(cleanDesc); bad {
+		cleanDesc = fmt.Sprintf("Use the %s tools.", name)
+	}
+
+	prompt := &mcp.Prompt{
+		Name:        name,
+		Title:       cleanTitle,
+		Description: cleanDesc,
+		Arguments: []*mcp.PromptArgument{
+			{
+				Name:        "request",
+				Description: "What to do with these tools.",
+				Required:    false,
+			},
+		},
+	}
+	toolList := strings.Join(cleanTools, ", ")
+	handler := func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		var request string
+		if req != nil && req.Params != nil && req.Params.Arguments != nil {
+			request = strings.TrimSpace(req.Params.Arguments["request"])
+		}
+		var body string
+		if request != "" {
+			body = fmt.Sprintf("Use the available tools (%s) to handle this request:\n\n%s", toolList, request)
+		} else {
+			body = fmt.Sprintf("Use the available tools (%s) to help with the user's request, or briefly list what you can do with them if no task was given.", toolList)
+		}
+		return &mcp.GetPromptResult{
+			Description: cleanDesc,
+			Messages: []*mcp.PromptMessage{
+				{
+					Role:    "user",
+					Content: &mcp.TextContent{Text: body},
+				},
+			},
+		}, nil
+	}
+	return prompt, handler
 }
 
 // connect is shared by tests and callers that need a client for the bridge.

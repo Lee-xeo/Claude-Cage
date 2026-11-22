@@ -46,12 +46,25 @@ func TestResourceAllocationSaveAndStartup(t *testing.T) {
 	}
 	w := request(s, "GET", "/api/environment/resources", "", "", true)
 	var status struct {
-		Automatic bool `json:"automatic"`
-		Memory    int  `json:"memory_gib"`
-		CPUs      int  `json:"cpus"`
+		Automatic  bool `json:"automatic"`
+		Memory     int  `json:"memory_gib"`
+		CPUs       int  `json:"cpus"`
+		Disk       int  `json:"disk_gib"`
+		MinDiskGiB int  `json:"min_disk_gib"`
+		MaxDiskGiB int  `json:"max_disk_gib"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil || status.Automatic || status.Memory != 4 || status.CPUs != 2 {
+	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil || status.Automatic || status.Memory != 4 || status.CPUs != 2 || status.Disk != cage.DefaultDiskGiB || status.MinDiskGiB < cage.MinDiskGiB || status.MaxDiskGiB < 64 {
 		t.Fatal(w.Body.String(), err)
+	}
+	// Saving a custom disk size within range succeeds and persists; out-of-range fails.
+	if w = request(s, "POST", "/api/environment/resources", s.origin, `{"allocation":{"automatic":false,"memory_gib":4,"cpus":2,"disk_gib":48}}`, true); w.Code != 200 {
+		t.Fatalf("valid disk allocation rejected: %d %s", w.Code, w.Body.String())
+	}
+	if disk, err := cage.ConfiguredDiskLimit(s.configPath); err != nil || disk != 48 {
+		t.Fatalf("saved disk limit = %d, %v; want 48", disk, err)
+	}
+	if w = request(s, "POST", "/api/environment/resources", s.origin, `{"allocation":{"automatic":false,"memory_gib":4,"cpus":2,"disk_gib":4}}`, true); w.Code == 200 {
+		t.Fatalf("accepted disk below minimum: %s", w.Body.String())
 	}
 	s.op.Lock()
 	w = request(s, "POST", "/api/environment/resources", s.origin, `{"allocation":{"automatic":true}}`, true)
