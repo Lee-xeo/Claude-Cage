@@ -381,9 +381,11 @@ func TestRuntimeEnablesTopLevelIPv6OnlyForIPv6LiteralNodes(t *testing.T) {
 }
 
 // Top-level ipv6 is global to the core (domain-named nodes then resolve AAAA
-// and may dial over the host's IPv6), so only the selected route may turn it on.
-func TestRuntimeIPv6FollowsSelectedRouteOnly(t *testing.T) {
-	topIPv6 := func(t *testing.T, s Store) bool {
+// and may dial over the host's IPv6). Any loaded IPv6-literal node needs it to
+// be dialable for latency tests and account routes; unless the selected route
+// has an IPv6-literal hop, domain-named servers stay A-only via ip-version.
+func TestRuntimeIPv6LiteralNodesStayDialableWithoutWideningDomains(t *testing.T) {
+	runtime := func(t *testing.T, s Store) (bool, map[string]any) {
 		t.Helper()
 		b, err := s.Runtime(t.TempDir())
 		if err != nil {
@@ -393,11 +395,16 @@ func TestRuntimeIPv6FollowsSelectedRouteOnly(t *testing.T) {
 		if err := yaml.Unmarshal(b, &cfg); err != nil {
 			t.Fatal(err)
 		}
+		versions := map[string]any{}
+		for _, p := range cfg["proxies"].([]any) {
+			p := p.(map[string]any)
+			versions[p["name"].(string)] = p["ip-version"]
+		}
 		got, _ := cfg["ipv6"].(bool)
-		return got
+		return got, versions
 	}
 	s, _ := Load(t.TempDir())
-	raw := `proxies: [{name: v4, type: socks5, server: node.example.com, port: 1080}, {name: v6, type: socks5, server: "2001:db8::10", port: 1080}, {name: via, type: socks5, server: 203.0.113.10, port: 1080, dialer-proxy: v6}]`
+	raw := `proxies: [{name: v4, type: socks5, server: node.example.com, port: 1080, ip-version: dual}, {name: v6, type: socks5, server: "2001:db8::10", port: 1080}, {name: via, type: socks5, server: 203.0.113.10, port: 1080, dialer-proxy: v6}, {name: hop, type: socks5, server: hop.example.com, port: 1080, dialer-proxy: v4}]`
 	if err := s.Import("r", "", []byte(raw), "r", 0, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -406,19 +413,34 @@ func TestRuntimeIPv6FollowsSelectedRouteOnly(t *testing.T) {
 		ids[n.Name] = n.ID
 	}
 	s.Selected = ids["v4"]
-	if topIPv6(t, s) {
-		t.Fatal("an unselected IPv6-literal node enabled IPv6 for the domain-named selected node")
+	top, versions := runtime(t, s)
+	if !top {
+		t.Fatal("an unselected IPv6-literal node must stay dialable for latency tests and account routes")
 	}
-	s.Selected = ids["v6"]
-	if !topIPv6(t, s) {
-		t.Fatal("selected IPv6-literal node needs top-level ipv6")
+	for _, name := range []string{"v4", "hop"} {
+		if versions[ids[name]] != "ipv4" {
+			t.Fatalf("domain-named node %s widened to IPv6 by an unselected IPv6-literal node: %v", name, versions)
+		}
 	}
-	s.Selected = ids["via"]
-	if !topIPv6(t, s) {
-		t.Fatal("an IPv6-literal hop on the selected route needs top-level ipv6")
+	if versions[ids["v6"]] != nil || versions[ids["via"]] != nil {
+		t.Fatalf("literal servers must not be pinned: %v", versions)
 	}
-	s.Selected, s.Chain = ids["v4"], []string{ids["v4"]}
-	if topIPv6(t, s) {
-		t.Fatal("explicit chain without IPv6 literals must keep ipv6 off")
+	for _, selected := range []string{"v6", "via"} {
+		s.Selected = ids[selected]
+		top, versions = runtime(t, s)
+		if !top {
+			t.Fatalf("selected route through %s needs top-level ipv6", selected)
+		}
+		if versions[ids["v4"]] != "dual" || versions[ids["hop"]] != nil {
+			t.Fatalf("an IPv6-literal selected route keeps imported ip-version unchanged: %v", versions)
+		}
+	}
+	s2, _ := Load(t.TempDir())
+	if err := s2.Import("r", "", []byte(`proxies: [{name: a, type: socks5, server: node.example.com, port: 1080}, {name: b, type: socks5, server: 203.0.113.10, port: 1080}]`), "r", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	s2.Selected, s2.Chain = s2.Sources[0].Nodes[1].ID, []string{s2.Sources[0].Nodes[0].ID, s2.Sources[0].Nodes[1].ID}
+	if top, versions = runtime(t, s2); top || versions[s2.Sources[0].Nodes[0].ID] != nil {
+		t.Fatalf("without IPv6 literals ipv6 stays off and nothing is pinned: %v %v", top, versions)
 	}
 }

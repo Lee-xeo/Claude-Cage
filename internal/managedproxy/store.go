@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -398,12 +399,16 @@ func (s Store) Runtime(profile string) ([]byte, error) {
 	// Infrastructure DNS bootstraps only the core's server domains. Guest DNS
 	// remains behind Cage Egress, and there is no host-system resolver fallback.
 	// Top-level ipv6 (mihomo v1.19.33: resolver.DisableIPv6 = !ipv6, global to
-	// the core) also makes every proxy server domain resolve AAAA and dial over
-	// IPv6. It is enabled only when a node on the selected route uses a
-	// literal IPv6 server address, so the core can dial that hop; other loaded
-	// nodes never turn it on. dns.ipv6 only controls AAAA answers of the core's
-	// own DNS listener (none is configured) and stays false. Cage Egress keeps
-	// blocking all guest IPv6 and enforcing IPv4 exits.
+	// the core) is required to dial any literal IPv6 server, including nodes
+	// only reached by latency tests or account routes. When it is on, every
+	// proxy server domain also resolves AAAA and may dial over IPv6, so unless
+	// the selected route itself has a literal IPv6 hop, domain-named servers
+	// are pinned to ip-version ipv4 to keep their previous A-only resolution.
+	// dns.ipv6 only controls AAAA answers of the core's own DNS listener (none
+	// is configured) and stays false. Cage Egress keeps blocking all guest IPv6
+	// and enforcing IPv4 exits.
+	routeIPv6 := routeHasIPv6Server(route, originals)
+	coreIPv6 := routeIPv6 || slices.ContainsFunc(proxies, func(p map[string]any) bool { return isIPv6Server(p["server"]) })
 	dns := map[string]any{"enable": true, "ipv6": false, "use-hosts": false, "use-system-hosts": false, "default-nameserver": s.NodeResolvers(), "proxy-server-nameserver": s.NodeResolvers(), "nameserver": s.coreNameservers()}
 	policies, err := s.sourceDNSPolicies(blocked)
 	if err != nil {
@@ -412,7 +417,7 @@ func (s Store) Runtime(profile string) ([]byte, error) {
 	if len(policies) > 0 {
 		dns["proxy-server-nameserver-policy"] = policies
 	}
-	config := map[string]any{"mixed-port": s.Port, "bind-address": "127.0.0.1", "allow-lan": false, "skip-auth-prefixes": []string{}, "mode": "rule", "ipv6": routeHasIPv6Server(route, originals), "log-level": "warning", "find-process-mode": "off", "external-controller-unix": Socket(profile), "tun": map[string]any{"enable": false}, "dns": dns, "geo-auto-update": false, "profile": map[string]any{"store-selected": false}, "proxy-groups": []any{map[string]any{"name": Group, "type": "select", "proxies": []string{s.Selected}}}}
+	config := map[string]any{"mixed-port": s.Port, "bind-address": "127.0.0.1", "allow-lan": false, "skip-auth-prefixes": []string{}, "mode": "rule", "ipv6": coreIPv6, "log-level": "warning", "find-process-mode": "off", "external-controller-unix": Socket(profile), "tun": map[string]any{"enable": false}, "dns": dns, "geo-auto-update": false, "profile": map[string]any{"store-selected": false}, "proxy-groups": []any{map[string]any{"name": Group, "type": "select", "proxies": []string{s.Selected}}}}
 	// An explicit environment chain can override imported dialers. Named
 	// account routes retain the node's imported chain, including dependent hops.
 	targets := map[string]string{}
@@ -453,6 +458,13 @@ func (s Store) Runtime(profile string) ([]byte, error) {
 			rules = append(rules, "IN-USER,"+user+","+accountTarget(n.ID))
 		}
 	}
+	if coreIPv6 && !routeIPv6 {
+		for _, p := range proxies {
+			if isDomainServer(p["server"]) {
+				p["ip-version"] = "ipv4"
+			}
+		}
+	}
 	config["proxies"] = proxies
 	config["authentication"] = auth
 	config["rules"] = append(rules, "MATCH,REJECT")
@@ -464,14 +476,29 @@ func (s Store) Runtime(profile string) ([]byte, error) {
 
 func routeHasIPv6Server(route []string, nodes map[string]map[string]any) bool {
 	for _, id := range route {
-		server, _ := nodes[id]["server"].(string)
-		server = strings.TrimSpace(server)
-		if strings.HasPrefix(server, "[") && strings.HasSuffix(server, "]") {
-			server = server[1 : len(server)-1]
-		}
-		if addr, err := netip.ParseAddr(server); err == nil && addr.Is6() && !addr.Is4In6() {
+		if isIPv6Server(nodes[id]["server"]) {
 			return true
 		}
 	}
 	return false
+}
+
+func serverAddr(value any) (string, netip.Addr, bool) {
+	server, _ := value.(string)
+	server = strings.TrimSpace(server)
+	if strings.HasPrefix(server, "[") && strings.HasSuffix(server, "]") {
+		server = server[1 : len(server)-1]
+	}
+	addr, err := netip.ParseAddr(server)
+	return server, addr, err == nil
+}
+
+func isIPv6Server(value any) bool {
+	_, addr, ok := serverAddr(value)
+	return ok && addr.Is6() && !addr.Is4In6()
+}
+
+func isDomainServer(value any) bool {
+	server, _, ok := serverAddr(value)
+	return server != "" && !ok
 }
