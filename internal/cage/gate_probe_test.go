@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,12 +48,13 @@ func TestExitProbeClassifiesProxyTimeout(t *testing.T) {
 	}()
 	cfg := DefaultConfig()
 	cfg.ProxyURL = "http://" + listener.Addr().String()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	ip, err := ProbeExitIP(ctx, cfg)
-	// Three exit services, then one reachability check through the same proxy.
-	if ip != "" || !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrExitProbeBlocked) || !strings.Contains(err.Error(), "节点可能无法连通") || connections.Load() != 4 {
-		t.Fatalf("three timed-out proxy probes = %q, %v, connections=%d", ip, err, connections.Load())
+	// Every exit service, then one reachability check through the same proxy.
+	wantConnections := int32(len(exitProbeServices) + 1)
+	if ip != "" || !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrExitProbeBlocked) || !strings.Contains(err.Error(), "节点可能无法连通") || connections.Load() != wantConnections {
+		t.Fatalf("timed-out proxy probes = %q, %v, connections=%d want=%d", ip, err, connections.Load(), wantConnections)
 	}
 }
 
@@ -126,7 +128,7 @@ func TestExitProbeUsesIPv4ServiceThroughProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"ipv4.icanhazip.com", "api.ipify.org"}, IPAddresses: []net.IP{net.IPv4(1, 1, 1, 1)}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"ipv4.icanhazip.com", "checkip.amazonaws.com", "whatismyip.akamai.com", "api.ipify.org", "ipv4.geojs.io"}, IPAddresses: []net.IP{net.IPv4(1, 1, 1, 1)}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	certificate, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)
@@ -135,55 +137,60 @@ func TestExitProbeUsesIPv4ServiceThroughProxy(t *testing.T) {
 	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate}), 0600); err != nil {
 		t.Fatal(err)
 	}
+	expectedURI := map[string]string{
+		"ipv4.icanhazip.com":    "/",
+		"checkip.amazonaws.com": "/",
+		"whatismyip.akamai.com": "/",
+		"1.1.1.1":               "/cdn-cgi/trace",
+		"api.ipify.org":         "/",
+		"ipv4.geojs.io":         "/v1/ip",
+	}
 	for _, scheme := range []string{"http", "socks5"} {
 		for _, tc := range []struct {
-			name, body, want string
-			status           int
+			name, body, want, answerHost string
+			status                       int
+			wantRequests                 int32
 		}{
-			{"public-ipv4", "8.8.8.8\n", "8.8.8.8", 200},
-			{"fallback-after-unavailable", "8.8.8.8\n", "8.8.8.8", 503},
-			{"fallback-after-invalid", "8.8.8.8\n", "8.8.8.8", 200},
-			{"trace-after-both-fail", "fl=1\nip=8.8.8.8\nuag=Go-http-client/1.1\n", "8.8.8.8", 503},
-			{"trace-repeated-ip", "ip=8.8.8.8\nip=9.9.9.9\n", "", 503},
-			{"trace-private-ip", "ip=192.168.1.1\n", "", 503},
-			{"whitespace", " \r\n1.1.1.1\r\n", "1.1.1.1", 200},
-			{"ipv6", "2606:4700:4700::1111\n", "", 200},
-			{"mapped-ipv4", "::ffff:8.8.8.8", "", 200},
-			{"private-ipv4", "192.168.1.1", "", 200},
-			{"loopback", "127.0.0.1", "", 200},
-			{"link-local", "169.254.1.1", "", 200},
-			{"multicast", "224.0.0.1", "", 200},
-			{"empty", "", "", 200},
-			{"json-response", `{"ip":"8.8.8.8","secret":"private-value"}`, "", 200},
-			{"multiple-addresses", "8.8.8.8\n1.1.1.1", "", 200},
-			{"oversized", "8.8.8.8" + strings.Repeat(" ", 4096), "", 200},
-			{"short-read", "8.8.8.8", "", 200},
-			{"unavailable", "private-value", "", 503},
-			{"redirect", "private-value", "", 302},
+			{"public-ipv4", "8.8.8.8\n", "8.8.8.8", "ipv4.icanhazip.com", 200, 2},
+			{"fallback-after-unavailable", "8.8.8.8\n", "8.8.8.8", "checkip.amazonaws.com", 503, 4},
+			{"fallback-after-invalid", "8.8.8.8\n", "8.8.8.8", "checkip.amazonaws.com", 200, 4},
+			{"fallback-akamai", "8.8.8.8\n", "8.8.8.8", "whatismyip.akamai.com", 503, 6},
+			{"trace-after-earlier-fail", "fl=1\nip=8.8.8.8\nuag=Go-http-client/1.1\n", "8.8.8.8", "1.1.1.1", 503, 8},
+			{"fallback-ipify", "8.8.8.8\n", "8.8.8.8", "api.ipify.org", 503, 10},
+			{"fallback-geojs", "8.8.8.8\n", "8.8.8.8", "ipv4.geojs.io", 503, 12},
+			{"trace-repeated-ip", "ip=8.8.8.8\nip=9.9.9.9\n", "", "1.1.1.1", 503, 12},
+			{"trace-private-ip", "ip=192.168.1.1\n", "", "1.1.1.1", 503, 12},
+			{"whitespace", " \r\n1.1.1.1\r\n", "1.1.1.1", "ipv4.icanhazip.com", 200, 2},
+			{"ipv6", "2606:4700:4700::1111\n", "", "ipv4.icanhazip.com", 200, 12},
+			{"mapped-ipv4", "::ffff:8.8.8.8", "", "ipv4.icanhazip.com", 200, 12},
+			{"private-ipv4", "192.168.1.1", "", "ipv4.icanhazip.com", 200, 12},
+			{"loopback", "127.0.0.1", "", "ipv4.icanhazip.com", 200, 12},
+			{"link-local", "169.254.1.1", "", "ipv4.icanhazip.com", 200, 12},
+			{"multicast", "224.0.0.1", "", "ipv4.icanhazip.com", 200, 12},
+			{"empty", "", "", "ipv4.icanhazip.com", 200, 12},
+			{"json-response", `{"ip":"8.8.8.8","secret":"private-value"}`, "", "ipv4.icanhazip.com", 200, 12},
+			{"multiple-addresses", "8.8.8.8\n1.1.1.1", "", "ipv4.icanhazip.com", 200, 12},
+			{"oversized", "8.8.8.8" + strings.Repeat(" ", 4096), "", "ipv4.icanhazip.com", 200, 12},
+			{"short-read", "8.8.8.8", "", "ipv4.icanhazip.com", 200, 12},
+			{"unavailable", "private-value", "", "ipv4.icanhazip.com", 503, 12},
+			{"redirect", "private-value", "", "ipv4.icanhazip.com", 302, 12},
 		} {
 			t.Run(scheme+"/"+tc.name, func(t *testing.T) {
 				var requests atomic.Int32
 				upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 					requests.Add(1)
-					wantURI := "/"
-					if request.Host == "1.1.1.1" {
-						wantURI = "/cdn-cgi/trace"
-					}
-					if (request.Host != "ipv4.icanhazip.com" && request.Host != "api.ipify.org" && request.Host != "1.1.1.1") || request.URL.RequestURI() != wantURI || request.Method != "GET" || request.Header.Get("User-Agent") != "Go-http-client/1.1" || request.Header.Get("Cookie") != "" || request.Header.Get("Authorization") != "" || request.Header.Get("Proxy-Authorization") != "" {
+					wantURI, ok := expectedURI[request.Host]
+					if !ok || request.URL.RequestURI() != wantURI || request.Method != "GET" || request.Header.Get("User-Agent") != "Go-http-client/1.1" || request.Header.Get("Cookie") != "" || request.Header.Get("Authorization") != "" || request.Header.Get("Proxy-Authorization") != "" {
 						t.Error("probe request changed destination or forwarded guest/proxy data")
 					}
-					if request.Host == "1.1.1.1" {
-						if strings.HasPrefix(tc.name, "trace-") {
+					if request.Host != "ipv4.icanhazip.com" {
+						if request.Host == tc.answerHost {
 							_, _ = io.WriteString(w, tc.body)
 							return
 						}
-						// A JSON echo or a bare address is not the trace format.
-						_, _ = io.WriteString(w, "8.8.8.8")
-						return
-					}
-					if request.Host == "api.ipify.org" {
-						if strings.HasPrefix(tc.name, "fallback-") {
-							_, _ = io.WriteString(w, tc.body)
+						if request.Host == "1.1.1.1" {
+							// A bare address is not the trace format.
+							_, _ = io.WriteString(w, "8.8.8.8")
 							return
 						}
 						_, _ = io.WriteString(w, `{"ip":"2606:4700:4700::1111"}`)
@@ -191,6 +198,10 @@ func TestExitProbeUsesIPv4ServiceThroughProxy(t *testing.T) {
 					}
 					if tc.name == "fallback-after-invalid" {
 						_, _ = io.WriteString(w, "192.168.1.1")
+						return
+					}
+					if tc.answerHost != "ipv4.icanhazip.com" {
+						w.WriteHeader(tc.status)
 						return
 					}
 					w.Header().Set("Content-Type", "text/plain")
@@ -212,18 +223,8 @@ func TestExitProbeUsesIPv4ServiceThroughProxy(t *testing.T) {
 				if output, err := command.CombinedOutput(); err != nil {
 					t.Fatalf("real probe entry failed: %v\n%s", err, output)
 				}
-				// One request per probe when the primary answers, two when the
-				// backup answers, and every service when only the trace answers
-				// or all of them fail. The host and guest probes each run once.
-				wantRequests := int32(2)
-				if strings.HasPrefix(tc.name, "fallback-") {
-					wantRequests = 4
-				}
-				if tc.want == "" || strings.HasPrefix(tc.name, "trace-") {
-					wantRequests = 6
-				}
-				if connects.Load() != wantRequests || requests.Load() != wantRequests {
-					t.Fatalf("host and guest probes must use only the configured proxy: connects=%d requests=%d", connects.Load(), requests.Load())
+				if connects.Load() != tc.wantRequests || requests.Load() != tc.wantRequests {
+					t.Fatalf("host and guest probes must use only the configured proxy: connects=%d requests=%d want=%d", connects.Load(), requests.Load(), tc.wantRequests)
 				}
 			})
 		}
@@ -241,7 +242,7 @@ func TestExitProbeProxyRejectionDoesNotFallbackOrLeakResponse(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ProxyURL = proxy.URL
 	ip, err := ProbeExitIP(context.Background(), cfg)
-	if err == nil || ip != "" || requests.Load() != 3 || strings.Contains(err.Error(), "private-proxy-response") {
+	if err == nil || ip != "" || requests.Load() != int32(len(exitProbeServices)) || strings.Contains(err.Error(), "private-proxy-response") {
 		t.Fatalf("proxy rejection escaped the configured route or leaked its response: IP=%q error=%v requests=%d", ip, err, requests.Load())
 	}
 }
@@ -361,8 +362,10 @@ func exitProbeProxy(t *testing.T, scheme, upstream string) (string, *atomic.Int3
 					target = net.JoinHostPort(string(host), fmt.Sprint(binary.BigEndian.Uint16(header[:2])))
 					_, _ = connection.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 80})
 				}
-				if target != "ipv4.icanhazip.com:443" && target != "api.ipify.org:443" && target != "1.1.1.1:443" {
-					t.Error("probe followed a redirect or changed destination")
+				switch target {
+				case "ipv4.icanhazip.com:443", "checkip.amazonaws.com:443", "whatismyip.akamai.com:443", "1.1.1.1:443", "api.ipify.org:443", "ipv4.geojs.io:443":
+				default:
+					t.Errorf("probe followed a redirect or changed destination: %s", target)
 					return
 				}
 				count.Add(1)
@@ -628,5 +631,37 @@ func TestExitProbeTimeoutChecksWhetherTheProxyReachesTheInternet(t *testing.T) {
 	ip, err := probeExitIPServices(context.Background(), &http.Client{Timeout: time.Second}, []exitProbeService{{id: "a", name: "a", endpoint: failing.URL}}, time.Minute, reachable.URL)
 	if ip != "" || err == nil || errors.Is(err, ErrExitProbeBlocked) || checks.Load() != 0 {
 		t.Fatalf("non-timeout failures must not run the reachability check: checks=%d err=%v", checks.Load(), err)
+	}
+}
+
+func TestExitProbeServicesInvariants(t *testing.T) {
+	if len(exitProbeServices) < 5 {
+		t.Fatalf("expected diverse fallback exit probe services, got %d", len(exitProbeServices))
+	}
+	seenIDs := make(map[string]bool, len(exitProbeServices))
+	seenHosts := make(map[string]bool, len(exitProbeServices))
+	for _, service := range exitProbeServices {
+		if service.id == "" || service.name == "" {
+			t.Fatalf("exit probe service missing id or name: %+v", service)
+		}
+		if seenIDs[service.id] {
+			t.Fatalf("duplicate exit probe service id: %q", service.id)
+		}
+		seenIDs[service.id] = true
+		parsed, err := url.Parse(service.endpoint)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			t.Fatalf("invalid exit probe endpoint %q: err=%v", service.endpoint, err)
+		}
+		if seenHosts[parsed.Host] {
+			t.Fatalf("duplicate exit probe host: %q", parsed.Host)
+		}
+		seenHosts[parsed.Host] = true
+	}
+	// Worst-case all-timeout duration across all services must leave margin
+	// inside the synthetic guest/browser diagnostic deadline so callers receive
+	// a structured HTTP 503 rather than timing out with status 0.
+	worstCase := time.Duration(len(exitProbeServices)-1)*exitProbeStagger + exitProbeRequestTimeout
+	if worstCase >= diagnosticProbeTimeout {
+		t.Fatalf("worst-case probe duration %v meets or exceeds diagnostic timeout %v", worstCase, diagnosticProbeTimeout)
 	}
 }
