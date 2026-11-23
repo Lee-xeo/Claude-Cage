@@ -50,6 +50,8 @@ func (p *mobilePairing) pairedRequestLocked(r *http.Request) bool {
 func (s *Server) mobileSurfaceRoutes(mux routeRegistrar) {
 	mux.HandleFunc("GET /api/mobile/browser/favorites", s.serveFavorites)
 	mux.HandleFunc("POST /api/mobile/browser/favorites", s.serveFavorites)
+	mux.HandleFunc("GET /api/mobile/browser/history", s.servePhoneHistory)
+	mux.HandleFunc("POST /api/mobile/browser/history", s.servePhoneHistory)
 	for _, surface := range []phoneSurface{phoneBrowser, phoneDesktop} {
 		route := "/api/mobile/" + string(surface)
 		handle := func(w http.ResponseWriter, r *http.Request) { s.phoneSurfaceRequest(surface, w, r) }
@@ -495,4 +497,92 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 
 func desktopPreparing(status int) bool {
 	return status == http.StatusConflict || status == http.StatusPreconditionFailed || status == http.StatusServiceUnavailable
+}
+
+type phoneHistoryRequest struct {
+	Profile   string  `json:"profile"`
+	Mode      string  `json:"mode,omitempty"`
+	Query     string  `json:"query,omitempty"`
+	Limit     int     `json:"limit,omitempty"`
+	URL       string  `json:"url,omitempty"`
+	Range     string  `json:"range,omitempty"`
+	StartTime float64 `json:"startTime,omitempty"`
+	EndTime   float64 `json:"endTime,omitempty"`
+}
+
+func (s *Server) servePhoneHistory(w http.ResponseWriter, r *http.Request) {
+	s.phones.mu.Lock()
+	room, profile := s.phones.roomCtx, s.phones.peerLocked()
+	allowed := s.phones.pairedRequestLocked(r)
+	s.phones.mu.Unlock()
+	if !allowed || profile == "" {
+		http.Error(w, "请通过电脑 Cage 的二维码或配对码连接这台主机，再查看浏览历史。", http.StatusForbidden)
+		return
+	}
+	epoch, _ := r.Context().Value(accountEpochKey{}).(context.Context)
+	if epoch == nil || epoch.Err() != nil {
+		http.Error(w, "请先解锁 Cage", http.StatusLocked)
+		return
+	}
+	var input browserInput
+	if r.Method == http.MethodPost {
+		if !readJSON(w, r, &input, 32<<10) {
+			return
+		}
+	}
+	if err := validBrowserHistory(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	ready, closing, token := s.ready, s.closing, s.credentials.Token
+	s.mu.Unlock()
+	if !ready || closing {
+		http.Error(w, "请在电脑启动 Cage 后查看浏览历史。", http.StatusConflict)
+		return
+	}
+	payload := phoneHistoryRequest{
+		Profile:   profile,
+		Mode:      input.Mode,
+		Query:     input.Query,
+		Limit:     input.Limit,
+		URL:       input.URL,
+		Range:     input.Range,
+		StartTime: input.StartTime,
+		EndTime:   input.EndTime,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, "浏览历史请求无效", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithCancel(r.Context())
+	stopRoom := context.AfterFunc(room, cancel)
+	stopEpoch := context.AfterFunc(epoch, cancel)
+	defer func() { stopEpoch(); stopRoom(); cancel() }()
+	response, err := s.browserClient().open(ctx, token, http.MethodPost, "/phone-browser/history", "application/json", bytes.NewReader(data), int64(len(data)), 15*time.Second)
+	if err != nil {
+		http.Error(w, "浏览历史暂时不可用，请检查电脑上的环境", http.StatusBadGateway)
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		switch response.StatusCode {
+		case http.StatusNotFound:
+			http.Error(w, "当前客机暂不支持浏览历史，请在电脑上更新环境。", http.StatusNotFound)
+		case http.StatusBadRequest:
+			http.Error(w, "浏览历史请求无效，请检查参数后重试。", http.StatusBadRequest)
+		default:
+			http.Error(w, "浏览历史暂时不可用，请检查电脑上的环境。", http.StatusBadGateway)
+		}
+		return
+	}
+	const limit = 1 << 20
+	out, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if err != nil || len(out) > limit || !json.Valid(out) {
+		http.Error(w, "客机返回的浏览历史无效", http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(out)
 }

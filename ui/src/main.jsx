@@ -1,4 +1,4 @@
-import { shortcut, primaryModifier } from "./platform.mjs";
+import { isMac, shortcut, primaryModifier } from "./platform.mjs";
 import {
   DEFAULT_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
@@ -1236,6 +1236,8 @@ function App() {
       if (k === "t" && !event.shiftKey) handle = newPage;
       if (k === "n" && event.shiftKey) handle = () => openBrowserPage(undefined, true);
       if (k === "d") handle = () => document.dispatchEvent(new Event("cage-add-favorite"));
+      if ((isMac && k === "y" && !event.shiftKey) || (!isMac && k === "h" && !event.shiftKey))
+        handle = () => document.dispatchEvent(new Event("cage-show-history"));
       if (k === "enter" && event.shiftKey) handle = newTerminalHere;
       if (k === "l")
         handle = () => {

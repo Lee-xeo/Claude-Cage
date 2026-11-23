@@ -127,7 +127,7 @@ func AgentOperations() []AgentOperation {
 	get("browser.preferences.get", "Read the browser homepage", "/api/browser/preferences")
 	post("browser.preferences.set", "Apply and persist the browser homepage with the same rollback as the UI", "/api/browser/preferences", object(map[string]string{"browser_home_url": "string"}))
 	get("browser.tabs", "Read browser tabs and state", "/api/browser/tabs")
-	for _, action := range []string{"settings", "cookies", "extensions", "internal-page", "info", "new", "activate", "close", "navigate", "back", "forward", "reload", "editor", "editor-restart", "split"} {
+	for _, action := range []string{"settings", "cookies", "history", "extensions", "internal-page", "info", "new", "activate", "close", "navigate", "back", "forward", "reload", "editor", "editor-restart", "split"} {
 		post("browser."+action, "Use the browser's existing workbench action", "/api/browser/"+action, from(browserInput{}))
 	}
 	get("favorites.get", "Read bookmarks and folders", "/api/favorites")

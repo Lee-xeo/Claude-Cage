@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { phoneError, startPhoneProxy, webAddress } from "./browser-phone-network.mjs";
+import { PhoneHistoryStore } from "./browser-history.mjs";
 
 const idleTimeout = 2 * 60 * 1000;
 const validID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -113,8 +114,15 @@ export class PhoneBrowser {
     this.language = language;
     this.connect = connect;
     this.pipeFactory = pipeFactory ?? ((binary, args) => new BrowserPipe(binary, args));
+    this.historyStore = new PhoneHistoryStore({ directory: this.directory, validateURL: webAddress });
     this.queue = Promise.resolve();
     this.pending = 0;
+  }
+  async history(input) {
+    if (!input || typeof input.profile !== "string" || !/^[a-f0-9]{64}$/.test(input.profile)) {
+      throw new Error("手机浏览器资料无效");
+    }
+    return this.historyStore.request(input.profile, input);
   }
   run(operation, input, signal) {
     // Serialize screenshot/context checks with all layout and input changes.
@@ -258,7 +266,13 @@ export class PhoneBrowser {
     const after = await this.document(s);
     if (before.token !== after.token) throw phoneError(409, "页面正在切换，请重新读取画面");
     if (!picture.data || picture.data.length > 2500000) throw new Error("远程画面过大，请减小视口");
-    const metadata = { id: s.id, url: after.url, title: info.targetInfo.title.slice(0, 512), width: s.width,
+    const title = info.targetInfo.title.slice(0, 512);
+    if (!after.failed && after.url && (s.lastRecordedURL !== after.url || (title && s.lastRecordedTitle !== title))) {
+      s.lastRecordedURL = after.url;
+      s.lastRecordedTitle = title;
+      void this.historyStore.record(s.profile, after.url, title).catch(() => {});
+    }
+    const metadata = { id: s.id, url: after.url, title, width: s.width,
       height: s.height, document: after.token, ...focus };
     const tag = createHash("sha256").update(JSON.stringify(metadata)).update(picture.data, "ascii").digest("hex").slice(0, 32);
     if (previousTag === tag) return { id: s.id, frame_tag: tag, unchanged: true };

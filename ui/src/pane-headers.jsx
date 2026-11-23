@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Archive, ArrowLeft, ArrowRight, ArrowUpRight, ChevronRight, FolderOpen,
+import { Archive, ArrowLeft, ArrowRight, ChevronRight, FolderOpen,
   Globe2, Cookie, Settings, Puzzle, ScanEye, Maximize2, MoreHorizontal, PanelLeftOpen, Plus, RefreshCw, X } from "lucide-react";
 import { BrowserVaultBar } from "./password-vault";
 import { WorkspaceTabs } from "./workspace-tabs";
 import { BrowserFavorites } from "./browser-favorites";
 import { BrowserDownloads } from "./browser-downloads";
 import { BrowserCookies } from "./browser-cookies";
+import { BrowserHistory } from "./browser-history";
+import { BrowserAddressBar } from "./browser-address-bar";
 import { tabName } from "./workspace-state.mjs";
 import { shortcut } from "./platform.mjs";
 import logo from "./logo.png";
@@ -89,12 +91,9 @@ export function BrowserHeader({ vault, onManageVault, tab, tabs, metadata, ready
   sidebarButton, exitButton, splitDrag, onSelect, onClose, onRename, onPin, onReorder, onNew,
   location, menu, back, forward, action, onNavigate, onOpen, onNewPrivate, onNewRegular, onCloseBrowser, onSettings, onReload, downloads, onStatus, onEditor, onRecover, recoveringEditor }) {
   const tr = useTranslation();
-  const [address, setAddress] = useState("");
   const [toolsOpen, setToolsOpen] = useState(false);
   const [cookiesOpen, setCookiesOpen] = useState(false);
   const toolsTrigger = useRef(), toolsMenu = useRef();
-  const url = tab.url === "about:blank" ? "" : tab.url || "";
-  useEffect(() => { setAddress(url); }, [tab.id, url]);
   useEffect(() => { setToolsOpen(false); setCookiesOpen(false); }, [tab.id]);
   useEffect(() => {
     if (!toolsOpen) return;
@@ -188,30 +187,7 @@ export function BrowserHeader({ vault, onManageVault, tab, tabs, metadata, ready
           <RefreshCw size={15} />
         </button>
       </div>
-      <form className="address-bar" onSubmit={event => { event.preventDefault(); onNavigate(address); }}>
-        {tab.incognito ? <span className="browser-private-badge" title={tab.login ? tr("授权结束后清理本次登录会话") : tr("关闭全部无痕标签后清理此会话")}><ScanEye size={13} />{tr("无痕")}</span> : <Globe2 size={13} />}
-        <input
-          aria-label={tr("网页地址或搜索")}
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          onFocus={(e) => e.target.select()}
-          placeholder={
-            ready
-              ? tr("输入网址或搜索，在 Cage 内打开")
-              : tr("启动环境后浏览网页")
-          }
-          disabled={!ready}
-          spellCheck="false"
-        />
-        <button
-          className="address-go"
-          type="submit"
-          aria-label={tr("打开地址")}
-          disabled={!ready}
-        >
-          <ArrowUpRight size={15} />
-        </button>
-      </form>
+      <BrowserAddressBar tab={tab} tabs={tabs} ready={ready} onNavigate={onNavigate} onSelect={onSelect} />
       <BrowserFavorites current={tab} shortcuts={focused} ready={ready && !busy} onOpen={onOpen} />
       <BrowserDownloads downloads={downloads} ready={ready && !busy} onStatus={onStatus} />
       <button className="icon-button browser-more-trigger" aria-label={tr("浏览器菜单")} title={tr("浏览器菜单")}
@@ -237,6 +213,7 @@ export function BrowserHeader({ vault, onManageVault, tab, tabs, metadata, ready
         {tab.incognito && <button className="browser-menu-item" role="menuitem" disabled={!ready || busy} onClick={onNewRegular}><Globe2 size={16} />{tr("新建普通标签")}</button>}
         {!tab.login && tab.kind !== "browser-settings" && <button className="browser-menu-item" role="menuitem" disabled={!ready || busy} onClick={() => setCookiesOpen(true)}><Cookie size={16} />{tr("管理 Cookie")}</button>}
         <button className="browser-menu-item" role="menuitem" disabled={!ready || busy} onClick={() => onSettings('extensions')}><Puzzle size={16} />{tr("扩展")}</button>
+        <BrowserHistory menu shortcuts={focused} ready={ready && !busy} onOpen={onOpen} returnFocusRef={toolsTrigger} />
         <BrowserDownloads menu anchorRef={toolsTrigger} downloads={downloads} ready={ready && !busy} onStatus={onStatus} />
         {tab.kind === "editor" && <button className="browser-menu-item" role="menuitem" aria-label={tr("恢复编辑器")} title={tr("单独重启编辑器")}
           disabled={!ready || busy || recoveringEditor} onClick={onRecover}>

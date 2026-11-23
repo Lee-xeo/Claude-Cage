@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -107,5 +108,60 @@ func TestBrowserEventsShutdownDrainsIdleAndBlockedStreams(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBrowserHistoryValidationAndForwarding(t *testing.T) {
+	s := testServer(t)
+	s.ready, s.credentials.Token = true, "guest-token"
+	var seen []map[string]any
+	guest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/history" || r.Header.Get("Authorization") != "Bearer guest-token" {
+			t.Errorf("unexpected guest history request: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		seen = append(seen, payload)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"items":[{"id":"1","url":"https://youtube.com/","title":"YouTube","lastVisitTime":1700000000000,"visitCount":2}]}`)
+	}))
+	defer guest.Close()
+	s.browserControl = localBrowserClient(t, s.lifetimeContext(), guest)
+	defer s.browserControl.close()
+
+	for _, bad := range []string{
+		`{"mode":"drop"}`,
+		`{"mode":"list","limit":501}`,
+		`{"mode":"delete","url":"javascript:alert(1)"}`,
+		`{"mode":"delete","url":"http://127.0.0.1:18080/?folder=/work"}`,
+		`{"mode":"clear","range":"decade"}`,
+	} {
+		w := request(s, "POST", "/api/browser/history", s.origin, bad, true)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for %s, got %d (%s)", bad, w.Code, w.Body.String())
+		}
+	}
+	if len(seen) != 0 {
+		t.Fatalf("invalid history inputs reached guest: %v", seen)
+	}
+
+	w := request(s, "POST", "/api/browser/history", s.origin, `{"mode":"list","query":"you","limit":20}`, true)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "youtube.com") {
+		t.Fatalf("history list failed: %d %s", w.Code, w.Body.String())
+	}
+	w = request(s, "POST", "/api/browser/history", s.origin, `{"mode":"delete","url":"https://youtube.com/"}`, true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("history delete failed: %d %s", w.Code, w.Body.String())
+	}
+	w = request(s, "POST", "/api/browser/history", s.origin, `{"mode":"clear","range":"day"}`, true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("history clear failed: %d %s", w.Code, w.Body.String())
+	}
+	if len(seen) != 3 || seen[0]["mode"] != "list" || seen[1]["mode"] != "delete" || seen[2]["range"] != "day" {
+		t.Fatalf("unexpected forwarded payloads: %+v", seen)
 	}
 }
