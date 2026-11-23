@@ -370,6 +370,45 @@ func agentWaitTarget(parent context.Context, path string, target workbench.Agent
 	}
 }
 
+// environmentCheck reads status. A ready environment whose gate is closed
+// refuses guest connections, so it is not reported as ready (#761).
+func environmentCheck(state json.RawMessage) (code, status, next string) {
+	var view struct {
+		Ready         bool          `json:"ready"`
+		Running       bool          `json:"vm_running"`
+		Update        bool          `json:"environment_update_required"`
+		Job           workbench.Job `json:"job"`
+		NetworkError  string        `json:"network_error"`
+		NetworkPaused bool          `json:"network_paused"`
+		NetworkOpen   *bool         `json:"network_open"`
+		Safety        struct {
+			Gate *struct {
+				Mode string `json:"mode"`
+			} `json:"gate"`
+		} `json:"safety"`
+	}
+	_ = json.Unmarshal(state, &view)
+	switch {
+	case view.Job.Running:
+		return "job_running", "waiting", "job " + view.Job.ID
+	case view.Job.Error != "":
+		return "job_failed", "blocked", "diagnostics"
+	case view.Update:
+		return "environment_update_required", "blocked", "environment.update"
+	case !view.Running || !view.Ready:
+		return "environment_not_ready", "blocked", "environment.start"
+	case view.NetworkError != "":
+		return "network_not_ready", "blocked", "inspect_network_policy"
+	case view.NetworkPaused:
+		return "network_paused", "blocked", "network.check"
+	case view.Safety.Gate != nil && view.Safety.Gate.Mode == cage.GateChecking:
+		return "network_checking", "waiting", "status"
+	case view.NetworkOpen != nil && !*view.NetworkOpen:
+		return "network_closed", "blocked", "network.check"
+	}
+	return "environment_ready", "ok", ""
+}
+
 func agentDoctor(ctx context.Context, path string) map[string]any {
 	result := map[string]any{"note": "Read-only snapshot. No repairs were applied; missing services were not started."}
 	checks := []map[string]any{}
@@ -431,28 +470,7 @@ func agentDoctor(ctx context.Context, path string) map[string]any {
 			}
 			if state, e := workbench.AgentCall(ctx, path, "status", nil); e == nil {
 				result["environment"] = state
-				var view struct {
-					Ready        bool          `json:"ready"`
-					Running      bool          `json:"vm_running"`
-					Update       bool          `json:"environment_update_required"`
-					Job          workbench.Job `json:"job"`
-					NetworkError string        `json:"network_error"`
-				}
-				_ = json.Unmarshal(state, &view)
-				switch {
-				case view.Job.Running:
-					add("job_running", "waiting", "job "+view.Job.ID)
-				case view.Job.Error != "":
-					add("job_failed", "blocked", "diagnostics")
-				case view.Update:
-					add("environment_update_required", "blocked", "environment.update")
-				case !view.Running || !view.Ready:
-					add("environment_not_ready", "blocked", "environment.start")
-				case view.NetworkError != "":
-					add("network_not_ready", "blocked", "inspect_network_policy")
-				default:
-					add("environment_ready", "ok", "")
-				}
+				add(environmentCheck(state))
 			} else {
 				add("environment_status_unavailable", "blocked", "diagnostics")
 			}

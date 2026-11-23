@@ -172,7 +172,7 @@ cage agent call initialization.status
 cage agent call network.check --wait 5m
 ```
 
-以 `status.ready`、`vm_running` 以及 `safety` 中当前配置对应的网络检查与授权共同判断可用性；`proxy.status.network_open` 可辅助检查外网是否已放行。网络暂停时保持用户的暂停意图，只有用户要求恢复联网才运行 `network.check`。完成首次引导使用 `initialization.set` 的 `{"action":"complete"}`，后台会再次核对环境与网络状态。
+以 `status.ready`、`vm_running` 以及 `safety` 中当前配置对应的网络检查与授权共同判断可用性；`status.network_open` 表示当前授权是否仍放行虚拟机外网，`status.network_paused` 表示用户已手动暂停联网，`proxy.status.network_open` 只说明代理本身是否就绪。外网未放行时虚拟机内的连接会被拒绝，`doctor` 会报告 `network_paused`、`network_checking` 或 `network_closed`，而不是 `environment_ready`；`cage run`、`cage shell` 和 `cage claude` 也会在 stderr 提示。网络暂停时保持用户的暂停意图，只有用户要求恢复联网才运行 `network.check`。完成首次引导使用 `initialization.set` 的 `{"action":"complete"}`，后台会再次核对环境与网络状态。
 
 换网络或睡眠唤醒后，后台会在需要时重新绑定物理网卡，并重新检查出口。恢复任务失败后保留待恢复状态，至少等待 15 秒再试；停止环境后不再排队恢复，手动暂停期间不会自动放行外网。最近一次保存的检查报告不能代替当前配置和当前运行实例的有效授权。
 

@@ -749,6 +749,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"storage_recovery": s.storageRecoveryStatusLocked(),
 		"keyboard":         s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.jobs.snapshot(),
 		"location": s.location, "network_error": s.currentNetworkErrorLocked(), "can_restore": e == nil,
+		"network_paused": s.networkPaused, "network_open": s.networkOpenLocked(time.Now()),
 		"safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError,
 		"abandoned_guests": s.abandonedGuestList(), "abandoned_environment": s.abandonedEnvironmentSystem(),
 	}
