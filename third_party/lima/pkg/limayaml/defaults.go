@@ -32,7 +32,6 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/limatype/dirnames"
 	"github.com/lima-vm/lima/v2/pkg/limatype/filenames"
 	"github.com/lima-vm/lima/v2/pkg/localpathutil"
-	. "github.com/lima-vm/lima/v2/pkg/must"
 	"github.com/lima-vm/lima/v2/pkg/networks"
 	"github.com/lima-vm/lima/v2/pkg/osutil"
 	"github.com/lima-vm/lima/v2/pkg/version"
@@ -53,8 +52,8 @@ const (
 var (
 	IPv4loopback1 = net.IPv4(127, 0, 0, 1)
 
-	userHomeDir = Must(os.UserHomeDir())
-	currentUser = Must(user.Current())
+	userHomeDir, userHomeDirErr = os.UserHomeDir()
+	currentUser, currentUserErr = user.Current()
 )
 
 //go:embed containerd.yaml
@@ -975,6 +974,12 @@ func executeGuestTemplate(format, instDir string, user limatype.User, param map[
 }
 
 func executeHostTemplate(format, instDir string, param map[string]string) (bytes.Buffer, error) {
+	if currentUserErr != nil {
+		return bytes.Buffer{}, fmt.Errorf("failed to resolve current user: %w", currentUserErr)
+	}
+	if userHomeDirErr != nil {
+		return bytes.Buffer{}, fmt.Errorf("failed to resolve user home directory: %w", userHomeDirErr)
+	}
 	tmpl, err := template.New("").Parse(format)
 	if err == nil {
 		limaHome, _ := dirnames.LimaDir()

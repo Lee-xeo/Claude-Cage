@@ -26,6 +26,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/hostproxy"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
+	"github.com/sylvinus/agent-vm/internal/paths"
 	"github.com/sylvinus/agent-vm/internal/uilocale"
 	"github.com/sylvinus/agent-vm/internal/workbench"
 	"io"
@@ -531,7 +532,7 @@ func run() int {
 		if location.Custom {
 			// Resolve the profile prefix once, as Lima did before migration.
 			// Keep state itself logical so its original disk and socket paths survive.
-			realProfile, err := filepath.EvalSymlinks(profile)
+			realProfile, err := paths.Resolve(profile)
 			if err != nil {
 				return fail(err)
 			}

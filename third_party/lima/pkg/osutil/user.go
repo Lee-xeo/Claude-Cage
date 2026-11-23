@@ -95,7 +95,7 @@ const (
 	fallbackGid  = 1000
 )
 
-var currentUser = Must(user.Current())
+var currentUser, currentUserErr = user.Current()
 
 var (
 	once     = new(sync.Once)
@@ -105,7 +105,9 @@ var (
 
 func LimaUser(ctx context.Context, limaVersion string, warn bool, guestOS *limatype.OS) *user.User {
 	once.Do(func() {
-		limaUser = currentUser
+		u := Must(currentUser, currentUserErr)
+		copied := *u
+		limaUser = &copied
 		if !regexUsername.MatchString(limaUser.Username) {
 			warning := fmt.Sprintf("local username %#q is not a valid Linux username (must match %#q); using %#q instead",
 				limaUser.Username, regexUsername.String(), fallbackUser)
