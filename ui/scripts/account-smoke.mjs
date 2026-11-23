@@ -65,6 +65,8 @@ try {
   await page.getByRole('status').filter({hasText:'账户资料已保存'}).waitFor();
   assert.equal(state.account.username,'山雀的工作室');
   assert.match(state.account.avatar,/^data:image\/png;base64,/);
+  assert.equal(await page.getByRole('button',{name:'恢复默认头像',exact:true}).count(),0);
+  assert.equal(await page.locator('.account-profile-actions').count(),0);
   await page.screenshot({path:output+'settings.png'});
   assert.equal(await page.getByLabel('当前密码',{exact:true}).count(),0);
   const editAvatar=page.getByRole('button',{name:'更换头像',exact:true});

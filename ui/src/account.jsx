@@ -770,10 +770,9 @@ export function AccountSettings({ busy: environmentBusy, onDirty, onConfirm }) {
             onChange={upload} aria-label={tr("选择头像图片")} />
           <input className="account-profile-name" aria-label={tr("用户名")} value={name} maxLength={40}
             autoComplete="username" onChange={(e) => setName(e.target.value)} required />
-          {(avatar || changed) && (
+          {changed && (
             <div className="account-profile-actions">
-              {avatar && <button type="button" className="text-button" onClick={() => setAvatar("")}>{tr("恢复默认头像")}</button>}
-              {changed && <button className="primary" disabled={!name.trim() || busy}><Check size={16} />{tr("保存资料")}</button>}
+              <button className="primary" disabled={!name.trim() || busy}><Check size={16} />{tr("保存资料")}</button>
             </div>
           )}
         </fieldset>
