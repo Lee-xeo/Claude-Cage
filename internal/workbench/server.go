@@ -869,6 +869,10 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request) {
 		requestError(w, errors.New("没有可恢复的配置"))
 		return
 	}
+	// The saved configuration does not carry this switch; the preferences
+	// saved with it do. Without it a restored switch is written back while
+	// the environment keeps running with the other setting.
+	v.Config.TLSClientHelloSplit = v.Preferences.TLSClientHelloSplit
 	s.launchRequest(w, r, "restore", func() error {
 		if err := s.apply(v, false); err != nil {
 			return err

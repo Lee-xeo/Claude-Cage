@@ -195,6 +195,15 @@ func probeExitIPServices(ctx context.Context, client *http.Client, services []ex
 		return "", usererror.Wrap("通过所选代理查询出口 IP", ctx.Err(), "外网保持关闭。")
 	}
 	if allTLSHandshakeFailed && !allTimedOut {
+		// The bundled core grants a SOCKS5 CONNECT before it dials the node,
+		// so a refused, unauthenticated or unroutable node also ends here as
+		// an EOF in the handshake. Only a proxy that reaches the plain
+		// connectivity address has a handshake problem.
+		if reachability != "" && ctx.Err() == nil {
+			if reached, _ := proxyReaches(ctx, client, reachability); !reached {
+				return "", usererror.New("代理节点无法连通", strings.Join(reported, "；"), "通过所选代理访问连通性检查地址也未成功，节点可能无法连通；请检查节点地址、端口、账号密码以及本机到节点的网络，或切换节点；外网保持关闭。", ErrProxyConnectFailed)
+			}
+		}
 		return "", usererror.New("TLS 握手失败", strings.Join(reported, "；"), "所选代理链路在 TLS 握手阶段中断（如返回 EOF），可尝试在“设置 → 网络与代理”开启“TLS ClientHello 分段传输兼容模式”或切换代理节点；外网保持关闭。", ErrTLSHandshakeFailed)
 	}
 	if allTimedOut {
