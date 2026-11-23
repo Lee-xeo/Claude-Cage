@@ -254,10 +254,11 @@ func TestAgentSocketUsesTheSameTerminalAndAccountLock(t *testing.T) {
 	}
 	cancel()
 	writer.Close()
-	output.Close()
+	go func() { _, _ = io.Copy(io.Discard, output) }()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
+	output.Close()
 	s.account.lock()
 	if err := AgentSocket(context.Background(), s.configPath, AgentTarget{}, "/api/terminals/"+session.id+"/stream", io.NopCloser(strings.NewReader("")), io.Discard); err == nil {
 		t.Fatal("locked account retained terminal access")

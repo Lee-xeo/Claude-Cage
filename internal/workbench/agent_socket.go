@@ -143,6 +143,9 @@ func AgentSocket(ctx context.Context, configPath string, target AgentTarget, pat
 			continue
 		}
 		if err := emit(value); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			return err
 		}
 	}
