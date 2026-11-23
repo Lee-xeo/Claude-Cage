@@ -95,6 +95,10 @@ func (s *Server) resourceStatus(w http.ResponseWriter, r *http.Request) {
 		storageProbeDir = s.instanceDir()
 	}
 	minDiskGiB, maxDiskGiB := cage.DiskBounds(storageProbeDir, uint64(max(int64(0), configuredDiskBytes)), guestDiskUsed)
+	// The disk only grows; the range offered starts at its present size.
+	if current := int((max(int64(0), configuredDiskBytes) + (1 << 30) - 1) >> 30); current > 0 {
+		minDiskGiB = min(current, maxDiskGiB)
+	}
 	diskGiB, diskErr := a.DiskLimit(storageProbeDir, uint64(max(int64(0), configuredDiskBytes)), guestDiskUsed)
 	if diskErr != nil {
 		if allocationError == "" {
@@ -136,6 +140,12 @@ func (s *Server) applyResources(w http.ResponseWriter, r *http.Request) {
 			requestError(w, err)
 			return
 		}
+		// Limits lowers an older saved value to this host's ceiling; a
+		// value being saved now has to fit.
+		if _, maxCPUs := cage.ResourceLimits(); !input.Allocation.Automatic && input.Allocation.CPUs > maxCPUs {
+			requestError(w, fmt.Errorf("CPU 须为 1–%d 个逻辑核心", maxCPUs))
+			return
+		}
 		_, _, configuredDiskBytes := s.configuredInstanceResources()
 		var guestDiskUsed uint64
 		if s.vmRunning() {
@@ -146,6 +156,10 @@ func (s *Server) applyResources(w http.ResponseWriter, r *http.Request) {
 		storageProbeDir := filepath.Dir(s.configPath)
 		if st, statErr := os.Stat(s.instanceDir()); statErr == nil && st.IsDir() {
 			storageProbeDir = s.instanceDir()
+		}
+		if !input.Allocation.Automatic && input.Allocation.DiskGiB > 0 && int64(input.Allocation.DiskGiB)<<30 < configuredDiskBytes {
+			requestError(w, cage.DiskShrinkUnavailable)
+			return
 		}
 		if _, err := input.Allocation.DiskLimit(storageProbeDir, uint64(max(int64(0), configuredDiskBytes)), guestDiskUsed); err != nil {
 			requestError(w, err)
@@ -182,9 +196,6 @@ func (s *Server) applyResources(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		targetDiskBytes := int64(targetDiskGiB) << 30
-		if configuredDiskBytes > 0 && targetDiskBytes < configuredDiskBytes {
-			return s.shrinkEnvironmentDisk(targetDiskGiB)
-		}
 		if s.vmRunning() {
 			if err := s.stopEnvironment(); err != nil {
 				return err

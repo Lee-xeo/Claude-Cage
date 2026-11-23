@@ -51,10 +51,10 @@ if [[ $scope == dedicated || $scope == node-* ]]; then
           "--property=InaccessiblePaths=-/run/systemd/resolve/io.systemd.Resolve -/run/dbus/system_bus_socket -/run/nscd/socket")
 elif [[ $scope != shared ]]; then exit 2; fi
 if [[ "${CAGE_ACCOUNT_TZ:-}" =~ ^[A-Za-z0-9_/+.-]{1,64}$ && "${CAGE_ACCOUNT_TZ}" != *..* ]]; then
-  props+=("--property=Environment=TZ=${CAGE_ACCOUNT_TZ}")
+  props+=("--property=Environment=account_tz=${CAGE_ACCOUNT_TZ}")
 fi
 if [[ "${CAGE_ACCOUNT_LANGUAGE:-}" =~ ^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$ ]]; then
-  props+=("--property=Environment=CAGE_LANGUAGE=${CAGE_ACCOUNT_LANGUAGE}")
+  props+=("--property=Environment=account_language=${CAGE_ACCOUNT_LANGUAGE}")
 fi
 program=$(mktemp "$base/session.XXXXXX")
 trap 'rm -f -- "$program"' EXIT
@@ -150,6 +150,11 @@ Xtigervnc -displayfd 3 3>"$XDG_RUNTIME_DIR/display" -geometry 1280x800 -depth 24
 for _ in {1..100}; do test -s "$XDG_RUNTIME_DIR/display" && break; sleep .05; done
 export DISPLAY=":$(cat "$XDG_RUNTIME_DIR/display")"
 xauth -f "$XAUTHORITY" add "$DISPLAY" . "$cookie"
+# The environment file's values win over the unit's own Environment=, so the
+# account's region arrives under other names and is applied here.
+if [[ -n "${account_tz:-}" ]]; then export TZ=$account_tz; fi
+if [[ -n "${account_language:-}" ]]; then CAGE_LANGUAGE=$account_language; fi
+unset account_tz account_language
 desktop_lang=""
 if [[ "${CAGE_LANGUAGE:-}" =~ ^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$ ]]; then
   desktop_lang="${CAGE_LANGUAGE}"
@@ -206,7 +211,11 @@ input_session=()
 if [[ -x /usr/local/bin/cage-input-session ]]; then input_session=(/usr/local/bin/cage-input-session); fi
 lang_args=()
 if [[ -n "${desktop_lang:-}" ]]; then lang_args=("--lang=${desktop_lang}"); fi
-DESKTOP_LOG_LEVEL=debug CLAUDE_ENABLE_LOGGING=1 DEBUG='*current-account*' ${input_session[@]+"${input_session[@]}"} claude-desktop "--user-data-dir=$base/data" ${lang_args[@]+"${lang_args[@]}"} --password-store=gnome-libsecret --xdg-portal-required-version=3 > >(/usr/bin/python3 -I /usr/local/lib/desktop-identity.py "$XDG_RUNTIME_DIR/account.json") &
+# The neutral launcher renames the audio and input socket paths the client
+# would otherwise see. It is installed with the environment.
+client_runtime=()
+if [[ -r /usr/local/bin/client_runtime.py ]]; then client_runtime=(/usr/bin/python3 -I /usr/local/bin/client_runtime.py); fi
+DESKTOP_LOG_LEVEL=debug CLAUDE_ENABLE_LOGGING=1 DEBUG='*current-account*' ${input_session[@]+"${input_session[@]}"} ${client_runtime[@]+"${client_runtime[@]}"} claude-desktop "--user-data-dir=$base/data" ${lang_args[@]+"${lang_args[@]}"} --password-store=gnome-libsecret --xdg-portal-required-version=3 > >(/usr/bin/python3 -I /usr/local/lib/desktop-identity.py "$XDG_RUNTIME_DIR/account.json") &
 app=$!
 printf '%s\n' "$app" > "$XDG_RUNTIME_DIR/app-pid"
 for _ in {1..250}; do

@@ -52,7 +52,7 @@ func allowed(method string, u *url.URL) bool {
 			return method == http.MethodPost
 		case "/api/mobile/cli/projects":
 			return method == http.MethodGet
-		case "/api/mobile/cli/sessions", "/api/mobile/browser/favorites":
+		case "/api/mobile/cli/sessions", "/api/mobile/browser/favorites", "/api/mobile/browser/history":
 			return method == http.MethodGet || method == http.MethodPost
 		}
 	}

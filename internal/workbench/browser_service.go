@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -43,6 +45,10 @@ type browserInput struct {
 	Scope          string              `json:"scope,omitempty"`
 	Query          string              `json:"query,omitempty"`
 	Page           int                 `json:"page,omitempty"`
+	Limit          int                 `json:"limit,omitempty"`
+	Range          string              `json:"range,omitempty"`
+	StartTime      float64             `json:"startTime,omitempty"`
+	EndTime        float64             `json:"endTime,omitempty"`
 	Left           string              `json:"left,omitempty"`
 	Right          string              `json:"right,omitempty"`
 	ID             string              `json:"id"`
@@ -142,6 +148,11 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 				}
 			}
 		}
+		if action == "history" {
+			if err := validBrowserHistory(input); err != nil {
+				return nil, browserInputError{err}
+			}
+		}
 		if (action == "copy-context" || action == "copy" || action == "cut") && (input.ID == "" || !validInputToken(input.Context)) {
 			return nil, browserInputError{errors.New("复制操作或目标标签无效")}
 		}
@@ -213,6 +224,55 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 
 func validCookieKey(key string) bool {
 	return len(key) == 64 && strings.Trim(key, "0123456789abcdef") == ""
+}
+
+func validBrowserHistory(input *browserInput) error {
+	if input == nil {
+		return errors.New("历史记录操作无效")
+	}
+	if input.Mode == "" {
+		input.Mode = "list"
+	}
+	switch input.Mode {
+	case "list":
+		input.Query = strings.TrimSpace(input.Query)
+		if len(input.Query) > 500 {
+			return errors.New("搜索词过长，请缩短后重试")
+		}
+		if input.Limit < 0 || input.Limit > 500 {
+			return errors.New("历史记录条数无效")
+		}
+		if math.IsNaN(input.StartTime) || math.IsInf(input.StartTime, 0) || input.StartTime < 0 ||
+			math.IsNaN(input.EndTime) || math.IsInf(input.EndTime, 0) || input.EndTime < 0 {
+			return errors.New("历史记录时间范围无效")
+		}
+		if input.URL != "" || input.Range != "" {
+			return errors.New("历史记录查询参数无效")
+		}
+		return nil
+	case "delete":
+		input.URL = strings.TrimSpace(input.URL)
+		parsed, err := url.Parse(input.URL)
+		if err != nil || len(input.URL) == 0 || len(input.URL) > 16384 ||
+			(parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			parsed.Hostname() == "" || parsed.User != nil ||
+			(parsed.Hostname() == "127.0.0.1" && parsed.Port() == "18080") {
+			return errors.New("历史记录地址无效")
+		}
+		return nil
+	case "clear":
+		if input.Range == "" {
+			input.Range = "all"
+		}
+		switch input.Range {
+		case "hour", "day", "week", "all":
+			return nil
+		default:
+			return errors.New("清除范围无效")
+		}
+	default:
+		return errors.New("历史记录操作无效")
+	}
 }
 
 // validBrowserCookie checks the format of a cookie to write. The guest owns

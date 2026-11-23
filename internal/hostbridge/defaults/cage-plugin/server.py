@@ -78,7 +78,7 @@ Required fields:
 - `name`: lowercase letters, digits, hyphens (`^[a-z0-9]+(-[a-z0-9]+)*$`, max 40 chars, must match folder name).
 - `version`: semantic version like `"0.1.0"`.
 - `description`: concise one-sentence functional summary.
-- `target`: `"workspace"` (runs inside the workspace environment, zero host risk) or `"local"` (runs on the user's computer with explicit user confirmation per call).
+- `target`: `"workspace"` (the default; runs beside the current session without a confirmation per call) or `"local"` (for tools that need the user's desktop apps, screen or input; the user confirms each call).
 - `permissions`: array of required capabilities from `["files", "commands", "screen", "input", "network"]`, or `[]`.
 - `contributes`: object containing `mcpServers` (at most 1 server), optional `views`, and optional `settings`.
 

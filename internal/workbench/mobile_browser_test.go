@@ -49,6 +49,20 @@ func testPairedBrowser(t *testing.T, ctx context.Context, s *Server, phone *mobi
 	receiving := make(chan struct{})
 	id := uuid.NewString()
 	s.browserControl = browserClientForTest(t, s, browserTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/phone-browser/history" {
+			var req phoneHistoryRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+			}
+			if req.Profile != profile {
+				t.Errorf("history profile mismatch: got %q", req.Profile)
+			}
+			reply := `{"items":[{"id":"https://youtube.com/","url":"https://youtube.com/","title":"YouTube","lastVisitTime":1700000000000,"visitCount":1}]}`
+			if req.Mode != "list" {
+				reply = `{"ok":true}`
+			}
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(reply))}, nil
+		}
 		var input phoneSurfaceInput
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			t.Error(err)
@@ -212,6 +226,12 @@ func testPairedBrowser(t *testing.T, ctx context.Context, s *Server, phone *mobi
 	do("POST", id+"/action", `{"type":"cdp"}`, 400)
 	do("GET", uuid.NewString()+"/frame", "", 410)
 	do("POST", id+"/close", "{}", 200)
+	if reply := do("GET", "history", "", 200); !strings.Contains(reply, "youtube.com") {
+		t.Fatalf("expected phone history list, got %s", reply)
+	}
+	do("POST", "history", `{"mode":"delete","url":"https://youtube.com/"}`, 200)
+	do("POST", "history", `{"mode":"clear","range":"day"}`, 200)
+	do("POST", "history", `{"mode":"delete","url":"javascript:alert(1)"}`, 400)
 	do("POST", "open", strings.Replace(open, `"width"`, `"url":"https://claude.ai/","width"`, 1), 200)
 	if url := <-openedURLs; url != "https://claude.ai/" {
 		t.Fatal("explicit shortcut overridden by home")

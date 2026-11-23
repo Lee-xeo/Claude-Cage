@@ -96,10 +96,12 @@ func (s *Server) desktopFileOwner(id string) string {
 func desktopFilesPollAllScript(asWorkUser string) string {
 	return `state=$(systemctl is-active cage-claude-desktop.service 2>/dev/null) || true
 default_active=0
+default_failed=0
 case "$state" in
   inactive|activating|deactivating|unknown) ;;
   active) default_active=1 ;;
-  *) printf 'desktop file service state=%s\n' "$state" >&2; exit 1 ;;
+  # A failed default Desktop does not stop the account Desktops' transfers.
+  *) default_failed=1 ;;
 esac
 sources=()
 if [ "$default_active" -eq 1 ]; then
@@ -119,6 +121,10 @@ for sock in /run/desktop-*/files.sock; do
   fi
 done
 if [ "${#sources[@]}" -eq 0 ]; then
+  if [ "$default_failed" -eq 1 ]; then
+    printf 'desktop file service state=%s\n' "$state" >&2
+    exit 1
+  fi
   printf '%s\n' '{"available":false,"sources":{}}'
   exit 0
 fi

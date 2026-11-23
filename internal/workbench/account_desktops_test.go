@@ -290,8 +290,13 @@ func TestLinuxAccountDesktopScriptWiresPortalAndIsolatedInput(t *testing.T) {
 		"/usr/local/bin/cage-input-session",
 		"--property=PrivateTmp=yes",
 		"--property=EnvironmentFile=-/etc/claude-cage/environment",
-		"--property=Environment=TZ=${CAGE_ACCOUNT_TZ}",
-		"--property=Environment=CAGE_LANGUAGE=${CAGE_ACCOUNT_LANGUAGE}",
+		// Not TZ= or CAGE_LANGUAGE= on the unit: the environment file's
+		// values would win over them.
+		"--property=Environment=account_tz=${CAGE_ACCOUNT_TZ}",
+		"--property=Environment=account_language=${CAGE_ACCOUNT_LANGUAGE}",
+		"export TZ=$account_tz",
+		"client_runtime=(/usr/bin/python3 -I /usr/local/bin/client_runtime.py)",
+		`${client_runtime[@]+"${client_runtime[@]}"} claude-desktop`,
 		"browser-language",
 		"unset CAGE_LANGUAGE",
 		"dbus-update-activation-environment DISPLAY XAUTHORITY HOME XDG_RUNTIME_DIR TZ LANG LC_ALL",

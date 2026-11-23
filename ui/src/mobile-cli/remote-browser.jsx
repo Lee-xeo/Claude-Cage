@@ -1,7 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { ArrowDownLeft, ArrowLeft, ArrowRight, BookOpen, Check, CornerDownLeft, Delete, Globe2, Keyboard, LoaderCircle, Maximize, Monitor, RotateCw, ZoomIn, X } from "lucide-react";
+import { ArrowDownLeft, ArrowLeft, ArrowRight, BookOpen, Check, CornerDownLeft, Delete, Globe2, History, Keyboard, LoaderCircle, Maximize, Monitor, RotateCw, Star, ZoomIn, X } from "lucide-react";
 import { PhoneFavorites } from "./phone-favorites";
+import { PhoneHistory } from "./phone-history";
+import { browserRequest } from "./transport.mjs";
+import { buildAddressSuggestions } from "../browser-omnibox.mjs";
 import { connectDisplay, framePoint } from "./browser-session.mjs";
 import "./remote-browser.css";
 
@@ -13,10 +16,74 @@ function Tool({icon: Icon, label, ...props}) {
 
 function AddressBar({frame, goToAddress, onNotice}) {
   const [address, setAddress] = useState(null);
+  const [focused, setFocused] = useState(false);
   const [invalid, setInvalid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [favorites, setFavorites] = useState([]);
+  const [history, setHistory] = useState([]);
   const submission = useRef(false);
+  const inputRef = useRef(null);
+  const wrapRef = useRef(null);
+  const lastLoaded = useRef(0);
   const current = frame?.url === "about:blank" ? "" : frame?.url || "";
+
+  const loadSources = async () => {
+    const now = Date.now();
+    if (now - lastLoaded.current < 5000) return;
+    lastLoaded.current = now;
+    try {
+      const data = await browserRequest("/favorites");
+      if (Array.isArray(data?.items)) setFavorites(data.items);
+    } catch { /* ignore */ }
+    try {
+      const data = await browserRequest("/history", { body: { mode: "list", query: "", limit: 50 } });
+      if (Array.isArray(data?.items)) setHistory(data.items);
+    } catch { /* ignore on older hosts */ }
+  };
+
+  useEffect(() => {
+    if (!focused) return;
+    const dismiss = (event) => {
+      if (!wrapRef.current?.contains(event.target)) setFocused(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [focused]);
+
+  const draft = address ?? "";
+  const suggestions = useMemo(() => {
+    if (!focused || address === null || !draft.trim()) return [];
+    return buildAddressSuggestions({
+      query: draft,
+      favorites,
+      history,
+      allowSearch: false,
+      publicOnly: true,
+      limit: 6,
+    });
+  }, [focused, address, draft, favorites, history]);
+
+  const openURL = async (href, rawToMatch = null) => {
+    if (submission.current) return;
+    submission.current = true;
+    setSubmitting(true);
+    setFocused(false);
+    setInvalid(false);
+    onNotice("");
+    try {
+      const opened = await goToAddress(href);
+      if (opened && (rawToMatch === null || inputRef.current?.value.trim() === rawToMatch)) {
+        inputRef.current?.blur();
+        setAddress(null);
+      }
+    } catch (error) {
+      onNotice(error.message);
+    } finally {
+      submission.current = false;
+      setSubmitting(false);
+    }
+  };
+
   const navigate = async event => {
     event.preventDefault();
     if (submission.current) return;
@@ -31,27 +98,47 @@ function AddressBar({frame, goToAddress, onNotice}) {
       setInvalid(true); onNotice("请输入有效的 HTTP 或 HTTPS 网址。");
       return;
     }
-    submission.current = true; setSubmitting(true); onNotice("");
-    try {
-      if (await goToAddress(url.href) && field.value.trim() === raw) {
-        field.blur();
-        setAddress(null);
-      }
-    } catch (error) {
-      onNotice(error.message);
-    } finally {
-      submission.current = false; setSubmitting(false);
-    }
+    await openURL(url.href, raw);
   };
-  return <form className="remote-address" onSubmit={navigate}>
+
+  return <div className="remote-address-wrap" ref={wrapRef}>
+    <form className="remote-address" onSubmit={navigate}>
         <Globe2 size={16} aria-hidden="true" />
-        <input aria-label="远程网页地址" aria-invalid={invalid} inputMode="url" enterKeyHint="go" autoCapitalize="none"
+        <input ref={inputRef} aria-label="远程网页地址" aria-invalid={invalid} inputMode="url" enterKeyHint="go" autoCapitalize="none"
           autoCorrect="off" autoComplete="off" spellCheck={false} placeholder="输入网址" disabled={!frame}
-          value={address ?? current} onFocus={event => event.target.select()}
-          onChange={event => {setAddress(event.target.value); setInvalid(false); onNotice("");}}
-          onKeyDown={event => {if (event.key === "Escape") {setAddress(null); setInvalid(false); onNotice(""); event.target.blur();}}} />
+          value={address ?? current}
+          onFocus={event => { setFocused(true); event.target.select(); }}
+          onChange={event => {
+            const next = event.target.value;
+            setAddress(next);
+            setInvalid(false);
+            onNotice("");
+            if (next.trim()) void loadSources();
+          }}
+          onKeyDown={event => {if (event.key === "Escape") {setAddress(null); setFocused(false); setInvalid(false); onNotice(""); event.target.blur();}}} />
         <button type="submit" aria-label="前往网址" aria-busy={submitting} disabled={!frame || submitting}>{submitting ? <LoaderCircle className="spin" size={17} /> : <ArrowDownLeft size={17} />}</button>
-      </form>;
+      </form>
+      {suggestions.length > 0 && (
+        <ul className="remote-suggestions" role="listbox" aria-label="网址建议">
+          {suggestions.map((item) => (
+            <li key={item.id} role="option">
+              <button
+                type="button"
+                className="remote-suggestion"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => openURL(item.url)}
+              >
+                {item.kind === "favorite" ? <Star size={15} /> : item.kind === "history" ? <History size={15} /> : <Globe2 size={15} />}
+                <span>
+                  <strong>{item.title}</strong>
+                  <small>{item.displayURL}</small>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>;
 }
 
 function RemoteKeyboard({frame, busy, send, onClose}) {
@@ -134,6 +221,8 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
   const [showAddress, setShowAddress] = useState(tool === "browser");
   const [addressNotice, setAddressNotice] = useState("");
   const [favorites, setFavorites] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const overlayOpen = favorites || historyOpen;
   const surface = useRef(null);
   const stage = useRef(null);
   const gesture = useRef(null);
@@ -153,7 +242,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
   useEffect(() => {
     if (preview) return;
     const session = connectDisplay(stage.current, next => {
-      if (!next.frame) {gesture.current = null; setKeyboard(""); setFavorites(false);}
+      if (!next.frame) {gesture.current = null; setKeyboard(""); setFavorites(false); setHistoryOpen(false);}
       setState(next);
     }, id, start, tool, initialURL);
     controls.current = session;
@@ -181,7 +270,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
   const send = (payload, expected) => controls.current?.send(payload, expected);
   const point = event => framePoint(surface.current.getBoundingClientRect(), frame, event.clientX, event.clientY);
   const down = event => {
-    if (favorites || !frame || (desktop && state.busy) || !event.isPrimary || event.button !== 0) return;
+    if (overlayOpen || !frame || (desktop && state.busy) || !event.isPrimary || event.button !== 0) return;
     const location = point(event);
     if (!location) return;
     if (!desktop) controls.current.cancelScroll();
@@ -220,7 +309,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
     }
   };
   const wheel = event => {
-    if (favorites || !frame || (desktop && state.busy)) return;
+    if (overlayOpen || !frame || (desktop && state.busy)) return;
     if (reading) {
       stage.current.scrollBy(event.deltaX, event.deltaY); return;
     }
@@ -234,13 +323,14 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
   };
   return <section className="remote-browser" aria-label={name}>
     {!desktop && addressSlot && frame && (showAddress
-      ? createPortal(<AddressBar frame={frame} goToAddress={async url => {const opened = await controls.current.navigate(url); if (opened) setFavorites(false); return opened;}} onNotice={setAddressNotice} />, addressSlot)
+      ? createPortal(<AddressBar frame={frame} goToAddress={async url => {const opened = await controls.current.navigate(url); if (opened) { setFavorites(false); setHistoryOpen(false); } return opened;}} onNotice={setAddressNotice} />, addressSlot)
       : hostname && hostname !== "claude.ai" && createPortal(<span className="remote-domain" title={hostname}><Globe2 size={14} />{hostname}</span>, addressSlot))}
     {frame && state.homeNotice && <p className="remote-home-note" role="status">{state.homeNotice}</p>}
     {frame && showAddress && addressNotice && <p className="remote-note" role="alert">{addressNotice}</p>}
     <div ref={stage} className="remote-stage" onPointerDown={down} onPointerMove={move} onPointerUp={up}
-      onPointerCancel={() => {gesture.current = null; controls.current?.cancelScroll();}} onWheel={wheel} onContextMenu={e => {if (!favorites) e.preventDefault();}}>
+      onPointerCancel={() => {gesture.current = null; controls.current?.cancelScroll();}} onWheel={wheel} onContextMenu={e => {if (!overlayOpen) e.preventDefault();}}>
       {frame && favorites ? <PhoneFavorites frame={frame} navigate={url => controls.current.navigate(url)} onClose={() => setFavorites(false)}/> :
+       frame && historyOpen ? <PhoneHistory navigate={url => controls.current.navigate(url)} onClose={() => setHistoryOpen(false)} /> :
        frame ? <div className={reading ? "display-surface reading" : "display-surface"} ref={surface}>
         <img className="remote-screen" alt={desktop ? "远程 Desktop 画面" : "远程浏览器画面"} src={frame.image} draggable={false} />
       </div> :
@@ -271,14 +361,16 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
         </button>}
       </> : <>
         <Tool label="关闭远程浏览器" icon={X} onClick={onBack} />
-        <Tool label="上一页" icon={ArrowLeft} disabled={!frame || state.busy || favorites} onClick={() => send({type:"back"}, frame)} />
-        <Tool label="下一页" icon={ArrowRight} disabled={!frame || state.busy || favorites} onClick={() => send({type:"forward"}, frame)} />
+        <Tool label="上一页" icon={ArrowLeft} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"back"}, frame)} />
+        <Tool label="下一页" icon={ArrowRight} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"forward"}, frame)} />
         {tool === "claude" && <Tool label="网页地址" aria-pressed={showAddress} icon={Globe2} disabled={!frame} onClick={() => {setAddressNotice(""); setShowAddress(!showAddress);}} />}
         {tool === "browser" && <Tool label="收藏夹" icon={BookOpen} disabled={!frame} aria-expanded={favorites}
-          onClick={() => {gesture.current = null; controls.current.cancelScroll(); setFavorites(!favorites);}} />}
-        <Tool label="重新加载网页" icon={RotateCw} disabled={!frame || state.busy || favorites} onClick={() => send({type:"reload"}, frame)} />
+          onClick={() => {gesture.current = null; controls.current.cancelScroll(); setHistoryOpen(false); setFavorites(!favorites);}} />}
+        {tool === "browser" && <Tool label="浏览历史" icon={History} disabled={!frame} aria-expanded={historyOpen}
+          onClick={() => {gesture.current = null; controls.current.cancelScroll(); setFavorites(false); setHistoryOpen(!historyOpen);}} />}
+        <Tool label="重新加载网页" icon={RotateCw} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"reload"}, frame)} />
       </>}
-      <Tool label="输入文字" icon={Keyboard} disabled={!focus || state.busy || favorites}
+      <Tool label="输入文字" icon={Keyboard} disabled={!focus || state.busy || overlayOpen}
         onClick={() => flushSync(() => setKeyboard(focus))} />
     </nav>}
     {desktop && frame?.login_supported === false && <p className="remote-home-note" role="status">需要登录时，请在电脑的 Cage 中完成 Claude Desktop 登录，手机会继续使用同一登录状态。</p>}

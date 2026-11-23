@@ -1137,6 +1137,7 @@ function DraftCard({ draft, model, onConfirm, onPage }) {
     const ok = await installDraft({
       id: draft.id,
       kind,
+      digest: draft.digest || "",
       replace: Boolean(draft.exists),
       confirm_overwrite: Boolean(draft.exists),
     });
@@ -1166,7 +1167,7 @@ function DraftCard({ draft, model, onConfirm, onPage }) {
           {draft.summary && <p className="plugin-draft-summary">{tr("提交说明：{0}", draft.summary)}</p>}
         </div>
         <div className="plugin-draft-actions">
-          <button type="button" className="primary" disabled={Boolean(busy) || draft.protected} onClick={onInstall}>
+          <button type="button" className="primary" disabled={Boolean(busy) || draft.protected || !draft.digest} onClick={onInstall}>
             {installing ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}
             {installing ? tr("正在安装…") : draft.exists ? tr("覆盖并重载") : tr("安装并重载")}
           </button>

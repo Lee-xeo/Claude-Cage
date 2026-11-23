@@ -312,6 +312,21 @@ export async function createWorkbench({
       tab.url = "cage://settings#" + (body?.mode || "general"); state.active = tab.id; result = tab;
     }
     else if (path === "/browser/extensions") result = { items: [] };
+    else if (path === "/browser/history") {
+      state.history ||= [];
+      const mode = body?.mode || "list";
+      if (mode === "delete") {
+        state.history = state.history.filter(item => item.url !== body.url);
+        result = { ok: true };
+      } else if (mode === "clear") {
+        state.history = [];
+        result = { ok: true };
+      } else {
+        const needle = String(body?.query || "").trim().toLowerCase();
+        const items = state.history.filter(item => !needle || `${item.title || ""} ${item.url || ""}`.toLowerCase().includes(needle));
+        result = { items: items.slice(0, body?.limit || 100) };
+      }
+    }
     else if (path === "/vnc-credentials") result = { password: "fixture-only" };
     else if (path === "/terminals" && request.method() === "GET")
       result = state.terminals;

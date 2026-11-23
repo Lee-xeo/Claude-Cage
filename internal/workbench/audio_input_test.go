@@ -60,30 +60,70 @@ func TestAudioInputDemandGatesPCMAndClosesOnCancellation(t *testing.T) {
 	}
 	defer ws.Close()
 
-	// Handshake announces format and initial demand=false.
-	_, rawHandshake, err := ws.ReadMessage()
-	if err != nil {
-		t.Fatal(err)
+	pong := make(chan struct{}, 1)
+	ws.SetPongHandler(func(string) error {
+		select {
+		case pong <- struct{}{}:
+		default:
+		}
+		return nil
+	})
+	type wsReply struct {
+		data []byte
+		err  error
 	}
+	replies := make(chan wsReply, 8)
+	go func() {
+		for {
+			_, data, readErr := ws.ReadMessage()
+			replies <- wsReply{data: data, err: readErr}
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+	readReply := func() []byte {
+		t.Helper()
+		select {
+		case msg := <-replies:
+			if msg.err != nil {
+				t.Fatal(msg.err)
+			}
+			return msg.data
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for websocket message")
+			return nil
+		}
+	}
+
+	// Handshake announces format and initial demand=false.
+	rawHandshake := readReply()
 	var handshake audioInputHandshake
 	if json.Unmarshal(rawHandshake, &handshake) != nil || handshake.Format != "s16le" || handshake.SampleRate != 48000 || handshake.Channels != 1 || handshake.Demand {
 		t.Fatalf("unexpected handshake: %s", rawHandshake)
 	}
 
 	// PCM sent while demand=false is dropped and never reaches guestStdin.
+	// Synchronize with a WebSocket ping/pong so the server read loop has
+	// consumed and discarded the frame before demand flips to true.
 	dropped := []byte{1, 2, 3, 4}
 	if err := ws.WriteMessage(websocket.BinaryMessage, dropped); err != nil {
 		t.Fatal(err)
+	}
+	if err := ws.WriteControl(websocket.PingMessage, []byte("sync"), time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-pong:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not process pre-demand frame before ping")
 	}
 
 	// Activate demand from guest stdout.
 	go func() {
 		_, _ = io.WriteString(guestOutW, "{\"demand\":true}\n")
 	}()
-	_, rawDemand, err := ws.ReadMessage()
-	if err != nil {
-		t.Fatal(err)
-	}
+	rawDemand := readReply()
 	var demandMsg audioInputDemand
 	if json.Unmarshal(rawDemand, &demandMsg) != nil || !demandMsg.Demand {
 		t.Fatalf("expected demand=true, got %s", rawDemand)
@@ -108,18 +148,19 @@ func TestAudioInputDemandGatesPCMAndClosesOnCancellation(t *testing.T) {
 	go func() {
 		_, _ = io.WriteString(guestOutW, "{\"demand\":false}\n")
 	}()
-	_, rawDemand, err = ws.ReadMessage()
-	if err != nil {
-		t.Fatal(err)
-	}
+	rawDemand = readReply()
 	if json.Unmarshal(rawDemand, &demandMsg) != nil || demandMsg.Demand {
 		t.Fatalf("expected demand=false, got %s", rawDemand)
 	}
 
 	// Cancelling request context tears down stream cleanly without goroutine leaks.
 	cancel()
-	_ = ws.SetReadDeadline(time.Now().Add(time.Second))
-	if _, _, err = ws.ReadMessage(); err == nil {
+	select {
+	case msg := <-replies:
+		if msg.err == nil {
+			t.Fatal("cancelled audio input stream stayed open")
+		}
+	case <-time.After(time.Second):
 		t.Fatal("cancelled audio input stream stayed open")
 	}
 	select {

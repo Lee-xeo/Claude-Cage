@@ -147,6 +147,8 @@ func (s *Server) startHostTools(serving bool) error {
 	approvals := newHostApprovals()
 	approvals.remoteAsk = s.remoteApprovals.ask
 	approvals.neverAlways[workspaceControlPlugin+"/"+workspaceControlManageTool] = true
+	// Preferences include the command every new terminal runs.
+	approvals.neverAlways[workspaceControlPlugin+"/"+workspaceControlPreferencesTool] = true
 	jobs := hostbridge.NewJobs()
 	ctx, cancel := context.WithCancel(s.lifetimeContext())
 	// Plugins the user installed run beside the built-in command tool. One

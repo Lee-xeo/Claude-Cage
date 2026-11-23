@@ -444,3 +444,183 @@ items:
 		t.Fatalf("mixed DNS not filtered to remote HTTPS DoH: %s", string(byName["MixedDNS"].Data))
 	}
 }
+
+func TestScanClashNyanpasuLegacyHomeOnWindows(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, ".config", "clash-nyanpasu")
+	// Releases before 1.6 keep core settings in config.yaml and write the
+	// merged runtime to clash-verge.yaml; current may list several profiles.
+	writeConfig(t, root, "config.yaml", "mixed-port: 7890\nexternal-controller: 127.0.0.1:9090\nsecret: private-controller-secret\n")
+	writeConfig(t, root, "clash-verge.yaml", testNode+"mixed-port: 7890\nsecret: private-controller-secret\n")
+	writeConfig(t, root, "profiles.yaml", `current:
+- rRemote01
+chain: []
+items:
+- uid: rRemote01
+  type: remote
+  name: My subscription
+  file: rRemote01.yaml
+  url: https://subscription.example/private-subscription-token
+  extra: {upload: 1, download: 2}
+  chain: [sScript01]
+- uid: sScript01
+  type: !script javascript
+  name: Script
+  file: sScript01.js
+- uid: lLocal01
+  type: local
+  name: Offline
+  file: lLocal01.yaml
+- uid: lEscape01
+  type: local
+  file: ../outside.yaml
+`)
+	writeConfig(t, root, "profiles/rRemote01.yaml", testNode)
+	writeConfig(t, root, "profiles/sScript01.js", `throw Error('must never execute')`)
+	writeConfig(t, root, "profiles/lLocal01.yaml", `proxies:
+  - {name: Offline, type: socks5, server: offline.example, port: 1080}
+`)
+	byName := map[string]Config{}
+	for _, c := range Scan(Locations("windows", home, filepath.Join(home, "AppData", "Roaming"), ""), []byte("key")) {
+		if c.Client == "Clash Nyanpasu" {
+			if _, dup := byName[c.Name]; dup {
+				t.Fatalf("duplicate entry %q", c.Name)
+			}
+			byName[c.Name] = c
+		}
+	}
+	if len(byName) != 3 {
+		t.Fatalf("unexpected Clash Nyanpasu configs: %s", mustJSON(t, byName))
+	}
+	runtime, remote, local := byName["当前生效配置"], byName["My subscription"], byName["Offline"]
+	if runtime.Error != "" || runtime.Nodes != 1 || !runtime.Current || runtime.Refreshable {
+		t.Fatalf("runtime config: %s", mustJSON(t, runtime))
+	}
+	if strings.Contains(string(runtime.Data), "mixed-port") || strings.Contains(string(runtime.Data), "private-controller-secret") {
+		t.Fatal("runtime import contains client settings")
+	}
+	if remote.Error != "" || remote.Nodes != 1 || !remote.Current || !remote.Refreshable || remote.URL != "https://subscription.example/private-subscription-token" {
+		t.Fatalf("remote profile: %s", mustJSON(t, remote))
+	}
+	if local.Error != "" || local.Nodes != 1 || local.Current || local.Refreshable {
+		t.Fatalf("local profile: %s", mustJSON(t, local))
+	}
+	view := mustJSON(t, byName)
+	for _, secret := range []string{root, "private-subscription-token", "private-controller-secret"} {
+		if strings.Contains(view, secret) {
+			t.Fatalf("display metadata leaked %s", secret)
+		}
+	}
+}
+
+func TestScanClashNyanpasuRuntimeFiles(t *testing.T) {
+	t.Run("2.x runtime directory", func(t *testing.T) {
+		root := t.TempDir()
+		// 2.x keeps core settings in the root clash-config.yaml; a missing node
+		// list there must not hide or shadow the runtime directory.
+		writeConfig(t, root, "application.yaml", "theme: system\n")
+		writeConfig(t, root, "clash-config.yaml", "mixed-port: 7890\nsecret: private-controller-secret\n")
+		writeConfig(t, root, "runtime/clash-config.yaml", testNode+"mixed-port: 7890\n")
+		writeConfig(t, root, "profiles.yaml", `current: subscription-a
+items:
+  - uid: subscription-a
+    name: Subscription A
+    type: config
+    config:
+      type: file
+      source:
+        type: remote
+        file: subscription-a.yaml
+        url: https://subscription.example/private-subscription-token
+        option: {with_proxy: false}
+      transforms: [normalize-nodes]
+  - uid: offline
+    name: Offline
+    type: config
+    config:
+      type: file
+      source:
+        type: local
+        binding: {type: managed, file: offline.yaml}
+  - uid: all
+    name: All
+    type: config
+    config: {type: composition, base: subscription-a, extend_proxies_from: [offline]}
+  - uid: normalize-nodes
+    name: Normalize Nodes
+    type: transform
+    transform:
+      type: overlay
+      source:
+        type: local
+        binding: {type: managed, file: normalize-nodes.yaml}
+`)
+		writeConfig(t, root, "profiles/subscription-a.yaml", testNode)
+		writeConfig(t, root, "profiles/offline.yaml", testNode)
+		writeConfig(t, root, "profiles/normalize-nodes.yaml", testNode)
+		configs := Scan([]Location{{"Clash Nyanpasu", root, Nyanpasu, ""}}, []byte("key"))
+		byName := map[string]Config{}
+		for _, c := range configs {
+			if c.Error != "" {
+				t.Fatalf("unexpected error entry: %s", mustJSON(t, c))
+			}
+			byName[c.Name] = c
+		}
+		if len(configs) != 3 || byName["当前生效配置"].Nodes != 1 || !byName["当前生效配置"].Current {
+			t.Fatalf("unexpected configs: %s", mustJSON(t, configs))
+		}
+		if a := byName["Subscription A"]; !a.Current || !a.Refreshable || a.Nodes != 1 {
+			t.Fatalf("remote profile: %s", mustJSON(t, a))
+		}
+		if o := byName["Offline"]; o.Current || o.Refreshable || o.Nodes != 1 {
+			t.Fatalf("local profile: %s", mustJSON(t, o))
+		}
+	})
+	t.Run("1.6 root runtime file", func(t *testing.T) {
+		root := t.TempDir()
+		writeConfig(t, root, "clash-config.yaml", testNode+"mixed-port: 7890\n")
+		configs := Scan([]Location{{"Clash Nyanpasu", root, Nyanpasu, ""}}, []byte("key"))
+		if len(configs) != 1 || configs[0].Error != "" || configs[0].Nodes != 1 || !configs[0].Current {
+			t.Fatalf("unexpected configs: %s", mustJSON(t, configs))
+		}
+	})
+	t.Run("no runtime nodes", func(t *testing.T) {
+		root := t.TempDir()
+		writeConfig(t, root, "clash-config.yaml", "mixed-port: 7890\n")
+		configs := Scan([]Location{{"Clash Nyanpasu", root, Nyanpasu, ""}}, []byte("key"))
+		if len(configs) != 1 || configs[0].Error == "" || configs[0].Name != "当前生效配置" {
+			t.Fatalf("unexpected configs: %s", mustJSON(t, configs))
+		}
+	})
+}
+
+func TestLocationsClashNyanpasu(t *testing.T) {
+	nyanpasu := func(locations []Location) []string {
+		var dirs []string
+		for _, loc := range locations {
+			if loc.Client == "Clash Nyanpasu" {
+				if loc.Layout != Nyanpasu {
+					t.Fatalf("unexpected layout: %+v", loc)
+				}
+				dirs = append(dirs, loc.Directory)
+			}
+		}
+		return dirs
+	}
+	home := "/home/person"
+	legacy := filepath.Join(home, ".config", "clash-nyanpasu")
+	for _, test := range []struct {
+		platform, dataHome, configHome string
+		want                           []string
+	}{
+		{"windows", "", "", []string{filepath.Join(home, "AppData", "Roaming", "Clash Nyanpasu", "config"), legacy}},
+		{"darwin", "", "", []string{filepath.Join(home, "Library", "Application Support", "Clash Nyanpasu", "config"), legacy}},
+		{"linux", "", "", []string{legacy}},
+		{"linux", "/custom/data", "/custom/config", []string{filepath.Join("/custom/config", "clash-nyanpasu"), legacy}},
+	} {
+		got := nyanpasu(Locations(test.platform, home, test.dataHome, test.configHome))
+		if strings.Join(got, "|") != strings.Join(test.want, "|") {
+			t.Fatalf("%s (%q): got %q, want %q", test.platform, test.configHome, got, test.want)
+		}
+	}
+}
