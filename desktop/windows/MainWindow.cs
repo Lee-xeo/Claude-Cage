@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -309,9 +310,13 @@ internal sealed class MainWindow : Form
         }
         catch (Exception error) { errors.Add(error.Message); }
         // WebView2 releases its processes asynchronously after Dispose. Its
-        // browser can retain the app's working directory until this event.
+        // browser can retain the app's working directory until this event,
+        // though the exit event can race with Dispose() or be missed if the
+        // browser process already exited. Wait on both the event and the OS
+        // process handle so an already-exited browser never fails the smoke run.
         if (environment != null)
         {
+            var browserPid = web.CoreWebView2?.BrowserProcessId ?? 0u;
             var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             void BrowserExited(object? sender, CoreWebView2BrowserProcessExitedEventArgs args) => exited.TrySetResult();
             environment.BrowserProcessExited += BrowserExited;
@@ -319,7 +324,26 @@ internal sealed class MainWindow : Form
             {
                 if (nativeBridgeReady && errors.Count == 0) smokePhase = "stopping_browser";
                 web.Dispose();
-                await exited.Task.WaitAsync(shutdown.Token);
+                Process? browserProcess = null;
+                if (browserPid != 0)
+                {
+                    try { browserProcess = Process.GetProcessById((int)browserPid); }
+                    catch (ArgumentException) { exited.TrySetResult(); }
+                    catch (InvalidOperationException) { exited.TrySetResult(); }
+                }
+                try
+                {
+                    if (browserProcess == null)
+                    {
+                        await exited.Task.WaitAsync(shutdown.Token);
+                    }
+                    else if (!browserProcess.HasExited)
+                    {
+                        var completed = await Task.WhenAny(exited.Task, browserProcess.WaitForExitAsync(shutdown.Token)).WaitAsync(shutdown.Token);
+                        await completed;
+                    }
+                }
+                finally { browserProcess?.Dispose(); }
             }
             catch (Exception error) { errors.Add("自检浏览器尚未退出：" + error.Message); }
             finally { environment.BrowserProcessExited -= BrowserExited; }

@@ -76,10 +76,21 @@ export function shareClipboard({ connect, native, onStatus, setActive, interval 
       const current = await native("clipboardRevision");
       if (typeof current !== "number") throw new Error("Clipboard revision unavailable");
       if (!initial && current === revision && (current === acknowledgedRevision || !explicit && current === deferredFiles)) return;
-      const value = await native("clipboardSyncRead", explicit ? {} : { defer_files: true });
+      const value = await native("clipboardSyncRead", explicit ? (initial ? { initial: true } : {}) : (initial ? { defer_files: true, initial: true } : { defer_files: true }));
       releaseFiles = retainFiles(value);
       const deferred = value?.files_pending === true;
       if (deferred && explicit) throw new Error("Clipboard files were not read");
+      if (!initial && value?.unchanged === true) {
+        const finalRevision = await native("clipboardRevision");
+        if (disposed || !guestReady || socket !== currentSocket || currentGeneration !== generation ||
+            value.revision !== finalRevision) return;
+        revision = value.revision;
+        acknowledgedRevision = value.revision;
+        setActive(true);
+        errorShown = false;
+        failures = 0;
+        return;
+      }
       // The guest only reports its own copies after a first host message, and
       // must not keep pasting an older selection while host files wait.
       const content = deferred ? { text: "" } : payload(value);
@@ -89,7 +100,7 @@ export function shareClipboard({ connect, native, onStatus, setActive, interval 
       revision = value.revision;
       if (!content) throw new Error("Clipboard content unavailable");
       const encoded = JSON.stringify(content);
-      if (deferred ? initial || encoded !== lastPayload : initial || value.revision !== acknowledgedRevision || encoded !== lastPayload) await send(currentSocket, content);
+      if (initial || encoded !== lastPayload) await send(currentSocket, content);
       if (disposed || !guestReady || socket !== currentSocket || currentGeneration !== generation) return;
       if (deferred) deferredFiles = value.revision;
       else acknowledgedRevision = value.revision;

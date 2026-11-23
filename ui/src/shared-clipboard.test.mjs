@@ -462,3 +462,19 @@ test("disconnecting during an explicit file paste cancels the native transfer", 
     assert.equal(f.sent.some(value => value.files), false);
   } finally { release?.(); f.controller.dispose(); }
 });
+
+test("external clipboard revision bumps with identical content or native unchanged marker do not re-send", async () => {
+  const f = fixture({ initial: { png: "same-image" } });
+  try {
+    await settle();
+    assert.deepEqual(f.sent, [{ png: "same-image" }]);
+    // Simulate an external remote-desktop tool rewriting the same image (bumping OS revision).
+    f.host({ png: "same-image" });
+    await f.controller.poll();
+    assert.equal(f.sent.length, 1, "identical image content must not be echoed on revision bump");
+    // Simulate native unchanged signal (pixel-identical image re-encoded by another tool).
+    f.host({ unchanged: true });
+    await f.controller.poll();
+    assert.equal(f.sent.length, 1, "native unchanged marker must not send or fail");
+  } finally { f.controller.dispose(); }
+});
