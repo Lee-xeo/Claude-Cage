@@ -361,9 +361,10 @@ func mustJSON(t *testing.T, v any) string {
 	return string(data)
 }
 
-func TestScanReportsUnsupportedNodeDNSInsteadOfMissingNodes(t *testing.T) {
+func TestScanIgnoresUnsupportedNodeDNSAndRetainsSafeDoH(t *testing.T) {
 	root := t.TempDir()
 	writeConfig(t, root, "http-dns.yaml", testNode+"dns:\n  proxy-server-nameserver: [http://resolver.example.test/dns-query]\n")
+	writeConfig(t, root, "fragment-dns.yaml", testNode+"dns:\n  proxy-server-nameserver: ['https://223.5.5.5/dns-query#skip-cert-verify=true', 'https://doh.pub/dns-query#skip-cert-verify=true', 'tls://223.5.5.5#skip-cert-verify=true']\n")
 	writeConfig(t, root, "system.yaml", testNode+"dns:\n  proxy-server-nameserver: [system]\n")
 	writeConfig(t, root, "doh.yaml", testNode+"dns:\n  proxy-server-nameserver: [https://resolver.example.test/dns-query]\n")
 	entries := Scan([]Location{{"Mihomo", root, Plain, ""}}, []byte("key"))
@@ -371,15 +372,17 @@ func TestScanReportsUnsupportedNodeDNSInsteadOfMissingNodes(t *testing.T) {
 	for _, e := range entries {
 		got[e.Name] = e
 	}
-	rejected := got["http-dns.yaml"]
-	if rejected.Nodes != 0 || strings.Contains(rejected.Error, "没有可导入的节点") || !strings.Contains(rejected.Error, "节点 DNS") || !strings.Contains(rejected.Error, "HTTPS DoH") {
-		t.Fatalf("unsupported node DNS misreported: %s", mustJSON(t, rejected))
+	for _, name := range []string{"http-dns.yaml", "fragment-dns.yaml", "system.yaml"} {
+		accepted := got[name]
+		if accepted.Nodes != 1 || accepted.Error != "" {
+			t.Fatalf("config %s with unsupported node DNS blocked import: %s", name, mustJSON(t, accepted))
+		}
+		if strings.Contains(string(accepted.Data), "proxy-server-nameserver") {
+			t.Fatalf("config %s retained unsafe node DNS: %s", name, string(accepted.Data))
+		}
 	}
-	if accepted := got["system.yaml"]; accepted.Nodes != 1 || accepted.Error != "" {
-		t.Fatalf("standard system node DNS rejected: %s", mustJSON(t, accepted))
-	}
-	if accepted := got["doh.yaml"]; accepted.Nodes != 1 || accepted.Error != "" {
-		t.Fatalf("remote DoH node DNS rejected: %s", mustJSON(t, accepted))
+	if accepted := got["doh.yaml"]; accepted.Nodes != 1 || accepted.Error != "" || !strings.Contains(string(accepted.Data), "https://resolver.example.test/dns-query") {
+		t.Fatalf("remote DoH node DNS rejected or dropped: %s", mustJSON(t, accepted))
 	}
 }
 

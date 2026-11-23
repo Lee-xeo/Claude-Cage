@@ -76,16 +76,15 @@ func TestSubscriptionNodeDNSPersistsAndRefreshes(t *testing.T) {
 	check(s.Sources[0].NodeDNS)
 	importSource(sourceDNSInput("node.example.test", "https://second.example.test/dns-query"))
 	check([]string{"https://second.example.test/dns-query"})
-	// Mixed real-world subscription resolvers ignore plain IP/DoT/UDP/system entries and keep valid HTTPS DoH.
-	importSource(sourceDNSInput("node.example.test", "119.29.29.29", "https://third.example.test/dns-query", "tls://223.5.5.5", "udp://127.0.0.1:7874", "system"))
+	// Mixed real-world subscription resolvers ignore non-HTTP, local, or fragmented entries and keep valid HTTPS DoH.
+	importSource(sourceDNSInput("node.example.test", "119.29.29.29", "https://223.5.5.5/dns-query#skip-cert-verify=true", "https://third.example.test/dns-query", "tls://223.5.5.5#skip-cert-verify=true", "udp://127.0.0.1:7874", "system"))
 	check([]string{"https://third.example.test/dns-query"})
-	before := s.Sources[0]
-	if err := s.Import("source", "", []byte(sourceDNSInput("node.example.test", "https://resolver.example.test/dns-query#private-route")), "source", 0, ""); err == nil || strings.Contains(err.Error(), "private-route") {
-		t.Fatal("unsafe resolver accepted or leaked", err)
+	// Refreshing with only fragmented/unsafe entries ignores them instead of failing import/refresh and falls back to Cage's default node DNS.
+	importSource(sourceDNSInput("node.example.test", "https://resolver.example.test/dns-query#private-route", "https://223.5.5.5/dns-query#skip-cert-verify=true", "tls://223.5.5.5#skip-cert-verify=true"))
+	if len(s.Sources[0].NodeDNS) != 0 {
+		t.Fatalf("unsafe fragmented resolvers were adopted: %v", s.Sources[0].NodeDNS)
 	}
-	if !reflect.DeepEqual(before, s.Sources[0]) {
-		t.Fatal("failed refresh changed source DNS or nodes")
-	}
+	check(nil)
 	importSource(sourceDNSInput("node.example.test"))
 	check(nil)
 }
@@ -146,37 +145,79 @@ func TestSubscriptionNodeDNSRejectsCrossSourceConflicts(t *testing.T) {
 }
 
 func TestSubscriptionNodeDNSValidatesUntrustedEndpoints(t *testing.T) {
-	// Standard non-HTTP Clash/Mihomo resolvers are ignored rather than blocking proxy import.
-	for _, server := range []string{"udp://127.0.0.1:7874", "119.29.29.29", "223.5.5.5:53", "system", "tls://resolver.example", "quic://dns.example", "dhcp://en0"} {
-		t.Run("ignore/"+server, func(t *testing.T) {
+	// Real-world Clash/Mihomo resolvers that cannot be safely adopted as bare
+	// remote HTTPS DoH (non-HTTP, plain IP, local, credentialed, fragmented
+	// such as #skip-cert-verify=true / #DIRECT / #h3=true, malformed) are
+	// ignored on import rather than blocking proxy import.
+	untrusted := []string{
+		"udp://127.0.0.1:7874",
+		"119.29.29.29",
+		"223.5.5.5:53",
+		"223.5.5.5#DIRECT",
+		"system",
+		"tls://resolver.example",
+		"tls://223.5.5.5#skip-cert-verify=true",
+		"quic://dns.example",
+		"dhcp://en0",
+		"http://resolver.example/dns-query",
+		"https://localhost/dns-query",
+		"https://127.0.0.1/dns-query",
+		"https://user:private-password@resolver.example/dns-query",
+		"https://223.5.5.5/dns-query#skip-cert-verify=true",
+		"https://doh.pub/dns-query#h3=true",
+		"https://resolver.example/dns-query#private-route",
+		"https://resolver.example:65536/dns-query",
+		"https://resolver.example:0/dns-query",
+	}
+	for _, server := range untrusted {
+		t.Run("ignore-import/"+server, func(t *testing.T) {
 			s, _ := Load(t.TempDir())
 			if err := s.Import("source", "", []byte(sourceDNSInput("node.example.test", server)), "source", 0, ""); err != nil {
-				t.Fatal("standard non-HTTP Clash resolver blocked import:", err)
+				t.Fatal("unsupported Clash resolver blocked import:", err)
 			}
 			if len(s.Sources) != 1 || len(s.Sources[0].NodeDNS) != 0 {
-				t.Fatalf("non-DoH resolver was adopted into NodeDNS: %v", s.Sources[0].NodeDNS)
+				t.Fatalf("unsafe resolver was adopted into NodeDNS: %v", s.Sources[0].NodeDNS)
 			}
 		})
 	}
-	// Unsafe or malformed HTTP(S) DoH endpoints remain strictly rejected.
-	for _, server := range []string{"http://resolver.example/dns-query", "https://localhost/dns-query", "https://127.0.0.1/dns-query", "https://user:private-password@resolver.example/dns-query", "https://resolver.example/dns-query#private-route", "https://resolver.example:65536/dns-query", "https://resolver.example:0/dns-query"} {
-		t.Run("reject/"+server, func(t *testing.T) {
+	// Persisted/tampered unsafe NodeDNS endpoints remain strictly rejected at Runtime generation.
+	for _, server := range []string{
+		"http://resolver.example/dns-query",
+		"https://localhost/dns-query",
+		"https://127.0.0.1/dns-query",
+		"https://user:private-password@resolver.example/dns-query",
+		"https://resolver.example/dns-query#private-route",
+		"https://resolver.example:65536/dns-query",
+		"https://resolver.example:0/dns-query",
+	} {
+		t.Run("reject-runtime/"+server, func(t *testing.T) {
 			s, _ := Load(t.TempDir())
-			err := s.Import("source", "", []byte(sourceDNSInput("node.example.test", server)), "source", 0, "")
-			if err == nil || strings.Contains(err.Error(), "private-") || len(s.Sources) != 0 {
-				t.Fatal("unsafe endpoint accepted, leaked, or changed store", err)
+			if err := s.Import("source", "", []byte(sourceDNSInput("node.example.test")), "source", 0, ""); err != nil {
+				t.Fatal(err)
+			}
+			s.Selected = s.Sources[0].Nodes[0].ID
+			s.Sources[0].NodeDNS = []string{server}
+			if _, err := s.Runtime(t.TempDir()); err == nil || strings.Contains(err.Error(), "private-") {
+				t.Fatal("tampered unsafe endpoint accepted or leaked at Runtime", err)
 			}
 		})
 	}
 	if filtered := FilterNodeDNS([]string{
 		"udp://127.0.0.1:7874",
 		"119.29.29.29",
-		"tls://223.5.5.5",
+		"tls://223.5.5.5#skip-cert-verify=true",
 		"system",
+		"https://223.5.5.5/dns-query#skip-cert-verify=true",
+		"http://resolver.example.test/dns-query",
+		"https://127.0.0.1/dns-query",
 		"https://d1.example.test/dns-query",
 		"https://d1.example.test/dns-query",
+		"https://resolver.example.test/dns-query#DIRECT",
 		"https://d2.example.test/dns-query",
-	}); len(filtered) != 2 || filtered[0] != "https://d1.example.test/dns-query" || filtered[1] != "https://d2.example.test/dns-query" {
+		"https://d3.example.test/dns-query",
+		"https://d4.example.test/dns-query",
+		"https://d5.example.test/dns-query",
+	}); len(filtered) != 4 || filtered[0] != "https://d1.example.test/dns-query" || filtered[3] != "https://d4.example.test/dns-query" {
 		t.Fatalf("unexpected FilterNodeDNS result: %v", filtered)
 	}
 	for _, host := range []string{"+.example.test", "*.example.test", "geosite:cn", "example.test,other.test"} {

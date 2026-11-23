@@ -182,19 +182,39 @@ dns:
 	if !reflect.DeepEqual(saved, after) {
 		t.Fatal("failed conflicting import changed saved sources")
 	}
-	response = `proxies: [{name: dns-node, type: http, server: source-dns.example.test, port: 8080}]
+	// Refreshing with a wildcard node server + custom DNS fails validation and preserves the saved configuration.
+	response = `proxies: [{name: dns-node, type: http, server: '*.example.test', port: 8080}]
 dns:
-  proxy-server-nameserver: [https://resolver.example.test/dns-query#private-route]
+  proxy-server-nameserver: [https://replacement.example.test/dns-query]
 `
-	if err := s.changeProxy("refresh", proxyInput{ID: src.ID, HostDownload: true}, nil); err == nil || strings.Contains(err.Error(), "private-route") {
-		t.Fatal("unsafe DNS refresh accepted or leaked", err)
+	if err := s.changeProxy("refresh", proxyInput{ID: src.ID, HostDownload: true}, nil); err == nil {
+		t.Fatal("wildcard source DNS refresh was accepted")
 	}
 	after, _ = managedproxy.Load(s.profile)
 	current := after.Sources[len(after.Sources)-1]
 	if !reflect.DeepEqual(src.NodeDNS, current.NodeDNS) || !reflect.DeepEqual(src.Nodes, current.Nodes) {
 		t.Fatal("failed DNS refresh replaced working configuration")
 	}
-	response = strings.Replace(response, "https://resolver.example.test/dns-query#private-route", "https://replacement.example.test:44443/dns-query", 1)
+	// Refreshing with fragmented/unsafe Clash DoH entries ignores them instead of failing refresh.
+	response = `proxies: [{name: dns-node, type: http, server: source-dns.example.test, port: 8080}]
+dns:
+  proxy-server-nameserver: ['https://resolver.example.test/dns-query#private-route', 'https://223.5.5.5/dns-query#skip-cert-verify=true']
+`
+	if err := s.changeProxy("refresh", proxyInput{ID: src.ID, HostDownload: true}, nil); err != nil {
+		t.Fatalf("fragmented Clash DoH blocked refresh: %v", err)
+	}
+	after, _ = managedproxy.Load(s.profile)
+	if len(after.Sources[len(after.Sources)-1].NodeDNS) != 0 {
+		t.Fatalf("unsafe fragmented DNS was adopted: %v", after.Sources[len(after.Sources)-1].NodeDNS)
+	}
+	w = request(s, "GET", "/api/proxy", s.origin, "", true)
+	if strings.Contains(w.Body.String(), "private-route") {
+		t.Fatal("proxy status leaked ignored resolver fragment")
+	}
+	response = `proxies: [{name: dns-node, type: http, server: source-dns.example.test, port: 8080}]
+dns:
+  proxy-server-nameserver: [https://replacement.example.test:44443/dns-query]
+`
 	if err := s.changeProxy("refresh", proxyInput{ID: src.ID, HostDownload: true}, nil); err != nil {
 		t.Fatal(err)
 	}
