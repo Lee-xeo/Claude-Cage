@@ -141,7 +141,7 @@ func TestAccountLockBlocksRoutesAndCancelsAccess(t *testing.T) {
 	default:
 		t.Fatal("active requests not cancelled")
 	}
-	for _, path := range []string{"/api/settings", "/api/terminals", "/api/vnc-credentials", "/api/claude-desktop/vnc-credentials", "/api/audio"} {
+	for _, path := range []string{"/api/settings", "/api/terminals", "/api/vnc-credentials", "/api/claude-desktop/vnc-credentials", "/api/audio", "/api/audio/input"} {
 		if w = request(s, "GET", path, "", "", true); w.Code != 423 {
 			t.Fatal(path, w.Code)
 		}

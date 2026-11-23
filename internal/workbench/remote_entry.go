@@ -72,6 +72,7 @@ func (s *Server) remoteManifest(w http.ResponseWriter, r *http.Request) {
 			"browser":              true,
 			"desktop":              true,
 			"audio":                true,
+			"audio_input":          true,
 		}})
 }
 

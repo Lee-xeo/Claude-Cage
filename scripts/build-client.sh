@@ -71,6 +71,7 @@ if [[ "$platform" == macos ]]; then
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSMicrophoneUsageDescription</key><string>Cage only uses your microphone when an application inside the environment requests audio input.</string>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 PLIST
@@ -78,8 +79,8 @@ PLIST
   # certificate, notarization, installer, or installed app is touched.
   macos_clear_bundle_attributes "$bundle"
   codesign --force --sign - "$bundle/Contents/Resources/cage"
-  codesign --force --sign - "$bundle/Contents/MacOS/Cage"
-  codesign --force --sign - "$bundle"
+  codesign --force --sign - --entitlements packaging/macos/cage-app.entitlements "$bundle/Contents/MacOS/Cage"
+  codesign --force --sign - --entitlements packaging/macos/cage-app.entitlements "$bundle"
   codesign --verify --deep --strict "$bundle"
   ditto -c -k --keepParent "$bundle" "$stage/result/Cage-Client-macos-$arch.zip"
 else

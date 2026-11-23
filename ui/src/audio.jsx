@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { AudioOutput } from "./audio-output";
+import { AudioInput } from "./audio-input";
 import { useTranslation } from "./interface-language.mjs";
 
 function savedAudio() {
@@ -42,6 +43,62 @@ export function useAudioOutput(enabled) {
     setPreferences({ muted: false, volume });
     player.current?.setActive(enabled && volume > 0);
   } };
+}
+
+export function useAudioInput(enabled) {
+  const [status, setStatus] = useState({ demand: false, state: "idle" });
+  const [error, setError] = useState("");
+  const capture = useRef();
+  useEffect(() => {
+    const input = new AudioInput(setStatus, setError);
+    capture.current = input;
+    const shutdown = () => input.disconnect();
+    window.addEventListener("pagehide", shutdown);
+    return () => {
+      window.removeEventListener("pagehide", shutdown);
+      input.close();
+      capture.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    capture.current?.setActive(enabled);
+  }, [enabled]);
+  return {
+    demand: status.demand,
+    state: status.state,
+    error,
+    retry: () => capture.current?.retry(),
+  };
+}
+
+export function MicrophoneIndicator({ mic }) {
+  const tr = useTranslation();
+  if (!mic?.demand) return null;
+  const active = mic.state === "capturing" || mic.state === "starting";
+  if (active) {
+    const label = tr("环境正在使用麦克风");
+    return (
+      <span className="mic-indicator active" role="status" aria-label={label} title={label}>
+        <span className="mic-dot" aria-hidden="true" />
+        <Mic size={14} />
+      </span>
+    );
+  }
+  const message =
+    mic.state === "denied"
+      ? tr("麦克风权限未授予，请在系统设置中允许 Cage 使用麦克风后点击重试")
+      : mic.state === "no-device"
+        ? tr("未检测到可用的本机麦克风")
+        : mic.state === "unsupported"
+          ? tr("当前窗口不支持麦克风采集")
+          : mic.state === "disconnected"
+            ? tr("本机麦克风已断开，请检查设备后点击重试")
+            : tr("麦克风采集未能启动，请检查本机音频设备后重试");
+  return (
+    <button className="mic-indicator error" type="button" onClick={mic.retry} aria-label={message} title={message}>
+      <MicOff size={14} />
+    </button>
+  );
 }
 
 export function AudioControls({ audio }) {

@@ -3135,6 +3135,23 @@ svg {
 
 .audio-controls { position: relative; display: flex; align-items: center; flex-shrink: 0; }
 .status-bar .audio-controls > button:last-child { border: 0; padding: 0; }
+.mic-indicator {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  height: 22px; padding: 0 5px; border-radius: var(--radius-sm);
+}
+.mic-indicator.active { color: var(--danger); }
+.mic-indicator.error { color: var(--warning); }
+.mic-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mic-dot { animation: none; }
+}
 .audio-volume-panel {
   position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 20;
   display: flex; justify-content: center; padding: 12px 10px;

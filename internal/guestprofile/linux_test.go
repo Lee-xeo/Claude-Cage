@@ -28,18 +28,26 @@ func TestLinuxDimensionsAndBrowser(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := p.Linux(`load-module module-null-sink sink_name=cage_output sink_properties=device.description=Cage
-set-default-source cage_output.monitor
+load-module module-pipe-source source_name=cage_input file=/run/cage-audio/input.fifo format=s16le rate=48000 channels=1 source_properties=device.description=Cage
+set-default-source cage_input
 const flags = ["--no-first-run", "--window-size=1440,900"];
 const directory = "/usr/local/lib/cage-split";
 {"name": "Cage browser panes"}
 `)
-	for _, want := range []string{"sink_name=speakers", "speakers.monitor", "--disable-webgl", "--disable-reading-from-canvas", "browser-panes-" + p.ExtensionSuffix, `"name": "My Tabs"`} {
+	for _, want := range []string{"sink_name=speakers", "source_name=speakers_input", `source_properties="device.description='My Audio'"`, "set-default-source speakers_input", "--disable-webgl", "--disable-reading-from-canvas", "browser-panes-" + p.ExtensionSuffix, `"name": "My Tabs"`} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing %q", want)
 		}
 	}
 	if p.Linux(s) != s {
 		t.Fatal("browser flags duplicated")
+	}
+	usb, err := New(Options{AudioModel: "scarlett-solo-4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(usb.AudioInputName(), "alsa_input.usb-Focusrite_Scarlett_Solo_") {
+		t.Fatalf("unexpected USB audio input name: %q", usb.AudioInputName())
 	}
 }
 

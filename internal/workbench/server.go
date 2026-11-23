@@ -112,6 +112,7 @@ type Server struct {
 	monitorTimingLogs                                map[string]monitorTimingLog
 	mobileConnectMu                                  sync.Mutex
 	audioClients                                     int
+	audioInputClients                                int
 	projectShares                                    map[string]*projectShare
 	hostTools                                        *hostTools
 	hostToolsRemoved                                 bool
@@ -531,6 +532,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/claude-desktop/{action}", s.claudeDesktopAction)
 	mux.HandleFunc("GET /api/terminals", s.listTerminals)
 	mux.HandleFunc("GET /api/audio", s.audio)
+	mux.HandleFunc("GET /api/audio/input", s.audioInput)
 	mux.HandleFunc("GET /api/clipboard", s.sharedClipboard)
 	mux.HandleFunc("POST /api/clipboard/files", s.clipboardArchive)
 	mux.HandleFunc("GET /api/clipboard/files/{id}", s.clipboardArchive)

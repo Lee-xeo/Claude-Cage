@@ -3190,5 +3190,11 @@
   "环境硬盘用量": "Uso de disco del entorno",
   "主机硬盘实际占用": "Espacio real usado en el equipo",
   "当前运行的是本地未签名构建。继续安装将切换为官方签名发行版，本地源码改动不会保留；配置、账户、项目和虚拟机磁盘会保留，后续将持续接收官方自动更新。": "Actualmente está ejecutando una compilación local sin firmar. Continuar con la instalación cambiará a la versión oficial firmada y no conservará los cambios locales del código fuente; la configuración, las cuentas, los proyectos y los discos de la máquina virtual se conservarán y en adelante recibirá actualizaciones automáticas oficiales.",
-  "更新至 {0}。当前为本地未签名构建，更新后将切换为官方签名发行版（配置、账户、项目和虚拟机磁盘会保留，本地源码改动不会保留）。": "Actualizar a {0}. Esta es una compilación local sin firmar; la actualización cambiará a la versión oficial firmada (se conservarán la configuración, las cuentas, los proyectos y los discos de la máquina virtual, pero no los cambios locales del código fuente)."
+  "更新至 {0}。当前为本地未签名构建，更新后将切换为官方签名发行版（配置、账户、项目和虚拟机磁盘会保留，本地源码改动不会保留）。": "Actualizar a {0}. Esta es una compilación local sin firmar; la actualización cambiará a la versión oficial firmada (se conservarán la configuración, las cuentas, los proyectos y los discos de la máquina virtual, pero no los cambios locales del código fuente).",
+  "环境正在使用麦克风": "El entorno está usando el micrófono",
+  "麦克风权限未授予，请在系统设置中允许 Cage 使用麦克风后点击重试": "No se ha concedido permiso de micrófono. Permite que Cage use el micrófono en la configuración del sistema y haz clic para reintentar",
+  "未检测到可用的本机麦克风": "No se detectó ningún micrófono local disponible",
+  "当前窗口不支持麦克风采集": "Esta ventana no admite la captura de micrófono",
+  "本机麦克风已断开，请检查设备后点击重试": "El micrófono local se desconectó. Comprueba el dispositivo y haz clic para reintentar",
+  "麦克风采集未能启动，请检查本机音频设备后重试": "No se pudo iniciar la captura del micrófono. Comprueba el dispositivo de audio local y vuelve a intentarlo"
 }

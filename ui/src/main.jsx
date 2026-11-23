@@ -51,7 +51,7 @@ import { BrowserHeader, BrowserTabRail, TerminalHeader, ExpandSidebar, ExpandPan
 import { useDownloadNotifications, useDesktopFiles } from "./browser-downloads";
 import { BrowserUploads } from "./browser-uploads";
 import { BrowserSettingsPage } from "./browser-settings";
-import { AudioControls, useAudioOutput } from "./audio";
+import { AudioControls, MicrophoneIndicator, useAudioInput, useAudioOutput } from "./audio";
 import { EnvironmentClock } from "./environment-clock";
 import { ProjectDialog } from "./project-dialog";
 import {
@@ -361,7 +361,9 @@ function App() {
     () => {setManagementPage(""); setHome(false); setDesktopOpen(true);},
     () => {setDesktopOpen(false); setHome(true);}, notify, (...args) => confirm(...args), desktopOpen && running && status?.account_desktops_supported && !managementPage, status?.desktop_catalog_revision);
   const viewingAccountDesktop = desktopOpen && accountDesktops.panes.length > 0;
-  const audio = useAudioOutput(running && !viewingAccountDesktop && !storageRecovery && !status?.environment_update_required && !connectionError);
+  const audioEnabled = running && !viewingAccountDesktop && !storageRecovery && !status?.environment_update_required && !connectionError;
+  const audio = useAudioOutput(audioEnabled);
+  const mic = useAudioInput(audioEnabled);
   useEffect(() => {
     if (audio.error) setToast(audio.error);
   }, [audio.error]);
@@ -2205,6 +2207,7 @@ function App() {
               enabled={running && !busy && !connectionError && windowVisible}
             />
             <span className="status-spacer" />
+            <MicrophoneIndicator mic={mic} />
             <AudioControls audio={audio} />
             <EnvironmentClock timezone={settings.timezone} clock12Hour={settings.clock_12_hour} />
             <span className={`status-feedback${toast && toastTone ? ` ${toastTone}` : ""}`} role="status">
