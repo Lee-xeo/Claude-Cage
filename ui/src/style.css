@@ -82,6 +82,10 @@
   border: 1px solid transparent;
   background-clip: padding-box;
 }
+/* Pointing at a scrollable area shows where its thumb is, on every page. */
+*:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
 [data-scrolling="true"]::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--muted) 26%, transparent);
 }
@@ -92,6 +96,9 @@
   * {
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
+  }
+  *:hover {
+    scrollbar-color: color-mix(in srgb, var(--muted) 18%, transparent) transparent;
   }
   [data-scrolling="true"] {
     scrollbar-color: color-mix(in srgb, var(--muted) 26%, transparent) transparent;
