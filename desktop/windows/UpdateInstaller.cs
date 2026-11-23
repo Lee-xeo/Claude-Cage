@@ -47,16 +47,27 @@ internal static class UpdateInstaller
             if (File.ReadAllText(Path.Combine(plan.Target, "Cage.install-id")).Trim() != "io.github.lee-xeo.claude-cage")
                 throw new IOException("请先使用 Cage 安装程序安装应用，再自动更新");
             var original = Path.Combine(plan.Target, "Cage.exe");
-            var ownPublisher = Authenticode.OwnPublisher();
-            if (plan.Publisher != ownPublisher) throw new IOException("安装计划发布者不匹配");
-            Authenticode.SamePublisher(original, ownPublisher);
+            string targetPublisher;
+            if (plan.UnsignedSource)
+            {
+                if (!string.Equals(plan.Publisher, Authenticode.OfficialPublisherKey, StringComparison.Ordinal))
+                    throw new IOException("安装计划发布者不匹配");
+                targetPublisher = Authenticode.OfficialPublisherKey;
+            }
+            else
+            {
+                var ownPublisher = Authenticode.OwnPublisher();
+                if (plan.Publisher != ownPublisher) throw new IOException("安装计划发布者不匹配");
+                Authenticode.SamePublisher(original, ownPublisher);
+                targetPublisher = ownPublisher;
+            }
             if (!UpdatePolicy.IsNewer(plan.Version, FileVersionInfo.GetVersionInfo(original).ProductVersion ?? ""))
                 throw new IOException("更新版本必须高于当前安装版本");
-            VerifyArchive(plan.Archive, plan.Digest, plan.Version, ownPublisher);
+            VerifyArchive(plan.Archive, plan.Digest, plan.Version, targetPublisher);
             // Hold the verified file open without write/delete sharing until the
             // installer exits. Another process cannot swap it after verification.
             await using var archiveLock = new FileStream(plan.Archive, FileMode.Open, FileAccess.Read, FileShare.Read);
-            VerifyArchive(plan.Archive, plan.Digest, plan.Version, ownPublisher);
+            VerifyArchive(plan.Archive, plan.Digest, plan.Version, targetPublisher);
             using var parent = Process.GetProcessById(plan.ParentPid);
             if (parent.StartTime.ToUniversalTime().Ticks != plan.ParentStartTicks ||
                 !string.Equals(parent.MainModule?.FileName, original, StringComparison.OrdinalIgnoreCase))
@@ -65,12 +76,21 @@ internal static class UpdateInstaller
             if (Directory.Exists(backup)) throw new IOException("更新备份目录已存在");
             // Preparation is reversible and completes before the controller stops.
             CopyTree(plan.Target, backup);
-            Authenticode.SamePublisher(UpdateRecovery.BackendPath(backup), ownPublisher);
+            if (plan.UnsignedSource)
+            {
+                var backupBackend = UpdateRecovery.BackendPath(backup);
+                UpdatePolicy.PlainPath(backupBackend);
+                if (!File.Exists(backupBackend)) throw new IOException("原应用备份缺少必要组件");
+            }
+            else
+            {
+                Authenticode.SamePublisher(UpdateRecovery.BackendPath(backup), targetPublisher);
+            }
             Console.WriteLine("READY"); await Console.Out.FlushAsync();
             if (await Console.In.ReadLineAsync(inputTimeout.Token) != "COMMIT") return 1;
             committed = true;
             await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(45));
-            VerifyArchive(plan.Archive, plan.Digest, plan.Version, ownPublisher);
+            VerifyArchive(plan.Archive, plan.Digest, plan.Version, targetPublisher);
             // NSIS requires /D= to be the final, unquoted argument; the executable
             // path is passed separately and no command shell is involved.
             var diagnosticOption = installerDiagnostics == null ? "" : $"/DIAGNOSTICS=\"{installerDiagnostics}\" ";
@@ -86,7 +106,7 @@ internal static class UpdateInstaller
                 if (installer.ExitCode != 0) throw new IOException($"Windows 安装程序未完成安装（退出码 {installer.ExitCode}）");
             }
             EnsureInstallationComplete(plan.Target);
-            Authenticode.SamePublisher(original, ownPublisher);
+            Authenticode.SamePublisher(original, targetPublisher);
             if (FileVersionInfo.GetVersionInfo(original).ProductVersion != plan.Version)
                 throw new IOException("安装后版本不匹配");
             var marker = Path.Combine(AppUpdater.Root, "launch-" + plan.Confirmation + ".json");
@@ -134,7 +154,7 @@ internal static class UpdateInstaller
                     EnsureInstallationComplete(plan.Target);
                     if (UpdateRecovery.OriginalIntact(plan.Target, backup))
                     {
-                        Authenticode.SamePublisher(Path.Combine(plan.Target, "Cage.exe"), plan.Publisher);
+                        if (!plan.UnsignedSource) Authenticode.SamePublisher(Path.Combine(plan.Target, "Cage.exe"), plan.Publisher);
                         Result(false, "更新未完成，原应用已保留：" + detail);
                         Process.Start(new ProcessStartInfo(Path.Combine(plan.Target, "Cage.exe")) { UseShellExecute = false, WorkingDirectory = plan.Target });
                         UpdateRecovery.CleanupDirectory(backup); backup = null;
@@ -143,7 +163,7 @@ internal static class UpdateInstaller
                     if (!installerStarted) throw new IOException("原应用在安装前发生变化，备份已保留，请核对安装目录后重试。");
                     // Stop the exact new controller through its lifecycle API before
                     // restoring files. Never kill other Cage instances by name.
-                    Authenticode.SamePublisher(UpdateRecovery.BackendPath(backup), plan.Publisher);
+                    if (!plan.UnsignedSource) Authenticode.SamePublisher(UpdateRecovery.BackendPath(backup), plan.Publisher);
                     await UpdateRecovery.PrepareRollback(backup);
                     if (launched is { HasExited: false }) { launched.Kill(); await launched.WaitForExitAsync(); }
                     var restored = plan.Target + ".restore-" + plan.Confirmation;

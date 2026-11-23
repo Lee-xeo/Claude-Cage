@@ -3189,5 +3189,7 @@
   "立即应用并启动环境": "Dabaq oo bilow deegaanka",
   "本次启动的硬盘上限": "Xadka disk-ka ee bilowgan",
   "环境硬盘用量": "Isticmaalka disk-ka deegaanka",
-  "主机硬盘实际占用": "Booska dhabta ah ee martigeliyaha"
+  "主机硬盘实际占用": "Booska dhabta ah ee martigeliyaha",
+  "当前运行的是本地未签名构建。继续安装将切换为官方签名发行版，本地源码改动不会保留；配置、账户、项目和虚拟机磁盘会保留，后续将持续接收官方自动更新。": "Waxaad hadda isticmaalaysaa dhisid maxalli ah oo aan saxiixnayn. Sii wadidda rakibidda waxay u wareejin doontaa nooca rasmiga ah ee saxiixan, isbeddellada koodka maxalliga ahna lama kaydin doono; dejimaha, koontooyinka, mashaariicda iyo diskiyada mashiinka farsamada waa la kaydin doonaa, waxaana mustaqbalka heli doontaa cusboonaysiinta tooska ah ee rasmiga ah.",
+  "更新至 {0}。当前为本地未签名构建，更新后将切换为官方签名发行版（配置、账户、项目和虚拟机磁盘会保留，本地源码改动不会保留）。": "Cusbooneysii una beddel {0}. Tani waa dhisid maxalli ah oo aan saxiixnayn; cusboonaysiinta kadib waxay u wareegi doontaa nooca rasmiga ah ee saxiixan (dejimaha, koontooyinka, mashaariicda iyo diskiyada mashiinka farsamada waa la kaydinayaa, isbeddellada koodka maxalliga ahna lama kaydinayo)."
 }

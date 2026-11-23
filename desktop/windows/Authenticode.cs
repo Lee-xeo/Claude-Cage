@@ -6,6 +6,12 @@ namespace Cage.Windows;
 
 internal static class Authenticode
 {
+    // Pinned official release publisher identity. Used only when an eligible
+    // unsigned source build opts to upgrade in-place to the official signed
+    // release; signed installations always pin to their own running signature.
+    public const string OfficialPublisherKey = "4D26DB6B8D67E016770E2A8530A4BE81D8D82F5778ED9FC368119B6A3F795839";
+    public const string OfficialPublisherOrganization = "CN\nLI SHI HAO";
+
     private static readonly Lazy<(string Key, string Organization)> Own = new(() => Identity(Environment.ProcessPath!, currentApp: true));
 
     public static string OwnPublisher() => Identity(Environment.ProcessPath!, currentApp: true).Key;
@@ -57,9 +63,15 @@ internal static class Authenticode
     {
         var actual = Identity(path, currentApp: false);
         if (string.Equals(actual.Key, expected, StringComparison.Ordinal)) return;
-        var own = Own.Value;
-        if (string.Equals(own.Key, expected, StringComparison.Ordinal) && own.Organization.Length != 0 &&
-            string.Equals(actual.Organization, own.Organization, StringComparison.Ordinal)) return;
+        if (string.Equals(expected, OfficialPublisherKey, StringComparison.Ordinal) &&
+            string.Equals(actual.Organization, OfficialPublisherOrganization, StringComparison.Ordinal)) return;
+        try
+        {
+            var own = Own.Value;
+            if (string.Equals(own.Key, expected, StringComparison.Ordinal) && own.Organization.Length != 0 &&
+                string.Equals(actual.Organization, own.Organization, StringComparison.Ordinal)) return;
+        }
+        catch (Exception error) when (error is IOException or CryptographicException or UnauthorizedAccessException) { }
         throw new IOException("更新包的发布者签名与当前 Cage 不一致");
     }
 

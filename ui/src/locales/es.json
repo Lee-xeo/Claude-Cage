@@ -3189,5 +3189,7 @@
   "立即应用并启动环境": "Aplicar e iniciar entorno",
   "本次启动的硬盘上限": "Límite de disco de este inicio",
   "环境硬盘用量": "Uso de disco del entorno",
-  "主机硬盘实际占用": "Espacio real usado en el equipo"
+  "主机硬盘实际占用": "Espacio real usado en el equipo",
+  "当前运行的是本地未签名构建。继续安装将切换为官方签名发行版，本地源码改动不会保留；配置、账户、项目和虚拟机磁盘会保留，后续将持续接收官方自动更新。": "Actualmente está ejecutando una compilación local sin firmar. Continuar con la instalación cambiará a la versión oficial firmada y no conservará los cambios locales del código fuente; la configuración, las cuentas, los proyectos y los discos de la máquina virtual se conservarán y en adelante recibirá actualizaciones automáticas oficiales.",
+  "更新至 {0}。当前为本地未签名构建，更新后将切换为官方签名发行版（配置、账户、项目和虚拟机磁盘会保留，本地源码改动不会保留）。": "Actualizar a {0}. Esta es una compilación local sin firmar; la actualización cambiará a la versión oficial firmada (se conservarán la configuración, las cuentas, los proyectos y los discos de la máquina virtual, pero no los cambios locales del código fuente)."
 }

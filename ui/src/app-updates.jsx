@@ -102,7 +102,7 @@ export function useAppUpdates() {
 
 export function AppUpdateDialog({ updates, onStatus }) {
   const tr = useTranslation();
-  const { installationPrompt, setInstallationPrompt, run } = updates;
+  const { state, installationPrompt, setInstallationPrompt, run } = updates;
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
   const attempt = useRef(null);
@@ -152,6 +152,7 @@ export function AppUpdateDialog({ updates, onStatus }) {
   </>}>
     <div className="modal-body">
       <p>{tr("更新已下载并验证。请先保存文件，点击下方按钮停止环境后安装并重启 Cage。当前终端任务会结束，项目、账户和登录状态会保留。")}</p>
+      {state.officialUpgrade && <p>{tr("当前运行的是本地未签名构建。继续安装将切换为官方签名发行版，本地源码改动不会保留；配置、账户、项目和虚拟机磁盘会保留，后续将持续接收官方自动更新。")}</p>}
       <p>{tr("取消可稍后安装，已下载的更新会保留。停止开始后，取消只推迟安装，环境仍会停止。")}</p>
       {stopping && <p role="status"><LoaderCircle size={16} className="spin" />{" " + tr("正在等待环境停止，完成后继续安装…")}</p>}
       {error && <p className="error-message" role="alert">{tr(error)}</p>}
@@ -196,6 +197,7 @@ export function AppUpdateButton({ updates }) {
     : failed ? tr("{0}，点击重试", state.message ? localizeBackendMessage(state.message, tr) : tr("更新未完成"))
     : busy ? label
     : manual ? tr("新版本 {0} 已发布。{1}点击打开发布页面。", state.latestVersion, state.message ? localizeBackendMessage(state.message, tr) + " " : "")
+    : state.officialUpgrade ? tr("更新至 {0}。当前为本地未签名构建，更新后将切换为官方签名发行版（配置、账户、项目和虚拟机磁盘会保留，本地源码改动不会保留）。", state.latestVersion)
     : tr("更新至 {0}。先下载并验证，安装前会提示你保存工作并手动停止环境。", state.latestVersion);
   const circumference = 2 * Math.PI * 15;
   return (

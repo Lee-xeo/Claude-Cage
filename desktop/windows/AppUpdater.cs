@@ -13,16 +13,18 @@ internal sealed class AppUpdater : IDisposable
     private readonly Action<Dictionary<string, object?>> changed;
     private readonly Action quit, reconnect;
     private readonly Func<string> readPublisher;
+    private readonly Func<bool> canUpgradeUnsigned;
     private readonly Action<string>? report;
     private readonly Dictionary<string, object?> state = new() { ["phase"] = "idle", ["currentVersion"] = Version, ["message"] = "" };
     private CancellationTokenSource? cancellation;
     private InstallPlan? prepared;
     private bool committed;
 
-    public AppUpdater(Action<Dictionary<string, object?>> changed, Action quit, Action reconnect, Func<string>? readPublisher = null, Action<string>? report = null)
+    public AppUpdater(Action<Dictionary<string, object?>> changed, Action quit, Action reconnect, Func<string>? readPublisher = null, Action<string>? report = null, Func<bool>? canUpgradeUnsigned = null)
     {
         this.changed = changed; this.quit = quit; this.reconnect = reconnect;
         this.readPublisher = readPublisher ?? Authenticode.OwnPublisher;
+        this.canUpgradeUnsigned = canUpgradeUnsigned ?? DefaultCanUpgradeUnsigned;
         this.report = report;
         try
         {
@@ -56,7 +58,7 @@ internal sealed class AppUpdater : IDisposable
             case "install":
                 if (cancellation == null)
                 {
-                    if (prepared != null) Change("ready", "更新已下载，请保存工作并手动停止环境后安装", true);
+                    if (prepared != null) { state["officialUpgrade"] = prepared.UnsignedSource; Change("ready", "更新已下载，请保存工作并手动停止环境后安装", true); }
                     else _ = Run(false);
                 }
                 break;
@@ -67,8 +69,28 @@ internal sealed class AppUpdater : IDisposable
         return new(state);
     }
 
+    private static bool DefaultCanUpgradeUnsigned()
+    {
+        if (Environment.GetEnvironmentVariable("CAGE_DISABLE_OFFICIAL_UPGRADE") == "1") return false;
+        try
+        {
+            var target = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+            if (string.IsNullOrEmpty(target)) return false;
+            UpdatePolicy.PlainPath(target);
+            var idPath = Path.Combine(target, "Cage.install-id");
+            if (!File.Exists(idPath)) return false;
+            UpdatePolicy.PlainPath(idPath);
+            return File.ReadAllText(idPath).Trim() == "io.github.lee-xeo.claude-cage";
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return false;
+        }
+    }
+
     private void Change(string phase, string message, bool retryable = false, string retryAt = "")
     {
+        if (phase is "current" or "manual") state["officialUpgrade"] = false;
         state["phase"] = phase; state["message"] = message; state["retryable"] = retryable; state["retryAt"] = retryAt; changed(new(state));
     }
 
@@ -95,13 +117,21 @@ internal sealed class AppUpdater : IDisposable
         var started = false;
         try
         {
-            // An unsigned development build cannot authenticate an automatic
-            // replacement. Still check for releases, but never download one.
+            // Signed installs pin strictly to their own certificate. Eligible
+            // unsigned source builds installed via the Cage installer may
+            // upgrade in-place to the pinned official signed release; all other
+            // unsigned builds fall back to manual download without auto-replacing.
             string? publisher = null;
+            var unsignedSource = false;
             try { publisher = await Task.Run(readPublisher, token); }
             catch (Exception error) when (error is IOException or CryptographicException or UnauthorizedAccessException)
             {
                 report?.Invoke("Windows publisher check failed: " + error.Message);
+                if (await Task.Run(canUpgradeUnsigned, token))
+                {
+                    publisher = Authenticode.OfficialPublisherKey;
+                    unsignedSource = true;
+                }
             }
             token.ThrowIfCancellationRequested();
             process.StartInfo = Backend.StartInfo(Backend.Executable, "app-update", checkOnly || publisher == null ? "check" : "download");
@@ -125,7 +155,11 @@ internal sealed class AppUpdater : IDisposable
                     };
                 if (publisher == null && state.GetValueOrDefault("phase") as string == "available")
                     Change("manual", "当前 Windows 程序未签名或签名无法验证，请从官方发布页下载安装包，退出 Cage 后安装到原位置；配置、凭据、项目和虚拟机磁盘会保留。");
-                else changed(new(state));
+                else
+                {
+                    state["officialUpgrade"] = state.GetValueOrDefault("phase") as string != "current" && unsignedSource;
+                    changed(new(state));
+                }
             }
             await process.WaitForExitAsync(token); await errors;
             if (process.ExitCode != 0) throw new IOException(last.ValueKind == JsonValueKind.Object && last.Text("message") is { Length: > 0 } error ? error : "更新请求未完成");
@@ -139,7 +173,7 @@ internal sealed class AppUpdater : IDisposable
             token.ThrowIfCancellationRequested();
             prepared = new InstallPlan(archive, digest, version, publisher,
                 AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar), Environment.ProcessId,
-                Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks, Guid.NewGuid().ToString());
+                Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks, Guid.NewGuid().ToString(), unsignedSource);
             archive = null;
         }
         catch (OperationCanceledException) { Change("failed", "更新已暂停，可稍后重试", true); }
@@ -150,7 +184,7 @@ internal sealed class AppUpdater : IDisposable
             if (archive != null) { try { Directory.Delete(Path.GetDirectoryName(archive)!, true); } catch (IOException) { } }
             cancellation.Dispose(); cancellation = null;
         }
-        if (prepared != null) Change("ready", "更新已下载，请保存工作并手动停止环境后安装", true);
+        if (prepared != null) { state["officialUpgrade"] = prepared.UnsignedSource; Change("ready", "更新已下载，请保存工作并手动停止环境后安装", true); }
     }
 
     private async Task Install()
@@ -160,14 +194,18 @@ internal sealed class AppUpdater : IDisposable
         var token = cancellation.Token;
         Process? helper = null;
         var helperPath = Path.Combine(Root, "helper-" + Guid.NewGuid() + ".exe");
+        state["officialUpgrade"] = prepared.UnsignedSource;
         Change("installing", "正在准备安装更新");
         try
         {
             // Validate the destination before stopping a running environment.
             UpdatePolicy.PlainPath(prepared.Target);
+            if (prepared.UnsignedSource && !string.Equals(prepared.Publisher, Authenticode.OfficialPublisherKey, StringComparison.Ordinal))
+                throw new IOException("安装计划发布者不匹配");
             Directory.CreateDirectory(Root); UpdatePolicy.PlainPath(Root);
             File.Copy(Environment.ProcessPath!, helperPath);
-            await Task.Run(() => Authenticode.SamePublisher(helperPath, prepared.Publisher), token);
+            if (!prepared.UnsignedSource)
+                await Task.Run(() => Authenticode.SamePublisher(helperPath, prepared.Publisher), token);
             var start = Backend.StartInfo(helperPath, "--install-update");
             // A live process's working directory cannot be renamed on Windows.
             // The helper outlives this App and must not retain its install path.
@@ -209,4 +247,4 @@ internal sealed class AppUpdater : IDisposable
 }
 
 internal sealed record InstallPlan(string Archive, string Digest, string Version, string Publisher,
-    string Target, int ParentPid, long ParentStartTicks, string Confirmation);
+    string Target, int ParentPid, long ParentStartTicks, string Confirmation, bool UnsignedSource = false);
