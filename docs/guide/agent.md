@@ -115,6 +115,8 @@ cage agent call proxy.status
 
 节点内容使用网络指南中的[完整 SOCKS5 YAML 示例](network.md#把原客户端的代理链迁到-cage)或用户自己的兼容配置；不要将 YAML 文件直接作为 `--input` 的 JSON 输入。两种导入方式择一使用，避免重复创建来源。
 
+`proxy.import` 必须带 `name`（1–100 字节），以及 `content`（整份配置或分享链接文本）或 `url`（HTTPS 订阅链接）之一。它不按 `id` 导入：`GET /api/proxy/local-configs` 列出的本机配置只能在这台电脑的 Cage 窗口中导入，Agent 需要自行读取用户指定的文件并放入 `content`。缺少字段、字段类型错误、未知字段或随附代理核心缺失时，请求直接返回 4xx 并说明字段或原因，不会创建作业；来源或节点 ID 是否存在、配置能否通过核心校验，仍以作业结果为准。
+
 从返回的来源和节点列表选择用户要求的出口；不要把订阅中的第一个节点当成用户已经同意的出口。
 
 ```json
@@ -126,7 +128,7 @@ cage agent call proxy.select --input /private/path/selection.json --wait 2m
 cage agent call proxy.status
 ```
 
-链式代理使用 `proxy.route`，输入 `{"node_ids":["入口ID","最终出口ID"]}`，顺序为入口到出口。只传一个节点时与 `proxy.select` 相同，保留该节点在订阅中自带的 `dialer-proxy` 中转。`proxy.select` 总是把路由替换为所选的单个节点：已有链会被清除，所选节点即使原本在链中也可以。节点无效、配置验证或核心启动失败时保留原路由；路由保存后的网络检查仍可能失败，应以 `proxy.status` 返回的当前路由为准。要保留或重建多跳链，请重新调用 `proxy.route`。更新订阅使用 `proxy.refresh` 和已有来源 `id`；本地来源没有订阅链接，`proxy.refresh` 需同时提供新的 `content`，按节点名称保留节点 ID、选择和出口规则。`proxy.edit-node` 输入来源 `id`、`node_id`、`server`、`server_port`，只修改本地节点的地址与端口；`proxy.import` 每次创建来源，不能盲目重试。
+`proxy.select` 只接受 `node_id`（可选 `port`）；请求体可以带与路径相同的 `"action":"select"`，其他取值会被拒绝。链式代理使用 `proxy.route`，输入 `{"node_ids":["入口ID","最终出口ID"]}`，顺序为入口到出口。只传一个节点时与 `proxy.select` 相同，保留该节点在订阅中自带的 `dialer-proxy` 中转。`proxy.select` 总是把路由替换为所选的单个节点：已有链会被清除，所选节点即使原本在链中也可以。节点无效、配置验证或核心启动失败时保留原路由；路由保存后的网络检查仍可能失败，应以 `proxy.status` 返回的当前路由为准。要保留或重建多跳链，请重新调用 `proxy.route`。更新订阅使用 `proxy.refresh` 和已有来源 `id`；本地来源没有订阅链接，`proxy.refresh` 需同时提供新的 `content`，按节点名称保留节点 ID、选择和出口规则。`proxy.edit-node` 输入来源 `id`、`node_id`、`server`、`server_port`，只修改本地节点的地址与端口；`proxy.import` 每次创建来源，不能盲目重试。
 
 仅切换节点或代理链（包括跨国家切换）会保留运行中的环境和终端。旧网络连接和检查授权会被撤销，完整检查通过后才恢复联网。首次启用内置代理、修改代理端口或环境设置仍可能需要重启环境。
 
@@ -221,6 +223,7 @@ cage agent job 012345abcdef --wait 30m
 | `config_path_mismatch` | 同一目录的后台使用了另一个配置文件名；改用原后台的绝对配置路径，保留所有现有文件。 |
 | `account_missing` | 这份配置还没有账户：由用户在 Cage 创建，或通过私有输入调用 `account.create`；不要调用 `account.unlock`。 |
 | `account_locked` | 用户在 Cage 解锁，或通过私有输入调用 `account.unlock`。 |
+| `proxy_core_missing` | 随附代理核心缺失，`proxy.status` 的 `core_error` 说明期望位置；代理导入、选择和重启会直接返回 `state_conflict`。重新安装完整应用；源码构建在 macOS 和 Linux 运行 `make cage-core`，Windows 使用 `scripts/build-windows.ps1`。 |
 | `request_rejected`、`invalid_input` | 读取本构建能力与错误说明，修正字段或节点/来源 ID；不要重复原请求。 |
 | `state_conflict`、`service_busy` | 读取当前任务和系统状态；有在途任务时等待原任务完成。 |
 | `unsupported_operation` | 检查当前平台的能力，使用对应版本指南。 |

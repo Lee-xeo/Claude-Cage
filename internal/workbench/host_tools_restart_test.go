@@ -40,6 +40,9 @@ func TestMain(m *testing.M) {
 		_ = server.Run(context.Background(), &mcp.StdioTransport{})
 		return
 	}
+	// No Mihomo is installed beside the test binary; proxy tests replace the
+	// core itself and only assert the missing-core path explicitly.
+	proxyCorePath = func() (string, error) { return "mihomo", nil }
 	os.Exit(m.Run())
 }
 

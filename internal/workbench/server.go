@@ -24,7 +24,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -696,15 +698,70 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any, limits ...int64) bo
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
-		http.Error(w, "请求格式无效", 400)
+		http.Error(w, jsonRequestError(err), 400)
 		return false
 	}
 	var extra any
 	if d.Decode(&extra) != io.EOF {
-		http.Error(w, "请求格式无效", 400)
+		http.Error(w, "请求格式无效：请求体只能包含一个 JSON 值", 400)
 		return false
 	}
 	return true
+}
+
+// jsonRequestError names the offending field, never its value, so API and
+// Agent callers can correct a request.
+func jsonRequestError(err error) string {
+	const invalid = "请求格式无效"
+	var tooLarge *http.MaxBytesError
+	var typeErr *json.UnmarshalTypeError
+	var syntaxErr *json.SyntaxError
+	switch {
+	case errors.As(err, &tooLarge):
+		return fmt.Sprintf("%s：请求体超过 %d 字节", invalid, tooLarge.Limit)
+	case errors.As(err, &typeErr) && typeErr.Field != "":
+		return fmt.Sprintf("%s：字段 %s 应为%s", invalid, quoteJSONField(typeErr.Field), jsonKind(typeErr.Type))
+	case errors.As(err, &typeErr):
+		return invalid + "：请求体应为 JSON " + jsonKind(typeErr.Type)
+	case errors.As(err, &syntaxErr), errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return invalid + "：不是完整的 JSON"
+	}
+	// encoding/json reports unknown fields only as text.
+	if quoted, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+		if field, e := strconv.Unquote(quoted); e == nil {
+			return fmt.Sprintf("%s：不支持字段 %s", invalid, quoteJSONField(field))
+		}
+	}
+	return invalid
+}
+
+func quoteJSONField(field string) string {
+	if r := []rune(field); len(r) > 64 {
+		field = string(r[:64]) + "…"
+	}
+	return strconv.Quote(field)
+}
+
+func jsonKind(t reflect.Type) string {
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil {
+		return "其他类型"
+	}
+	switch t.Kind() {
+	case reflect.String:
+		return "字符串"
+	case reflect.Bool:
+		return "布尔值"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32, reflect.Float64:
+		return "数字"
+	case reflect.Slice, reflect.Array:
+		return "数组"
+	case reflect.Map, reflect.Struct:
+		return "对象"
+	}
+	return "其他类型"
 }
 func jsonReply(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

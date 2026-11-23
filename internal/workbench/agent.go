@@ -64,8 +64,10 @@ func AgentOperations() []AgentOperation {
 	post("settings.restore", "Restore the saved previous settings and restart the environment; inspect status and obtain permission to interrupt work first", "/api/restore", object(nil))
 	get("proxy.status", "List source and node IDs without subscription URLs or node secrets", "/api/proxy")
 	proxy := from(proxyInput{})
+	// The operation name already selects the action.
+	delete(proxy["properties"].(map[string]any), "action")
 	for _, action := range []string{"import", "refresh", "edit", "edit-node", "delete", "select", "route", "restart", "stop"} {
-		post("proxy."+action, "Proxy operation; import creates a source, refresh updates an existing source (a local source needs new content and keeps node IDs by name), edit-node changes server/server_port of a local node only. Read state before retrying. select/route applies the route", "/api/proxy/"+action, proxy)
+		post("proxy."+action, "Proxy operation; import creates a source from name plus content (the whole Clash/Mihomo YAML or share links) or url (HTTPS subscription), refresh updates an existing source (a local source needs new content and keeps node IDs by name), edit-node changes server/server_port of a local node only. Read state before retrying. select/route applies the route", "/api/proxy/"+action, proxy)
 	}
 	get("guest.options", "Whether the environment is new, and any installation an earlier version left unfinished", "/api/environment/guest-systems")
 	get("initialization.status", "Read initial setup state; desktop_active indicates desktop first-run onboarding is active", "/api/environment/initialization")

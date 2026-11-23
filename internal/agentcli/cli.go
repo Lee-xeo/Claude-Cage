@@ -411,11 +411,16 @@ func agentDoctor(ctx context.Context, path string) map[string]any {
 			if proxy, e := workbench.AgentCall(ctx, path, "proxy.status", nil); e == nil {
 				result["proxy"] = proxy
 				var view struct {
-					Active  bool  `json:"active"`
-					Running bool  `json:"running"`
-					Sources []any `json:"sources"`
+					Active        bool  `json:"active"`
+					Running       bool  `json:"running"`
+					CoreAvailable *bool `json:"core_available"`
+					Sources       []any `json:"sources"`
 				}
 				_ = json.Unmarshal(proxy, &view)
+				if view.CoreAvailable != nil && !*view.CoreAvailable {
+					// proxy.core_error names the expected location.
+					add("proxy_core_missing", "blocked", "reinstall")
+				}
 				switch {
 				case len(view.Sources) == 0:
 					add("proxy_missing", "blocked", "proxy.import")

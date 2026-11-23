@@ -72,7 +72,16 @@ func CorePath() (string, error) {
 			return filepath.Clean(p), nil
 		}
 	}
-	return "", errors.New("Cage 随附代理核心缺失，请重新安装完整应用；开发构建请运行 scripts/fetch-proxy-core.sh")
+	return "", missingCoreError(name, runtime.GOOS)
+}
+
+// missingCoreError names where CorePath looks, without the host path.
+func missingCoreError(name, goos string) error {
+	build := "源码构建请运行 make cage-core"
+	if goos == "windows" {
+		build = "源码构建请运行 scripts/build-windows.ps1"
+	}
+	return fmt.Errorf("Cage 随附代理核心缺失：%s 应与 cage 可执行文件位于同一目录，或位于其上级目录的 proxy-core 中；请重新安装完整应用，%s", name, build)
 }
 func Validate(ctx context.Context, profile string, s Store) error {
 	core, err := CorePath()

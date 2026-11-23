@@ -25,6 +25,7 @@ var (
 	validateProxyCore = managedproxy.Validate
 	startProxyCore    = managedproxy.Start
 	fetchProxySource  = managedproxy.Fetch
+	proxyCorePath     = managedproxy.CorePath
 )
 
 type proxyInput struct {
@@ -39,6 +40,9 @@ type proxyInput struct {
 	Port         int      `json:"port"`
 	Server       string   `json:"server"`
 	ServerPort   int      `json:"server_port"`
+	// Action may repeat the operation named by the request path, which
+	// scripted callers tend to send (#763); a different value is rejected.
+	Action string `json:"action"`
 }
 
 func (s *Server) proxyStatus(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +112,11 @@ func (s *Server) proxyStatus(w http.ResponseWriter, r *http.Request) {
 	if running {
 		_ = managedproxy.API(ctx, s.profile, "GET", "/version", nil, &version)
 	}
-	_, coreErr := managedproxy.CorePath()
+	_, coreErr := proxyCorePath()
+	coreError := ""
+	if coreErr != nil {
+		coreError = coreErr.Error()
+	}
 	route, routeErr := p.Route()
 	if route == nil {
 		route = append([]string{}, p.Chain...)
@@ -120,7 +128,7 @@ func (s *Server) proxyStatus(w http.ResponseWriter, r *http.Request) {
 			state, label = "migration_required", "需要迁移代理节点"
 		}
 	}
-	jsonReply(w, map[string]any{"route": route, "route_error": routeError, "sources": sources, "selected": p.Selected, "port": p.Port, "running": running, "active": active, "state": state, "state_label": label, "network_open": state == "ready", "core_available": coreErr == nil, "version": version.Version, "revision": p.Revision, "bootstrap_dns": strings.Join(p.NodeResolvers(), "、"), "udp_blocked": true, "ipv6_blocked": true})
+	jsonReply(w, map[string]any{"route": route, "route_error": routeError, "sources": sources, "selected": p.Selected, "port": p.Port, "running": running, "active": active, "state": state, "state_label": label, "network_open": state == "ready", "core_available": coreErr == nil, "core_error": coreError, "version": version.Version, "revision": p.Revision, "bootstrap_dns": strings.Join(p.NodeResolvers(), "、"), "udp_blocked": true, "ipv6_blocked": true})
 }
 func (s *Server) proxyMutation(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("action") == "import-local" && !s.requireLocalConfigAccess(w, r) {
@@ -136,11 +144,112 @@ func (s *Server) proxyMutation(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if input.Action != "" && input.Action != action {
+		http.Error(w, "字段 action 与请求路径不一致：此接口执行 "+action+"，可省略 action", http.StatusBadRequest)
+		return
+	}
+	if err := checkProxyInput(action, input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if proxyCoreActions[action] {
+		if _, err := proxyCorePath(); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+	}
 	s.mu.Lock()
 	pauseVersion := s.safety.pauseVersion
 	s.mu.Unlock()
 	s.launchRequest(w, r, "proxy", func() error { return s.changeProxy(action, input, &pauseVersion) })
 }
+
+// Every operation that validates or starts the bundled core fails before a job
+// is queued when the core is missing; delete, edit and stop still work.
+var proxyCoreActions = map[string]bool{"import": true, "import-local": true, "refresh": true, "edit-node": true, "select": true, "restart": true, "route": true}
+
+// checkProxyInput rejects malformed input synchronously, so API callers get a
+// 4xx instead of an accepted job that fails. Messages already shown by the
+// workbench keep their wording, and translation. Checks against saved sources
+// and nodes stay in changeProxy, which runs serialized with other operations.
+func checkProxyInput(action string, in proxyInput) error {
+	switch action {
+	case "import":
+		if in.ID != "" {
+			return errors.New("proxy.import 不按 id 导入：GET /api/proxy/local-configs 列出的配置只能在本机 Cage 窗口中导入；请在 content 中提供整份配置，或在 url 中提供订阅链接")
+		}
+		if name := strings.TrimSpace(in.Name); name == "" || len(name) > 100 {
+			return errors.New("请填写 1–100 字节的来源名称")
+		}
+		if in.Interval < 0 || in.Interval > 168 {
+			return errors.New("更新间隔应为 0–168 小时，0 表示手动更新")
+		}
+		if in.URL == "" && strings.TrimSpace(in.Content) == "" {
+			return errors.New("缺少 content 或 url：content 填写整份 Clash/Mihomo 配置或节点分享链接文本，url 填写 HTTPS 订阅链接")
+		}
+		if in.URL != "" && !subscriptionURL(in.URL) {
+			return errors.New("订阅需要完整的 HTTPS 网址，不支持地址内用户名和密码")
+		}
+		if len(in.Content) > managedproxy.MaxImport {
+			return errors.New("配置为空或超过 8 MiB")
+		}
+	case "import-local":
+		if in.ID == "" {
+			return errors.New("缺少 id：请填写 GET /api/proxy/local-configs 返回的配置 id")
+		}
+	case "refresh", "edit", "edit-node", "delete":
+		if in.ID == "" {
+			return errors.New("缺少 id：请填写 proxy.status 返回的来源 id")
+		}
+		if len(in.Content) > managedproxy.MaxImport {
+			return errors.New("配置为空或超过 8 MiB")
+		}
+		if action == "edit" {
+			if strings.TrimSpace(in.Name) == "" || len(in.Name) > 100 || in.Interval < 0 || in.Interval > 168 {
+				return errors.New("名称或更新间隔无效")
+			}
+			if in.URL != "" && !subscriptionURL(in.URL) {
+				return errors.New("订阅需要完整的 HTTPS 网址")
+			}
+		}
+		if action == "edit-node" {
+			if in.NodeID == "" {
+				return errors.New("缺少 node_id：请填写 proxy.status 返回的节点 ID")
+			}
+			server := strings.Trim(strings.TrimSpace(in.Server), "[]")
+			if len(server) > 253 || net.ParseIP(server) == nil && !nodeHostname.MatchString(server) {
+				return errors.New("服务器地址无效，请填写 IP 地址或域名")
+			}
+			if in.ServerPort < 1 || in.ServerPort > 65535 {
+				return errors.New("节点端口应为 1–65535")
+			}
+		}
+	case "select":
+		if len(in.NodeIDs) > 0 {
+			return errors.New("proxy.select 只接受 node_id；多跳代理链请使用 proxy.route 的 node_ids")
+		}
+		if in.NodeID == "" {
+			return errors.New("缺少 node_id：请填写 proxy.status 返回的节点 ID")
+		}
+	case "route":
+		if in.NodeID != "" {
+			return errors.New("proxy.route 只接受 node_ids：按入口到最终出口的顺序填写节点 ID")
+		}
+		if len(in.NodeIDs) == 0 {
+			return errors.New("请至少选择一个最终出口")
+		}
+	}
+	if (action == "select" || action == "restart" || action == "route") && in.Port != 0 && (in.Port < 1024 || in.Port > 65535) {
+		return errors.New("代理端口应为 1024–65535")
+	}
+	return nil
+}
+
+func subscriptionURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Hostname() != "" && u.User == nil && u.Fragment == ""
+}
+
 func (s *Server) subscriptionClient(host bool) (*http.Client, error) {
 	cfg, err := loadConfig(s.configPath)
 	if err != nil {
@@ -674,6 +783,9 @@ func (s *Server) proxyLogs(w http.ResponseWriter, r *http.Request) {
 		lines = append(lines, "内置核心运行中；已读回当前节点选择")
 	} else {
 		lines = append(lines, "内置核心未就绪；不会直连回退")
+		if _, err := proxyCorePath(); err != nil {
+			lines = append(lines, err.Error())
+		}
 	}
 	for _, src := range p.Sources {
 		lines = append(lines, src.Updated.Format("2006-01-02 15:04")+" · "+src.Name+" · "+src.Error)

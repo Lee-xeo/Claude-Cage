@@ -67,6 +67,8 @@ bash scripts/build-app.sh
 
 使用 `GOTOOLCHAIN=local` 时，先让 `PATH` 中的 Go 本身满足两个模块的要求，例如 Go 1.27.3 或更新版本；仅准备 Go 1.26.10 会在构建 `tools/tailnet` 时失败。离线构建还需预先准备 Go 模块、前端依赖和构建脚本所需的下载材料。Windows 与 Linux 构建也会使用该子模块，须核对同一版本要求。
 
+`build-app.sh` 会先获取随附的代理核心 Mihomo。单独运行 `make cage` 只生成 `_output/bin/cage`，不含代理核心，此时代理导入会直接报“随附代理核心缺失”；在 macOS 或 Linux x86_64 上运行 `make cage-core`，它会校验并放到 `_output/proxy-core/mihomo`，`cage` 运行时从这里或同目录加载。
+
 ### macOS 构建排查
 
 构建开始时会先链接一个最小 C 程序并让 Swift 导入 Cocoa，工具链有问题时在编译前报出原因。
