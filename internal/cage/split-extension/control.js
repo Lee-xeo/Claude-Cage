@@ -14,6 +14,63 @@ globalThis.manageCageExtensions = async function (input) {
   await chrome.management.setEnabled(input.id, input.mode === 'enable');
   return { ok: true };
 };
+function isHistoryURL(value) {
+  if (typeof value !== 'string' || !value || value.length > 16384) return false;
+  try {
+    const parsed = new URL(value);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return false;
+    if (parsed.hostname === '127.0.0.1' && parsed.port === '18080') return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+const historyRanges = {
+  hour: 60 * 60 * 1000,
+  day: 24 * 60 * 60 * 1000,
+  week: 7 * 24 * 60 * 60 * 1000,
+};
+globalThis.manageCageHistory = async function (input) {
+  const mode = input?.mode || 'list';
+  if (mode === 'list') {
+    const query = typeof input?.query === 'string' ? input.query.trim().slice(0, 500) : '';
+    const limit = Math.max(1, Math.min(500, Number.isInteger(input?.limit) ? input.limit : 100));
+    const startTime = Number.isFinite(input?.startTime) && input.startTime >= 0 ? input.startTime : 0;
+    const params = { text: query, startTime, maxResults: Math.min(1000, limit + 80) };
+    if (Number.isFinite(input?.endTime) && input.endTime > 0) params.endTime = input.endTime;
+    const raw = await chrome.history.search(params);
+    const items = raw
+      .filter(item => isHistoryURL(item?.url))
+      .sort((a, b) => (Number(b.lastVisitTime) || 0) - (Number(a.lastVisitTime) || 0))
+      .slice(0, limit)
+      .map(item => ({
+        id: String(item.id || item.url),
+        url: item.url,
+        title: String(item.title || '').slice(0, 300),
+        lastVisitTime: Number(item.lastVisitTime) || 0,
+        visitCount: Math.max(1, Number(item.visitCount) || 1),
+      }));
+    return { items };
+  }
+  if (mode === 'delete') {
+    if (!isHistoryURL(input?.url)) throw new Error('历史记录地址无效');
+    await chrome.history.deleteUrl({ url: input.url });
+    return { ok: true };
+  }
+  if (mode === 'clear') {
+    const range = input?.range || 'all';
+    if (range === 'all') {
+      await chrome.history.deleteAll();
+      return { ok: true };
+    }
+    const span = historyRanges[range];
+    if (!span) throw new Error('清除范围无效');
+    const endTime = Date.now();
+    await chrome.history.deleteRange({ startTime: Math.max(0, endTime - span), endTime });
+    return { ok: true };
+  }
+  throw new Error('历史记录操作无效');
+};
 let managedSplit;
 const faviconVersions = new Map();
 chrome.tabs.onUpdated.addListener((tabId, changes) => {

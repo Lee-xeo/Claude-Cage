@@ -660,6 +660,9 @@ func run() int {
 	if !allowed[args[0]] {
 		return fail(fmt.Errorf("unknown cage command %q; see cage help", args[0]))
 	}
+	if args[0] == "run" || args[0] == "shell" || args[0] == "claude" {
+		warnClosedNetwork(path, os.Stderr)
+	}
 	return cli.Main(args, cli.Stdio())
 }
 
@@ -697,7 +700,7 @@ func startEnvironment(command string, args []string, stdio cli.IO, invoke func([
 	if err := startServices(); err != nil {
 		return fail(err)
 	}
-	fmt.Fprintln(stdio.Stdout, "Cage local services are ready. Open Cage or run cage desktop to complete the required network checks. External networking stays closed until the workbench approves this VM; no local access password is required.")
+	fmt.Fprintln(stdio.Stdout, "Cage local services are ready. Open Cage, run cage desktop or run 'cage agent call network.check --wait 5m' to complete the required network checks. External networking stays closed until the workbench approves this VM; no local access password is required.")
 	if command == "login" {
 		return invoke([]string{"run", "--tty", "bash", "-lc", "source /etc/profile.d/claude-cage.sh; exec claude auth login"}, stdio)
 	}

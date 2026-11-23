@@ -114,6 +114,7 @@ type Server struct {
 	monitorTimingLogs                                map[string]monitorTimingLog
 	mobileConnectMu                                  sync.Mutex
 	audioClients                                     int
+	audioInputClients                                int
 	projectShares                                    map[string]*projectShare
 	hostTools                                        *hostTools
 	hostToolsRemoved                                 bool
@@ -533,6 +534,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/claude-desktop/{action}", s.claudeDesktopAction)
 	mux.HandleFunc("GET /api/terminals", s.listTerminals)
 	mux.HandleFunc("GET /api/audio", s.audio)
+	mux.HandleFunc("GET /api/audio/input", s.audioInput)
 	mux.HandleFunc("GET /api/clipboard", s.sharedClipboard)
 	mux.HandleFunc("POST /api/clipboard/files", s.clipboardArchive)
 	mux.HandleFunc("GET /api/clipboard/files/{id}", s.clipboardArchive)
@@ -806,6 +808,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"storage_recovery": s.storageRecoveryStatusLocked(),
 		"keyboard":         s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.jobs.snapshot(),
 		"location": s.location, "network_error": s.currentNetworkErrorLocked(), "can_restore": e == nil,
+		"network_paused": s.networkPaused, "network_open": s.networkOpenLocked(time.Now()),
 		"safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError,
 		"abandoned_guests": s.abandonedGuestList(), "abandoned_environment": s.abandonedEnvironmentSystem(),
 	}
@@ -926,6 +929,10 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request) {
 		requestError(w, errors.New("没有可恢复的配置"))
 		return
 	}
+	// The saved configuration does not carry this switch; the preferences
+	// saved with it do. Without it a restored switch is written back while
+	// the environment keeps running with the other setting.
+	v.Config.TLSClientHelloSplit = v.Preferences.TLSClientHelloSplit
 	s.launchRequest(w, r, "restore", func() error {
 		if err := s.apply(v, false); err != nil {
 			return err

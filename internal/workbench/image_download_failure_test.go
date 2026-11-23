@@ -29,6 +29,15 @@ func TestImageDownloadFailureNamesEachMirror(t *testing.T) {
 	}
 }
 
+// #713: when the host proxy refused the connection, switching Cage nodes
+// cannot help, so the next step names the host proxy settings instead.
+func TestImageDownloadFailureNamesHostProxy(t *testing.T) {
+	reason, next, ok := imageDownloadFailure(vm.ImageDownloadMarker + " official:proxy:kept nju:proxy:none")
+	if !ok || !strings.Contains(reason, "Debian 官方源（无法连接宿主机代理，已保留下载进度）") || !strings.Contains(next, "HTTPS_PROXY") || !strings.Contains(next, "换节点无效") || strings.Contains(next, "换一个节点") || !strings.Contains(next, "断点续传") {
+		t.Fatalf("reason %q next %q", reason, next)
+	}
+}
+
 // Only the fixed codes are accepted: a line that adds any other text is not a
 // summary and never reaches the message.
 func TestImageDownloadFailureRejectsOtherText(t *testing.T) {

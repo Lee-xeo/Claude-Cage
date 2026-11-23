@@ -59,6 +59,28 @@ func (s *Server) readDefaultPluginsLocked() map[string]defaultPluginRecord {
 	return records
 }
 
+// defaultPluginsUnreadableLocked reports a record file that exists but cannot
+// be understood. Treating it as empty would reinstall plugins the user
+// removed and then write over what the file still holds.
+func (s *Server) defaultPluginsUnreadableLocked() bool {
+	raw, err := os.ReadFile(filepath.Join(s.profile, defaultPluginsFile))
+	if err != nil {
+		return !os.IsNotExist(err)
+	}
+	var parsed defaultPluginsData
+	return json.Unmarshal(raw, &parsed) != nil
+}
+
+// defaultPluginDismissed reports a bundled plugin the user uninstalled.
+func (s *Server) defaultPluginDismissed(name string) bool {
+	if _, ok := hostbridge.DefaultPluginByName(name); !ok {
+		return false
+	}
+	s.defaultPluginsMu.Lock()
+	defer s.defaultPluginsMu.Unlock()
+	return s.readDefaultPluginsLocked()[name].Dismissed
+}
+
 func (s *Server) writeDefaultPluginsLocked(records map[string]defaultPluginRecord) error {
 	return writePrivate(filepath.Join(s.profile, defaultPluginsFile), defaultPluginsData{
 		Version: 1,
@@ -76,6 +98,10 @@ func (s *Server) ensureDefaultPlugins() {
 	s.defaultPluginsMu.Lock()
 	defer s.defaultPluginsMu.Unlock()
 
+	if s.defaultPluginsUnreadableLocked() {
+		diagnostics.Log("warn", "host-tools", "default-plugins.json cannot be read; bundled plugins are left as they are")
+		return
+	}
 	records := s.readDefaultPluginsLocked()
 	changed := false
 	dir := s.hostPluginDir()

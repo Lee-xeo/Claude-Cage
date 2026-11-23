@@ -175,11 +175,17 @@ curl() {
 		t.Fatalf("expected default owner empty, got %q", got)
 	}
 
-	// Case 3: default failed -> surfaces error even when account desktop is active.
+	// Case 3: a failed default Desktop does not stop an account Desktop's
+	// transfers; with no other source the failure is reported.
 	cmd = exec.Command(bash, "--noprofile", "--norc", "-s")
 	cmd.Stdin = strings.NewReader("DEFAULT_STATE=failed\nACCOUNT_STATE=active\n" + fixture + script)
+	if out, err := cmd.CombinedOutput(); err != nil || !strings.Contains(string(out), accountID) || strings.Contains(string(out), `"default"`) {
+		t.Fatalf("expected the account Desktop to keep working beside a failed default, got: %s (%v)", out, err)
+	}
+	cmd = exec.Command(bash, "--noprofile", "--norc", "-s")
+	cmd.Stdin = strings.NewReader("DEFAULT_STATE=failed\nACCOUNT_STATE=inactive\n" + fixture + script)
 	if out, err := cmd.CombinedOutput(); err == nil {
-		t.Fatalf("expected failed default service to error, got: %s", out)
+		t.Fatalf("expected a failed default service alone to error, got: %s", out)
 	}
 }
 

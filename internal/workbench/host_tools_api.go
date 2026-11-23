@@ -338,7 +338,7 @@ func (s *Server) setHostPluginAlways(name, project string, always bool) error {
 		return errors.New("插件名称无效")
 	}
 	if !always {
-		if err := grants.revoke(hostGrantPlugin + name); err != nil {
+		if err := grants.revokePlugin(name); err != nil {
 			return err
 		}
 		s.closeHostTools()
@@ -480,7 +480,7 @@ func (s *Server) setHostTools(w http.ResponseWriter, r *http.Request) {
 		}
 		// A plugin installed again later starts turned on, and asks again.
 		_ = s.recordHostPluginOn(body.Remove, true)
-		_ = s.hostGrantStore().revoke(hostGrantPlugin + body.Remove)
+		_ = s.hostGrantStore().revokePlugin(body.Remove)
 		s.forgetPluginSettings(body.Remove)
 		s.markDefaultPluginDismissed(body.Remove, true)
 	}

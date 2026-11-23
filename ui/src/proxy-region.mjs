@@ -2,7 +2,7 @@ const FLAG_RE = /[\u{1F1E6}-\u{1F1FF}]{2}/gu;
 
 const KEYWORD_REGIONS = [
   ["HK", ["香港", "hong kong", "hongkong"]],
-  ["TW", ["台湾", "台灣", "台北", "新北", "高雄", "台中", "彰化", "taiwan", "taipei"]],
+  ["TW", ["台湾", "台灣", "台北", "新北", "高雄", "彰化", "taiwan", "taipei"]],
   ["MO", ["澳门", "澳門", "macau", "macao"]],
   ["JP", ["日本", "东京", "東京", "大阪", "埼玉", "福冈", "福岡", "名古屋", "札幌", "japan", "tokyo", "osaka", "fukuoka", "nagoya", "saitama"]],
   ["SG", ["新加坡", "狮城", "獅城", "singapore"]],
@@ -220,6 +220,10 @@ export function regionLabel(code, locale) {
   }
 }
 
+const KEYWORDS_BY_LENGTH = KEYWORD_REGIONS
+  .flatMap(([code, keywords]) => keywords.map(kw => [kw, code]))
+  .sort((a, b) => b[0].length - a[0].length);
+
 export function detectNodeRegion(name) {
   const text = String(name || "");
   if (!text) return "ZZ";
@@ -232,10 +236,16 @@ export function detectNodeRegion(name) {
   }
 
   // 2. Unambiguous Chinese / English country & city keywords
+  // The longest keyword wins ("印度尼西亚" before "印度"), and a Latin
+  // keyword must stand as a word ("rome" is not part of "chrome").
   const lower = text.toLowerCase();
-  for (const [code, keywords] of KEYWORD_REGIONS) {
-    for (const kw of keywords) {
-      if (lower.includes(kw)) return code;
+  for (const [kw, code] of KEYWORDS_BY_LENGTH) {
+    const at = lower.indexOf(kw);
+    if (at < 0) continue;
+    if (!/^[\x00-\x7f]+$/.test(kw)) return code;
+    for (let i = at; i >= 0; i = lower.indexOf(kw, i + 1)) {
+      const before = lower[i - 1] || "", after = lower[i + kw.length] || "";
+      if (!/[a-z]/.test(before) && !/[a-z]/.test(after)) return code;
     }
   }
 

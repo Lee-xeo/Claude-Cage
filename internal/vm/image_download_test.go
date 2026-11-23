@@ -5,8 +5,10 @@ import (
 	"crypto/sha512"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -72,5 +74,30 @@ func TestImageDownloadSummaryNamesDebianMirrors(t *testing.T) {
 		if got := ImageDownloadSummary(err); got != "" {
 			t.Fatalf("%v summarized as %q", err, got)
 		}
+	}
+}
+
+// #713: a host proxy that refuses the connection is not a mirror failure.
+func TestImageDownloadSummaryNamesHostProxyFailure(t *testing.T) {
+	closed, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := closed.Addr().String()
+	closed.Close()
+	var lines []string
+	for i, scheme := range []string{"http", "socks5"} {
+		proxy, _ := url.Parse(scheme + "://" + address)
+		client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}}
+		location := debianImageMirrors[i].base + "debian.qcow2"
+		_, err := client.Get(location)
+		if err == nil {
+			t.Fatalf("%s proxy at a closed port answered", scheme)
+		}
+		lines = append(lines, fmt.Sprintf("failed to download `%s`: %v", location, err))
+	}
+	got := ImageDownloadSummary(errors.New(strings.Join(lines, "\n")))
+	if want := ImageDownloadMarker + " official:proxy:none nju:proxy:none"; got != want {
+		t.Fatalf("summary = %q, want %q\nfrom %s", got, want, strings.Join(lines, "\n"))
 	}
 }

@@ -93,7 +93,7 @@ func TestStorageRecoveryKeepsHostAccessAndBlocksEnvironmentMutations(t *testing.
 			t.Fatalf("mutation %s reached its receiver: %d %s", endpoint, response.Code, response.Body.String())
 		}
 	}
-	for _, endpoint := range []string{"/api/browser/state", "/api/vnc", "/api/terminals", "/api/audio"} {
+	for _, endpoint := range []string{"/api/browser/state", "/api/vnc", "/api/terminals", "/api/audio", "/api/audio/input"} {
 		if response := desktopRequestForTest(s, http.MethodGet, endpoint, nil); response.Code != http.StatusConflict {
 			t.Fatalf("guest session %s was admitted: %d", endpoint, response.Code)
 		}

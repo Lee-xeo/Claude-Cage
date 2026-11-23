@@ -29,6 +29,9 @@ const (
 // capacity available to ext4 on next start. It skips when a shrink operation
 // is pending or awaiting host truncation.
 const GuestDiskGrowScript = `if ! systemd-detect-virt --container --quiet; then
+# A shrink that never completed left its request behind, which kept the
+# service below from growing the filesystem ever again.
+sudo rm -f /var/lib/rootfs-resize/request /var/lib/rootfs-resize/done
 sudo tee /usr/local/sbin/rootfs-grow >/dev/null <<'ROOTFS_GROW_EOF'
 #!/bin/bash
 set -euo pipefail

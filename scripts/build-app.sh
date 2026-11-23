@@ -102,6 +102,7 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSMicrophoneUsageDescription</key><string>Cage only uses your microphone when an application inside the environment requests audio input.</string>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 PLIST
@@ -116,6 +117,8 @@ if [[ -n "${CAGE_PROVISIONING_PROFILE:-}" ]]; then
   bash scripts/prepare-account-signing.sh "$CAGE_PROVISIONING_PROFILE" "$signing_team" "$build_stage/account.entitlements"
   cp "$CAGE_PROVISIONING_PROFILE" "$bundle/Contents/embedded.provisionprofile"
   account_signing+=(--entitlements "$build_stage/account.entitlements")
+else
+  account_signing+=(--entitlements packaging/macos/cage-app.entitlements)
 fi
 "${sign[@]}" "$bundle/Contents/Resources/mihomo"
 "${sign[@]}" "$bundle/Contents/Resources/CageUpdateInstaller"

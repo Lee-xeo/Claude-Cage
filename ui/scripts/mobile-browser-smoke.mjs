@@ -104,6 +104,12 @@ try {
       return reply({id:frame.id});
     }
     if (!path.startsWith("/api/mobile/browser/")) return route.fulfill({status:404});
+    if (path === "/api/mobile/browser/history") {
+      if (!favoritesAvailable) return route.fulfill({status:404});
+      const mode = body?.mode || "list";
+      if (mode === "delete" || mode === "clear") return reply({ok:true});
+      return reply({items:[{id:"https://youtube.com/",url:"https://youtube.com/",title:"YouTube",lastVisitTime:Date.now(),visitCount:1}]});
+    }
     if (path === "/api/mobile/browser/favorites") {
       if (!favoritesAvailable) return route.fulfill({status:404});
       if (body) {

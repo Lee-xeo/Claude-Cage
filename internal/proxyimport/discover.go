@@ -56,6 +56,9 @@ const (
 	OixCloud
 	// Surge reads the INI-style .conf profiles of Surge for Mac.
 	Surge
+	// Nyanpasu is Clash Nyanpasu. Its runtime file moved between releases and
+	// its root config files may hold only app or core settings.
+	Nyanpasu
 )
 
 const encryptedConfigError = "配置文件使用 age 加密，Cage 不会解密私有配置，无法直接导入。请从原客户端或服务商导出明文 Clash/Mihomo YAML 后通过“添加来源”导入，或手动添加节点"
@@ -89,6 +92,13 @@ func Locations(platform, home, dataHome, configHome string) []Location {
 	if platform == "darwin" || platform == "windows" {
 		partyHome = dataHome
 	}
+	// Clash Nyanpasu 1.6 and later use the platform config root (the data home
+	// here on macOS and Windows); earlier releases used ~/.config on every
+	// platform regardless of XDG_CONFIG_HOME.
+	nyanpasuHome := filepath.Join(configHome, "clash-nyanpasu")
+	if platform == "darwin" || platform == "windows" {
+		nyanpasuHome = filepath.Join(dataHome, "Clash Nyanpasu", "config")
+	}
 	out := []Location{
 		{"FlClash", filepath.Join(dataHome, "com.follow.clash"), Plain, ""},
 		{"FlClash", filepath.Join(dataHome, "com.follow.clash", "profiles"), Plain, ""},
@@ -97,11 +107,15 @@ func Locations(platform, home, dataHome, configHome string) []Location {
 		// Clash Neo is a Verge fork and keeps the same profile layout.
 		{"Clash Neo", filepath.Join(dataHome, "io.github.clash-neo"), Verge, ""},
 		{"Clash Party", filepath.Join(partyHome, "mihomo-party"), Party, ""},
+		{"Clash Nyanpasu", nyanpasuHome, Nyanpasu, ""},
 		{"Clash Verge", filepath.Join(configHome, "clash-verge"), Verge, ""},
 		{"Clash / ClashX", filepath.Join(configHome, "clash"), Plain, ""},
 		{"Mihomo", filepath.Join(configHome, "mihomo"), Plain, ""},
 		{"ShadowsocksR", filepath.Join(configHome, "shadowsocksr"), Plain, ""},
 		{"Shadowsocks", filepath.Join(configHome, "shadowsocks"), Plain, ""},
+	}
+	if legacy := filepath.Join(home, ".config", "clash-nyanpasu"); legacy != nyanpasuHome {
+		out = append(out, Location{"Clash Nyanpasu", legacy, Nyanpasu, ""})
 	}
 	if platform == "darwin" {
 		out = append(out, Location{"ShadowsocksX-NG", filepath.Join(home, ".ShadowsocksX-NG"), Plain, ""})
@@ -333,6 +347,36 @@ func Scan(locations []Location, key []byte) []Config {
 				}
 				add(filepath.Join("profiles", item.File), "", name, item.URL, item.UID == index.Current)
 			}
+		case Nyanpasu:
+			// 2.x writes runtime/clash-config.yaml and keeps core settings in the
+			// root clash-config.yaml, which 1.6 used as its runtime file; earlier
+			// releases wrote clash-verge.yaml. Report a failure only when no
+			// candidate yields nodes.
+			var fallback *Config
+			for _, file := range []string{filepath.Join("runtime", "clash-config.yaml"), "clash-config.yaml", "clash-verge.yaml"} {
+				c, ok, _ := build(file, "", "当前生效配置", "", true)
+				if !ok {
+					continue
+				}
+				if c.Error == "" {
+					out = append(out, c)
+					fallback = nil
+					break
+				}
+				if fallback == nil {
+					fallback = &c
+				}
+			}
+			if fallback != nil {
+				out = append(out, *fallback)
+			}
+			data, err := readWithin(root, "profiles.yaml")
+			if err != nil {
+				continue
+			}
+			for _, p := range nyanpasuProfiles(data) {
+				add(filepath.Join("profiles", p.file), "", p.name, p.url, p.current)
+			}
 		case Surge:
 			files, err := os.ReadDir(root)
 			if err != nil {
@@ -374,6 +418,85 @@ func Scan(locations []Location, key []byte) []Config {
 		}
 		return out[i].Current && !out[j].Current
 	})
+	return out
+}
+
+type nyanpasuProfile struct {
+	file, name, url string
+	current         bool
+}
+
+// nyanpasuProfiles reads both profiles.yaml schemas: 1.x keeps file and url on
+// each item and may list several current items; 2.x nests them under
+// config.source. Script, merge, transform and composition items have no
+// standalone node file and are skipped.
+func nyanpasuProfiles(data []byte) []nyanpasuProfile {
+	var index struct {
+		Current yaml.Node   `yaml:"current"`
+		Items   []yaml.Node `yaml:"items"`
+	}
+	if yaml.Unmarshal(data, &index) != nil {
+		return nil
+	}
+	current := map[string]bool{}
+	var one string
+	var many []string
+	if index.Current.Decode(&one) == nil {
+		current[one] = one != ""
+	} else if index.Current.Decode(&many) == nil {
+		for _, uid := range many {
+			current[uid] = uid != ""
+		}
+	}
+	out := []nyanpasuProfile{}
+	for i, node := range index.Items {
+		if i >= 64 {
+			break
+		}
+		var item struct {
+			UID    string `yaml:"uid"`
+			Name   string `yaml:"name"`
+			Type   string `yaml:"type"`
+			File   string `yaml:"file"`
+			URL    string `yaml:"url"`
+			Config struct {
+				Type   string `yaml:"type"`
+				Source struct {
+					Type    string `yaml:"type"`
+					File    string `yaml:"file"`
+					URL     string `yaml:"url"`
+					Binding struct {
+						File string `yaml:"file"`
+					} `yaml:"binding"`
+				} `yaml:"source"`
+			} `yaml:"config"`
+		}
+		// Script items carry custom YAML tags such as "!script javascript".
+		if node.Decode(&item) != nil {
+			continue
+		}
+		file, remote := "", ""
+		switch {
+		case item.Type == "remote":
+			file, remote = item.File, item.URL
+		case item.Type == "local":
+			file = item.File
+		case item.Type == "config" && item.Config.Type == "file" && item.Config.Source.Type == "remote":
+			file, remote = item.Config.Source.File, item.Config.Source.URL
+		case item.Type == "config" && item.Config.Type == "file" && item.Config.Source.Type == "local":
+			file = item.Config.Source.Binding.File
+		default:
+			continue
+		}
+		if file == "" || filepath.Base(file) != file || strings.ContainsAny(file, `/\\`) {
+			continue
+		}
+		name := item.Name
+		if name == "" {
+			name = "已保存的配置"
+		}
+		out = append(out, nyanpasuProfile{file: file, name: name, url: remote, current: current[item.UID]})
+	}
 	return out
 }
 

@@ -1461,8 +1461,20 @@ static gboolean decide_policy(WebKitWebView *web, WebKitPolicyDecision *decision
     }
     return FALSE;
 }
-static gboolean deny_permission(WebKitWebView *web, WebKitPermissionRequest *request, gpointer data) {
-    (void)web; (void)data; webkit_permission_request_deny(request); return TRUE;
+static gboolean handle_permission(WebKitWebView *web, WebKitPermissionRequest *request, gpointer data) {
+    (void)data;
+    if (WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST(request)) {
+        WebKitUserMediaPermissionRequest *media = WEBKIT_USER_MEDIA_PERMISSION_REQUEST(request);
+        const char *uri = webkit_web_view_get_uri(web);
+        if (webkit_user_media_permission_is_for_audio_device(media) &&
+            !webkit_user_media_permission_is_for_video_device(media) &&
+            valid_workbench(uri, app.port, FALSE)) {
+            webkit_permission_request_allow(request);
+            return TRUE;
+        }
+    }
+    webkit_permission_request_deny(request);
+    return TRUE;
 }
 static gboolean workbench_file_chooser(WebKitWebView *web, WebKitFileChooserRequest *request, gpointer data) {
     (void)data;
@@ -1633,12 +1645,12 @@ static void create_window(void) {
     webkit_settings_set_javascript_can_open_windows_automatically(web_settings, FALSE);
     webkit_settings_set_enable_write_console_messages_to_stdout(web_settings, FALSE);
     webkit_settings_set_enable_webgl(web_settings, FALSE);
-    webkit_settings_set_enable_media_stream(web_settings, FALSE);
+    webkit_settings_set_enable_media_stream(web_settings, TRUE);
 #if WEBKIT_CHECK_VERSION(2, 38, 0)
     webkit_settings_set_enable_webrtc(web_settings, FALSE);
 #endif
     g_signal_connect(app.web, "decide-policy", G_CALLBACK(decide_policy), NULL);
-    g_signal_connect(app.web, "permission-request", G_CALLBACK(deny_permission), NULL);
+    g_signal_connect(app.web, "permission-request", G_CALLBACK(handle_permission), NULL);
     g_signal_connect(app.web, "run-file-chooser", G_CALLBACK(workbench_file_chooser), NULL);
     g_signal_connect(app.web, "context-menu", G_CALLBACK(deny_context_menu), NULL);
     g_signal_connect(app.web, "load-changed", G_CALLBACK(load_changed), NULL);

@@ -17,5 +17,6 @@ cat > "$output" <<PLIST
 <key>com.apple.application-identifier</key><string>$team.$bundle_id</string>
 <key>com.apple.developer.team-identifier</key><string>$team</string>
 <key>keychain-access-groups</key><array><string>$team.$bundle_id</string></array>
+<key>com.apple.security.device.audio-input</key><true/>
 </dict></plist>
 PLIST

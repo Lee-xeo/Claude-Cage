@@ -67,8 +67,12 @@ Check(WindowLayout.Bounds(new(0, 0, 3840, 2080), 192, new(100, 100, 1000, 700, 9
 Console.WriteLine($"Windows window layout: {assertions} assertions passed.");
 assertions = 0;
 Check(UpdatePolicy.IsWorkbench("http://localhost:4321/", 4321), "expected local origin rejected");
+Check(UpdatePolicy.AllowMicrophonePermission("http://localhost:4321/", 4321), "local workbench microphone permission rejected");
 foreach (var origin in new[] { "https://localhost:4321/", "http://localhost:4322/", "http://localhost.evil:4321/", "http://user@localhost:4321/", "http://127.0.0.1:4321/", "file:///C:/workbench.html" })
+{
     Check(!UpdatePolicy.IsWorkbench(origin, 4321), "foreign native bridge origin accepted: " + origin);
+    Check(!UpdatePolicy.AllowMicrophonePermission(origin, 4321), "foreign microphone permission accepted: " + origin);
+}
 Check(UpdatePolicy.Entry("http://localhost:4321/#token").Port == 4321, "entry URL rejected");
 Reject(() => UpdatePolicy.Entry("http://localhost:4321/"), "entry without token accepted");
 Check(UpdatePolicy.IsNewer("0.1.0-alpha.10", "0.1.0-alpha.9"), "numeric prerelease ordering");

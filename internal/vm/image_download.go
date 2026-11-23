@@ -68,6 +68,9 @@ func imageDownloadCause(text string) string {
 		code     string
 		patterns []string
 	}{
+		// net/http names a failed dial to the host's HTTP or SOCKS proxy this
+		// way; the mirror itself was never reached.
+		{"proxy", []string{"proxyconnect", "socks connect"}},
 		{"checksum", []string{"checksum mismatch", "digest", "sha512"}},
 		{"dns", []string{"no such host", "server misbehaving", "temporary failure in name resolution"}},
 		{"refused", []string{"connection refused"}},

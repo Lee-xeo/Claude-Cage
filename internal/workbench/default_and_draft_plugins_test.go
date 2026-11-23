@@ -215,6 +215,25 @@ func writeTestSubmission(t *testing.T, storeRoot, name, target string, permissio
 	}
 }
 
+// reviewedDigest lists the drafts as the review page does and returns the
+// digest of the copy shown for id.
+func reviewedDigest(t *testing.T, s *Server, id string) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.getHostPluginDrafts(rec, httptest.NewRequest(http.MethodGet, "/api/host-tools/drafts", nil))
+	var list pluginDraftsListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, draft := range list.Drafts {
+		if draft.ID == id {
+			return draft.Digest
+		}
+	}
+	t.Fatalf("draft %s is not listed", id)
+	return ""
+}
+
 func TestDraftReviewInstallRevokesAlwaysGrantAndProtectsBuiltIn(t *testing.T) {
 	store := t.TempDir()
 	s := &Server{
@@ -266,11 +285,32 @@ func TestDraftReviewInstallRevokesAlwaysGrantAndProtectsBuiltIn(t *testing.T) {
 		t.Fatalf("expected path traversal rejected, got 200")
 	}
 
-	// Install as host plugin first.
+	// Nothing installs without naming the copy that was reviewed.
 	rec = httptest.NewRecorder()
 	s.installHostPluginDraft(rec, trustedPluginRequest(s, http.MethodPost, "/api/host-tools/drafts/install", `{"id":"my-helper","kind":"host"}`))
+	if rec.Code == http.StatusOK {
+		t.Fatal("expected install without a reviewed digest to fail")
+	}
+	// The environment rewrites its folder after the review, adding a file the
+	// user never saw. The reviewed copy is what gets installed.
+	digest := list.Drafts[0].Digest
+	if digest == "" || len(list.Drafts[0].Files) == 0 {
+		t.Fatalf("review must carry a digest and the real file list: %+v", list.Drafts[0])
+	}
+	writeTestSubmission(t, store, "my-helper", "local", []string{"network"}, "print('swapped')\n")
+	if err := os.WriteFile(filepath.Join(store, "my-helper", "files", "hidden.py"), []byte("print('hidden')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	s.installHostPluginDraft(rec, trustedPluginRequest(s, http.MethodPost, "/api/host-tools/drafts/install", `{"id":"my-helper","kind":"host","digest":"`+digest+`"}`))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("install draft status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Lstat(filepath.Join(s.hostPluginDir(), "my-helper", "hidden.py")); !os.IsNotExist(err) {
+		t.Fatal("SECURITY VIOLATION: a file added after review was installed")
+	}
+	if data, _ := os.ReadFile(filepath.Join(s.hostPluginDir(), "my-helper", "server.py")); !strings.Contains(string(data), "print('v2')") {
+		t.Fatalf("installed program is not the reviewed one: %s", data)
 	}
 	installedManifest, err := hostbridge.LoadManifest(filepath.Join(s.hostPluginDir(), "my-helper"))
 	if err != nil {
@@ -298,14 +338,15 @@ func TestDraftReviewInstallRevokesAlwaysGrantAndProtectsBuiltIn(t *testing.T) {
 
 	// Replacing without replace=true must fail.
 	rec = httptest.NewRecorder()
-	s.installHostPluginDraft(rec, trustedPluginRequest(s, http.MethodPost, "/api/host-tools/drafts/install", `{"id":"my-helper","kind":"host"}`))
+	digest = reviewedDigest(t, s, "my-helper")
+	s.installHostPluginDraft(rec, trustedPluginRequest(s, http.MethodPost, "/api/host-tools/drafts/install", `{"id":"my-helper","kind":"host","digest":"`+digest+`"}`))
 	if rec.Code == http.StatusOK {
 		t.Fatal("expected overwrite without replace=true to fail")
 	}
 
 	// Replacing with replace=true succeeds, sets old copy aside, AND revokes the always-allow grant!
 	rec = httptest.NewRecorder()
-	s.installHostPluginDraft(rec, trustedPluginRequest(s, http.MethodPost, "/api/host-tools/drafts/install", `{"id":"my-helper","kind":"host","replace":true}`))
+	s.installHostPluginDraft(rec, trustedPluginRequest(s, http.MethodPost, "/api/host-tools/drafts/install", `{"id":"my-helper","kind":"host","replace":true,"digest":"`+digest+`"}`))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("replace install failed: %d %s", rec.Code, rec.Body.String())
 	}

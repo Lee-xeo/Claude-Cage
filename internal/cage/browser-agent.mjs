@@ -11,6 +11,7 @@ import { LoginBrowser, isClaudeSignIn } from "./browser-login.mjs";
 import { PrivateBrowser } from "./browser-private.mjs";
 import { browserCookies, AccountLoginCookies } from "./browser-cookies.mjs";
 import { BrowserExtensions, extensionUploadLimit } from "./browser-extensions.mjs";
+import { BrowserHistory } from "./browser-history.mjs";
 import { BrowserClipboard } from "./browser-clipboard.mjs";
 import { BrowserVisibility, rememberOpener, targetAfterClose } from "./browser-visibility.mjs";
 import { BrowserWheel, createActivitySignal, createPointerProbe } from "./browser-wheel.mjs";
@@ -106,6 +107,7 @@ const auditCreations = new Set(), deferredTargetInfo = new Map();
 const loginBrowser = new LoginBrowser(cdp, new AccountLoginCookies("/home/cage-browser/LoginProfiles"));
 const privateBrowser = new PrivateBrowser(cdp, downloadPath);
 const browserExtensions = new BrowserExtensions({ directory: "/home/cage-browser", cdp, control: splitController, protectedID: extensionId });
+const browserHistory = new BrowserHistory({ cdp, control: splitController });
 const pending = new Map(),
   targets = new Map(),
   sessions = new Map();
@@ -877,12 +879,13 @@ const server = http.createServer(async (req, res) => {
       catch (error) { res.writeHead(error.status || 503); res.end("{}"); }
       return;
     }
-    if (["/phone-browser/open", "/phone-browser/action", "/phone-browser/frame", "/phone-browser/close"].includes(req.url)) {
+    if (["/phone-browser/open", "/phone-browser/action", "/phone-browser/frame", "/phone-browser/close", "/phone-browser/history"].includes(req.url)) {
       // Load only for a phone operation, keeping desktop startup independent.
       const { PhoneBrowser } = await import("./browser-phone.mjs");
       phoneBrowser ??= new PhoneBrowser({ binary: browserBinary });
       try {
-        res.end(JSON.stringify(await phoneBrowser.run(req.url.slice("/phone-browser/".length), input)));
+        const op = req.url.slice("/phone-browser/".length);
+        res.end(JSON.stringify(op === "history" ? await phoneBrowser.history(input) : await phoneBrowser.run(op, input)));
       } catch (error) {
         res.writeHead([403, 409, 410, 503].includes(error.status) ? error.status : 400);
         res.end(JSON.stringify({ error: error.message }));
@@ -955,6 +958,7 @@ const server = http.createServer(async (req, res) => {
         const { product, protocolVersion } = await cdp("Browser.getVersion");
         return { product, protocolVersion };
       }
+      if (req.url === "/history") return browserHistory.request(input);
       if (req.url === "/extensions") {
         const result = await browserExtensions.request(input);
         if (input.mode === "options" && result.url) {

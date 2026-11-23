@@ -81,6 +81,11 @@ func (s *Server) archiveCodeReading(ctx context.Context, list *claudeAccountList
 			return empty, err
 		}
 		dest = list.bySubject(subject)
+		if dest == nil {
+			// The user deleted this account and keeps using the environment's
+			// own login. It runs as the default client without a record.
+			return claudeSelection{GuestID: "default", Subject: subject}, nil
+		}
 	} else {
 		for i := range list.Accounts {
 			owner := &list.Accounts[i]

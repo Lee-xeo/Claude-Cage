@@ -1,4 +1,4 @@
-import { shortcut, primaryModifier } from "./platform.mjs";
+import { isMac, shortcut, primaryModifier } from "./platform.mjs";
 import {
   DEFAULT_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
@@ -51,7 +51,7 @@ import { BrowserHeader, BrowserTabRail, TerminalHeader, ExpandSidebar, ExpandPan
 import { useDownloadNotifications, useDesktopFiles } from "./browser-downloads";
 import { BrowserUploads } from "./browser-uploads";
 import { BrowserSettingsPage } from "./browser-settings";
-import { AudioControls, useAudioOutput } from "./audio";
+import { AudioControls, MicrophoneIndicator, useAudioInput, useAudioOutput } from "./audio";
 import { EnvironmentClock } from "./environment-clock";
 import { ProjectDialog } from "./project-dialog";
 import {
@@ -153,7 +153,7 @@ function App() {
     [sidebarWidth, setSidebarWidth] = useState(() =>
       clampSidebarWidth(
         readLocal(clientStorageKey("cage-sidebar-width"), DEFAULT_SIDEBAR_WIDTH),
-        typeof window !== "undefined" ? window.innerWidth : 0,
+        0,
       ),
     ),
     [sidebarResizing, setSidebarResizing] = useState(false),
@@ -179,13 +179,15 @@ function App() {
     [details, setDetails] = useState(false),
     [safetyOpen, setSafetyOpen] = useState(false),
     [quitting, setQuitting] = useState(null);
+  // The state keeps the width the user chose. A narrow window only limits
+  // what is shown, so the choice comes back when the window grows again.
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   useEffect(() => {
-    const onResize = () => {
-      setSidebarWidth((current) => clampSidebarWidth(current, window.innerWidth));
-    };
+    const onResize = () => setViewportWidth(window.innerWidth);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+  const shownSidebarWidth = clampSidebarWidth(sidebarWidth, viewportWidth);
   // Keep feedback continuous until polling observes the accepted start job.
   const clientStatus = serverStatus && { ...serverStatus, keyboard: clientKeyboard(serverStatus.keyboard) };
   const status = clientStatus && startRequest
@@ -361,7 +363,9 @@ function App() {
     () => {setManagementPage(""); setHome(false); setDesktopOpen(true);},
     () => {setDesktopOpen(false); setHome(true);}, notify, (...args) => confirm(...args), desktopOpen && running && status?.account_desktops_supported && !managementPage, status?.desktop_catalog_revision);
   const viewingAccountDesktop = desktopOpen && accountDesktops.panes.length > 0;
-  const audio = useAudioOutput(running && !viewingAccountDesktop && !storageRecovery && !status?.environment_update_required && !connectionError);
+  const audioEnabled = running && !viewingAccountDesktop && !storageRecovery && !status?.environment_update_required && !connectionError;
+  const audio = useAudioOutput(audioEnabled);
+  const mic = useAudioInput(audioEnabled);
   useEffect(() => {
     if (audio.error) setToast(audio.error);
   }, [audio.error]);
@@ -1236,6 +1240,8 @@ function App() {
       if (k === "t" && !event.shiftKey) handle = newPage;
       if (k === "n" && event.shiftKey) handle = () => openBrowserPage(undefined, true);
       if (k === "d") handle = () => document.dispatchEvent(new Event("cage-add-favorite"));
+      if ((isMac && k === "y" && !event.shiftKey) || (!isMac && k === "h" && !event.shiftKey))
+        handle = () => document.dispatchEvent(new Event("cage-show-history"));
       if (k === "enter" && event.shiftKey) handle = newTerminalHere;
       if (k === "l")
         handle = () => {
@@ -1675,7 +1681,7 @@ function App() {
     if (event.button !== 0) return;
     event.preventDefault();
     const rtl = document.documentElement.dir === "rtl";
-    sidebarDrag.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: sidebarWidth, rtl, latest: sidebarWidth };
+    sidebarDrag.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: shownSidebarWidth, rtl, latest: shownSidebarWidth };
     setSidebarResizing(true);
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* noop */ }
   };
@@ -1706,7 +1712,7 @@ function App() {
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
       const step = event.key === "ArrowRight" ? SIDEBAR_WIDTH_STEP : -SIDEBAR_WIDTH_STEP;
-      const width = nextSidebarWidth(sidebarWidth, step, rtl, window.innerWidth);
+      const width = nextSidebarWidth(shownSidebarWidth, step, rtl, window.innerWidth);
       persist("cage-sidebar-width", width, setSidebarWidth);
     } else if (event.key === "Home") {
       event.preventDefault();
@@ -1724,7 +1730,7 @@ function App() {
     <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <div
         className={`workbench-shell ${sidebarResizing ? "sidebar-resizing" : ""}`}
-        style={{ "--sidebar-width": `${sidebarWidth}px` }}
+        style={sidebarWidth === DEFAULT_SIDEBAR_WIDTH ? undefined : { "--sidebar-width": `${shownSidebarWidth}px` }}
         inert={settingsOpen || undefined}
       >
         {!sidebarCollapsed && (
@@ -1815,7 +1821,7 @@ function App() {
             aria-label={tr("调整侧栏宽度")}
             aria-valuemin={MIN_SIDEBAR_WIDTH}
             aria-valuemax={currentSidebarMax}
-            aria-valuenow={sidebarWidth}
+            aria-valuenow={shownSidebarWidth}
             onPointerDown={startSidebarResize}
             onPointerMove={moveSidebarResize}
             onPointerUp={finishSidebarResize}
@@ -2205,6 +2211,7 @@ function App() {
               enabled={running && !busy && !connectionError && windowVisible}
             />
             <span className="status-spacer" />
+            <MicrophoneIndicator mic={mic} />
             <AudioControls audio={audio} />
             <EnvironmentClock timezone={settings.timezone} clock12Hour={settings.clock_12_hour} />
             <span className={`status-feedback${toast && toastTone ? ` ${toastTone}` : ""}`} role="status">

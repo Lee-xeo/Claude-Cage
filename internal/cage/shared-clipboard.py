@@ -865,7 +865,10 @@ def main(argv=None):
             raise ValueError('file selection exceeded its limit')
         paths = json.loads(selection)
         with CacheRegistry().reading(paths):
-            account = pwd.getpwnam(args[1])
+            # Keep this spelling: the guest profile rewrites it to map the
+            # stable role name to the environment's own user name.
+            user = args[1]
+            account = pwd.getpwnam(user)
             os.initgroups(account.pw_name, account.pw_gid)
             os.setgid(account.pw_gid)
             os.setuid(account.pw_uid)

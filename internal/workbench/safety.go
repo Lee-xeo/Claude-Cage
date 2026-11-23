@@ -113,6 +113,15 @@ func (s *Server) publishGate(state cage.GateStatus) {
 	}
 }
 
+// networkOpenLocked reports whether the last published gate grant still lets
+// guest traffic out. A paused or lost proxy network is closed even while the
+// guest has not yet observed the revocation.
+func (s *Server) networkOpenLocked(now time.Time) bool {
+	gate := s.safety.Gate
+	return !s.networkPaused && !s.proxyNetworkLost && gate != nil && gate.Mode == cage.GateOpen && gate.PolicyVerified &&
+		!gate.Fault && gate.Until.After(now) && gate.Report != nil && gate.Report.Authorizes(gate.RunID, gate.Configuration, now) == nil
+}
+
 // A gate grant resolves a monitoring failure. Independent diagnostics, such
 // as a location lookup failure, are cleared by the operation that owns them.
 func (s *Server) currentNetworkErrorLocked() string {

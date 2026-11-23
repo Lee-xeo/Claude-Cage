@@ -32,12 +32,14 @@ type hostGrant struct {
 const (
 	hostGrantPlugin  = "plugin:"
 	hostGrantProject = "project:"
+	// A plugin shared with a remote host is agreed to separately from its use
+	// by the assistant on this computer: neither answer stands for the other.
+	hostGrantRemotePlugin = "remote-plugin:"
 )
 
+// load reads the file every time. More than one store can point at the same
+// file, and a cached copy would write back over what the other one saved.
 func (g *hostGrants) load() {
-	if g.loaded {
-		return
-	}
 	g.loaded, g.grants = true, map[string]hostGrant{}
 	data, err := os.ReadFile(g.path)
 	if err != nil {
@@ -87,6 +89,11 @@ func (g *hostGrants) grant(key string, permissions []string) error {
 // revoke takes back the grant for key.
 func (g *hostGrants) revoke(key string) error {
 	return g.remove(func(name string) bool { return name == key })
+}
+
+// revokePlugin takes back every grant for a plugin, local and remote.
+func (g *hostGrants) revokePlugin(name string) error {
+	return g.remove(func(key string) bool { return key == hostGrantPlugin+name || key == hostGrantRemotePlugin+name })
 }
 
 // revokeProjects takes back every project's grant for commands.

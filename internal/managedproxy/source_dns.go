@@ -65,12 +65,24 @@ func FilterNodeDNS(servers []string) []string {
 	return out
 }
 
+// privateDNSHost reports a literal address inside a private, link-local or
+// carrier-grade NAT range. A subscription must not point node lookups at the
+// user's own network.
+func privateDNSHost(host string) bool {
+	addr, err := netip.ParseAddr(strings.Trim(host, "[]"))
+	if err != nil {
+		return false
+	}
+	addr = addr.Unmap()
+	return addr.IsPrivate() || addr.IsLinkLocalUnicast() || netip.MustParsePrefix("100.64.0.0/10").Contains(addr)
+}
+
 func isSafeSourceDNS(raw string, local localServers) bool {
 	if raw == "" || len(raw) > 2048 {
 		return false
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || local.contains(u.Hostname()) {
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || local.contains(u.Hostname()) || privateDNSHost(u.Hostname()) {
 		return false
 	}
 	if port := u.Port(); port != "" {
@@ -91,6 +103,11 @@ func validateSourceDNS(servers []string) ([]string, error) {
 	for i, raw := range servers {
 		raw = strings.TrimSpace(raw)
 		u, err := url.Parse(raw)
+		if err == nil && privateDNSHost(u.Hostname()) {
+			// Saved before such addresses were refused at import. Leaving it
+			// out keeps the other nodes working.
+			continue
+		}
 		if err != nil || len(raw) > 2048 || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || local.contains(u.Hostname()) {
 			return nil, sourceNodeDNSError{fmt.Errorf("订阅的第 %d 个节点 DNS 需要远程 HTTPS DoH 地址，不支持用户名、密码或 # 路由参数", i+1)}
 		}
@@ -111,9 +128,16 @@ func validateSourceDNS(servers []string) ([]string, error) {
 // Exact policies there cannot alter business DNS or resolver bootstrapping.
 // It keys policies by domain, not node/source; reject conflicting ownership
 // rather than silently sending another source's queries to this resolver.
+// The same resolvers in another order are the same ownership.
 func (s Store) sourceDNSPolicies(blocked map[string]string) (map[string][]string, error) {
 	policies := map[string][]string{}
 	owners := map[string][]string{}
+	sameServers := func(a, b []string) bool {
+		a, b = slices.Clone(a), slices.Clone(b)
+		slices.Sort(a)
+		slices.Sort(b)
+		return slices.Equal(a, b)
+	}
 	for _, src := range s.Sources {
 		servers, err := validateSourceDNS(src.NodeDNS)
 		if err != nil {
@@ -132,7 +156,7 @@ func (s Store) sourceDNSPolicies(blocked map[string]string) (map[string][]string
 			if _, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
 				continue
 			}
-			if previous, ok := owners[host]; ok && !slices.Equal(previous, servers) {
+			if previous, ok := owners[host]; ok && !sameServers(previous, servers) {
 				return nil, errors.New("多个来源对同一节点域名指定了不同 DNS，无法隔离解析；请统一这些来源的节点 DNS 或移除冲突来源，原配置已保留")
 			}
 			owners[host] = servers

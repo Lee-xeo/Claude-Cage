@@ -590,7 +590,7 @@ func (e *External) ModelTools() []*mcp.Tool {
 // plugin's normal approval gate.
 func (e *External) CallForModel(ctx context.Context, name string, arguments json.RawMessage) (*mcp.CallToolResult, error) {
 	if !slices.ContainsFunc(e.ModelTools(), func(tool *mcp.Tool) bool { return tool.Name == name }) {
-		return nil, &RefusedError{fmt.Errorf("plugin %s, tool %s: not offered to the model", e.Manifest.Name, name)}
+		return nil, &RefusedError{fmt.Errorf("tool %s is not offered", name)}
 	}
 	return e.call(ctx, name, arguments, false)
 }
@@ -658,7 +658,7 @@ func (e *External) run(ctx context.Context, name string, arguments json.RawMessa
 	session := e.session
 	e.mu.Unlock()
 	if session == nil {
-		return nil, fmt.Errorf("plugin %s is not running", e.Manifest.Name)
+		return nil, errors.New("the extension is not running")
 	}
 	result, err := session.CallTool(ctx, params)
 	if err == nil || ctx.Err() != nil {
@@ -679,7 +679,7 @@ func (e *External) run(ctx context.Context, name string, arguments json.RawMessa
 			_ = e.session.Close()
 			e.session, e.tools, e.prompts = nil, offered, offeredPrompts
 			e.mu.Unlock()
-			return nil, fmt.Errorf("plugin %s changed its tools while running", e.Manifest.Name)
+			return nil, errors.New("the extension changed its tools while running")
 		}
 	}
 	session = e.session
@@ -698,7 +698,7 @@ func (e *External) getPrompt(ctx context.Context, name string, arguments map[str
 	session := e.session
 	e.mu.Unlock()
 	if session == nil {
-		return nil, fmt.Errorf("plugin %s is not running", e.Manifest.Name)
+		return nil, errors.New("the extension is not running")
 	}
 	result, err := session.GetPrompt(ctx, params)
 	if err != nil && ctx.Err() == nil {
@@ -715,7 +715,7 @@ func (e *External) getPrompt(ctx context.Context, name string, arguments map[str
 				_ = e.session.Close()
 				e.session, e.tools, e.prompts = nil, offered, offeredPrompts
 				e.mu.Unlock()
-				return nil, fmt.Errorf("plugin %s changed its tools while running", e.Manifest.Name)
+				return nil, errors.New("the extension changed its tools while running")
 			}
 		}
 		session = e.session
@@ -728,8 +728,8 @@ func (e *External) getPrompt(ctx context.Context, name string, arguments map[str
 	if err != nil {
 		return nil, err
 	}
-	if word, found := CheckPromptResultWording(result); found {
-		return nil, fmt.Errorf("prompt %s returned disallowed wording %q", name, word)
+	if _, found := CheckPromptResultWording(result); found {
+		return nil, fmt.Errorf("prompt %s returned wording that cannot be shown", name)
 	}
 	return result, nil
 }

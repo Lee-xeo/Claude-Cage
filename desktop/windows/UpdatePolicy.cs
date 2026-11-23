@@ -11,6 +11,8 @@ internal static partial class UpdatePolicy
         url.Scheme == "http" && url.Host == "localhost" && url.Port == port &&
         url.UserInfo.Length == 0;
 
+    public static bool AllowMicrophonePermission(string? raw, int port) => IsWorkbench(raw, port);
+
     public static Uri Entry(string raw)
     {
         if (!Uri.TryCreate(raw, UriKind.Absolute, out var url) ||
