@@ -39,6 +39,8 @@ def copy_to_workspace(source, size, workspace, name):
                 dst.write(chunk)
                 remaining -= len(chunk)
             dst.flush()
+            if os.fstat(source).st_size != size or os.read(source, 1):
+                raise OSError(errno.EIO, '下载源文件在保存过程中发生变化')
             os.fchmod(dst.fileno(), 0o644)
             os.fsync(dst.fileno())
             root, extension = os.path.splitext(name)

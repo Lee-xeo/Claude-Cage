@@ -90,6 +90,27 @@ class DownloadSaveTests(unittest.TestCase):
         self.assertFalse(helper.remove_source_if_unchanged(directory, 'source', original))
         self.assertTrue(self.source.read_bytes().endswith(b'new bytes'))
 
+    def test_growing_source_during_copy_is_refused_without_publishing(self):
+        fd = os.open(self.source, os.O_RDONLY | os.O_NOFOLLOW)
+        self.addCleanup(os.close, fd)
+        initial_size = self.source.stat().st_size
+        real_read = helper.os.read
+        appended = False
+
+        def growing_read(read_fd, count):
+            nonlocal appended
+            data = real_read(read_fd, count)
+            if not appended and read_fd == fd:
+                appended = True
+                with self.source.open('ab') as writer:
+                    writer.write(b'more-video-frames')
+            return data
+
+        with mock.patch.object(helper.os, 'read', side_effect=growing_read):
+            with self.assertRaises(OSError):
+                helper.copy_to_workspace(fd, initial_size, str(self.workspace), 'video.mp4')
+        self.assertEqual(list((self.workspace / 'Downloads').iterdir()), [])
+
 
 if __name__ == '__main__':
     unittest.main()

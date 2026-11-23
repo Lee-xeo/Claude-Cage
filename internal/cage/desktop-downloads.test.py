@@ -1,3 +1,4 @@
+import errno
 import importlib.util
 import json
 import os
@@ -6,6 +7,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 
 def load(name, filename):
@@ -86,6 +88,82 @@ class DesktopDownloadsTests(unittest.TestCase):
         item = self.wait()
         self.assertEqual(item['state'], 'saved')
         self.assertEqual(Path(item['path']).read_bytes(), b'')
+
+    def test_rename_while_open_waits_for_remaining_writes_and_close(self):
+        # Electron/Chromium renames an active Unconfirmed download into the
+        # SaveFile destination while keeping its file descriptor open for
+        # writing. Neither a 0-byte prefix nor a partial prefix may be published.
+        staging = self.root / 'unconfirmed'
+        staging.mkdir()
+        for label, prefix in (('empty-prefix', b''), ('partial-prefix', b'A' * (2 * 65536))):
+            with self.subTest(label=label):
+                self.finished.clear()
+                target = Path(self.manager.begin(f'{label}.mp4'))
+                temp = staging / f'Unconfirmed-{label}.crdownload'
+                remaining = bytes(range(256)) * 4096  # 1 MiB written after rename
+                fd = os.open(temp, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+                try:
+                    if prefix:
+                        os.write(fd, prefix)
+                    os.rename(temp, target)
+                    self.assertFalse(self.finished.wait(.15))
+                    self.assertEqual(self.manager.snapshot()[0]['state'], 'downloading')
+                    self.assertFalse((self.workspace / 'Downloads' / target.name).exists())
+                    for offset in range(0, len(remaining), 65536):
+                        os.write(fd, remaining[offset:offset + 65536])
+                    self.assertFalse(self.finished.wait(.1))
+                finally:
+                    os.close(fd)
+                item = self.wait()
+                expected = prefix + remaining
+                self.assertEqual(item['state'], 'saved')
+                self.assertEqual(item['receivedBytes'], len(expected))
+                self.assertEqual(Path(item['path']).read_bytes(), expected)
+
+    def test_rename_while_open_without_further_writes_completes_on_close(self):
+        staging = self.root / 'unconfirmed-complete'
+        staging.mkdir()
+        target = Path(self.manager.begin('already-written.mp4'))
+        temp = staging / 'Unconfirmed.crdownload'
+        payload = b'complete-before-rename'
+        fd = os.open(temp, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, payload)
+            os.rename(temp, target)
+            self.assertFalse(self.finished.wait(.15))
+        finally:
+            os.close(fd)
+        item = self.wait()
+        self.assertEqual(item['state'], 'saved')
+        self.assertEqual(Path(item['path']).read_bytes(), payload)
+
+    def test_rename_while_open_canceled_by_unlink_marks_canceled(self):
+        staging = self.root / 'unconfirmed-cancel'
+        staging.mkdir()
+        target = Path(self.manager.begin('aborted.mp4'))
+        temp = staging / 'Unconfirmed.crdownload'
+        fd = os.open(temp, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, b'partial')
+            os.rename(temp, target)
+            self.assertFalse(self.finished.wait(.1))
+            target.unlink()
+        finally:
+            os.close(fd)
+        item = self.wait()
+        self.assertEqual(item['state'], 'canceled')
+        self.assertFalse((self.workspace / 'Downloads').exists())
+
+    def test_proc_fallback_detects_open_writer_when_leases_unavailable(self):
+        path = self.root / 'fallback.mp4'
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with mock.patch.object(downloads.fcntl, 'fcntl', side_effect=OSError(errno.EOPNOTSUPP, 'unsupported')):
+                self.assertEqual(downloads.target_writer_state(path), 'open')
+        finally:
+            os.close(fd)
+        with mock.patch.object(downloads.fcntl, 'fcntl', side_effect=OSError(errno.EOPNOTSUPP, 'unsupported')):
+            self.assertEqual(downloads.target_writer_state(path), 'closed')
 
     def test_failed_copy_can_retry_after_restart_but_incomplete_cannot(self):
         def fail(*args):

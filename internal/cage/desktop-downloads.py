@@ -1,12 +1,18 @@
 """SaveFile destinations and completed Desktop exports (runs as cage, never root)."""
 import ctypes as C
 from datetime import datetime, timezone
+import errno
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 from importlib.machinery import SourceFileLoader
 import json
 import os
 from pathlib import Path
 import re
 import select
+import signal
 import stat
 import struct
 import threading
@@ -18,8 +24,86 @@ def valid_name(name):
             and name not in ('.', '..') and not re.search(r'[/\\\x00-\x1f]', name))
 
 
+def _ignore_sigio():
+    sigio = getattr(signal, 'SIGIO', None)
+    if sigio is None or threading.current_thread() is not threading.main_thread():
+        return
+    try:
+        if signal.getsignal(sigio) == signal.SIG_DFL:
+            signal.signal(sigio, signal.SIG_IGN)
+    except (OSError, ValueError):
+        pass
+
+
+def _proc_has_open_writer(device, inode):
+    """Fallback when kernel leases are unavailable."""
+    try:
+        entries = os.listdir('/proc')
+    except OSError:
+        return False
+    for pid in entries:
+        if not pid.isdigit():
+            continue
+        fd_dir = f'/proc/{pid}/fd'
+        try:
+            fds = os.listdir(fd_dir)
+        except OSError:
+            continue
+        for num in fds:
+            try:
+                st = os.stat(f'{fd_dir}/{num}')
+                if st.st_dev != device or st.st_ino != inode:
+                    continue
+                with open(f'/proc/{pid}/fdinfo/{num}', 'r') as info:
+                    for line in info:
+                        if line.startswith('flags:'):
+                            flags = int(line.split()[1], 8)
+                            if (flags & 3) in (os.O_WRONLY, os.O_RDWR):
+                                return True
+                            break
+            except (OSError, ValueError, IndexError):
+                continue
+    return False
+
+
+def target_writer_state(path):
+    """Return 'missing', 'open', 'closed', or 'invalid' for a download target."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return 'missing'
+    except OSError:
+        # Symlinks (ELOOP) or unreadable entries are handed to save() to fail cleanly.
+        return 'invalid'
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            return 'invalid'
+        sigio = getattr(signal, 'SIGIO', None)
+        can_lease = (fcntl is not None and sigio is not None
+                     and signal.getsignal(sigio) != signal.SIG_DFL)
+        if can_lease:
+            setlease = getattr(fcntl, 'F_SETLEASE', 1024)
+            try:
+                fcntl.fcntl(fd, setlease, fcntl.F_RDLCK)
+                try:
+                    fcntl.fcntl(fd, setlease, fcntl.F_UNLCK)
+                except OSError:
+                    pass
+                return 'closed'
+            except OSError as error:
+                if error.errno == errno.EAGAIN:
+                    return 'open'
+                if error.errno not in (errno.EINVAL, errno.ENOSYS, errno.EOPNOTSUPP, errno.EPERM, errno.EACCES):
+                    raise
+        return 'open' if _proc_has_open_writer(info.st_dev, info.st_ino) else 'closed'
+    finally:
+        os.close(fd)
+
+
 class Downloads:
     def __init__(self, directory, workspace, copier):
+        _ignore_sigio()
         self.directory, self.workspace, self.copier = Path(directory), workspace, copier
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.manifest = self.directory / 'state.json'
@@ -105,6 +189,7 @@ class Downloads:
 
     def watch(self, item, fd):
         wrote_target = False
+        moved_target = False
         try:
             while True:
                 if not select.select([fd], [], [], 1800)[0]:
@@ -117,17 +202,26 @@ class Downloads:
                     offset += 16 + length
                     if mask & 0x4000:  # IN_Q_OVERFLOW: never infer completion from size stability.
                         raise ValueError('下载完成通知丢失，请重新下载')
-                    if name == item['sourceName'] + '.crdownload' and mask & 0x200:
+                    if mask & 0x200 and (name == item['sourceName'] + '.crdownload'
+                                         or (name == item['sourceName'] and (wrote_target or moved_target))):
                         with self.lock:
                             item.update(state='canceled', retryable=False)
                             self.persist()
                         return
-                    if name == item['sourceName'] and mask & 0x2:
+                    if name != item['sourceName']:
+                        continue
+                    if mask & 0x2:
                         wrote_target = True
-                    # Chromium first reserves the final name with an empty file,
-                    # then writes .crdownload and renames it. Its initial close
-                    # is not completion. A direct exporter must actually write.
-                    if name == item['sourceName'] and (mask & 0x80 or (mask & 0x8 and wrote_target)):
+                    if mask & 0x80:
+                        moved_target = True
+                    # Chromium may reserve the final name with an empty file
+                    # before writing .crdownload, or rename an active download
+                    # into place while still holding the file descriptor open
+                    # for writing. Publish only after all writers have closed.
+                    if (mask & 0x80) or ((mask & 0x8) and (wrote_target or moved_target)):
+                        state = target_writer_state(self.source(item))
+                        if state in ('open', 'missing'):
+                            continue
                         with self.lock:
                             item.update(complete=True, state='saving')
                             self.persist()
