@@ -49,8 +49,9 @@ func TestWindowsVMCPUsStayBelowQEMUEventLimit(t *testing.T) {
 			t.Fatalf("%+v on a 192-thread host: %d %v", a, cpus, err)
 		}
 	}
-	if _, _, err := (ResourceAllocation{MemoryGiB: 8, CPUs: want + 1}).Limits(); err == nil {
-		t.Fatal("accepted more vCPUs than the host allows")
+	// A larger value saved earlier never reaches the VM, and still starts it.
+	if _, cpus, err := (ResourceAllocation{MemoryGiB: 8, CPUs: want + 1}).Limits(); err != nil || cpus != want {
+		t.Fatalf("a saved %d vCPUs gave %d %v, want the host's %d", want+1, cpus, err, want)
 	}
 }
 
