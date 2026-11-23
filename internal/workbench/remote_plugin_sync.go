@@ -103,6 +103,12 @@ func (s *Server) syncHostPlugin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "插件名称无效", http.StatusBadRequest)
 		return
 	}
+	// A bundled plugin uninstalled on this computer stays uninstalled until
+	// it is restored here; a connecting client does not put it back.
+	if s.defaultPluginDismissed(name) {
+		http.Error(w, "此插件已在远程主机上卸载，可在远程主机的插件页恢复", http.StatusUnprocessableEntity)
+		return
+	}
 	data, err := io.ReadAll(io.LimitReader(r.Body, hostbridge.PluginArchiveLimit+1))
 	if err != nil {
 		requestError(w, errors.New("无法读取插件压缩包"))

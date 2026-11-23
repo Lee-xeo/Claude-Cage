@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -40,21 +43,21 @@ type pluginDraftFileInfo struct {
 }
 
 type pluginDraftSubmission struct {
-	ID          string                   `json:"id"`
-	Name        string                   `json:"name"`
-	DisplayName string                   `json:"displayName,omitempty"`
-	Version     string                   `json:"version"`
-	Description string                   `json:"description"`
-	Summary     string                   `json:"summary,omitempty"`
-	Target      string                   `json:"target"`
-	Platforms   []string                 `json:"platforms,omitempty"`
-	Permissions []string                 `json:"permissions"`
-	Categories  []string                 `json:"categories,omitempty"`
-	Contributes *hostbridge.Contributes  `json:"contributes,omitempty"`
-	SubmittedAt string                   `json:"submittedAt,omitempty"`
-	Tools       []hostbridge.ToolInfo    `json:"tools,omitempty"`
-	Warnings    []string                 `json:"warnings,omitempty"`
-	Files       []pluginDraftFileInfo    `json:"files,omitempty"`
+	ID          string                  `json:"id"`
+	Name        string                  `json:"name"`
+	DisplayName string                  `json:"displayName,omitempty"`
+	Version     string                  `json:"version"`
+	Description string                  `json:"description"`
+	Summary     string                  `json:"summary,omitempty"`
+	Target      string                  `json:"target"`
+	Platforms   []string                `json:"platforms,omitempty"`
+	Permissions []string                `json:"permissions"`
+	Categories  []string                `json:"categories,omitempty"`
+	Contributes *hostbridge.Contributes `json:"contributes,omitempty"`
+	SubmittedAt string                  `json:"submittedAt,omitempty"`
+	Tools       []hostbridge.ToolInfo   `json:"tools,omitempty"`
+	Warnings    []string                `json:"warnings,omitempty"`
+	Files       []pluginDraftFileInfo   `json:"files,omitempty"`
 }
 
 type pluginDraftView struct {
@@ -74,10 +77,13 @@ type pluginDraftView struct {
 	Tools           []hostbridge.ToolInfo `json:"tools,omitempty"`
 	Warnings        []string              `json:"warnings,omitempty"`
 	Files           []pluginDraftFileInfo `json:"files"`
-	Exists          bool                  `json:"exists"`
-	ExistingVersion string                `json:"existing_version,omitempty"`
-	ExistingSource  string                `json:"existing_source,omitempty"`
-	Protected       bool                  `json:"protected,omitempty"`
+	// Digest names the exact copy shown for review. Installation takes it
+	// back and installs only that copy.
+	Digest          string `json:"digest,omitempty"`
+	Exists          bool   `json:"exists"`
+	ExistingVersion string `json:"existing_version,omitempty"`
+	ExistingSource  string `json:"existing_source,omitempty"`
+	Protected       bool   `json:"protected,omitempty"`
 }
 
 type pluginDraftsListView struct {
@@ -105,18 +111,6 @@ if root.is_dir():
 sys.stdout.write(json.dumps(items))
 ' "$1"`
 
-const guestReadSubmissionFileScript = `python3 -c '
-import pathlib, sys
-root = (pathlib.Path.home() / sys.argv[1] / sys.argv[2] / "files").resolve()
-target = (root / sys.argv[3]).resolve()
-if not target.is_relative_to(root) or not target.is_file() or target.is_symlink():
-    sys.exit(2)
-data = target.read_bytes()
-if len(data) > 262144:
-    sys.exit(3)
-sys.stdout.buffer.write(data)
-' "$1" "$2" "$3"`
-
 const guestTarSubmissionScript = `set -e
 dir="$HOME/$1/$2/files"
 [ -d "$dir" ] && [ ! -L "$dir" ] || exit 2
@@ -125,6 +119,118 @@ tar -cf - -C "$dir" .`
 const guestDiscardSubmissionScript = `set -e
 dir="$HOME/$1/$2"
 [ -d "$dir" ] && [ ! -L "$dir" ] && rm -rf -- "$dir" || true`
+
+// draftSnapshotMu orders the copies kept for review; two windows may list at
+// the same time.
+var draftSnapshotMu sync.Mutex
+
+// draftReviewDir holds this computer's copy of each draft under review. The
+// environment can rewrite its own folder at any time, so what the user reads
+// and what is installed both come from here.
+func (s *Server) draftReviewDir() string {
+	return filepath.Join(s.profile, "plugin-draft-review")
+}
+
+// draftTree lists the plain files below dir with a digest over their paths,
+// executable bits and contents.
+func draftTree(dir string) ([]pluginDraftFileInfo, string, error) {
+	files := []pluginDraftFileInfo{}
+	sum := sha256.New()
+	err := filepath.WalkDir(dir, func(current string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if current == dir {
+			return nil
+		}
+		info, err := os.Lstat(current)
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, current)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("%s 不是普通文件或文件夹", filepath.ToSlash(rel))
+		}
+		data, err := os.ReadFile(current)
+		if err != nil {
+			return err
+		}
+		content := sha256.Sum256(data)
+		item := pluginDraftFileInfo{
+			Path:   filepath.ToSlash(rel),
+			Size:   int64(len(data)),
+			SHA256: hex.EncodeToString(content[:]),
+			Text:   !bytes.ContainsRune(data, 0) && utf8.Valid(data),
+		}
+		files = append(files, item)
+		fmt.Fprintf(sum, "%s\x00%t\x00%s\n", item.Path, info.Mode().Perm()&0o111 != 0, item.SHA256)
+		return nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return files, hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// snapshotDraft replaces the review copy of one draft with what the
+// environment holds now, and reports what that copy declares and contains.
+func (s *Server) snapshotDraft(ctx context.Context, id string) (hostbridge.Manifest, []pluginDraftFileInfo, string, error) {
+	if !hostbridge.ValidPluginName(id) {
+		return hostbridge.Manifest{}, nil, "", errors.New("插件名称无效")
+	}
+	draftSnapshotMu.Lock()
+	defer draftSnapshotMu.Unlock()
+	root := s.draftReviewDir()
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return hostbridge.Manifest{}, nil, "", err
+	}
+	final := filepath.Join(root, id)
+	_ = os.RemoveAll(final)
+	staging, err := os.MkdirTemp(root, ".fetching-*")
+	if err != nil {
+		return hostbridge.Manifest{}, nil, "", err
+	}
+	defer os.RemoveAll(staging)
+	if err := s.fetchSubmittedDraftToDir(ctx, id, staging); err != nil {
+		return hostbridge.Manifest{}, nil, "", err
+	}
+	manifest, _, err := hostbridge.ValidateDraftDir(staging, id, "", "")
+	if err != nil {
+		return hostbridge.Manifest{}, nil, "", err
+	}
+	files, digest, err := draftTree(staging)
+	if err != nil {
+		return hostbridge.Manifest{}, nil, "", err
+	}
+	if err := os.Rename(staging, final); err != nil {
+		return hostbridge.Manifest{}, nil, "", err
+	}
+	return manifest, files, digest, nil
+}
+
+// reviewedDraftDir is the review copy of a draft when it still matches digest.
+func (s *Server) reviewedDraftDir(id, digest string) (string, error) {
+	if !hostbridge.ValidPluginName(id) {
+		return "", errors.New("插件名称无效")
+	}
+	draftSnapshotMu.Lock()
+	defer draftSnapshotMu.Unlock()
+	dir := filepath.Join(s.draftReviewDir(), id)
+	if digest == "" {
+		return "", errors.New("请先在待审核草稿中查看这个插件，再安装")
+	}
+	_, current, err := draftTree(dir)
+	if err != nil || current != digest {
+		return "", errors.New("草稿在审核后发生了变化，请刷新待审核草稿并重新查看")
+	}
+	return dir, nil
+}
 
 func validDraftRelPath(rel string) bool {
 	if rel == "" || len(rel) > 200 || strings.Contains(rel, "\\") || strings.HasPrefix(rel, "/") || strings.HasSuffix(rel, "/") {
@@ -193,34 +299,22 @@ func listLocalSubmittedDrafts(root string) ([]pluginDraftSubmission, bool, error
 	return subs, true, nil
 }
 
-func (s *Server) readSubmittedDraftFile(ctx context.Context, id, rel string) ([]byte, error) {
+// readReviewedDraftFile reads one file of the copy kept for review.
+func (s *Server) readReviewedDraftFile(id, rel string) ([]byte, error) {
 	if !hostbridge.ValidPluginName(id) || !validDraftRelPath(rel) {
 		return nil, errors.New("无效的草稿或文件路径")
 	}
-	if s.draftStoreOverride != "" {
-		base := filepath.Join(s.draftStoreOverride, id, "files")
-		full := filepath.Join(base, filepath.FromSlash(rel))
-		info, err := os.Lstat(full)
-		if err != nil || !info.Mode().IsRegular() {
-			return nil, os.ErrNotExist
-		}
-		if info.Size() > draftFileViewLimit {
-			return nil, errors.New("文件超过 256 KB 预览限制")
-		}
-		return os.ReadFile(full)
+	draftSnapshotMu.Lock()
+	defer draftSnapshotMu.Unlock()
+	full := filepath.Join(s.draftReviewDir(), id, filepath.FromSlash(rel))
+	info, err := os.Lstat(full)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, os.ErrNotExist
 	}
-	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	cmd := s.sshCommand(runCtx, "-T", s.sshTarget(), "--",
-		"sh -c "+shellQuote(guestReadSubmissionFileScript)+" sh "+shellQuote(guestSubmissionRoot)+" "+shellQuote(id)+" "+shellQuote(rel))
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-	if len(out) > draftFileViewLimit {
+	if info.Size() > draftFileViewLimit {
 		return nil, errors.New("文件超过 256 KB 预览限制")
 	}
-	return out, nil
+	return os.ReadFile(full)
 }
 
 func (s *Server) fetchSubmittedDraftToDir(ctx context.Context, id, dstDir string) error {
@@ -249,6 +343,7 @@ func (s *Server) discardSubmittedDraft(ctx context.Context, id string) error {
 	if !hostbridge.ValidPluginName(id) {
 		return errors.New("插件名称无效")
 	}
+	_ = os.RemoveAll(filepath.Join(s.draftReviewDir(), id))
 	if s.draftStoreOverride != "" {
 		return os.RemoveAll(filepath.Join(s.draftStoreOverride, id))
 	}
@@ -389,36 +484,47 @@ func (s *Server) getHostPluginDrafts(w http.ResponseWriter, r *http.Request) {
 		if !hostbridge.ValidPluginName(sub.Name) {
 			continue
 		}
-		recommended := hostbridge.KindGuest
-		if sub.Target == hostbridge.DraftTargetLocal {
-			recommended = hostbridge.KindHost
-		}
 		exists, existingVer, existingSource, protected := s.existingPluginSource(sub.Name)
-		files := sub.Files
-		if files == nil {
-			files = []pluginDraftFileInfo{}
+		// Everything a decision rests on comes from this computer's copy of
+		// the files. The submission record is written inside the environment
+		// and only supplies the notes shown beside them.
+		manifest, files, digest, err := s.snapshotDraft(r.Context(), sub.Name)
+		if err != nil {
+			diagnostics.Log("warn", "host-tools", fmt.Sprintf("snapshot draft %s error=%v", sub.Name, err))
+			views = append(views, pluginDraftView{
+				ID: sub.Name, Name: sub.Name, Target: hostbridge.DraftTargetWorkspace, RecommendedKind: hostbridge.KindGuest,
+				Permissions: []string{}, Files: []pluginDraftFileInfo{},
+				Warnings: []string{"无法读取或校验这个草稿，暂时不能安装：" + err.Error()},
+				Exists:   exists, ExistingVersion: existingVer, ExistingSource: existingSource, Protected: protected,
+			})
+			continue
 		}
-		perms := sub.Permissions
+		target, recommended := hostbridge.DraftTargetWorkspace, hostbridge.KindGuest
+		if manifest.Kind == hostbridge.KindHost {
+			target, recommended = hostbridge.DraftTargetLocal, hostbridge.KindHost
+		}
+		perms := manifest.Permissions
 		if perms == nil {
 			perms = []string{}
 		}
 		views = append(views, pluginDraftView{
 			ID:              sub.Name,
 			Name:            sub.Name,
-			DisplayName:     sub.DisplayName,
-			Version:         sub.Version,
-			Description:     sub.Description,
+			DisplayName:     manifest.DisplayName,
+			Version:         manifest.Version,
+			Description:     manifest.Description,
 			Summary:         sub.Summary,
-			Target:          sub.Target,
+			Target:          target,
 			RecommendedKind: recommended,
-			Platforms:       sub.Platforms,
+			Platforms:       manifest.Platforms,
 			Permissions:     perms,
-			Categories:      hostbridge.ShownCategories(sub.Categories),
-			Contributes:     hostContributes(sub.Contributes),
+			Categories:      hostbridge.ShownCategories(manifest.Categories),
+			Contributes:     hostContributes(manifest.Contributes),
 			SubmittedAt:     sub.SubmittedAt,
 			Tools:           sub.Tools,
 			Warnings:        sub.Warnings,
 			Files:           files,
+			Digest:          digest,
 			Exists:          exists,
 			ExistingVersion: existingVer,
 			ExistingSource:  existingSource,
@@ -439,7 +545,7 @@ func (s *Server) getHostPluginDraftFile(w http.ResponseWriter, r *http.Request) 
 	}
 	id := r.URL.Query().Get("id")
 	rel := r.URL.Query().Get("path")
-	data, err := s.readSubmittedDraftFile(r.Context(), id, rel)
+	data, err := s.readReviewedDraftFile(id, rel)
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.NotFound(w, r)
@@ -489,6 +595,7 @@ func (s *Server) installHostPluginDraft(w http.ResponseWriter, r *http.Request) 
 		Kind             string `json:"kind"`
 		Replace          bool   `json:"replace"`
 		ConfirmOverwrite bool   `json:"confirm_overwrite"`
+		Digest           string `json:"digest"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -549,8 +656,19 @@ func (s *Server) installHostPluginDraft(w http.ResponseWriter, r *http.Request) 
 	}
 	defer os.RemoveAll(staging)
 
-	if err := s.fetchSubmittedDraftToDir(r.Context(), body.ID, staging); err != nil {
+	// Install the copy the user was shown, never a fresh read: the
+	// environment may have rewritten its folder since.
+	reviewed, err := s.reviewedDraftDir(body.ID, body.Digest)
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	if err := copyPlainTree(reviewed, staging); err != nil {
 		requestError(w, errors.New("读取草稿失败："+err.Error()))
+		return
+	}
+	if _, copied, err := draftTree(staging); err != nil || copied != body.Digest {
+		requestError(w, errors.New("草稿在审核后发生了变化，请刷新待审核草稿并重新查看"))
 		return
 	}
 	_, manifestBytes, err := hostbridge.ValidateDraftDir(staging, body.ID, body.Kind, "")
@@ -593,8 +711,14 @@ func (s *Server) installHostPluginDraft(w http.ResponseWriter, r *http.Request) 
 	// Security invariant: installing or replacing a plugin from a draft ALWAYS
 	// revokes any previous "always allow" grant for that plugin name, even when
 	// declared permissions did not change.
-	_ = s.hostGrantStore().revoke(hostGrantPlugin + body.ID)
+	_ = s.hostGrantStore().revokePlugin(body.ID)
+	// What the user entered for the plugin it replaces, secrets included, was
+	// entered for that program and is not handed to this one.
+	if exists {
+		s.forgetPluginSettings(body.ID)
+	}
 	_ = s.recordHostPluginOn(body.ID, true)
+	_ = os.RemoveAll(filepath.Join(s.draftReviewDir(), body.ID))
 	if err := s.discardSubmittedDraft(r.Context(), body.ID); err != nil {
 		diagnostics.Log("warn", "host-tools", fmt.Sprintf("discard installed draft %s error=%v", body.ID, err))
 	}

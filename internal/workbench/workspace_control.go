@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	workspaceControlPlugin      = "use-cage"
-	workspaceControlManageTool  = "workspace_manage_extension"
-	workspaceControlReloadDelay = 150 * time.Millisecond
+	workspaceControlPlugin          = "use-cage"
+	workspaceControlManageTool      = "workspace_manage_extension"
+	workspaceControlPreferencesTool = "workspace_update_preferences"
+	workspaceControlReloadDelay     = 150 * time.Millisecond
 )
 
 // workspaceControlBridge serves a narrow, capability-scoped loopback HTTP API

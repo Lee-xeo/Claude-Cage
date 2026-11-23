@@ -555,8 +555,8 @@ func (m *clientPluginBridgeManager) localApprove(manifest hostbridge.Manifest) f
 	return func(ctx context.Context, request hostbridge.ToolRequest) error {
 		title := fmt.Sprintf("允许远程主机「%s」使用你这台电脑上的插件？", label)
 		msg := "请求来源　远程主机「" + label + "」\n插件「" + request.Plugin + "」\n工具　" + request.Tool + "\n\n" + request.Arguments +
-			"\n\n插件将以你的系统账户权限在当前这台电脑上运行。「始终允许」会记住对该本机插件的授权，可在插件页随时撤销。"
-		return approvals.decide(ctx, hostGrantPlugin+request.Plugin, manifest.Permissions, request.Arguments, len(request.Arguments), title, msg, remoteApprovalPrompt{})
+			"\n\n插件将以你的系统账户权限在当前这台电脑上运行。「始终允许」只记住远程主机对该插件的使用，可在插件页随时撤销。"
+		return approvals.decide(ctx, hostGrantRemotePlugin+request.Plugin, manifest.Permissions, request.Arguments, len(request.Arguments), title, msg, remoteApprovalPrompt{})
 	}
 }
 
