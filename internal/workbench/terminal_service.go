@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 )
 
 const terminalLimit = 12
@@ -573,8 +574,13 @@ func (s *Server) readClaudeReportForSubject(ctx context.Context, id, subject, co
 		}
 	}
 	data, err := s.guest(ctx, command)
-	if err != nil || json.Unmarshal(data, &snapshot) != nil {
-		return snapshot, errors.New("无法读取账号状态，请确认环境已启动并同步环境组件")
+	if err != nil {
+		diagnostics.Log("warn", "accounts", fmt.Sprintf("guest account report exec failed: %v", err))
+		return snapshot, fmt.Errorf("无法读取账号状态，请确认环境已启动并同步环境组件: %w", err)
+	}
+	if decodeErr := json.Unmarshal(data, &snapshot); decodeErr != nil {
+		diagnostics.Log("warn", "accounts", fmt.Sprintf("guest account report decode failed: %v", decodeErr))
+		return snapshot, fmt.Errorf("无法读取账号状态，请确认环境已启动并同步环境组件: %w", decodeErr)
 	}
 	return snapshot, nil
 }

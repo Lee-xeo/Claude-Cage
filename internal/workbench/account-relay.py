@@ -9,6 +9,8 @@ import sys
 
 UPSTREAM = sys.argv[1]
 LOGIN_SOCKET = sys.argv[2]
+STDIN_AUTH = len(sys.argv) > 3 and sys.argv[3] == "--stdin-auth"
+AUTH_HEADER = b""
 MAX_DNS = 65535
 slots = asyncio.Semaphore(96)
 browser_slots = asyncio.Semaphore(48)
@@ -17,6 +19,8 @@ browser_slots = asyncio.Semaphore(48)
 async def upstream(header, payload=b""):
     reader, writer = await asyncio.open_unix_connection(UPSTREAM)
     try:
+        if AUTH_HEADER and header.endswith(b"\r\n\r\n"):
+            header = header[:-2] + AUTH_HEADER + b"\r\n"
         writer.write(header + payload)
         await writer.drain()
         reply = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 28)
@@ -171,6 +175,12 @@ async def dns_tcp(reader, writer):
 
 
 async def main():
+    global AUTH_HEADER
+    if STDIN_AUTH:
+        token = sys.stdin.buffer.readline().decode("ascii").strip()
+        if not token:
+            raise ValueError("missing relay authorization")
+        AUTH_HEADER = f"Proxy-Authorization: Bearer {token}\r\n".encode("ascii")
     loop = asyncio.get_running_loop()
     await loop.create_datagram_endpoint(UDP, local_addr=("127.0.0.1", 53))
     servers = [

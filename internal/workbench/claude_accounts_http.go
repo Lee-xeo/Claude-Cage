@@ -3,11 +3,21 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 )
+
+type accountProbeError struct{ cause error }
+
+func (e *accountProbeError) Error() string {
+	return "无法读取账号状态，请确认环境已启动并检查 Claude Code"
+}
+func (e *accountProbeError) Unwrap() error { return e.cause }
 
 var errClaudeAccessLost = errors.New("Cage 已锁定，请先解锁")
 
@@ -495,7 +505,12 @@ func (s *Server) runClaudeRefresh(parent context.Context, id, guestID string, ca
 		return
 	}
 	if probeErr != nil {
-		err = errors.New("无法读取账号状态，请确认环境已启动并检查 Claude Code")
+		if errors.Is(probeErr, errAccountRouteFailed) || errors.Is(probeErr, errUnsupportedAccountNetwork) {
+			err = probeErr
+			return
+		}
+		diagnostics.Log("warn", "accounts", fmt.Sprintf("probe claude account failed: %v", probeErr))
+		err = &accountProbeError{cause: probeErr}
 		return
 	}
 	m.mu.Lock()

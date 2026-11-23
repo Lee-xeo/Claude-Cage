@@ -2,11 +2,16 @@ package workbench
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"crypto/subtle"
 	_ "embed"
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +19,7 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
@@ -34,7 +40,176 @@ type accountNetworks struct {
 	links map[string]*accountNetworkLink
 }
 
-var errUnsupportedAccountNetwork = errors.New("当前环境不支持这个账号出口")
+var (
+	errUnsupportedAccountNetwork = errors.New("当前环境不支持这个账号出口")
+	errAccountRouteFailed        = errors.New("账号专属网络启动失败，已阻止回落到环境出口")
+)
+
+type accountRouteError struct {
+	message string
+	cause   error
+}
+
+func (e *accountRouteError) Error() string { return e.message }
+func (e *accountRouteError) Unwrap() error { return e.cause }
+func (e *accountRouteError) Is(target error) bool {
+	return target == errAccountRouteFailed
+}
+
+type limitedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+	max int
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if rem := b.max - b.buf.Len(); rem > 0 {
+		if len(p) > rem {
+			b.buf.Write(p[:rem])
+		} else {
+			b.buf.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+func (b *limitedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// accountNetworkBridge bridges an authenticated loopback TCP listener to a
+// local Unix domain socket on Windows, where Win32-OpenSSH cannot dial local
+// AF_UNIX sockets in -R reverse forwards. Every connection must present the
+// per-link bearer token in Proxy-Authorization before any bytes reach target.
+type accountNetworkBridge struct {
+	ln    net.Listener
+	token string
+	mu    sync.Mutex
+	conns map[net.Conn]struct{}
+}
+
+func startAccountNetworkBridge(target string) (*accountNetworkBridge, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	b := &accountNetworkBridge{
+		ln:    ln,
+		token: randomToken(),
+		conns: map[net.Conn]struct{}{},
+	}
+	go b.serve(target)
+	return b, nil
+}
+
+func (b *accountNetworkBridge) addr() string { return b.ln.Addr().String() }
+
+func (b *accountNetworkBridge) close() {
+	_ = b.ln.Close()
+	b.mu.Lock()
+	for c := range b.conns {
+		_ = c.Close()
+	}
+	b.mu.Unlock()
+}
+
+func (b *accountNetworkBridge) track(c net.Conn) {
+	b.mu.Lock()
+	b.conns[c] = struct{}{}
+	b.mu.Unlock()
+}
+
+func (b *accountNetworkBridge) untrack(c net.Conn) {
+	b.mu.Lock()
+	delete(b.conns, c)
+	b.mu.Unlock()
+}
+
+func (b *accountNetworkBridge) serve(target string) {
+	for {
+		client, err := b.ln.Accept()
+		if err != nil {
+			return
+		}
+		b.track(client)
+		go func(c net.Conn) {
+			defer func() {
+				b.untrack(c)
+				_ = c.Close()
+			}()
+			b.handle(c, target)
+		}(client)
+	}
+}
+
+func (b *accountNetworkBridge) handle(client net.Conn, target string) {
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	reader := bufio.NewReaderSize(client, 8192)
+	var cleaned bytes.Buffer
+	total := 0
+	authorized := false
+	wantHeader := "Bearer " + b.token
+	for i := 0; ; i++ {
+		line, err := reader.ReadSlice('\n')
+		if err != nil {
+			return
+		}
+		total += len(line)
+		if total > 4096 {
+			return
+		}
+		trimmed := strings.TrimRight(string(line), "\r\n")
+		if trimmed == "" {
+			cleaned.Write(line)
+			break
+		}
+		if i > 0 {
+			if colon := strings.IndexByte(trimmed, ':'); colon > 0 && strings.EqualFold(strings.TrimSpace(trimmed[:colon]), "Proxy-Authorization") {
+				got := strings.TrimSpace(trimmed[colon+1:])
+				if subtle.ConstantTimeCompare([]byte(got), []byte(wantHeader)) == 1 {
+					authorized = true
+				}
+				continue
+			}
+		}
+		cleaned.Write(line)
+	}
+	if !authorized {
+		_, _ = client.Write([]byte("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"))
+		return
+	}
+	_ = client.SetReadDeadline(time.Time{})
+	upstream, err := net.DialTimeout("unix", target, 5*time.Second)
+	if err != nil {
+		_, _ = client.Write([]byte("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n"))
+		return
+	}
+	b.track(upstream)
+	defer func() {
+		b.untrack(upstream)
+		_ = upstream.Close()
+	}()
+	if _, err := upstream.Write(cleaned.Bytes()); err != nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = io.Copy(upstream, reader)
+		if cw, ok := upstream.(interface{ CloseWrite() error }); ok {
+			_ = cw.CloseWrite()
+		}
+	}()
+	_, _ = io.Copy(client, upstream)
+	if cw, ok := client.(interface{ CloseWrite() error }); ok {
+		_ = cw.CloseWrite()
+	}
+	<-done
+}
 
 // Guest profile IDs can outlive registry IDs after recovery. The default
 // profile can represent different subscriptions, so match its known subject.
@@ -78,7 +253,11 @@ func (s *Server) ensureAccountNetwork(ctx context.Context, id, node string) erro
 	}
 	target, err := gate.PrepareAccountNode(ctx, node)
 	if err != nil {
-		return errors.New("账号节点尚未就绪，请更新 Cage 环境并应用代理配置")
+		diagnostics.Log("warn", "account-network", fmt.Sprintf("prepare node failed err=%v", err))
+		return &accountRouteError{
+			message: "账号节点尚未就绪，请更新 Cage 环境并应用代理配置",
+			cause:   err,
+		}
 	}
 	if old := m.links[id]; old != nil {
 		select {
@@ -97,41 +276,94 @@ func (s *Server) ensureAccountNetwork(ctx context.Context, id, node string) erro
 	}
 	ns := "net-" + id
 	remote := "/tmp/socket-" + randomToken()[:24]
+	forwardTarget := target
+	relayFlags := ""
+	var bridge *accountNetworkBridge
+	if runtime.GOOS == "windows" {
+		bridge, err = startAccountNetworkBridge(target)
+		if err != nil {
+			diagnostics.Log("warn", "account-network", fmt.Sprintf("windows bridge listen failed err=%v", err))
+			return &accountRouteError{
+				message: "账号专属网络本地中继启动失败，已阻止回落到环境出口",
+				cause:   err,
+			}
+		}
+		forwardTarget = bridge.addr()
+		relayFlags = " --stdin-auth"
+	}
 	cmdline := "set -eu; sudo /bin/bash -c " + shellescape.Quote(setupAccountNetwork) + " -- " + id +
-		"; exec sudo ip netns exec " + ns + " setpriv --reuid=\"$(id -u)\" --regid=\"$(id -g)\" --init-groups python3 -I -c " + shellescape.Quote(accountRelay) + " " + remote + " /run/account-routes/" + id + "/browser.sock"
+		"; exec sudo ip netns exec " + ns + " setpriv --reuid=\"$(id -u)\" --regid=\"$(id -g)\" --init-groups python3 -I -c " + shellescape.Quote(accountRelay) + " " + remote + " /run/account-routes/" + id + "/browser.sock" + relayFlags
 	life, cancel := context.WithCancel(s.lifetimeContext())
-	cmd := s.sshCommandWithForwarding(life, "-T", "-o", "ExitOnForwardFailure=yes", "-R", remote+":"+target, s.sshTarget(), "--", "/bin/bash -c "+shellescape.Quote(cmdline))
+	cmd := s.sshCommandWithForwarding(life, "-T", "-o", "ExitOnForwardFailure=yes", "-R", remote+":"+forwardTarget, s.sshTarget(), "--", "/bin/bash -c "+shellescape.Quote(cmdline))
+	stderr := &limitedBuffer{max: 2048}
+	cmd.Stderr = stderr
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
+		if bridge != nil {
+			bridge.close()
+		}
 		return err
 	}
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		in.Close()
 		cancel()
+		if bridge != nil {
+			bridge.close()
+		}
 		return err
 	}
+	startedAt := time.Now()
 	if err = cmd.Start(); err != nil {
 		cancel()
 		in.Close()
-		return err
+		if bridge != nil {
+			bridge.close()
+		}
+		diagnostics.Log("warn", "account-network", fmt.Sprintf("ssh start failed err=%v", err))
+		return &accountRouteError{
+			message: "账号专属网络启动失败，已阻止回落到环境出口",
+			cause:   err,
+		}
+	}
+	if bridge != nil {
+		if _, writeErr := io.WriteString(in, bridge.token+"\n"); writeErr != nil {
+			cancel()
+			in.Close()
+			bridge.close()
+			_ = cmd.Wait()
+			diagnostics.Log("warn", "account-network", fmt.Sprintf("relay auth write failed err=%v", writeErr))
+			return &accountRouteError{
+				message: "账号专属网络启动失败，已阻止回落到环境出口",
+				cause:   writeErr,
+			}
+		}
 	}
 	link := &accountNetworkLink{node: node, done: make(chan struct{}), cancel: cancel}
-	ready := make(chan int, 1)
+	type readySignal struct {
+		pid     int
+		readErr error
+	}
+	ready := make(chan readySignal, 1)
+	waitDone := make(chan error, 1)
 	go func() {
 		reader := bufio.NewReader(out)
-		line, _ := reader.ReadString('\n')
+		line, readErr := reader.ReadString('\n')
 		prefix, ok := strings.CutPrefix(strings.TrimSpace(line), "ready ")
 		pid := 0
 		if ok {
 			pid, _ = strconv.Atoi(prefix)
 		}
-		ready <- pid
+		ready <- readySignal{pid: pid, readErr: readErr}
 		io.Copy(io.Discard, reader)
-		cmd.Wait()
+		waitErr := cmd.Wait()
+		waitDone <- waitErr
 		in.Close()
 		cancel()
+		if bridge != nil {
+			bridge.close()
+		}
 		close(link.done)
 		m.mu.Lock()
 		if m.links[id] == link {
@@ -141,22 +373,82 @@ func (s *Server) ensureAccountNetwork(ctx context.Context, id, node string) erro
 	}()
 	timer := time.NewTimer(25 * time.Second)
 	defer timer.Stop()
+	var failStage string
+	var cause error
 	select {
-	case pid := <-ready:
-		if pid > 0 {
-			link.pid = pid
+	case sig := <-ready:
+		if sig.pid > 0 {
+			link.pid = sig.pid
 			if m.links == nil {
 				m.links = map[string]*accountNetworkLink{}
 			}
 			m.links[id] = link
 			return nil
 		}
+		failStage = "handshake"
+		cause = sig.readErr
 	case <-ctx.Done():
+		failStage = "canceled"
+		cause = ctx.Err()
 	case <-timer.C:
+		failStage = "timeout"
+		cause = context.DeadlineExceeded
 	}
 	cancel()
 	in.Close()
-	return errors.New("账号专属网络启动失败，已阻止回落到环境出口")
+	if bridge != nil {
+		bridge.close()
+	}
+	var waitErr error
+	select {
+	case waitErr = <-waitDone:
+	case <-time.After(1 * time.Second):
+	}
+	exitCode := -1
+	var exitErr *exec.ExitError
+	if errors.As(waitErr, &exitErr) {
+		exitCode = exitErr.ExitCode()
+	}
+	if cause == nil {
+		cause = waitErr
+	}
+	stderrSummary := sanitizeAccountNetworkStderr(stderr.String())
+	diagnostics.Log("warn", "account-network", fmt.Sprintf(
+		"stage=%s elapsed_ms=%d exit=%d err=%v stderr=%q",
+		failStage, time.Since(startedAt).Milliseconds(), exitCode, cause, stderrSummary,
+	))
+	msg := "账号专属网络启动失败，已阻止回落到环境出口"
+	switch failStage {
+	case "timeout":
+		msg += "（等待客机专属通道就绪超时）"
+	case "canceled":
+		msg += "（请求已取消）"
+	default:
+		if exitCode >= 0 {
+			msg += fmt.Sprintf("（SSH 通道退出码 %d）", exitCode)
+		}
+	}
+	return &accountRouteError{message: msg, cause: cause}
+}
+
+func sanitizeAccountNetworkStderr(raw string) string {
+	lines := strings.FieldsFunc(raw, func(r rune) bool { return r == '\r' || r == '\n' })
+	var kept []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Keep short diagnostic lines; avoid echoing full filesystem paths or tokens.
+		if len(line) > 160 {
+			line = line[:160] + "..."
+		}
+		kept = append(kept, line)
+		if len(kept) >= 4 {
+			break
+		}
+	}
+	return strings.Join(kept, " | ")
 }
 
 func (s *Server) accountForRoute(id string) (claudeAccount, error) {
