@@ -97,8 +97,14 @@ final class CageUpdateInstaller: NSObject, NSApplicationDelegate {
                 try self.replace()
                 DispatchQueue.main.async { self.openInstalled() }
             } catch {
-                if self.committed || (self.plan != nil && CageUpdateFiles.parentHasExited(self.plan.parentPID)) {
+                let parentGone = self.plan != nil && CageUpdateFiles.parentHasExited(self.plan.parentPID)
+                if self.didReplace || parentGone {
                     self.recover(error.localizedDescription)
+                } else if self.committed {
+                    // The original App is still running and nothing was
+                    // replaced. Reopening it here would start a second instance.
+                    self.record(success: false, message: error.localizedDescription + "。原应用已保留")
+                    self.exitHelper()
                 } else {
                     self.finishBeforeCommit(error.localizedDescription)
                 }
