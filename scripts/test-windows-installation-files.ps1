@@ -436,6 +436,37 @@ try {
         Check (!$text.Contains($root) -and !$text.Contains('program.txt')) 'The detach diagnostic contains file paths.'
         Invoke-Helper @('-Operation','complete','-Target',$old,'-Receipt',$receipt)
         Check (!(Test-Path -LiteralPath $receipt)) 'Completing a failed detach left its receipt.'
+
+        # A process still running the replaced program keeps its file open:
+        # cleanup can neither delete it nor move its folder. Unchanged program
+        # bytes stay behind; anything else keeps the receipt until it moves.
+        foreach ($withUserFile in @($false, $true)) {
+            $scenario = Join-Path $root ('cleanup-running-program-' + $withUserFile)
+            $old = Join-Path $scenario 'installed'; $stage = Join-Path $scenario 'staged'; $receipt = Join-Path $scenario 'receipt.json'
+            $backup = $old + '-backup'
+            App $old 'old'; App $stage 'new'
+            Prepare $old $stage $receipt
+            [IO.Directory]::Move($old, $backup)
+            Invoke-Helper @('-Operation','move','-Source',$backup,'-Target',$stage,'-Receipt',$receipt)
+            [IO.Directory]::Move($stage, $old)
+            if ($withUserFile) { Write-File (Join-Path $backup 'late-note.txt') 'written while installing' }
+            $held = [IO.File]::Open((Join-Path $backup 'program.txt'), 'Open', 'Read', 'Read')
+            try { Invoke-Helper @('-Operation','cleanup','-Source',$backup,'-Target',$old,'-Receipt',$receipt) ([int]$withUserFile) }
+            finally { $held.Dispose() }
+            Check ((Get-Content (Join-Path $old 'program.txt') -Raw) -eq 'new') 'Cleanup of a held program file changed the new program.'
+            if ($withUserFile) {
+                Check (Test-Path -LiteralPath $receipt) 'Cleanup completed while a user file stayed in the old folder.'
+                Check ((Get-Content (Join-Path $backup 'late-note.txt') -Raw) -eq 'written while installing') 'Failed cleanup lost a user file.'
+                Invoke-Helper @('-Operation','cleanup','-Source',$backup,'-Target',$old,'-Receipt',$receipt)
+                $late = @(Get-ChildItem (Join-Path $old 'Cage-preserved-files') -File -Recurse | Where-Object { (Get-Content $_.FullName -Raw) -eq 'written while installing' })
+                Check ($late.Count -eq 1) 'Retried cleanup did not preserve the user file.'
+                Check (!(Test-Path -LiteralPath $backup)) 'Retried cleanup left the old folder.'
+            } else {
+                Check ((@(Get-ChildItem -LiteralPath $backup -Recurse -File).Name -join ',') -eq 'program.txt') 'Cleanup kept more than the held program file.'
+                Check (!(Test-Path -LiteralPath (Join-Path $old 'Cage-preserved-files'))) 'Cleanup left an empty preserved-files folder.'
+            }
+            Check (!(Test-Path -LiteralPath $receipt)) 'Cleanup kept its receipt after the old folder was resolved.'
+        }
     }
     $scenario = Join-Path $root 'legacy-automatic-rollback'
     $old = Join-Path $scenario 'installed'; $stage = Join-Path $scenario 'restored'; $receipt = Join-Path $scenario 'receipt.json'

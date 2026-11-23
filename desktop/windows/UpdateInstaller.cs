@@ -145,7 +145,12 @@ internal static class UpdateInstaller
                     // restoring files. Never kill other Cage instances by name.
                     Authenticode.SamePublisher(UpdateRecovery.BackendPath(backup), plan.Publisher);
                     await UpdateRecovery.PrepareRollback(backup);
-                    if (launched is { HasExited: false }) { launched.Kill(); await launched.WaitForExitAsync(); }
+                    var appStopped = false;
+                    if (launched is { HasExited: false }) { launched.Kill(); await launched.WaitForExitAsync(); appStopped = true; }
+                    // A stopped App cannot restart the controller; stop the one it
+                    // may have started since the first lifecycle request.
+                    if (await UpdateRecovery.StopInstalledApps(plan.Target) || appStopped) await UpdateRecovery.PrepareRollback(backup);
+                    await UpdateRecovery.WaitForInstalledProcesses(plan.Target, TimeSpan.FromSeconds(30));
                     var restored = plan.Target + ".restore-" + plan.Confirmation;
                     var failed = plan.Target + ".failed-" + plan.Confirmation;
                     CopyTree(backup, restored);

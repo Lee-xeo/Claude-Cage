@@ -262,10 +262,31 @@ function Test-HasExistingContent([string]$Path) {
     catch { return $true }
 }
 
-function Complete-Transfer {
+# A running process maps the replaced version's program images, so cleanup can
+# neither delete them nor move their folder. Bytes that still match the receipt
+# hold no user data and need no recovery; only then may that folder remain.
+function Test-OnlyProgramFiles([string]$Root, $Files) {
+    $owned = @{}
+    foreach ($entry in $Files) { $owned[$entry.path] = $entry.sha256 }
+    $found = $false
+    foreach ($item in Read-Tree $Root $null) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+        if ($item.PSIsContainer) { continue }
+        $relative = Relative-Path $Root $item.FullName
+        if (!$owned.ContainsKey($relative)) { return $false }
+        try { $stream = Open-ReadLocked $item.FullName } catch { return $false }
+        try { if ((Stream-Hash $stream) -ne $owned[$relative]) { return $false } } finally { $stream.Dispose() }
+        $found = $true
+    }
+    return $found
+}
+
+function Complete-Transfer([string]$RetainedBackup) {
     $transfer = Get-Content -LiteralPath $Receipt -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($transfer.kind -ne 'cage-installation' -or !(Test-Path -LiteralPath (Join-Path $Target $identityName))) { throw '安装目录尚未恢复，事务回执已保留。' }
-    if ($transfer.backupPath -and (Test-Path -LiteralPath $transfer.backupPath)) { throw ('旧目录仍需恢复，事务回执已保留：' + $transfer.backupPath) }
+    $retained = $RetainedBackup -and $transfer.backupPath -and
+        [IO.Path]::GetFullPath($transfer.backupPath).TrimEnd([IO.Path]::DirectorySeparatorChar) -eq [IO.Path]::GetFullPath($RetainedBackup).TrimEnd([IO.Path]::DirectorySeparatorChar)
+    if ($transfer.backupPath -and !$retained -and (Test-Path -LiteralPath $transfer.backupPath)) { throw ('旧目录仍需恢复，事务回执已保留：' + $transfer.backupPath) }
     foreach ($entry in $transfer.moves) {
         if ($entry.state -eq 'absent') { continue }
         $relative = if ($entry.state -eq 'moved') { $entry.destination } else { $entry.path }
@@ -434,13 +455,23 @@ if ($Operation -eq 'prepare') {
         } catch { Write-Output '安装期间变化或被占用的文件已保留在旧目录。' }
     }
     Remove-EmptyDirectories $Source $transfer.directories
+    $retainedBackup = $null
     if (@(Get-ChildItem -LiteralPath $Source -Force).Count) {
         $recovery = Join-Path $Target ('Cage-preserved-files/late-' + [guid]::NewGuid().ToString('N'))
-        [IO.Directory]::CreateDirectory((Split-Path $recovery -Parent)) | Out-Null
-        [IO.Directory]::Move($Source, $recovery)
-        Write-Output ('安装期间变化的文件已保留在 ' + $recovery)
+        $preserved = Split-Path $recovery -Parent
+        $createdPreserved = !(Test-Path -LiteralPath $preserved)
+        [IO.Directory]::CreateDirectory($preserved) | Out-Null
+        try {
+            [IO.Directory]::Move($Source, $recovery)
+            Write-Output ('安装期间变化的文件已保留在 ' + $recovery)
+        } catch {
+            if (!(Test-OnlyProgramFiles $Source $transfer.files)) { throw }
+            if ($createdPreserved) { [IO.Directory]::Delete($preserved) }
+            $retainedBackup = $Source
+            Write-Output ('被替换的程序文件仍被占用，已留在 ' + $Source + '，退出相关程序后可删除。')
+        }
     } else { [IO.Directory]::Delete($Source) }
-    Complete-Transfer
+    Complete-Transfer $retainedBackup
 } elseif ($Operation -eq 'detach') {
     # Source is the installation folder, Target the new backup folder.
     $diagnosticStep = 'detaching_previous_application'

@@ -185,6 +185,39 @@ try
     var rejected = false;
     try { await UpdateRecovery.PrepareRollback(backup); } catch (IOException) { rejected = true; }
     Check(rejected, "recovery continued without a prepared response from the old backend");
+    if (OperatingSystem.IsWindows())
+    {
+        // The candidate App was started outside the helper and left a
+        // controller child running from the installation.
+        var running = Path.Combine(integration, "running application");
+        InstallFixture(running, false);
+        foreach (var file in Directory.EnumerateFiles(AppContext.BaseDirectory))
+            File.Copy(file, Path.Combine(running, Path.GetFileName(file)));
+        File.Copy(Environment.ProcessPath!, Path.Combine(running, "Cage.exe"), true);
+        var runningRelease = Path.Combine(integration, "running release");
+        using var runningApp = System.Diagnostics.Process.Start(Backend.StartInfo(Path.Combine(running, "Cage.exe"), "smoke-wait", runningRelease))!;
+        using var runningChild = System.Diagnostics.Process.Start(Backend.StartInfo(Path.Combine(running, "resources", "cage.exe"), "smoke-wait", runningRelease))!;
+        try
+        {
+            Check(!await UpdateRecovery.StopInstalledApps(backup), "rollback stopped an App of another installation");
+            Check(!runningApp.HasExited, "another installation's App exited");
+            Check(await UpdateRecovery.StopInstalledApps(running), "rollback left the candidate App running");
+            Check(runningApp.HasExited && !runningChild.HasExited, "rollback stopped more than the exact candidate launcher");
+            var blocked = false;
+            try { await UpdateRecovery.WaitForInstalledProcesses(running, TimeSpan.FromMilliseconds(500)); }
+            catch (IOException error) when (error.Message.Contains("cage.exe")) { blocked = true; }
+            Check(blocked, "rollback continued while a candidate process still ran from the installation");
+            File.WriteAllText(runningRelease, "release");
+            await UpdateRecovery.WaitForInstalledProcesses(running, TimeSpan.FromSeconds(10));
+            Check(runningChild.HasExited, "rollback continued before the candidate process exited");
+        }
+        finally
+        {
+            File.WriteAllText(runningRelease, "release");
+            foreach (var process in new[] { runningApp, runningChild })
+                if (!process.WaitForExit(5000)) { process.Kill(); process.WaitForExit(); }
+        }
+    }
 
     var garbage = Path.Combine(integration, "locked backup"); Directory.CreateDirectory(garbage);
     var lockedFile = Path.Combine(garbage, "old.dll"); File.WriteAllText(lockedFile, "old version");
