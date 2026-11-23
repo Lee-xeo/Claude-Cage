@@ -113,7 +113,8 @@ export class LoginBrowser {
       const sessionId = await activate({ targetId, ...context, type: "page", url: url.href });
       await this.cdp("Page.navigate", { url: url.href }, sessionId);
       return { id: targetId, incognito: privateLogin };
-    } catch {
+    } catch (error) {
+      console.error("Login browser open failed:", error?.message || error);
       await this.finish(login);
       throw new Error("授权页面未能打开");
     }

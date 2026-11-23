@@ -67,7 +67,7 @@ export class BrowserVisibility {
     // The CDP reply can precede the window manager's state transition.
     // Fullscreen/minimized changes must observe the intermediate state, which
     // Openbox may report as maximized instead of normal.
-    for (let attempt = 0; attempt < 40; attempt++) {
+    for (let attempt = 0; attempt < 80; attempt++) {
       const current = await this.cdp("Browser.getWindowBounds", { windowId });
       const state = current.bounds.windowState;
       if (state === bounds.windowState || (allowMaximized && state === "maximized")) return;

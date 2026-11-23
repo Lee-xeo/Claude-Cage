@@ -70,5 +70,5 @@ printf '%s' "${2:-}" | browser_request --input-type=module -e '
 import {readFileSync} from "node:fs";
 const {token}=JSON.parse(readFileSync("/etc/claude-cage/browser-control.json","utf8"));
 const response=await fetch("http://127.0.0.1:18500"+process.argv[1],{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({url:readFileSync(0,"utf8"),login:process.argv[2],route:process.argv[3] || undefined,account:process.argv[4] || undefined})});
-if(!response.ok)process.exit(1);
+if(!response.ok){console.error(await response.text().catch(()=>""));process.exit(1);}
 ' "$1" "${3:-}" "$route" "$account"

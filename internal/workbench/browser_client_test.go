@@ -185,6 +185,16 @@ func TestBrowserClientLogsAllowlistedReasonOnly(t *testing.T) {
 		t.Fatal("expected audit error for known reason")
 	}
 
+	currentErr = "授权页面未能打开"
+	if _, err := client.request(context.Background(), "token", http.MethodPost, "/new", []byte(`{}`)); err == nil || !strings.Contains(err.Error(), "未能打开授权页面") {
+		t.Fatalf("expected specific login open error, got %v", err)
+	}
+
+	currentErr = "Browser window did not change state"
+	if _, err := client.request(context.Background(), "token", http.MethodPost, "/new", []byte(`{}`)); err == nil || !strings.Contains(err.Error(), "窗口状态切换超时") {
+		t.Fatalf("expected specific visibility timeout error, got %v", err)
+	}
+
 	currentErr = "https://private.example/secret-token"
 	if _, err := client.request(context.Background(), "token", http.MethodPost, "/audit", []byte(`{}`)); err == nil {
 		t.Fatal("expected audit error for unknown reason")

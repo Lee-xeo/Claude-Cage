@@ -536,7 +536,16 @@ async function activate(id, focus = false) {
   if (!targets.has(id)) throw new Error("Tab no longer exists");
   // Restored background tabs may have no live renderer until activated.
   // Page.enable must not block the command that wakes that renderer.
-  await visibility.activate(id);
+  try {
+    await visibility.activate(id);
+  } catch (error) {
+    if (!focus) throw error;
+    // A newly focused tab (such as a login page opened while the browser view
+    // is hidden) must still open and navigate even if Openbox lags on window
+    // state sync; the subsequent /visibility call re-syncs fullscreen state.
+    console.error("Browser visibility sync deferred during focus:", error?.message || error);
+    await cdp("Target.activateTarget", { targetId: id }).catch(() => {});
+  }
   await session(id);
   activeId = id;
   void refreshNavigation();
