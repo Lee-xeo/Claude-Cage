@@ -112,3 +112,7 @@ func lookProgram(name string, env []string) string {
 	}
 	return name
 }
+
+func resolveHostCommand(_ context.Context, name string, env []string) (string, []string, error) {
+	return lookProgram(name, env), nil, nil
+}

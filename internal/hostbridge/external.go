@@ -372,11 +372,22 @@ func (e *External) open(ctx context.Context, projectDir string) (*mcp.ClientSess
 		}
 		// A bare name is found on the PATH the program is given, which may
 		// be longer than this process's own.
+		args := expanded[1:]
 		if filepath.Base(program) == program {
-			program = lookProgram(program, env)
+			resolved, prefix, err := resolveHostCommand(ctx, program, env)
+			if err != nil {
+				if bareProgram != "" && (errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist)) {
+					return nil, nil, nil, &MissingProgramError{Plugin: e.Manifest.Name, Program: bareProgram, Err: err}
+				}
+				return nil, nil, nil, fmt.Errorf("plugin %s: %w", e.Manifest.Name, err)
+			}
+			program = resolved
+			if len(prefix) > 0 {
+				args = append(slices.Clone(prefix), args...)
+			}
 		}
 		// The program outlives the call that starts it.
-		cmd = exec.Command(program, expanded[1:]...)
+		cmd = exec.Command(program, args...)
 		cmd.Dir = e.Dir
 		cmd.Env = env
 		hideWindow(cmd)
