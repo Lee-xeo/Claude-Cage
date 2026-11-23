@@ -15,10 +15,32 @@ $zip = Join-Path $Destination "nsis-$version.zip"
 $cached = (Test-Path -LiteralPath $zip -PathType Leaf) -and (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -eq $expectedSHA256
 if (-not $cached) {
     # SourceForge returns a browser download page (HTTP 200 HTML) for PowerShell's
-    # default user agent. Use the command-line downloader it redirects to the ZIP.
+    # default user agent. Use the command-line downloader it redirects to the ZIP,
+    # and fall back to Invoke-WebRequest with a curl user-agent on Windows when
+    # Schannel revocation checks fail offline.
     $curl = if ($IsWindows) { 'curl.exe' } else { 'curl' }
-    & $curl --fail --location --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 15 --max-time 120 --output $zip --write-out "NSIS download: HTTP %{http_code}, %{content_type}, %{size_download} bytes\n" $url
-    if ($LASTEXITCODE -ne 0) { throw "NSIS download failed (curl exit $LASTEXITCODE)." }
+    $partial = "$zip.partial-$([guid]::NewGuid().ToString('N'))"
+    try {
+        & $curl --fail --location --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 15 --max-time 120 --output $partial --write-out "NSIS download: HTTP %{http_code}, %{content_type}, %{size_download} bytes\n" $url
+        if ($LASTEXITCODE -ne 0) {
+            if (-not $IsWindows) { throw "NSIS download failed (curl exit $LASTEXITCODE)." }
+            Write-Warning "NSIS curl download failed (exit $LASTEXITCODE); falling back to Invoke-WebRequest with HTTPS and SHA-256 verification."
+            Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+            for ($attempt = 1; ; $attempt++) {
+                try {
+                    Invoke-WebRequest -Uri $url -UserAgent 'curl/8.18.0' -OutFile $partial -TimeoutSec 120 -MaximumRedirection 5
+                    break
+                } catch {
+                    if ($attempt -ge 4) { throw }
+                    Write-Warning "NSIS Invoke-WebRequest failed (attempt $attempt): $($_.Exception.Message)"
+                    Start-Sleep -Seconds (5 * $attempt)
+                }
+            }
+        }
+        Move-Item -LiteralPath $partial -Destination $zip -Force
+    } finally {
+        if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue }
+    }
 }
 
 $stream = [IO.File]::OpenRead($zip)

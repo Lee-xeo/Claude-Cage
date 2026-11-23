@@ -83,5 +83,25 @@ try {
     $script:downloadContent = $verifiedContent
     $archive = Get-VerifiedDependency $dependency $downloads
     if ([IO.File]::ReadAllText($archive) -ne $verifiedContent) { throw 'The verified download was not published on retry.' }
+
+    if ($IsWindows) {
+        # Verify Windows fallback to Invoke-WebRequest when the shared curl fetcher fails (e.g. Schannel revocation offline).
+        $fallbackDir = Join-Path $root 'downloads-fallback'
+        $fallbackCalled = $false
+        function Get-BuildCommand {
+            param([string[]]$Names, [switch]$Optional)
+            if ($Names -contains 'node') { return 'node.exe' }
+            throw "Unexpected build tool lookup: $($Names -join ', ')"
+        }
+        function Invoke-BuildTool {
+            param([string]$Tool, [string[]]$Arguments)
+            $script:fallbackCalled = $true
+            throw 'node.exe failed with exit code 1 (CRYPT_E_REVOCATION_OFFLINE)'
+        }
+        $fallbackArchive = Get-VerifiedDependency $dependency $fallbackDir
+        if (-not $script:fallbackCalled -or [IO.File]::ReadAllText($fallbackArchive) -ne $verifiedContent) {
+            throw 'Get-VerifiedDependency did not fall back to Invoke-WebRequest after shared downloader failure.'
+        }
+    }
     Write-Output 'PASS: QEMU cache locking, rollback, interrupted rebuild recovery, custom output ownership, and dependency retry.'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }

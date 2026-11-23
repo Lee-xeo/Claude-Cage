@@ -151,7 +151,7 @@ class DeviceResetTest(unittest.TestCase):
         # Project file still intact
         self.assertTrue((self.work_home / "my-project" / "main.go").exists())
 
-    def test_rejects_invalid_inputs_and_symlinks(self):
+    def test_rejects_invalid_inputs(self):
         with self.assertRaises(MOD.Refused):
             self.resetter.reset({"items": ["../evil"]})
         with self.assertRaises(MOD.Refused):
@@ -161,11 +161,17 @@ class DeviceResetTest(unittest.TestCase):
         with self.assertRaises(MOD.Refused):
             self.resetter.restore("../escape")
 
+    def test_skips_symlink_targets(self):
         # Symlink target must be skipped safely without touching outside files
         outside = Path(self.tmp.name) / "outside-secret.txt"
         outside.write_text("keep-me", encoding="utf-8")
         (self.work_home / ".bash_history").unlink()
-        os.symlink(outside, self.work_home / ".bash_history")
+        try:
+            os.symlink(outside, self.work_home / ".bash_history")
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                self.skipTest("creating file symlinks on Windows requires Developer Mode or SeCreateSymbolicLinkPrivilege (WinError 1314)")
+            raise
         res = self.resetter.reset({"items": ["system_traces"], "irreversible": True})
         self.assertEqual(res["status"], "partial")
         self.assertTrue(outside.exists())

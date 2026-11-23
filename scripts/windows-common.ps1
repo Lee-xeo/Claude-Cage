@@ -257,7 +257,12 @@ function Get-VerifiedDependency {
         # The shared fetcher resumes with HTTP Range after each interruption and
         # only publishes a file whose pinned digest matches.
         New-Item -ItemType Directory -Path $Cache -Force | Out-Null
-        Invoke-BuildTool $node @($fetcher, $Dependency.url, $Dependency.hash, $path)
+        try {
+            Invoke-BuildTool $node @($fetcher, $Dependency.url, $Dependency.hash, $path)
+        } catch {
+            if (-not $IsWindows) { throw }
+            Write-Warning "Shared curl downloader failed for $($Dependency.file); falling back to Invoke-WebRequest with HTTPS and checksum verification: $($_.Exception.Message)"
+        }
     }
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         New-Item -ItemType Directory -Path $Cache -Force | Out-Null

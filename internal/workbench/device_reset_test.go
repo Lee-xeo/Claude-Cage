@@ -35,8 +35,18 @@ func waitDeviceResetJob(t *testing.T, s *Server) Job {
 }
 
 func TestDeviceResetPythonScript(t *testing.T) {
-	py, err := exec.LookPath("python3")
-	if err != nil {
+	py := ""
+	for _, candidate := range []string{"python3", "python"} {
+		resolved, err := exec.LookPath(candidate)
+		if err != nil {
+			continue
+		}
+		if exec.Command(resolved, "-c", "import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)").Run() == nil {
+			py = resolved
+			break
+		}
+	}
+	if py == "" {
 		t.Skip("python3 not found")
 	}
 	cmd := exec.Command(py, "-m", "unittest", "device_reset_test.py")
