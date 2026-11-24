@@ -85,6 +85,15 @@ Cage 的核心路线是把有风险的运行外壳（Claude Code、Claude Deskto
 - **审批弹窗回流本机**：远程主机上的 `commands` 和主机插件需要确认时，确认弹窗会在你面前的桌面端弹出并标明远程主机名称；已设为「始终允许」的项目或插件在客户端断开后仍可自动放行。
 - **反向共享本机插件**：像 `blender`、`desktop-control` 这类依赖本机桌面的插件，可以在远程工作台「插件设置 → 共享本机插件给当前远程」里按需临时开启。开启后，远程 Claude 调用它们时会经加密隧道回到你本机审批并执行，断开连接后自动收回。
 
+## 在环境中运行其他桌面应用
+
+除了 Claude Desktop，Cage 也能通过插件在环境里运行其他厂商的官方桌面应用，例如 `codex-app`（OpenAI 的 Codex，即 Linux 版 ChatGPT 应用）和 `antigravity-app`（Google 的 Antigravity）。它们和 Claude Desktop 一样在自己的画面中运行，可以复制粘贴、选择项目、上传附件，登录在 Cage 浏览器完成后回到应用。这类插件不做多账号管理，每个应用一份登录。
+
+- **安装与打开**：从插件市场安装插件后，侧栏会出现应用入口。首次打开时点“下载并安装”，Cage 从厂商的官方渠道下载，再点“打开应用”。
+- **默认使用最新版本**：插件只写明官方下载渠道，不锁定版本。点应用顶部的“更新应用”，Cage 会关闭应用、安装当时的官方最新版本并重新打开。厂商改变发布方式导致装不上或打不开时，升级插件即可修复。
+- **数据保留**：应用的登录、设置和项目保存在环境里。更新、卸载应用或升级插件只处理应用文件，重新安装后继续使用原来的登录。
+- **资源**：每个应用都会占用一份内存。环境内存不足时，应用可能被系统关闭；同时运行多个应用前，先在设置中检查计算资源。
+
 ## 常见插件示例
 
 可以在[官网插件市场](https://claude-cage.com/plugins/)在线浏览全部插件、权限声明与 SHA-256 校验值，或在 [cage-plugins](https://github.com/Lee-xeo/cage-plugins) 仓库查看源码。代表性插件包括：
@@ -95,6 +104,7 @@ Cage 的核心路线是把有风险的运行外壳（Claude Code、Claude Deskto
 - **`excel-workbooks` / `word-documents` / `powerpoint-slides`**（环境内插件）：无需安装 Office 即可读写表格、文档与演示文稿。
 - **`documents-to-markdown`**（环境内插件）：将 PDF、Office、EPUB 与 HTML 文档解析为整洁 Markdown。
 - **`browser`**（环境内插件）：控制环境内的 Chromium 浏览网页（基于 `microsoft/playwright-mcp`）。
+- **`codex-app` / `antigravity-app`**（环境内插件）：在环境中运行 Codex 或 Antigravity 的官方桌面应用，默认跟随官方最新版本。
 - **`system-status`**（环境内插件）：同时提供 MCP 工具与自定义侧栏页面，展示环境处理器、内存与磁盘状态。
 - **`clock`**（主机插件）：最小示例插件，适合作为开发模板。
 

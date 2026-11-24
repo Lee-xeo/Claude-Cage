@@ -25,6 +25,7 @@ type Contributes struct {
 	Views       []View       `json:"views,omitempty"`
 	URIHandlers []URIHandler `json:"uriHandlers,omitempty"`
 	Settings    []Setting    `json:"settings,omitempty"`
+	DesktopApps []DesktopApp `json:"desktopApps,omitempty"`
 }
 
 // Setting is a value the user enters for the plugin, such as an address or
@@ -155,10 +156,12 @@ func validID(id string) bool { return pluginName.MatchString(id) && len(id) <= 4
 // validFile reports whether name is a path inside the plugin with one of the
 // extensions.
 func validFile(name string, extensions ...string) bool {
-	if name == "" || len(name) > 200 || path.IsAbs(name) || path.Clean(name) != name || strings.Contains(name, "\\") || name == ".." || strings.HasPrefix(name, "../") {
-		return false
-	}
-	return slices.Contains(extensions, strings.ToLower(path.Ext(name)))
+	return validRelative(name) && slices.Contains(extensions, strings.ToLower(path.Ext(name)))
+}
+
+// validRelative reports whether name is a clean path inside a directory.
+func validRelative(name string) bool {
+	return name != "" && len(name) <= 200 && !path.IsAbs(name) && path.Clean(name) == name && !strings.ContainsAny(name, "\\\x00\r\n") && name != ".." && !strings.HasPrefix(name, "../")
 }
 
 // validOpenURL reports whether pattern is https to a named host, or http to
@@ -304,6 +307,9 @@ func (m *Manifest) check() error {
 			return fmt.Errorf("uriHandlers %s: reveal %q is not one of views", handler.Scheme, handler.Reveal)
 		}
 		schemes = append(schemes, handler.Scheme)
+	}
+	if err := m.checkDesktopApps(schemes); err != nil {
+		return err
 	}
 	if len(m.Contributes.Settings) > 0 {
 		if floor, ok := engineFloor(m.Engines.Cage); !ok || slices.Compare(floor[:], settingsSince[:]) < 0 {
