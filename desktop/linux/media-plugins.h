@@ -1,13 +1,19 @@
 /* GStreamer plugins and renderer defaults seen by WebKit's processes.
  *
  * WebKit loads the system GStreamer plugins inside its sandboxed web process.
- * The NVIDIA codec plugin (libgstnvcodec.so) initializes CUDA there and crashes
- * on a device node the sandbox does not provide, so the workbench cannot start
- * on such hosts. When that plugin is installed, give WebKit a private plugin
- * directory that links every other system plugin, and a private registry so
- * the system's own registry cache is not rewritten. The workbench never uses
- * NVIDIA codecs. Hosts without the plugin, and hosts whose GStreamer paths are
- * configured explicitly, are left unchanged. The sandbox stays enabled.
+ * Two plugins crash WebKitWebProcess there over and over, so the workbench
+ * cannot start on such hosts:
+ *   - libgstnvcodec.so (NVIDIA codecs) initializes CUDA and fails on a device
+ *     node the sandbox does not provide;
+ *   - libgstlibav.so (gst-libav) crashes the web process while the plugin is
+ *     scanned and loaded.
+ * When either plugin is installed, give WebKit a private plugin directory that
+ * links every other system plugin, and a private registry so the system's own
+ * registry cache is not rewritten. The cost is that WebKit loses NVIDIA and
+ * FFmpeg (libav) decoding; the workbench needs neither, and the remaining
+ * system decoders still load. Hosts without these plugins, and hosts whose
+ * GStreamer paths are configured explicitly, are left unchanged. The sandbox
+ * stays enabled.
  *
  * Plain POSIX only, so the logic can be tested without GTK or WebKit. */
 #ifndef CAGE_LINUX_MEDIA_PLUGINS_H
@@ -26,7 +32,7 @@
 #define PATH_MAX 4096
 #endif
 
-static const char *const media_plugins_excluded[] = {"libgstnvcodec.so", NULL};
+static const char *const media_plugins_excluded[] = {"libgstnvcodec.so", "libgstlibav.so", NULL};
 
 static const char *const media_plugins_system_dirs[] = {
 #if defined(__x86_64__)

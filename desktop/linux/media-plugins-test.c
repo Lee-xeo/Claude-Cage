@@ -68,6 +68,7 @@ int main(void) {
     assert(!media_plugins_is_plugin("README.txt"));
     assert(!media_plugins_is_plugin("libfoo.so"));
     assert(media_plugins_excluded_name("libgstnvcodec.so"));
+    assert(media_plugins_excluded_name("libgstlibav.so"));
     assert(!media_plugins_excluded_name("libgstcoreelements.so"));
 
     char root_tpl[] = "/tmp/cage-media-plugins-test-XXXXXX";
@@ -190,6 +191,36 @@ int main(void) {
     assert(media_plugins_disable_dmabuf_default(gpu_none) == 0);
     assert(!strcmp(getenv("WEBKIT_DISABLE_DMABUF_RENDERER"), "1"));
     unsetenv("WEBKIT_DISABLE_DMABUF_RENDERER");
+
+    /* 7. gst-libav host: libgstlibav.so alone triggers isolation, is never
+     *    linked, and a libav link left by an older private directory is removed. */
+    char sys_av[PATH_MAX], cache_av[PATH_MAX];
+    assert(media_plugins_join(sys_av, sizeof sys_av, root, "sys-av"));
+    assert(media_plugins_join(cache_av, sizeof cache_av, root, "cache-av"));
+    assert(mkdir(sys_av, 0700) == 0);
+    assert(mkdir(cache_av, 0700) == 0);
+    write_dummy(sys_av, "libgstcoreelements.so");
+    write_dummy(sys_av, "libgstaudioconvert.so");
+    write_dummy(sys_av, "libgstlibav.so");
+    const char *av_candidates[] = {sys_av, NULL};
+    clear_gst_env();
+    assert(media_plugins_isolate(cache_av, av_candidates) == 1);
+    plugin_env = getenv("GST_PLUGIN_SYSTEM_PATH_1_0");
+    assert(plugin_env != NULL && strstr(plugin_env, cache_av) == plugin_env);
+    char av_core[PATH_MAX], av_link[PATH_MAX], av_source[PATH_MAX];
+    assert(media_plugins_join(av_core, sizeof av_core, plugin_env, "libgstcoreelements.so"));
+    assert(media_plugins_join(av_link, sizeof av_link, plugin_env, "libgstlibav.so"));
+    assert(media_plugins_join(av_source, sizeof av_source, sys_av, "libgstlibav.so"));
+    assert(path_exists_lstat(av_core));
+    assert(!path_exists_lstat(av_link));
+
+    assert(symlink(av_source, av_link) == 0);
+    assert(path_exists_lstat(av_link));
+    clear_gst_env();
+    assert(media_plugins_isolate(cache_av, av_candidates) == 1);
+    assert(!path_exists_lstat(av_link));
+    assert(path_exists_lstat(av_core));
+    clear_gst_env();
 
     remove_tree(root);
     puts("Linux media-plugins unit tests: all checks passed.");

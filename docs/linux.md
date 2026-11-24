@@ -70,7 +70,7 @@ sudo apt remove claude-cage
 
 ## 常见问题
 
-- 工作台无法显示：确认在普通用户的图形桌面会话中启动，且系统 WebKitGTK 安装完整。不要关闭 WebKit 沙箱来绕过桌面配置问题。若主机安装了 NVIDIA GStreamer 插件（`libgstnvcodec.so`），Cage 会自动为内置 WebKit 建立私有插件目录与注册表缓存并排除该插件；检测到 NVIDIA 专有驱动（`/proc/driver/nvidia/version` 或 `/sys/module/nvidia`）时还会关闭 WebKit DMA-BUF 渲染，其他显卡保持 WebKit 默认；也可自行设置 `WEBKIT_DISABLE_DMABUF_RENDERER=1`（关闭）或 `=0`（保持开启），显式设置始终优先，并在启动阶段渲染进程崩溃时自动回退到软件渲染重试一次。若仍失败，请查看 `~/.claude-cage/logs/events.jsonl` 中的 WebKit 退出诊断记录。
+- 工作台无法显示：确认在普通用户的图形桌面会话中启动，且系统 WebKitGTK 安装完整。不要关闭 WebKit 沙箱来绕过桌面配置问题。若主机安装了 NVIDIA GStreamer 插件（`libgstnvcodec.so`）或 gst-libav（`libgstlibav.so`，会导致 WebKit 渲染进程反复崩溃），Cage 会自动为内置 WebKit 建立私有插件目录与注册表缓存并排除这些插件，内置 WebKit 因此不使用 NVIDIA 与 FFmpeg 解码，工作台不受影响；检测到 NVIDIA 专有驱动（`/proc/driver/nvidia/version` 或 `/sys/module/nvidia`）时还会关闭 WebKit DMA-BUF 渲染，其他显卡保持 WebKit 默认；也可自行设置 `WEBKIT_DISABLE_DMABUF_RENDERER=1`（关闭）或 `=0`（保持开启），显式设置始终优先，并在启动阶段渲染进程崩溃时自动回退到软件渲染重试一次。若仍失败，请查看 `~/.claude-cage/logs/events.jsonl` 中的 WebKit 退出诊断记录。
 - Ubuntu 24.04 上窗口出现前报 `bwrap: setting up uid map: Permission denied` 或 `Failed to fully launch dbus-proxy`：系统默认限制非特权用户命名空间，WebKitGTK 的 bubblewrap 沙箱因此无法启动。保留沙箱，为 Cage 桌面程序添加应用专属的 AppArmor 配置，例如以管理员身份创建 `/etc/apparmor.d/claude-cage`：
 
   ```text
