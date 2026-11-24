@@ -624,3 +624,36 @@ func TestLocationsClashNyanpasu(t *testing.T) {
 		}
 	}
 }
+
+// #867: ClashX Meta's YAML under ~/.config/clash.meta is offered on macOS only.
+func TestScanClashXMetaOnMacOS(t *testing.T) {
+	home := t.TempDir()
+	writeConfig(t, filepath.Join(home, ".config", "clash.meta"), "config.yaml", testNode)
+	var found *Config
+	entries := Scan(Locations("darwin", home, "", ""), []byte("key"))
+	for i, e := range entries {
+		if e.Client == "ClashX Meta" && e.Name == "config.yaml" {
+			found = &entries[i]
+		}
+	}
+	if found == nil || found.Nodes != 1 || found.Error != "" {
+		t.Fatalf("ClashX Meta config not importable: %+v", entries)
+	}
+	custom := filepath.Join(t.TempDir(), "xdg")
+	var dirs []string
+	for _, loc := range Locations("darwin", home, "", custom) {
+		if loc.Client == "ClashX Meta" {
+			dirs = append(dirs, loc.Directory)
+		}
+	}
+	if want := filepath.Join(home, ".config", "clash.meta") + "|" + filepath.Join(custom, "clash.meta"); strings.Join(dirs, "|") != want {
+		t.Fatalf("ClashX Meta directories = %q, want %q", dirs, want)
+	}
+	for _, platform := range []string{"linux", "windows"} {
+		for _, loc := range Locations(platform, home, "", "") {
+			if loc.Client == "ClashX Meta" {
+				t.Fatalf("%s offers ClashX Meta: %+v", platform, loc)
+			}
+		}
+	}
+}
