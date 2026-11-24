@@ -38,7 +38,7 @@ type fakeSocketFS struct {
 
 func (f *fakeSocketFS) fs() windowsSocketFS {
 	return windowsSocketFS{
-		persistentACLs: func(dir string) bool { return !windowsPathWithin(dir, f.noACLs) },
+		persistentACLs: func(dir string) bool { return !WindowsPathWithin(dir, f.noACLs) },
 		exists:         func(dir string) bool { return f.existing[dir] },
 		mkdir: func(dir string) error {
 			f.made = append(f.made, dir)

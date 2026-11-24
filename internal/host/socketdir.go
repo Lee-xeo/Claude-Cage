@@ -26,16 +26,16 @@ func windowsSocketDirProblem(dir string, room int, excluded []string) error {
 	if len(dir)+room > windowsSocketPathLimit {
 		return errors.New("too long")
 	}
-	if windowsPathWithin(dir, excluded) {
+	if WindowsPathWithin(dir, excluded) {
 		return errors.New("inside AppData or Temp")
 	}
 	return nil
 }
 
-// windowsPathWithin reports whether dir is one of roots or below one,
+// WindowsPathWithin reports whether dir is one of roots or below one,
 // comparing as Windows does: case-insensitively, ignoring trailing dots and
 // spaces of each component.
-func windowsPathWithin(dir string, roots []string) bool {
+func WindowsPathWithin(dir string, roots []string) bool {
 	normalize := func(p string) string {
 		parts := strings.Split(strings.ReplaceAll(p, "/", `\`), `\`)
 		for i, part := range parts {
@@ -46,11 +46,17 @@ func windowsPathWithin(dir string, roots []string) bool {
 		return strings.ToLower(strings.TrimRight(strings.Join(parts, `\`), `\`))
 	}
 	d := normalize(dir)
+	if d == "" {
+		return false
+	}
 	for _, root := range roots {
 		if root == "" {
 			continue
 		}
 		r := normalize(root)
+		if r == "" {
+			continue
+		}
 		if d == r || strings.HasPrefix(d, r+`\`) {
 			return true
 		}
@@ -89,7 +95,7 @@ func chooseWindowsSocketDir(candidates []string, room int, excluded []string, fs
 	var reasons []string
 	for _, dir := range candidates {
 		problem := windowsSocketDirProblem(dir, room, excluded)
-		if strings.HasPrefix(dir, `\\`) || windowsPathWithin(dir, excluded) {
+		if strings.HasPrefix(dir, `\\`) || WindowsPathWithin(dir, excluded) {
 			reasons = append(reasons, problem.Error())
 			continue
 		}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -568,21 +569,123 @@ func (s *Server) readClaudeReportForSubject(ctx context.Context, id, subject, co
 	if a != nil {
 		if id == "default" && subject == "" {
 			// Discover the mutable default identity locally before sending traffic.
-			command = wrapAccountNamespace("unshare -nm", command)
+			command = wrapOfflineAccountNamespace(command)
 		} else if command, err = s.routeSelected(ctx, *a, command); err != nil {
 			return snapshot, err
 		}
 	}
-	data, err := s.guest(ctx, command)
+	data, stderr, err := s.guestControlWithStderr(ctx, command)
 	if err != nil {
-		diagnostics.Log("warn", "accounts", fmt.Sprintf("guest account report exec failed: %v", err))
-		return snapshot, fmt.Errorf("无法读取账号状态，请确认环境已启动并同步环境组件: %w", err)
+		probeErr := classifyAccountProbeError(err, stderr)
+		diagnostics.Log("warn", "accounts", fmt.Sprintf("guest account report exec failed: exit=%d err=%v stderr=%q", probeErr.exitCode, err, sanitizeAccountNetworkStderr(stderr)))
+		return snapshot, probeErr
 	}
 	if decodeErr := json.Unmarshal(data, &snapshot); decodeErr != nil {
-		diagnostics.Log("warn", "accounts", fmt.Sprintf("guest account report decode failed: %v", decodeErr))
-		return snapshot, fmt.Errorf("无法读取账号状态，请确认环境已启动并同步环境组件: %w", decodeErr)
+		diagnostics.Log("warn", "accounts", fmt.Sprintf("guest account report decode failed: err=%v stderr=%q", decodeErr, sanitizeAccountNetworkStderr(stderr)))
+		return snapshot, &accountProbeError{
+			message:  "无法读取账号状态，请确认环境已启动并同步环境组件",
+			cause:    decodeErr,
+			exitCode: -1,
+		}
 	}
 	return snapshot, nil
+}
+
+func classifyAccountProbeError(err error, stderr string) *accountProbeError {
+	exitCode := -1
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		exitCode = exitErr.ExitCode()
+	}
+	exitSuffix := ""
+	if exitCode >= 0 {
+		exitSuffix = fmt.Sprintf("（退出码 %d）", exitCode)
+	}
+	lower := strings.ToLower(stderr)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || strings.Contains(stderr, "读取 Claude 订阅状态超时"):
+		return &accountProbeError{
+			message:  "读取账号状态超时，请确认环境已启动并检查 Claude Code",
+			cause:    err,
+			exitCode: exitCode,
+		}
+	case isAccountProbeNamespacePermissionError(lower):
+		return &accountProbeError{
+			message:  "无法隔离读取账号状态：客机命名空间或 sudo 权限受限，请检查客机 unshare/user namespace 权限" + exitSuffix,
+			cause:    err,
+			exitCode: exitCode,
+		}
+	case strings.Contains(stderr, "未找到官方 Claude Code CLI") ||
+		strings.Contains(lower, "claude is not installed") ||
+		strings.Contains(lower, "claude: command not found"):
+		return &accountProbeError{
+			message:  "未找到官方 Claude Code CLI，请先在环境中安装后重试",
+			cause:    err,
+			exitCode: exitCode,
+		}
+	case strings.Contains(stderr, "无法读取 Claude 订阅状态"):
+		return &accountProbeError{
+			message:  "无法读取 Claude 订阅状态，请确认官方 Claude Code CLI 可正常运行后重试",
+			cause:    err,
+			exitCode: exitCode,
+		}
+	case strings.Contains(lower, "/usr/local/bin/cage-claude-account") &&
+		(strings.Contains(lower, "no such file") || strings.Contains(lower, "not found") || strings.Contains(lower, "permission denied")),
+		exitCode == 127 && !strings.Contains(lower, "unshare"):
+		return &accountProbeError{
+			message:  "客机账号组件缺失或不可执行，请同步环境组件后重试" + exitSuffix,
+			cause:    err,
+			exitCode: exitCode,
+		}
+	case exitCode == 255 ||
+		strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "connection reset") ||
+		strings.Contains(lower, "could not resolve") ||
+		strings.Contains(lower, "broken pipe") ||
+		strings.Contains(lower, "no route to host"):
+		return &accountProbeError{
+			message:  "无法连接客机以读取账号状态，请确认环境已启动" + exitSuffix,
+			cause:    err,
+			exitCode: exitCode,
+		}
+	default:
+		return &accountProbeError{
+			message:  "无法读取账号状态，请确认环境已启动并同步环境组件" + exitSuffix,
+			cause:    err,
+			exitCode: exitCode,
+		}
+	}
+}
+
+func isAccountProbeNamespacePermissionError(lower string) bool {
+	if strings.Contains(lower, "unshare") &&
+		(strings.Contains(lower, "operation not permitted") ||
+			strings.Contains(lower, "permission denied") ||
+			strings.Contains(lower, "not permitted") ||
+			strings.Contains(lower, "unshare failed") ||
+			strings.Contains(lower, "not found")) {
+		return true
+	}
+	if strings.Contains(lower, "setpriv") &&
+		(strings.Contains(lower, "invalid argument") ||
+			strings.Contains(lower, "operation not permitted") ||
+			strings.Contains(lower, "permission denied")) {
+		return true
+	}
+	if strings.Contains(lower, "mount:") &&
+		(strings.Contains(lower, "operation not permitted") ||
+			strings.Contains(lower, "permission denied") ||
+			strings.Contains(lower, "must be superuser")) {
+		return true
+	}
+	if strings.Contains(lower, "sudo:") &&
+		(strings.Contains(lower, "password is required") ||
+			strings.Contains(lower, "terminal is required") ||
+			strings.Contains(lower, "not allowed") ||
+			strings.Contains(lower, "effective uid is not 0")) {
+		return true
+	}
+	return false
 }
 
 func claudeSnapshotCommand(id string) string {

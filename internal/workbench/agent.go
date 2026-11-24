@@ -103,6 +103,7 @@ func AgentOperations() []AgentOperation {
 	post("appearance.set", "Save complete appearance using the workbench validator", "/api/appearance", from(Appearance{}))
 	get("appearance.codex", "Read the same local Codex appearance import as the UI", "/api/appearance/codex")
 	post("settings.probe", "Probe actual exit location for a complete settings draft", "/api/settings/probe", from(Settings{}))
+	post("settings.dns_check", "Test configured encrypted DNS endpoints through the selected proxy for a complete settings draft", "/api/settings/dns-check", from(Settings{}))
 	get("proxy.connections", "Inspect live proxy connections", "/api/proxy/connections")
 	get("proxy.logs", "Inspect proxy logs", "/api/proxy/logs")
 	post("proxy.delay", "Measure one node (node_id) or up to 300 nodes four at a time (node_ids); returns per-node results and the fastest working node as best without changing the selection", "/api/proxy/delay", object(map[string]string{"node_id": "string", "node_ids": "array"}))

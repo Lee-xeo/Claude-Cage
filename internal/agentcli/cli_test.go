@@ -75,6 +75,43 @@ func TestAgentCLIRejectsSecretArgumentsAndMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestAgentCLIAcceptsUTF8BOMJSONInput(t *testing.T) {
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	dir := t.TempDir()
+	inputFile := filepath.Join(dir, "input.json")
+	if err := os.WriteFile(inputFile, append(append([]byte(nil), bom...), []byte(`{"unexpected":true}`)...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "profile", "config.json")
+	// Read operations reject non-empty JSON objects with a distinct message
+	// ("Read operations accept no input fields."), proving the BOM-prefixed
+	// JSON object parsed cleanly instead of failing with invalid_input.
+	for _, tc := range []struct {
+		name  string
+		args  []string
+		stdin string
+	}{
+		{"file", []string{"call", "status", "--input", inputFile, "--config", configPath}, ""},
+		{"stdin", []string{"call", "status", "--input", "-", "--config", configPath}, string(bom) + `{"unexpected":true}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output bytes.Buffer
+			code := Main(tc.args, strings.NewReader(tc.stdin), &output)
+			if code != 2 || !strings.Contains(output.String(), "Read operations accept no input fields.") {
+				t.Fatalf("BOM JSON was not parsed: code=%d output=%s", code, output.String())
+			}
+		})
+	}
+	// A BOM alone or BOM + non-object still fails validation.
+	for _, badInput := range []string{string(bom), string(bom) + `[]`, string(bom) + `null`} {
+		var output bytes.Buffer
+		code := Main([]string{"call", "account.unlock", "--input", "-", "--config", configPath}, strings.NewReader(badInput), &output)
+		if code != 2 || !strings.Contains(output.String(), "Input must be one JSON object") {
+			t.Fatalf("invalid BOM input accepted: code=%d output=%s", code, output.String())
+		}
+	}
+}
+
 func TestAgentWaitTimeoutKeepsOriginalJobID(t *testing.T) {
 	data, err := agentWait(context.Background(), filepath.Join(t.TempDir(), "config.json"), "012345abcdef", time.Millisecond)
 	if err == nil || data != nil || !strings.Contains(err.Error(), "job may still be running") {

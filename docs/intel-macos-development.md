@@ -10,6 +10,13 @@ Intel Mac 使用随包的 QEMU 和 Hypervisor.framework 硬件虚拟化运行环
 
 需要 Xcode、Go（根模块要求 1.26.10，`tools/tailnet` 要求 1.27.3，均为最低版本）、Node.js、Python 3.11+、Meson、Ninja、pkg-config，以及源码构建所需的 gettext、pixman、libffi。GLib 和 PCRE2 由构建脚本从固定版本源码构建。依赖工具需在 `PATH` 中；Go 工具链的联网下载、离线准备与构建前检查见[macOS 源码构建说明](../.github/CONTRIBUTING.md#macos-源码构建)。
 
+QEMU 配置阶段（`mkvenv`）除源码归档自带的 `qemu.qmp` 外，还需要 `pip`、`setuptools`、`wheel` 及其运行依赖 `packaging` 四个纯 Python 构建包。`scripts/build-intel-macos-runtime.sh` 已固定这四项的版本与 SHA-256（与 Windows 构建 [dependencies.json](../packaging/windows/dependencies.json) 一致），下载校验后缓存在 `_output/intel-runtime/python-wheels/`，并在调用 QEMU `configure` 时自动设置 `PIP_NO_INDEX=1` 与指向该缓存目录的 `PIP_FIND_LINKS`（以 `file://` URI 传入，兼容含空格的路径），不再在配置阶段临时访问 PyPI。这些包仅用于构建，不进入安装包。
+
+若当前网络无法直连 `files.pythonhosted.org` 或需要离线构建，可任选以下方式之一：
+
+- 预先通过可用渠道获取上述四个固定版本 `.whl` 文件并核对 SHA-256，放入 `_output/intel-runtime/python-wheels/` 后再运行构建（脚本会直接复用并校验缓存，不触发下载），或通过 `PIP_FIND_LINKS` 指定本地 wheel 目录。
+- 在 `CAGE_BUILD_PYTHON` 指向的独立 Python 环境中先运行 `python -m ensurepip --upgrade`，安装已校验的 `wheel` 与 QEMU 源码归档中 `python/wheels/qemu_qmp-0.0.6-py3-none-any.whl`，再在构建会话中设置 `PIP_NO_INDEX=1`。
+
 ```sh
 bash scripts/build-app.sh --intel-macos-test
 ```

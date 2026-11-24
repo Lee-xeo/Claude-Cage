@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 7.0
 [CmdletBinding()]
 param(
     [switch]$Release,
@@ -25,6 +25,8 @@ $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath (Join-Path $OutputDirectory 'Uninstall.exe')) { throw 'Do not build over an installed application. Choose a separate output directory and use the installer to upgrade.' }
 Assert-NoCageDataInBuildOutput $OutputDirectory
 Assert-WindowsWorkbenchTestBase
+Assert-WindowsBuildDirectoryIntegrity $repository
+if (Test-Path -LiteralPath $OutputDirectory) { Assert-WindowsBuildDirectoryIntegrity $OutputDirectory }
 $version = Get-CageVersion $repository
 $signed = $Release -or $Sign
 if ($signed) { Assert-WindowsSigningConfiguration }
@@ -110,8 +112,18 @@ try {
     $tags = 'external_hcs,external_wsl2,yq_noxml,yq_nolua,yq_noini,yq_nohcl,yq_notoml,yq_noprops,yq_nocsv,yq_nouri,yq_nobase64,yq_nosh,yq_noshell'
     $ldflags = "-s -w -X github.com/sylvinus/agent-vm/internal/version.Version=$version -X github.com/lima-vm/lima/v2/pkg/version.Version=$limaVersion"
     Invoke-BuildTool $go @('build', '-trimpath', '-tags', $tags, '-ldflags', $ldflags, '-o', (Join-Path $resources 'cage.exe'), './cmd/cage')
-    Invoke-BuildTool (Join-Path $resources 'cage.exe') @('verify-vm-assets')
-    Invoke-BuildTool (Join-Path $resources 'cage.exe') @('verify-web-assets')
+    $savedVerifyTemp = $env:TEMP; $savedVerifyTmp = $env:TMP
+    try {
+        if ($env:CAGE_TEMP) {
+            $verifyTemp = [IO.Path]::GetFullPath($env:CAGE_TEMP)
+            New-Item -ItemType Directory -Path $verifyTemp -Force | Out-Null
+            $env:TEMP = $verifyTemp; $env:TMP = $verifyTemp
+        }
+        Invoke-BuildTool (Join-Path $resources 'cage.exe') @('verify-vm-assets')
+        Invoke-BuildTool (Join-Path $resources 'cage.exe') @('verify-web-assets')
+    } finally {
+        $env:TEMP = $savedVerifyTemp; $env:TMP = $savedVerifyTmp
+    }
     Invoke-BuildTool $dotnet @('publish', 'desktop/windows/Cage.Windows.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
         '-p:EnableWindowsTargeting=true', '-p:PublishSingleFile=true', '-p:RestoreLockedMode=true', "-p:Version=$version", "-p:InformationalVersion=$version", '-o', $app)
     Get-ChildItem -LiteralPath $app -File | Where-Object { $_.Extension -in @('.pdb', '.xml') } | Remove-Item -Force
