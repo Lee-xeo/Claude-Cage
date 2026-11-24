@@ -43,6 +43,8 @@ type safetyState struct {
 type networkObservation struct {
 	Status int    `json:"status"`
 	IP     string `json:"ip"`
+	Error  string `json:"error,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 type guestObservation struct {
 	TZ                  string             `json:"tz"`
@@ -842,6 +844,9 @@ func (s *Server) runSafetyCheck() (returned error) {
 		set("proxy_transport", cage.CheckPassed, "终端请求经过 环境网络层的固定检测通道，并由指定代理完成 HTTPS 出口查询；未放开任意网站", "")
 	} else {
 		evidence := fmt.Sprintf("环境未能完成代理出口查询（检测通道 HTTP %d），尚不能确认代理连接可用", network.Egress.Status)
+		if detail := diagnosticFailureDetail(network.Egress); detail != "" {
+			evidence = fmt.Sprintf("环境未能完成代理出口查询（检测通道 HTTP %d，%s），尚不能确认代理连接可用", network.Egress.Status, detail)
+		}
 		if network.Egress.Status == 0 {
 			evidence = "环境没有收到代理出口查询的结果，尚不能确认代理连接可用"
 		}

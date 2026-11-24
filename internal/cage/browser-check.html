@@ -20,8 +20,8 @@
     if (location.origin !== "http://198.18.0.254") return;
     try {
       const response = await fetch("/egress", {credentials: "omit", cache: "no-store", signal: AbortSignal.timeout(14000)});
-      const {ip} = await response.json();
-      result.network = {status: response.status, ip};
+      const data = await response.json();
+      result.network = {status: response.status, ip: data.ip, error: data.error, reason: data.reason};
     } catch { result.network = {status: 0}; }
   }
   report.searchParams.set("result", JSON.stringify(result));
