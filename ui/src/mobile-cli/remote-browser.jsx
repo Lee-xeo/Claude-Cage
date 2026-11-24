@@ -5,7 +5,7 @@ import { PhoneFavorites } from "./phone-favorites";
 import { PhoneHistory } from "./phone-history";
 import { browserRequest } from "./transport.mjs";
 import { buildAddressSuggestions } from "../browser-omnibox.mjs";
-import { connectDisplay, framePoint } from "./browser-session.mjs";
+import { connectDisplay, desktopDragDelta, desktopReleaseDelta, framePoint } from "./browser-session.mjs";
 import "./remote-browser.css";
 
 function Tool({icon: Icon, label, ...props}) {
@@ -270,13 +270,13 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
   const send = (payload, expected) => controls.current?.send(payload, expected);
   const point = event => framePoint(surface.current.getBoundingClientRect(), frame, event.clientX, event.clientY);
   const down = event => {
-    if (overlayOpen || !frame || (desktop && state.busy) || !event.isPrimary || event.button !== 0) return;
+    if (overlayOpen || !frame || !event.isPrimary || event.button !== 0) return;
     const location = point(event);
     if (!location) return;
-    if (!desktop) controls.current.cancelScroll();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    controls.current.cancelScroll();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     gesture.current = {pointer: event.pointerId, location, frame, x:event.clientX, y:event.clientY,
-      lastX:0, lastY:0, dragged:false, left:stage.current.scrollLeft, top:stage.current.scrollTop};
+      lastX:0, lastY:0, dragged:false, scrolled:false, axis:"", left:stage.current.scrollLeft, top:stage.current.scrollTop};
   };
   const drag = (start, event) => {
     const dx = start.x - event.clientX, dy = start.y - event.clientY;
@@ -285,7 +285,11 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
     if (reading) {
       stage.current.scrollLeft = start.left + dx;
       stage.current.scrollTop = start.top + dy;
-    } else if (!desktop) {
+    } else if (desktop) {
+      const {x, y, scale} = start.location;
+      const step = desktopDragDelta(start, dx, dy, scale);
+      if (step) controls.current.scroll(start.frame, {x, y, ...step});
+    } else {
       const {x, y, scale} = start.location;
       const totalX = Math.round(dx / scale), totalY = Math.round(dy / scale);
       controls.current.scroll(start.frame, {x, y, dx:totalX - start.lastX, dy:totalY - start.lastY});
@@ -304,12 +308,12 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
     const {x, y, scale} = start.location;
     if (!start.dragged) void send({type:"tap", x, y}, start.frame);
     else if (desktop && !reading) {
-      const delta = value => Math.max(-3200, Math.min(3200, Math.round(value / scale)));
-      void send({type:"scroll", x, y, dx:delta(start.x - event.clientX), dy:delta(start.y - event.clientY)}, start.frame);
+      const rest = desktopReleaseDelta(start, start.x - event.clientX, start.y - event.clientY, scale);
+      if (rest) controls.current.scroll(start.frame, {x, y, ...rest});
     }
   };
   const wheel = event => {
-    if (overlayOpen || !frame || (desktop && state.busy)) return;
+    if (overlayOpen || !frame) return;
     if (reading) {
       stage.current.scrollBy(event.deltaX, event.deltaY); return;
     }
@@ -318,8 +322,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
     const units = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? frame.height : 1;
     const delta = value => Math.max(-3200, Math.min(3200, Math.round(value * units / location.scale)));
     const input = {x:location.x, y:location.y, dx:delta(event.deltaX), dy:delta(event.deltaY)};
-    if (desktop) void send({type:"scroll", ...input}, frame);
-    else controls.current.scroll(frame, input);
+    controls.current.scroll(frame, input);
   };
   return <section className="remote-browser" aria-label={name}>
     {!desktop && addressSlot && frame && (showAddress
@@ -327,7 +330,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
       : hostname && hostname !== "claude.ai" && createPortal(<span className="remote-domain" title={hostname}><Globe2 size={14} />{hostname}</span>, addressSlot))}
     {frame && state.homeNotice && <p className="remote-home-note" role="status">{state.homeNotice}</p>}
     {frame && showAddress && addressNotice && <p className="remote-note" role="alert">{addressNotice}</p>}
-    <div ref={stage} className="remote-stage" onPointerDown={down} onPointerMove={move} onPointerUp={up}
+    <div ref={stage} className={frame && !overlayOpen ? "remote-stage interactive" : "remote-stage"} onPointerDown={down} onPointerMove={move} onPointerUp={up}
       onPointerCancel={() => {gesture.current = null; controls.current?.cancelScroll();}} onWheel={wheel} onContextMenu={e => {if (!overlayOpen) e.preventDefault();}}>
       {frame && favorites ? <PhoneFavorites frame={frame} navigate={url => controls.current.navigate(url)} onClose={() => setFavorites(false)}/> :
        frame && historyOpen ? <PhoneHistory navigate={url => controls.current.navigate(url)} onClose={() => setHistoryOpen(false)} /> :

@@ -244,7 +244,7 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 		return
 	}
 	if input.After != "" || input.Profile != "" || (op != "open" && input.ID != "") ||
-		(input.ReturnFrame && (surface != phoneBrowser || op != "action")) {
+		(input.ReturnFrame && op != "action") {
 		http.Error(w, "图形会话请求无效", 400)
 		return
 	}
@@ -478,13 +478,23 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 		out = append(out, `"action_frame":true}`...)
 	}
 	defer interruptHTTPOnCancel(w, r.WithContext(ctx))()
-	if surface == phoneDesktop && op == "frame" {
+	if surface == phoneDesktop && (op == "frame" || (op == "action" && input.ReturnFrame)) {
 		var frame map[string]json.RawMessage
-		if json.Unmarshal(out, &frame) == nil && string(frame["pixel_ratio_control"]) == "true" {
-			// Both this host and the guest understand pixel_ratio. Older hosts
-			// must keep receiving the original request shape from new clients.
-			frame["pixel_ratio_supported"] = json.RawMessage("true")
-			out, _ = json.Marshal(frame)
+		if json.Unmarshal(out, &frame) == nil {
+			changed := false
+			if string(frame["pixel_ratio_control"]) == "true" {
+				// Both this host and the guest understand pixel_ratio. Older hosts
+				// must keep receiving the original request shape from new clients.
+				frame["pixel_ratio_supported"] = json.RawMessage("true")
+				changed = true
+			}
+			if string(frame["action_frame_control"]) == "true" {
+				frame["action_frame"] = json.RawMessage("true")
+				changed = true
+			}
+			if changed {
+				out, _ = json.Marshal(frame)
+			}
 		}
 	}
 	if (op == "frame" || input.ReturnFrame) && len(out) > 3<<20 {
