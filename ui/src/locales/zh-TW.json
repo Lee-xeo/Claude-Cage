@@ -3223,5 +3223,11 @@
   "麦克风采集未能启动，请检查本机音频设备后重试": "麥克風採集未能啟動，請檢查本機音訊裝置後重試",
   "更新 Claude Desktop": "更新 Claude Desktop",
   "官方软件源": "官方軟體來源",
-  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "Linux 版透過系統軟體來源更新。可在「設定 → 環境與恢復」中更新，或在 Cage 終端機執行 sudo apt update && sudo apt install --only-upgrade claude-desktop。"
+  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "Linux 版透過系統軟體來源更新。可在「設定 → 環境與恢復」中更新，或在 Cage 終端機執行 sudo apt update && sudo apt install --only-upgrade claude-desktop。",
+  "拖动以移动位置，双击复位": "拖動以移動位置，按兩下復位",
+  "展开浮窗": "展開浮窗",
+  "收起浮窗": "收起浮窗",
+  "浮窗「{0}」": "浮窗「{0}」",
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "在工作台上開啟一個可拖動的半透明浮窗。浮窗在隔離的框架中執行，只能使用這個外掛程式自己的工具。它可以在內建瀏覽器中開啟：{0}。",
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "在工作台上開啟一個可拖動的半透明浮窗。浮窗在隔離的框架中執行，只能使用這個外掛程式自己的工具。它不能開啟網頁。"
 }

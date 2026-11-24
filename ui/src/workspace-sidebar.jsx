@@ -236,7 +236,7 @@ export function WorkspaceSidebar({
             <div className="sidebar-nav-divider" aria-hidden="true" />
             {plugins && <HostPluginsNav open={plugins.open} onOpen={plugins.onOpen} />}
             {onTailscale && <button className={`sidebar-link ${tailscaleOpen ? "selected" : ""}`} aria-current={tailscaleOpen ? "page" : undefined} onClick={onTailscale} aria-label={tr("打开 Tailscale")}><Network size={17} />Tailscale</button>}
-            {plugins?.pages?.length > 0 && <PluginPagesNav pages={plugins.pages} selected={plugins.pageOpen} onOpen={plugins.onView} />}
+            {plugins?.pages?.length > 0 && <PluginPagesNav pages={plugins.pages} selected={plugins.pageOpen} floatingOpen={plugins.floatingOpen} onOpen={plugins.onView} />}
           </>
         )}
       </nav>

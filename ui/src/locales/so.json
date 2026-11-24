@@ -3223,5 +3223,11 @@
   "麦克风采集未能启动，请检查本机音频设备后重试": "Waa la bilaabi waayay duubista makarafoonka. Hubi qalabka codka maxalliga ah oo mar kale isku day",
   "更新 Claude Desktop": "Cusbooneysii Claude Desktop",
   "官方软件源": "Isha software-ka rasmiga ah",
-  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "Nooca Linux waxaa lagu cusboonaysiiyaa isha software-ka nidaamka. Waxaad ka cusboonaysiin kartaa \"Dejinta → Deegaanka iyo soo kabashada\", ama terminal-ka Cage ku socodsii sudo apt update && sudo apt install --only-upgrade claude-desktop."
+  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "Nooca Linux waxaa lagu cusboonaysiiyaa isha software-ka nidaamka. Waxaad ka cusboonaysiin kartaa \"Dejinta → Deegaanka iyo soo kabashada\", ama terminal-ka Cage ku socodsii sudo apt update && sudo apt install --only-upgrade claude-desktop.",
+  "拖动以移动位置，双击复位": "Jiid si aad u dhaqaajiso, laba jeer guji si aad booska ugu celiso",
+  "展开浮窗": "Ballaari daaqadda sabbeysa",
+  "收起浮窗": "Laab daaqadda sabbeysa",
+  "浮窗「{0}」": "Daaqadda sabbeysa \"{0}\"",
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, waxayna biraawsarka gudaha ka furi kartaa: {0}.",
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, mana furi karto bogag internet."
 }

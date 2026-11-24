@@ -3223,5 +3223,11 @@
   "麦克风采集未能启动，请检查本机音频设备后重试": "Impossible de démarrer la capture du microphone. Vérifiez le périphérique audio local puis réessayez",
   "更新 Claude Desktop": "Mettre à jour Claude Desktop",
   "官方软件源": "Source officielle",
-  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "La version Linux se met à jour via les sources logicielles du système. Vous pouvez la mettre à jour dans « Paramètres → Environnement et récupération », ou exécuter sudo apt update && sudo apt install --only-upgrade claude-desktop dans le terminal Cage."
+  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "La version Linux se met à jour via les sources logicielles du système. Vous pouvez la mettre à jour dans « Paramètres → Environnement et récupération », ou exécuter sudo apt update && sudo apt install --only-upgrade claude-desktop dans le terminal Cage.",
+  "拖动以移动位置，双击复位": "Glisser pour déplacer, double-cliquer pour réinitialiser la position",
+  "展开浮窗": "Déplier la fenêtre flottante",
+  "收起浮窗": "Replier la fenêtre flottante",
+  "浮窗「{0}」": "Fenêtre flottante « {0} »",
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et peut ouvrir dans le navigateur intégré : {0}.",
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et ne peut pas ouvrir de pages web."
 }

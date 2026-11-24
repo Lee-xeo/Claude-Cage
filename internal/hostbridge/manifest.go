@@ -63,9 +63,13 @@ func ValidSettingValue(value string) bool {
 	return len(value) <= SettingValueLimit && !strings.ContainsAny(value, "\x00\r\n")
 }
 
-// settingsSince is the first application version that reads settings; older
-// ones reject a manifest that has them.
-var settingsSince = [3]int{0, 2, 0}
+// settingsSince and floatingViewsSince are the first application version that
+// reads settings and view presentation fields; older ones reject manifests that
+// have them.
+var (
+	settingsSince      = [3]int{0, 2, 0}
+	floatingViewsSince = [3]int{0, 2, 0}
+)
 
 var settingEnv = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 
@@ -113,7 +117,20 @@ type MCPServer struct {
 	Command []string `json:"command"`
 }
 
-// View is a page of the plugin's own.
+// Presentation modes for a plugin view.
+const (
+	ViewPresentationPage     = "page"
+	ViewPresentationFloating = "floating"
+)
+
+const (
+	floatingViewMinWidth  = 220
+	floatingViewMaxWidth  = 720
+	floatingViewMinHeight = 100
+	floatingViewMaxHeight = 720
+)
+
+// View is a page or floating panel of the plugin's own.
 type View struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -124,6 +141,11 @@ type View struct {
 	Server string `json:"server,omitempty"`
 	// OpenURLs are the address patterns the page may ask to have opened.
 	OpenURLs []string `json:"openUrls,omitempty"`
+	// Presentation is "page" (default) or "floating" for a draggable overlay.
+	Presentation string `json:"presentation,omitempty"`
+	// Width and Height are optional initial CSS pixel dimensions for a floating view.
+	Width  int `json:"width,omitempty"`
+	Height int `json:"height,omitempty"`
 }
 
 // URIHandler hands links of one scheme to a tool.
@@ -282,6 +304,19 @@ func (m *Manifest) check() error {
 			return fmt.Errorf("views %s: icon must be a PNG or SVG file inside the plugin", view.ID)
 		case view.Server != "" && !slices.Contains(servers, view.Server):
 			return fmt.Errorf("views %s: server %q is not one of mcpServers", view.ID, view.Server)
+		case view.Presentation != "" && view.Presentation != ViewPresentationPage && view.Presentation != ViewPresentationFloating:
+			return fmt.Errorf("views %s: presentation must be page or floating", view.ID)
+		case (view.Width != 0 || view.Height != 0) && view.Presentation != ViewPresentationFloating:
+			return fmt.Errorf("views %s: width and height are only for floating views", view.ID)
+		case view.Width != 0 && (view.Width < floatingViewMinWidth || view.Width > floatingViewMaxWidth):
+			return fmt.Errorf("views %s: width must be between %d and %d", view.ID, floatingViewMinWidth, floatingViewMaxWidth)
+		case view.Height != 0 && (view.Height < floatingViewMinHeight || view.Height > floatingViewMaxHeight):
+			return fmt.Errorf("views %s: height must be between %d and %d", view.ID, floatingViewMinHeight, floatingViewMaxHeight)
+		}
+		if view.Presentation != "" || view.Width != 0 || view.Height != 0 {
+			if floor, ok := engineFloor(m.Engines.Cage); !ok || slices.Compare(floor[:], floatingViewsSince[:]) < 0 {
+				return fmt.Errorf("views %s: presentation needs engines.cage of at least %d.%d.%d", view.ID, floatingViewsSince[0], floatingViewsSince[1], floatingViewsSince[2])
+			}
 		}
 		for _, pattern := range view.OpenURLs {
 			if !validOpenURL(pattern) {

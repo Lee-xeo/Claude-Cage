@@ -107,10 +107,12 @@ Views run inside a `sandbox="allow-scripts"` iframe without `allow-same-origin`.
 - Only static files with allowed extensions (`.html`, `.js`, `.mjs`, `.css`, `.json`, `.txt`, `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.ico`, `.woff`, `.woff2`, `.ttf`, `.otf`, `.wasm`) up to 20 MiB each are served.
 
 ## JSON-RPC 2.0 Bridge (`window.parent.postMessage`)
-Call `ui/initialize` (`{"protocolVersion": 1}`) first. It returns `{protocolVersion, plugin, view, theme: {scheme, tokens}, locale, state}`.
+Call `ui/initialize` (`{"protocolVersion": 1}`) first. It returns `{protocolVersion, plugin, view, presentation, theme: {scheme, tokens}, locale, state}`.
+Set `"presentation": "floating"` (with optional `"width"` 220..720 and `"height"` 100..720) in `contributes.views[]` to open the view as a draggable translucent floating overlay instead of a full page.
 Available methods:
 - `tools/list`, `tools/call` (`{name, arguments}`)
 - `ui/setState` (`{state}`, max 64 KiB) to persist view state across reopen
+- `ui/resize` (`{width?, height?}`) to adjust a floating view's dimensions
 - `ui/notify` (`{message, tone?: "info"|"error"}`)
 - `ui/confirm` (`{title, message, confirmLabel?, danger?}`)
 - `ui/copy` (`{text}`, max 64 KiB)
@@ -773,7 +775,7 @@ def validate_manifest_dict(data: Any, expected_name: str) -> tuple[list[str], li
         if not isinstance(view, dict):
             errors.append(f"views[{idx}] must be an object")
             continue
-        unknown_v = sorted(set(view.keys()) - {"id", "title", "icon", "entry", "server", "openUrls"})
+        unknown_v = sorted(set(view.keys()) - {"id", "title", "icon", "entry", "server", "openUrls", "presentation", "width", "height"})
         if unknown_v:
             errors.append(f"views[{idx}] has unknown fields: {', '.join(unknown_v)}")
         vid = view.get("id")
@@ -799,6 +801,15 @@ def validate_manifest_dict(data: Any, expected_name: str) -> tuple[list[str], li
             open_urls = view["openUrls"]
             if not isinstance(open_urls, list) or not all(valid_open_url(u) for u in open_urls):
                 errors.append(f"views[{idx}].openUrls contains an invalid URL pattern")
+        vpresentation = view.get("presentation", "")
+        if vpresentation != "" and vpresentation not in ("page", "floating"):
+            errors.append(f"views[{idx}].presentation must be 'page' or 'floating'")
+        for dim, lo, hi in (("width", 220, 720), ("height", 100, 720)):
+            if dim in view:
+                if vpresentation != "floating":
+                    errors.append(f"views[{idx}].{dim} is only allowed when presentation is 'floating'")
+                elif not isinstance(view[dim], int) or isinstance(view[dim], bool) or not (lo <= view[dim] <= hi):
+                    errors.append(f"views[{idx}].{dim} must be an integer between {lo} and {hi}")
 
     if len(settings) > 20:
         errors.append("contributes.settings supports at most 20 items")

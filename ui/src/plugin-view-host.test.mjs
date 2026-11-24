@@ -50,8 +50,20 @@ test("a page must initialize first and then gets its plugin, theme and saved sta
   assert.equal(wrong.error.code, ERRORS.invalidParams);
   const ready = await page.handle(request(3, "ui/initialize", { protocolVersion: 1 }));
   assert.deepEqual(ready, { jsonrpc: "2.0", id: 3, result: {
-    protocolVersion: 1, plugin: "tailscale", view: "tailscale", theme: { scheme: "dark", tokens: { paper: "#111" } }, locale: "zh-CN", state: { query: "laptop" },
+    protocolVersion: 1, plugin: "tailscale", view: "tailscale", presentation: "page", theme: { scheme: "dark", tokens: { paper: "#111" } }, locale: "zh-CN", state: { query: "laptop" },
   } });
+});
+
+test("floating views expose presentation and clamp ui/resize dimensions", async () => {
+  const sizes = [];
+  const floating = host({ presentation: "floating", resize: next => sizes.push(next) });
+  const ready = await floating.handle(request(1, "ui/initialize", { protocolVersion: 1 }));
+  assert.equal(ready.result.presentation, "floating");
+  assert.equal((await floating.handle(request(2, "ui/resize", {}))).error.code, ERRORS.invalidParams);
+  assert.equal((await floating.handle(request(3, "ui/resize", { height: -10 }))).error.code, ERRORS.invalidParams);
+  assert.deepEqual((await floating.handle(request(4, "ui/resize", { width: 100, height: 999 }))).result, { width: 220, height: 720 });
+  assert.deepEqual((await floating.handle(request(5, "ui/resize", { height: 112.4 }))).result, { height: 112 });
+  assert.deepEqual(sizes, [{ width: 220, height: 720 }, { height: 112 }]);
 });
 
 test("tool calls go to the app with the page's arguments; pages without a server get none", async () => {

@@ -182,6 +182,9 @@ my-plugin/
 | `icon` | 否 | 格式同顶层 `icon`。目前侧栏显示的是插件的顶层图标，这个字段为以后预留 |
 | `server` | 否 | 页面可以调用的 MCP 服务的 `id`。省略表示纯静态页面 |
 | `openUrls` | 否 | 页面可以请求打开的地址模式，见下 |
+| `presentation` | 否 | 展示方式：`page`（默认，作为独立工作区页面打开）或 `floating`（作为可拖动、可收起的半透明毛玻璃浮窗悬浮在工作台上）。需要 `engines.cage` 至少为 `0.2.0` |
+| `width` | 否 | 仅 `presentation: "floating"` 可用：浮窗初始宽度（CSS 像素，范围 `220`–`720`），需要 `engines.cage` 至少为 `0.2.0` |
+| `height` | 否 | 仅 `presentation: "floating"` 可用：浮窗内容区初始高度（CSS 像素，范围 `100`–`720`），需要 `engines.cage` 至少为 `0.2.0` |
 
 清单里的文件路径不超过 200 个字符。
 
@@ -296,7 +299,7 @@ Cage 界面会按当前软件界面语言自动展示插件的名称与说明（
 
 | 方法 | 参数 | 结果 |
 | --- | --- | --- |
-| `ui/initialize` | `{"protocolVersion":1}` | `{"protocolVersion":1,"plugin","view","theme":{"scheme":"light"或"dark","tokens":{…}},"locale","state"}`。目前 `locale` 固定为 `zh-CN` |
+| `ui/initialize` | `{"protocolVersion":1}` | `{"protocolVersion":1,"plugin","view","presentation":"page"或"floating","theme":{"scheme":"light"或"dark","tokens":{…}},"locale","state"}`。`locale` 为当前工作台界面语言 |
 | `tools/list` | 无 | `{"tools":[{"name","description","inputSchema"}]}` |
 | `tools/call` | `{"name","arguments":{…}}` | MCP 的调用结果：`{"content":[…],"structuredContent"?,"isError"?}`。工具名不超过 200 个字符 |
 | `ui/openUrl` | `{"url"}` | `{}`。地址必须匹配清单的 `openUrls`，不超过 4096 个字符，在应用的内置浏览器里打开 |
@@ -304,6 +307,7 @@ Cage 界面会按当前软件界面语言自动展示插件的名称与说明（
 | `ui/copy` | `{"text"}` | `{}`。不超过 64 KiB |
 | `ui/notify` | `{"message","tone"?:"info"或"error"}` | `{}`。不超过 500 个字符 |
 | `ui/setState` | `{"state":<任意 JSON>}` | `{}`。序列化后不超过 64 KiB，超过时返回 -32002。下次 `ui/initialize` 时在 `state` 里取回。状态保存在当前窗口，不跨设备同步 |
+| `ui/resize` | `{"width"?,"height"?}` | 调整 `floating` 浮窗的宽高（宽度钳位到 `220`–`720`，高度钳位到 `80`–`720`，并返回生效的尺寸）；非浮窗视图仅校验并返回钳位值 |
 
 `theme.tokens` 是工作台当前主题的颜色，名称为 `paper`、`ink`、`strong`、`muted`、`line`、`chrome`、`hover`、`selected`、`accent`、`link`、`focus`、`input`、`button`、`button-ink`、`success`、`danger`。值是 CSS 颜色，主题未定义的名称不会出现。
 
