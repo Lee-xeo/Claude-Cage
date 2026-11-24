@@ -745,8 +745,14 @@ async function resizeDisplay(width, height, density) {
   const name = `cage-${width}x${height}`;
   if (displaySize === name) {
     // A viewer attaching at an unchanged size still restores the full rate.
-    await runFile("/usr/bin/xrandr", ["--output", "VNC-0", "--mode", name]).catch(() => {});
-    return result;
+    // A display that restarted no longer has this mode and is set up again,
+    // instead of keeping its default size behind a successful reply.
+    try {
+      await runFile("/usr/bin/xrandr", ["--output", "VNC-0", "--mode", name]);
+      return result;
+    } catch {
+      displaySize = "";
+    }
   }
   const { stdout } = await runFile("/usr/bin/xrandr", ["--query"]);
   if (!stdout.includes(name)) {

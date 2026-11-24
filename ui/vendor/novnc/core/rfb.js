@@ -14,7 +14,7 @@ import { dragThreshold, isMac, supportsWebCodecsH264Decode } from './util/browse
 import { clientToElement } from './util/element.js';
 import { setCapture } from './util/events.js';
 import EventTargetMixin from './util/eventtarget.js';
-import Display from "./display.js";
+import CageDisplay from "./cage-display.js";
 import CageBrowserDisplay from "./cage-browser-display.js";
 import CageWheel, { cageWheelCapability, cageWheelEncoding, cageWheelNotched, cageWheelPacket } from "./cage-wheel.js";
 import Inflator from "./inflator.js";
@@ -272,7 +272,7 @@ export default class RFB extends EventTargetMixin {
         // NB: nothing that needs explicit teardown should be done
         // before this point, since this can throw an exception
         try {
-            const DisplayClass = options.cageBrowserDisplay ? CageBrowserDisplay : Display;
+            const DisplayClass = options.cageBrowserDisplay ? CageBrowserDisplay : CageDisplay;
             this._display = new DisplayClass(this._canvas);
         } catch (exc) {
             Log.Error("Display exception: " + exc);
@@ -358,6 +358,10 @@ export default class RFB extends EventTargetMixin {
         this._clipViewport = viewport;
         this._updateClip();
     }
+
+    // The guest's framebuffer size. Another viewer or a restarted display may
+    // leave it different from the size this viewer requested.
+    get cageFramebufferSize() { return { width: this._fbWidth, height: this._fbHeight }; }
 
     get scaleViewport() { return this._scaleViewport; }
     set scaleViewport(scale) {

@@ -274,9 +274,10 @@ func TestLimaLifecycle(t *testing.T) {
 	}
 }
 
-// Start gives a VM, made before or not, the rule leaving the guest's
-// ephemeral ports unforwarded: on 127.0.0.1, 0.0.0.0, ::, TCP or UDP, as
-// Lima's forwarder reads it. Other ports are forwarded still.
+// Start gives a VM, made before or not, the rules leaving the guest's
+// ephemeral ports, the host tools port and the guest-only service ports
+// unforwarded: on 127.0.0.1, 0.0.0.0, ::, TCP or UDP, as Lima's forwarder
+// reads it. Other ports are forwarded still.
 func TestLimaEphemeralPorts(t *testing.T) {
 	ctx := context.Background()
 	l := newTestLima(t)
@@ -300,7 +301,7 @@ func TestLimaEphemeralPorts(t *testing.T) {
 	if err != nil || inst.Config == nil {
 		t.Fatalf("inspect: %v %v", err, inst.Errors)
 	}
-	if n := len(inst.Config.PortForwards); n != 3 || inst.Config.PortForwards[0].GuestPort != 40000 {
+	if n := len(inst.Config.PortForwards); n != 5 || inst.Config.PortForwards[0].GuestPort != 40000 {
 		t.Errorf("port forwards: %+v", inst.Config.PortForwards)
 	}
 	def := limatype.PortForward{}
@@ -316,6 +317,8 @@ func TestLimaEphemeralPorts(t *testing.T) {
 		{Protocol: "tcp", Ip: "::", Port: 60999},
 		{Protocol: "udp", Ip: "0.0.0.0", Port: 50000},
 		{Protocol: "tcp", Ip: "127.0.0.1", Port: 18962},
+		{Protocol: "tcp", Ip: "127.0.0.1", Port: 18080},
+		{Protocol: "tcp", Ip: "127.0.0.1", Port: 16080},
 	} {
 		got = nil
 		fw.OnEvent(cctx, nil, &api.Event{AddedLocalPorts: []*api.IPPort{p}})
@@ -329,12 +332,18 @@ func TestLimaEphemeralPorts(t *testing.T) {
 	if len(got) != 1 || got[0].Type == events.PortForwardEventNotForwarding {
 		t.Errorf("32767: %+v", got)
 	}
+	// The host's VNC reaches the guest's 15900 through Lima: forwarded.
+	got = nil
+	fw.OnEvent(cctx, nil, &api.Event{AddedLocalPorts: []*api.IPPort{{Protocol: "tcp", Ip: "127.0.0.1", Port: 15900}}})
+	if len(got) != 1 || got[0].Type == events.PortForwardEventNotForwarding {
+		t.Errorf("15900: %+v", got)
+	}
 
 	// Once there, not written again.
 	y := filepath.Join(inst.Dir, "lima.yaml")
 	before, _ := os.ReadFile(y)
 	l.Start(ctx, "p-12345678", io.Discard)
-	if after, _ := os.ReadFile(y); string(after) != string(before) || strings.Count(string(after), "ignore: true") != 2 {
+	if after, _ := os.ReadFile(y); string(after) != string(before) || strings.Count(string(after), "ignore: true") != 4 {
 		t.Errorf("rewritten:\n%s", after)
 	}
 }

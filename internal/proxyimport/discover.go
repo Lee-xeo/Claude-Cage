@@ -118,6 +118,12 @@ func Locations(platform, home, dataHome, configHome string) []Location {
 		out = append(out, Location{"Clash Nyanpasu", legacy, Nyanpasu, ""})
 	}
 	if platform == "darwin" {
+		// ClashX Meta keeps its YAML configs at the top level of
+		// ~/.config/clash.meta; it does not read XDG_CONFIG_HOME.
+		out = append(out, Location{"ClashX Meta", filepath.Join(home, ".config", "clash.meta"), Plain, ""})
+		if custom := filepath.Join(configHome, "clash.meta"); custom != filepath.Join(home, ".config", "clash.meta") {
+			out = append(out, Location{"ClashX Meta", custom, Plain, ""})
+		}
 		out = append(out, Location{"ShadowsocksX-NG", filepath.Join(home, ".ShadowsocksX-NG"), Plain, ""})
 		out = append(out, surgeProfileDirectories(home)...)
 	}

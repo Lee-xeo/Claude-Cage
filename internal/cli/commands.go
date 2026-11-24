@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -53,8 +54,8 @@ func endedBySignal(parent context.Context) (ctx context.Context, stop func()) {
 // failed when this run made the VM (a VM that was there before is not
 // deleted for a start that did not go through). A kill or a closed terminal
 // (SIGTERM, SIGHUP) ends the command and still deletes. --scratch: see
-// scratch.
-func (e *app) inVM(ctx context.Context, opts VMOpts, fn session) int {
+// scratch. tty is whether the command asks for a terminal: see resourceOut.
+func (e *app) inVM(ctx context.Context, opts VMOpts, tty bool, fn session) int {
 	dir, err := vmname.AbsDir("")
 	if err != nil {
 		fmt.Fprintf(e.io.Stderr, "Error: %v\n", err)
@@ -64,7 +65,7 @@ func (e *app) inVM(ctx context.Context, opts VMOpts, fn session) int {
 	ctx, stop := endedBySignal(ctx)
 	defer stop()
 	if opts.Scratch {
-		return e.scratch(ctx, cleanup, opts, dir, fn)
+		return e.scratch(ctx, cleanup, opts, dir, tty, fn)
 	}
 	s := &start{app: e, ctx: ctx, opts: opts, dir: dir, name: e.instanceName(dir)}
 	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
@@ -88,7 +89,7 @@ func (e *app) inVM(ctx context.Context, opts VMOpts, fn session) int {
 	st := 1
 	started := s.ensureRunning() == nil
 	if started {
-		s.printResources()
+		s.printResources(e.resourceOut(tty))
 		// A Ctrl-C is the command's, in the VM, as a shell leaves it to the job
 		// it waits on: this run goes on to --rm and the terminal's reset.
 		sig := make(chan os.Signal, 1)
@@ -103,15 +104,26 @@ func (e *app) inVM(ctx context.Context, opts VMOpts, fn session) int {
 	return st
 }
 
-// printResources says what the VM has, and when the base it was cloned
-// from was built: its agents and packages are that old.
-func (s *start) printResources() {
+// printResources says, on w, what the VM has, and when the base it was
+// cloned from was built: its agents and packages are that old.
+func (s *start) printResources(w io.Writer) {
 	if inst, err := s.get(s.name); err == nil && inst != nil {
-		fmt.Fprintf(s.io.Stdout, "  Resources: CPUs: %d, Memory: %d GiB, Disk: %d GiB\n", inst.CPUs, inst.Memory>>30, inst.Disk>>30)
+		fmt.Fprintf(w, "  Resources: CPUs: %d, Memory: %d GiB, Disk: %d GiB\n", inst.CPUs, inst.Memory>>30, inst.Disk>>30)
 	}
 	if built, err := strconv.ParseInt(s.state.ReadMarker(state.VersionOf, s.name), 10, 64); err == nil && built >= 0 {
-		fmt.Fprintf(s.io.Stdout, "  Base VM: built %s\n", time.Unix(built, 0).Format("2006-01-02"))
+		fmt.Fprintf(w, "  Base VM: built %s\n", time.Unix(built, 0).Format("2006-01-02"))
 	}
+}
+
+// resourceOut is where a session's resource lines go: standard output only
+// for a command that asks for a terminal and has one there. Otherwise they
+// go to standard error, so that standard output is the command's own, for a
+// script or a pipe to read.
+func (e *app) resourceOut(tty bool) io.Writer {
+	if f, ok := e.io.Stdout.(*os.File); tty && ok && ui.IsTerminal(f) {
+		return e.io.Stdout
+	}
+	return e.io.Stderr
 }
 
 // lima runs args in the VM through a login zsh, from the project: agent PATH
@@ -135,7 +147,18 @@ func (s *start) limaIn(workdir string, tty bool, args ...string) int {
 	code, err := b.Shell(s.ctx, s.name, vm.ShellOpts{
 		Workdir: workdir,
 		Args: append([]string{"zsh", "-l", "-c",
-			`case "$1" in *=*|*/*) ;; *) command -v -- "$1" >/dev/null || { print -r -- "agent-vm: $1 is not installed in this VM." >&2; exit 127; } ;; esac; exec env -- "$@"`,
+			`case "$1" in
+				*=*|*/*) ;;
+				*) if ! command -v -- "$1" >/dev/null; then
+					case "$1" in
+						*[[:space:]]*)
+							print -r -- "agent-vm: Executable not found. Pass the executable and arguments separately (run echo hi), or use an explicit shell (run bash -lc 'echo hi | cat')." >&2 ;;
+						*) print -r -- "agent-vm: $1 is not installed in this VM." >&2 ;;
+					esac
+					exit 127
+				fi ;;
+			esac
+			exec env -- "$@"`,
 			"agent-vm"}, args...),
 		Stdin: s.io.Stdin, Stdout: s.io.Stdout, Stderr: s.io.Stderr, Interactive: tty,
 	})
@@ -171,7 +194,7 @@ func (e *app) agentCmd(ctx context.Context, agent string, opts VMOpts, args []st
 		return exitUsage
 	}
 	cmd := append(append([]string(nil), a.cmd...), rest...)
-	return e.inVM(ctx, opts, func(s *start) int { return s.lima(a.tty || tty, cmd...) })
+	return e.inVM(ctx, opts, a.tty || tty, func(s *start) int { return s.lima(a.tty || tty, cmd...) })
 }
 
 // `run [--tty] [--workdir DIR] <command> [args]`: --tty gives the command a
@@ -192,7 +215,7 @@ func (e *app) runCmd(ctx context.Context, opts VMOpts, args []string) int {
 		fmt.Fprintln(e.io.Stderr, "Usage: agent-vm run [--tty] [--workdir DIR] <command> [args]")
 		return exitUsage
 	}
-	return e.inVM(ctx, opts, func(s *start) int {
+	return e.inVM(ctx, opts, tty, func(s *start) int {
 		if workdir != "" {
 			return s.limaIn(workdir, tty, rest...)
 		}
@@ -314,7 +337,7 @@ func (e *app) shellCmd(ctx context.Context, opts VMOpts, args []string) int {
 			return exitUsage
 		}
 	}
-	return e.inVM(ctx, opts, func(s *start) int {
+	return e.inVM(ctx, opts, command == "", func(s *start) int {
 		if command != "" {
 			return s.shell(false, "zsh", "-l", "-c", command)
 		}
@@ -356,7 +379,7 @@ func (s *start) shell(tty bool, args ...string) int {
 // deletion. A run killed outright leaves its VM recorded with its pid, and
 // the next scratch run deletes it. cleanup is the context of the deletions,
 // which a kill of this run (ctx) does not end.
-func (e *app) scratch(ctx, cleanup context.Context, opts VMOpts, dir string, fn session) int {
+func (e *app) scratch(ctx, cleanup context.Context, opts VMOpts, dir string, tty bool, fn session) int {
 	dead, unknown := e.scratchLeftovers()
 	for _, left := range dead {
 		fmt.Fprintf(e.io.Stdout, "Deleting scratch VM '%s', left by a run that did not finish...\n", left)
@@ -378,7 +401,7 @@ func (e *app) scratch(ctx, cleanup context.Context, opts VMOpts, dir string, fn 
 	s := &start{app: e, ctx: ctx, opts: opts, dir: dir, name: name}
 	st := 1
 	if s.ensureRunning() == nil {
-		s.printResources()
+		s.printResources(e.resourceOut(tty))
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt)
 		st = fn(s)

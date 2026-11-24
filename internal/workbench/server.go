@@ -527,6 +527,8 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/desktop-instances/{id}/metadata", s.updateAccountDesktopMetadata)
 	mux.HandleFunc("GET /api/desktop-instances/{id}/{action}", s.accountDesktop)
 	mux.HandleFunc("POST /api/desktop-instances/{id}/{action}", s.accountDesktop)
+	mux.HandleFunc("GET /api/desktop-apps/{plugin}/{app}/{action}", s.desktopApp)
+	mux.HandleFunc("POST /api/desktop-apps/{plugin}/{app}/{action}", s.desktopApp)
 	mux.HandleFunc("GET /api/claude-desktop", s.claudeDesktopStatus)
 	mux.HandleFunc("GET /api/claude-desktop/vnc-credentials", s.claudeDesktopCredentials)
 	mux.HandleFunc("GET /api/claude-desktop/vnc", s.claudeDesktopVNC)

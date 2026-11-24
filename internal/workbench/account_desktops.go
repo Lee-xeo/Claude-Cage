@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-
+	"strings"
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
@@ -34,11 +34,18 @@ func (s *Server) accountDesktopsSupported() bool {
 
 func (s *Server) accountDesktop(w http.ResponseWriter, r *http.Request) {
 	id, action := r.PathValue("id"), r.PathValue("action")
-	if !validClaudeID(id) || !(r.Method == "GET" && (action == "vnc" || action == "vnc-credentials" || action == "clipboard" || action == "input") || r.Method == "POST" && (action == "start" || action == "stop")) {
+	if !validClaudeID(id) || !(r.Method == "GET" && (action == "vnc" || action == "vnc-credentials" || action == "clipboard" || action == "input") || r.Method == "POST" && (action == "start" || action == "stop" || action == "resize")) {
 		http.NotFound(w, r)
 		return
 	}
-	if r.Method == "POST" {
+	var size displaySize
+	var scale string
+	if action == "resize" {
+		var ok bool
+		if size, scale, ok = readDisplaySize(w, r); !ok {
+			return
+		}
+	} else if r.Method == "POST" {
 		var input struct{}
 		if !readJSON(w, r, &input) {
 			return
@@ -79,13 +86,27 @@ func (s *Server) accountDesktop(w http.ResponseWriter, r *http.Request) {
 	case "vnc-credentials":
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		b, err := s.guest(ctx, "systemctl is-active --quiet desktop-"+id+".service && cat "+run+`/password && { if test -S "$HOME/.local/share/desktop-profiles/`+id+`/home/.cache/cage-input/input.sock"; then printf 1; else printf 0; fi; }`)
-		if err != nil || len(b) != 9 || (b[8] != '0' && b[8] != '1') {
+		// A session with a settings manager renders at the density its viewer
+		// names. One started by an earlier version keeps 96 DPI: its viewer
+		// sizes the display in CSS pixels.
+		b, err := s.guest(ctx, "systemctl is-active --quiet desktop-"+id+".service && cat "+run+`/password && { if test -S "$HOME/.local/share/desktop-profiles/`+id+`/home/.cache/cage-input/input.sock"; then printf 1; else printf 0; fi; } && if test -f `+run+`/xsettings.pid; then printf ' %s' "$(cat `+run+`/base-display-scale 2>/dev/null)"; fi`)
+		reply, ok := accountDesktopCredentials(b)
+		if err != nil || !ok {
 			http.Error(w, "此 Desktop 尚未启动", 409)
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		jsonReply(w, map[string]any{"password": string(b[:8]), "native_input": b[8] == '1'})
+		jsonReply(w, reply)
+		return
+	case "resize":
+		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		defer cancel()
+		output, err := s.guestQuick(ctx, accountDesktopResizeScript(id, size.Width, size.Height, scale))
+		if err != nil {
+			http.Error(w, "Desktop 画面尺寸未能调整", 502)
+			return
+		}
+		displayResizeReply(w, size, scale, output)
 		return
 	}
 	s.launchRequest(w, r, "desktop-instance-"+action, func() error {
@@ -119,6 +140,37 @@ func (s *Server) accountDesktop(w http.ResponseWriter, r *http.Request) {
 		}
 		return s.changeAccountDesktop(s.operationContext(), id, owner, action)
 	})
+}
+
+// accountDesktopCredentials reads the password, whether native input is
+// available and, for a session that follows its viewer, a space and the
+// configured density.
+func accountDesktopCredentials(b []byte) (map[string]any, bool) {
+	if len(b) < 9 || (b[8] != '0' && b[8] != '1') || len(b) > 9 && b[9] != ' ' {
+		return nil, false
+	}
+	dynamic, density := len(b) > 9, 1.0
+	if dynamic {
+		density = 2
+		if strings.TrimSpace(string(b[10:])) == "1.5" {
+			density = 1.5
+		}
+	}
+	return map[string]any{"password": string(b[:8]), "native_input": b[8] == '1', "display_scale": density, "dynamic_scale": dynamic}, true
+}
+
+// The instance's X display is in its private /tmp and, with a dedicated
+// network, in its own network namespace: the mode commands run in both, as
+// the workspace user. id is a validated instance ID.
+func accountDesktopResizeScript(id string, wid, hei int, scale string) string {
+	run := "/run/desktop-" + id
+	prelude := `pid=$(systemctl show --property=MainPID --value desktop-` + id + `.service)
+test "${pid:-0}" -gt 1
+display=$(cat ` + run + `/display)
+case $display in ''|*[!0-9]*) exit 1 ;; esac
+`
+	enter := `sudo -n nsenter --target "$pid" --mount --net --setuid "$(id -u)" --setgid "$(id -g)" -- /usr/bin/env DISPLAY=":$display" XAUTHORITY=` + run + `/Xauthority /bin/bash -se`
+	return displayResizeScript(run, prelude, "", enter, wid, hei, scale)
 }
 
 func (s *Server) changeAccountDesktop(parent context.Context, instance string, account claudeAccount, action string) error {

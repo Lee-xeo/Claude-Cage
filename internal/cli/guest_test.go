@@ -105,6 +105,38 @@ func TestGuestRun(t *testing.T) {
 	if code := se.run("run", "V=x", "sh", "-c", "echo v=$V"); code != 0 || !strings.Contains(se.out(), "v=x") {
 		t.Errorf("assignment: %d %s", code, se.out())
 	}
+	// Without a terminal, standard output is the command's alone: the
+	// resource lines are on standard error.
+	if code := se.run("run", "printf", "%s\n", "cage-check"); code != 0 || se.stdout.String() != "cage-check\n" ||
+		!strings.Contains(se.stderr.String(), "  Resources: ") || !strings.Contains(se.stderr.String(), "  Base VM: built ") {
+		t.Errorf("stdout: %d %q, stderr: %q", code, se.stdout.String(), se.stderr.String())
+	}
+}
+
+func TestGuestRunCommandString(t *testing.T) {
+	se := newStartEnv(t)
+	se.base()
+	localGuest(t, se)
+
+	if code := se.run("run", "echo hi | cat"); code != 127 ||
+		!strings.Contains(se.out(), "Pass the executable and arguments separately") ||
+		!strings.Contains(se.out(), "run bash -lc 'echo hi | cat'") {
+		t.Fatalf("quoted command string: %d %s", code, se.out())
+	}
+	if code := se.run("run", "printf", "%s\n", "two words | cat"); code != 0 ||
+		!strings.Contains(se.out(), "two words | cat\n") {
+		t.Fatalf("literal argument: %d %s", code, se.out())
+	}
+	if code := se.run("run", "bash", "-lc", "echo shell-output | cat"); code != 0 ||
+		!strings.Contains(se.out(), "shell-output\n") {
+		t.Fatalf("explicit shell: %d %s", code, se.out())
+	}
+	if err := os.WriteFile(filepath.Join(se.proj, "my script"), []byte("#!/bin/sh\necho script-output\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code := se.run("run", "./my script"); code != 0 || !strings.Contains(se.out(), "script-output\n") {
+		t.Fatalf("path containing spaces: %d %s", code, se.out())
+	}
 }
 
 // A project runtime script that is a link out of the project runs in the
