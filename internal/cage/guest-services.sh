@@ -46,14 +46,28 @@ TimeoutStopSec=15
 UNIT
 printf 'cage-browser ALL=(root) NOPASSWD: /usr/bin/systemctl restart cage-editor.service\n' | sudo tee /etc/sudoers.d/cage-editor >/dev/null
 sudo chmod 0440 /etc/sudoers.d/cage-editor
+# Every shell, and every program that reads a login shell's environment,
+# takes only the standard time and locale settings from the service
+# environment. Values the services use internally stay with those services.
 sudo tee /etc/profile.d/claude-cage.sh >/dev/null <<'SCRIPT'
-if [ -f /etc/claude-cage/environment ]; then
-  set -a
-  . /etc/claude-cage/environment
-  set +a
+if [ -r /etc/claude-cage/environment ]; then
+  while IFS='=' read -r env_key env_value || [ -n "$env_key" ]; do
+    case $env_key in
+      TZ|LANG|LC_ALL) export "$env_key=$env_value" ;;
+    esac
+  done < /etc/claude-cage/environment
+  unset env_key env_value
+fi
+unset CAGE_LANGUAGE
+# PulseAudio clients find the shared server in the system client configuration.
+if [ "${PULSE_SERVER:-}" = unix:/run/cage-audio/native ]; then
+  unset PULSE_SERVER
 fi
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY FTP_PROXY NO_PROXY http_proxy https_proxy all_proxy ftp_proxy no_proxy
-export BROWSER=/usr/local/bin/cage-open
+# Keep a browser opener handed down by the launcher; replace only the old path.
+case ${BROWSER:-/usr/local/bin/cage-open} in
+  /usr/local/bin/cage-open) export BROWSER=/usr/local/bin/xdg-open ;;
+esac
 SCRIPT
 if ! grep -q '/etc/profile.d/claude-cage.sh' /etc/zsh/zshenv; then
   echo '. /etc/profile.d/claude-cage.sh' | sudo tee -a /etc/zsh/zshenv >/dev/null
