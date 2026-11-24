@@ -3246,5 +3246,17 @@
   "收起浮窗": "Contraer ventana flotante",
   "浮窗「{0}」": "Ventana flotante «{0}»",
   "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Abre una ventana flotante semitransparente y arrastrable sobre el espacio de trabajo. Se ejecuta en un marco aislado, solo usa las herramientas de este complemento y puede abrir en el navegador integrado: {0}.",
-  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Abre una ventana flotante semitransparente y arrastrable sobre el espacio de trabajo. Se ejecuta en un marco aislado, solo usa las herramientas de este complemento y no puede abrir páginas web."
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Abre una ventana flotante semitransparente y arrastrable sobre el espacio de trabajo. Se ejecuta en un marco aislado, solo usa las herramientas de este complemento y no puede abrir páginas web.",
+  "测试加密 DNS": "Probar DNS cifrado",
+  "测试或修改加密 DNS": "Probar o cambiar DNS cifrado",
+  "经所选节点解析 {0}": "Resolviendo {0} mediante el nodo seleccionado",
+  "可用 · {0}": "Disponible · {0}",
+  "TLS 握手失败": "Error en el intercambio TLS",
+  "连接超时": "Tiempo de conexión agotado",
+  "返回错误 · {0}": "Respuesta de error · {0}",
+  "未返回可用地址": "No se devolvió una dirección utilizable",
+  "已保存加密 DNS，可以继续安装。": "DNS cifrado guardado; ya puede continuar con la instalación.",
+  "请先选择并应用代理节点，再测试加密 DNS。": "Seleccione y aplique primero un nodo de proxy antes de probar el DNS cifrado.",
+  "正在测试加密 DNS…": "Probando DNS cifrado…",
+  "正在保存加密 DNS…": "Guardando DNS cifrado…"
 }

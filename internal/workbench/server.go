@@ -473,6 +473,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/appearance", s.saveAppearance)
 	mux.HandleFunc("GET /api/appearance/codex", s.codexAppearance)
 	mux.HandleFunc("POST /api/settings/probe", s.probe)
+	mux.HandleFunc("POST /api/settings/dns-check", s.checkDNS)
 	mux.HandleFunc("GET /api/proxy", s.proxyStatus)
 	mux.HandleFunc("GET /api/proxy/local-configs", s.proxyLocalConfigs)
 	mux.HandleFunc("POST /api/proxy/delay", s.proxyDelay)
@@ -880,6 +881,26 @@ func (s *Server) proposedWithOptions(w http.ResponseWriter, r *http.Request) (sa
 	}
 	return savedProfile{c, p}, input.SaveStaticDraft, true
 }
+
+var checkDNSFunc = cage.CheckDNS
+
+func (s *Server) checkDNS(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.proposed(w, r)
+	if !ok {
+		return
+	}
+	if err := v.Config.RequireManagedProxy(s.profile); err != nil {
+		requestError(w, err)
+		return
+	}
+	result, err := checkDNSFunc(r.Context(), v.Config)
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	jsonReply(w, result)
+}
+
 func (s *Server) probe(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.proposed(w, r)
 	if !ok {

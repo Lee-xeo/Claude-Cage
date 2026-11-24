@@ -3246,5 +3246,17 @@
   "收起浮窗": "Laab daaqadda sabbeysa",
   "浮窗「{0}」": "Daaqadda sabbeysa \"{0}\"",
   "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, waxayna biraawsarka gudaha ka furi kartaa: {0}.",
-  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, mana furi karto bogag internet."
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, mana furi karto bogag internet.",
+  "测试加密 DNS": "Tijaabi DNS la sireeyay",
+  "测试或修改加密 DNS": "Tijaabi ama beddel DNS la sireeyay",
+  "经所选节点解析 {0}": "Xallinta {0} iyadoo loo marayo node-ka la doortay",
+  "可用 · {0}": "La heli karo · {0}",
+  "TLS 握手失败": "Is-gacan-qaadka TLS wuu fashilmay",
+  "连接超时": "Waqtiga xidhiidhka wuu dhammaaday",
+  "返回错误 · {0}": "Jawaab khalad ah · {0}",
+  "未返回可用地址": "Ciwaan la adeegsan karo lama soo celin",
+  "已保存加密 DNS，可以继续安装。": "DNS la sireeyay waa la kaydiyay, waxaad sii wadi kartaa rakibidda.",
+  "请先选择并应用代理节点，再测试加密 DNS。": "Fadlan marka hore dooro oo codso node-ka proxy ka hor intaadan tijaabin DNS la sireeyay.",
+  "正在测试加密 DNS…": "Waxaa la tijaabinayaa DNS la sireeyay…",
+  "正在保存加密 DNS…": "Waxaa la kaydinayaa DNS la sireeyay…"
 }

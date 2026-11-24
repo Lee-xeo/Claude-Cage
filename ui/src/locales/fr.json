@@ -3246,5 +3246,17 @@
   "收起浮窗": "Replier la fenêtre flottante",
   "浮窗「{0}」": "Fenêtre flottante « {0} »",
   "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et peut ouvrir dans le navigateur intégré : {0}.",
-  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et ne peut pas ouvrir de pages web."
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et ne peut pas ouvrir de pages web.",
+  "测试加密 DNS": "Tester le DNS chiffré",
+  "测试或修改加密 DNS": "Tester ou modifier le DNS chiffré",
+  "经所选节点解析 {0}": "Résolution de {0} via le nœud sélectionné",
+  "可用 · {0}": "Disponible · {0}",
+  "TLS 握手失败": "Échec de la négociation TLS",
+  "连接超时": "Délai de connexion dépassé",
+  "返回错误 · {0}": "Réponse d'erreur · {0}",
+  "未返回可用地址": "Aucune adresse utilisable renvoyée",
+  "已保存加密 DNS，可以继续安装。": "DNS chiffré enregistré, vous pouvez continuer l'installation.",
+  "请先选择并应用代理节点，再测试加密 DNS。": "Sélectionnez et appliquez d'abord un nœud de proxy avant de tester le DNS chiffré.",
+  "正在测试加密 DNS…": "Test du DNS chiffré…",
+  "正在保存加密 DNS…": "Enregistrement du DNS chiffré…"
 }
