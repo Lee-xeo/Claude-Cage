@@ -215,6 +215,20 @@ reality-opts:
 
 这是节点内的配置片段，需放回完整的 Clash/Mihomo YAML 后重新导入、应用。保留原配置，每次只调整这一项，再重复相同的 HTTPS 与出口检查。部分节点在启用此项后可以恢复连接；请按原节点与服务端要求使用，不要对所有 REALITY 节点无条件添加或重写参数。若仍失败，保留日志继续排查，不能仅凭该错误判断服务端版本或设置，也不要通过关闭证书校验、放宽出口规则或启用直连回退处理。
 
+### TLS 节点无 client-fingerprint 时握手超时
+
+部分 VMess、VLESS、Trojan 等开启 `tls: true`（常见于 `network: grpc` 等 TCP 类传输）且**未设置 `client-fingerprint`** 的节点，在较旧版本 Mihomo（如 Go 1.22 构建的 v1.18.x）上可正常连通，但在 Cage 内置的 Go 1.26 构建的 Mihomo（v1.19.33 及以上）上会出现核心日志持续报 `connect error: context deadline exceeded`、出口探测全部超时且外网保持关闭的情况。
+
+这是因为 Go 1.26 默认在 TLS 握手中携带后量子密钥交换（X25519MLKEM768），导致 ClientHello 报文体积更大，部分节点服务端或中间链路会将其丢弃。设置中的「TLS ClientHello 分段传输兼容模式」作用于代理隧道内的目标网站 HTTPS 握手，不会改写内置核心连接外层代理节点时的 TLS 指纹。
+
+遇到该现象时，可在导入的 Clash/Mihomo YAML 中仅对受影响节点显式补充：
+
+```yaml
+client-fingerprint: safari
+```
+
+若 `safari` 仍不适用，可改试 `firefox`（部分链路下 `chrome` 与 `random` 仍可能触发相同的大 ClientHello 丢包问题）。保存修改后在代理页刷新或重新导入该来源并重新应用节点，再重新运行出口探测与完整网络检查，确认出口 IP 与全部关键检查均通过。请仅按需为受影响节点添加，不要批量改写所有节点，也不要通过关闭证书校验、放宽出口规则或启用直连回退绕过。
+
 ## 通过 Tailscale 私网使用 SSH
 
 从侧栏「浏览器」下方打开「Tailscale」，在 Cage 浏览器授权后，可让本机与 Cage 环境通过私网双向 SSH。连接步骤、公钥和本机 SSH 服务要求见 [Tailscale 与 SSH 私网](tailscale.md)。

@@ -553,8 +553,8 @@ func TestExitProbeClassifiesTLSHandshakeEOFAndTimeout(t *testing.T) {
 	}()
 	eofServices := []exitProbeService{{id: "eof", name: "EOF 服务", endpoint: "https://" + eofLn.Addr().String()}}
 	ip, err := probeExitIPServices(context.Background(), &http.Client{Timeout: 2 * time.Second}, eofServices, time.Minute, "")
-	if ip != "" || !errors.Is(err, ErrTLSHandshakeFailed) || errors.Is(err, ErrProxyConnectFailed) || errors.Is(err, ErrExitProbeTimeout) || !strings.Contains(err.Error(), "TLS 握手失败") {
-		t.Fatalf("TLS EOF expected ErrTLSHandshakeFailed, got ip=%q err=%v", ip, err)
+	if ip != "" || !errors.Is(err, ErrTLSHandshakeFailed) || errors.Is(err, ErrProxyConnectFailed) || errors.Is(err, ErrExitProbeTimeout) || !strings.Contains(err.Error(), "TLS 握手失败") || !strings.Contains(err.Error(), "client-fingerprint: safari") {
+		t.Fatalf("TLS EOF expected ErrTLSHandshakeFailed with client-fingerprint hint, got ip=%q err=%v", ip, err)
 	}
 
 	// Server that accepts TCP and stalls during TLS handshake -> TLS handshake timeout.
@@ -579,8 +579,8 @@ func TestExitProbeClassifiesTLSHandshakeEOFAndTimeout(t *testing.T) {
 	}()
 	stallServices := []exitProbeService{{id: "tls-stall", name: "握手超时服务", endpoint: "https://" + stallLn.Addr().String()}}
 	ip, err = probeExitIPServices(context.Background(), &http.Client{Timeout: 120 * time.Millisecond}, stallServices, time.Minute, "")
-	if ip != "" || !errors.Is(err, ErrTLSHandshakeFailed) || !errors.Is(err, ErrExitProbeTimeout) || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "TLS 握手超时") {
-		t.Fatalf("TLS stall expected ErrTLSHandshakeFailed + ErrExitProbeTimeout, got ip=%q err=%v", ip, err)
+	if ip != "" || !errors.Is(err, ErrTLSHandshakeFailed) || !errors.Is(err, ErrExitProbeTimeout) || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "TLS 握手超时") || !strings.Contains(err.Error(), "client-fingerprint: safari") {
+		t.Fatalf("TLS stall expected ErrTLSHandshakeFailed + ErrExitProbeTimeout with client-fingerprint hint, got ip=%q err=%v", ip, err)
 	}
 }
 
@@ -613,8 +613,8 @@ func TestExitProbeTimeoutChecksWhetherTheProxyReachesTheInternet(t *testing.T) {
 		t.Fatalf("reachable proxy must report blocked echo services: checks=%d err=%v", checks.Load(), err)
 	}
 	err = probe(stalled.URL)
-	if errors.Is(err, ErrExitProbeBlocked) || !strings.Contains(err.Error(), "节点可能无法连通") {
-		t.Fatalf("stalled reachability check must point at the node: %v", err)
+	if errors.Is(err, ErrExitProbeBlocked) || !strings.Contains(err.Error(), "节点可能无法连通") || !strings.Contains(err.Error(), "client-fingerprint: safari") {
+		t.Fatalf("stalled reachability check must point at the node and include client-fingerprint hint: %v", err)
 	}
 	for _, reachability := range []string{other.URL, ""} {
 		err = probe(reachability)

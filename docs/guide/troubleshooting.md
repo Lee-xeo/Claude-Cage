@@ -56,6 +56,7 @@ keywords: 错误 失败 白屏 断网 137 OOM 代理 账号 配对 SSH 损坏 �
 | 命中大陆网段或定位为中国大陆 | 换用非大陆出口，静态 IP 和不限地区均不能豁免。怀疑归属错误时保留检查报告。 |
 | 旧配置显示“代理链需要迁移” | 导入原客户端里的具体节点，在 Cage 内按中转到最终出口的顺序应用并重新检测。见[把原客户端的代理链迁到 Cage](network.md#把原客户端的代理链迁到-cage)。 |
 | 代理核心未就绪 | 进入代理诊断检查状态，重新应用节点或重启 Cage 核心。 |
+| TLS / gRPC 节点持续握手超时（核心日志报 `connect error: context deadline exceeded`） | Go 1.26 构建的内置核心默认发送较大的后量子 TLS ClientHello。未设置 `client-fingerprint` 的 VMess/VLESS/Trojan 等节点可尝试在节点 YAML 中添加 `client-fingerprint: safari` 或 `firefox` 后重新导入并应用；详见[TLS 节点无 client-fingerprint 时握手超时](network.md#tls-节点无-client-fingerprint-时握手超时)。 |
 | 端口占用 | 选一个未占用的 Cage 独立端口，按提示重启，无需终止其他代理。 |
 | 位置查询失败 | 重试或换节点；所有模式均须确认非大陆出口，手动时区和语言不能跳过国家或地区检查。 |
 | 出口采样不完整 | 展开证据，查看缺失的是宿主、虚拟机终端还是浏览器，以及超时或 HTTP 状态；终端代理通过仍需其他路径成功。动态 IP 规则无法代替缺失的采样。 |
