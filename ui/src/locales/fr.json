@@ -3246,5 +3246,11 @@
   "收起浮窗": "Replier la fenêtre flottante",
   "浮窗「{0}」": "Fenêtre flottante « {0} »",
   "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et peut ouvrir dans le navigateur intégré : {0}.",
-  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et ne peut pas ouvrir de pages web."
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et ne peut pas ouvrir de pages web.",
+  "已配对设备": "Appareils associés",
+  "配对新设备": "Associer un nouvel appareil",
+  "已达配对上限（{0} 台），请先移除不需要的设备。": "Limite d'appareils associés atteinte ({0}). Supprimez d'abord un appareil inutile.",
+  "新设备已配对。": "Nouvel appareil associé.",
+  "最多可同时配对 8 台设备，请先移除不需要的设备": "Vous pouvez associer jusqu'à 8 appareils simultanément. Supprimez d'abord un appareil inutile.",
+  "未找到已配对的设备": "Appareil associé introuvable"
 }

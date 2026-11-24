@@ -3246,5 +3246,11 @@
   "收起浮窗": "Laab daaqadda sabbeysa",
   "浮窗「{0}」": "Daaqadda sabbeysa \"{0}\"",
   "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, waxayna biraawsarka gudaha ka furi kartaa: {0}.",
-  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, mana furi karto bogag internet."
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, mana furi karto bogag internet.",
+  "已配对设备": "Qalabka isku xiran",
+  "配对新设备": "Ku xir qalab cusub",
+  "已达配对上限（{0} 台），请先移除不需要的设备。": "Waxaa la gaaray xadka qalabka la isku xiri karo ({0}). Fadlan marka hore ka saar qalab aadan u baahnayn.",
+  "新设备已配对。": "Qalab cusub waa la isku xiray.",
+  "最多可同时配对 8 台设备，请先移除不需要的设备": "Waxaa isku mar la isku xiri karaa ilaa 8 qalab. Fadlan marka hore ka saar qalab aadan u baahnayn.",
+  "未找到已配对的设备": "Qalabka isku xiran lama helin"
 }

@@ -3246,5 +3246,11 @@
   "收起浮窗": "Contraer ventana flotante",
   "浮窗「{0}」": "Ventana flotante «{0}»",
   "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Abre una ventana flotante semitransparente y arrastrable sobre el espacio de trabajo. Se ejecuta en un marco aislado, solo usa las herramientas de este complemento y puede abrir en el navegador integrado: {0}.",
-  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Abre una ventana flotante semitransparente y arrastrable sobre el espacio de trabajo. Se ejecuta en un marco aislado, solo usa las herramientas de este complemento y no puede abrir páginas web."
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Abre una ventana flotante semitransparente y arrastrable sobre el espacio de trabajo. Se ejecuta en un marco aislado, solo usa las herramientas de este complemento y no puede abrir páginas web.",
+  "已配对设备": "Dispositivos vinculados",
+  "配对新设备": "Vincular nuevo dispositivo",
+  "已达配对上限（{0} 台），请先移除不需要的设备。": "Se alcanzó el límite de dispositivos vinculados ({0}). Elimina primero un dispositivo que no necesites.",
+  "新设备已配对。": "Nuevo dispositivo vinculado.",
+  "最多可同时配对 8 台设备，请先移除不需要的设备": "Se pueden vincular hasta 8 dispositivos a la vez. Elimina primero un dispositivo que no necesites.",
+  "未找到已配对的设备": "No se encontró el dispositivo vinculado"
 }

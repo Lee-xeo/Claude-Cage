@@ -303,9 +303,11 @@ func TestLegacyPasswordlessWorkspaceReturnsActionableMobileState(t *testing.T) {
 	}
 	proof := randomToken()
 	s.phones.mu.Lock()
-	s.phones.record = &phoneRecord{Lookup: "lookup"}
-	s.phones.roomProof = proof
-	s.phones.roomCtx = context.Background()
+	s.phones.slots = []*phoneSlot{{
+		record:    phoneRecord{ID: "phone-1", Lookup: "lookup"},
+		roomProof: proof,
+		roomCtx:   context.Background(),
+	}}
 	s.phones.mu.Unlock()
 
 	if _, state := a.accessStateFor(false, true); state != accountAccessDesktopOnly {

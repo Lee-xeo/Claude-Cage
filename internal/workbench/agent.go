@@ -113,9 +113,9 @@ func AgentOperations() []AgentOperation {
 	post("vault.change", "Save/delete/unblock; reveal requires the same account_password reauthentication as the UI", "/api/vault", object(map[string]string{"action": "string", "entry": "object", "id": "string", "origin": "string", "account_password": "string"}))
 	ops[len(ops)-1].InputSchema["properties"].(map[string]any)["entry"] = from(vaultEntry{})
 	post("vault.browser", "Use the browser vault's existing save/fill/block actions", "/api/vault/browser", from(vaultBrowserInput{}))
-	get("mobile.get", "Inspect phone pairing", "/api/mobile-pair")
-	post("mobile.pair", "Generate the same phone pairing invitation", "/api/mobile-pair", object(map[string]string{"admin": "string", "relay": "string"}))
-	add("mobile.remove", "Remove the same paired device", "DELETE", "/api/mobile-pair", object(nil))
+	get("mobile.get", "Inspect paired mobile devices", "/api/mobile-pair")
+	post("mobile.pair", "Generate a phone pairing invitation", "/api/mobile-pair", object(map[string]string{"admin": "string", "relay": "string"}))
+	add("mobile.remove", "Remove one paired device by id, or all paired devices when id is omitted", "DELETE", "/api/mobile-pair", object(map[string]string{"id": "string"}))
 	get("tailscale.get", "Read guest private-network state", "/api/tailscale")
 	for _, action := range []string{"install", "connect", "login", "disconnect", "logout", "control-server", "add-key", "remove-key"} {
 		schema := object(nil)
