@@ -65,6 +65,7 @@ Cage 支持含中文的安装目录。启动时优先读取随附 QEMU 的 UEFI 
 - 提示 Windows 应用程序控制或签名校验阻止了 QEMU：检查 Windows 安全中心和 CodeIntegrity/Operational 事件。使用带可信签名的完整发布包，保留原来的环境存储位置和虚拟磁盘。
 - 工作台能打开，环境不能联网：检查 Cage 内是否已选择节点及网络检查结果。Windows 浏览器能联网不表示 Cage 节点已配置。
 - 提示权限或路径不可用：使用当前用户有权限访问的本地目录，不把 Cage 安装目录、私有配置或磁盘根目录作为共享项目。更新器拒绝含符号链接或目录联接的安装路径。
+- Go 或运行时进程无报错挂起且 CPU 为 0%：检查本机是否安装了企业/高校同步盘客户端（如基于 AnyShare 的同步盘）或其他向新建进程注入监控 DLL 的软件；可在 PowerShell 中用 `(Get-Process cage).Modules`（构建期查看 `compile`）确认是否被注入非系统 DLL，并将 `cage.exe`、`Cage.exe`、`mihomo.exe`、`qemu-system-x86_64.exe`、`qemu-img.exe`、`ssh.exe` 加入其排除列表或暂停相关监控服务后重试。
 
 反馈问题时提供 Cage 版本、Windows 版本与内部版本号、CPU 架构、失败步骤和错误原文。不要附带代理密码、订阅链接、会话地址或未脱敏的配置文件。
 
@@ -82,7 +83,7 @@ Cage 支持含中文的安装目录。启动时优先读取随附 QEMU 的 UEFI 
 | [WebView2 Evergreen 运行时](https://developer.microsoft.com/microsoft-edge/webview2/) | 本机需安装此运行时，构建完成后会启动工作台进行自检。 |
 | [MSYS2](https://www.msys2.org/)、NSIS | MSYS2 的 UCRT64 环境用于编译 QEMU。生成安装包还需要 NSIS。 |
 
-把 MSYS2 安装到简短、只含 ASCII 且无空格的本地路径，例如 `C:\msys64`。打开 **MSYS2 UCRT64**，运行 `pacman -Syu` 更新。若更新时终端关闭，重新打开 UCRT64 再运行一次。若 `pacman` 长时间没有进度，日志反复出现 `gpg: waiting for lock` 或 `starting migration from earlier GnuPG versions`，可能是 gpg-agent 无法建立本机套接字（目前见于部分 Windows 11 预览版本）。结束 MSYS2 中残留的 `gpg`、`gpg-agent`、`dirmngr` 和 `pacman` 进程，删除 `/etc/pacman.d/gnupg/` 下的 `.#lk*`、`*.lock` 和 `S.gpg-agent*` 后重试；仍然卡住时先排查 Windows 更新或安全软件对 AF_UNIX 套接字的影响，不建议关闭软件包签名校验。更新完成后安装下列依赖，包清单与 CI 一致。[Windows CI 工具配置](../.github/actions/windows-toolchain/action.yml)
+把 MSYS2 安装到简短、只含 ASCII 且无空格的本地路径，例如 `C:\msys64`。打开 **MSYS2 UCRT64**，运行 `pacman -Syu` 更新。国内网络下若默认镜像 `mirror.msys2.org` 频繁返回 503 或超时，可将 `/etc/pacman.d/mirrorlist.*` 切换至国内镜像站（如 USTC 或 TUNA），并注意 `pacman.conf` 中各 MinGW 仓库共用 `mirrorlist.mingw`（含 `$repo` 变量）。若更新时终端关闭，重新打开 UCRT64 再运行一次。若 `pacman` 长时间没有进度，日志反复出现 `gpg: waiting for lock` 或 `starting migration from earlier GnuPG versions`，可能是 gpg-agent 无法建立本机套接字（目前见于部分 Windows 11 预览版本）。结束 MSYS2 中残留的 `gpg`、`gpg-agent`、`dirmngr` 和 `pacman` 进程，删除 `/etc/pacman.d/gnupg/` 下的 `.#lk*`、`*.lock` 和 `S.gpg-agent*` 后重试；仍然卡住时先排查 Windows 更新或安全软件对 AF_UNIX 套接字的影响，不建议关闭软件包签名校验。更新完成后安装下列依赖，包清单与 CI 一致。[Windows CI 工具配置](../.github/actions/windows-toolchain/action.yml)
 
 ```bash
 pacman -S --needed make patch diffutils git tar gzip findutils curl \
@@ -105,6 +106,11 @@ QEMU 下载前会分别编译、链接并运行最小 C 和 C++ 程序。默认 
 NuGet 报 `Central Directory corrupt` 或 `Received an unexpected EOF or 0 bytes from the transport stream` 时，检查代理是否截断了运行时包的下载。已完成的 QEMU、前端和 NuGet 全局包缓存可以保留。从官方来源下载完整的同版本 `.nupkg`，与 NuGet 官方目录记录的 `packageHash` 核对一致后放入本地目录，再保留 `--locked-mode` 重试还原。命令行同时指定官方源和本地目录时，把 HTTPS 源写在前面，例如 `dotnet restore .\desktop\windows\Cage.Windows.csproj --locked-mode -r win-x64 -p:Configuration=Release --source https://api.nuget.org/v3/index.json --source C:\CageNuGetFeed`；本地目录在前时，部分 SDK 会把后面的地址当作文件路径并报 `NU1301`。也可通过 `NuGet.Config` 配置本地包源。
 
 应用输出到 `_output/windows-amd64/app`。本地默认自检目录是仓库内的 `_output/workbench-smoke`。源码如果检出到 AppData 或重解析到其他私有目录，构建会在开始前提示把 `RUNNER_TEMP` 指向 AppData 外的普通本地目录，例如 `D:\CageBuildTemp`。若自检失败，构建输出会显示已识别的共享目录错误、候选应用目录和诊断路径。可查看 `smoke.json` 和 `profile/logs/events.jsonl`。`prepareStatus=prepared` 是自检结束时后台的停止确认。
+
+源码构建常见主机环境问题排查：
+
+- **Go 编译进程（`compile.exe`）停在 0% CPU 且无报错挂起**：通常是第三方企业/高校同步盘（如 AnyShare 文件监控服务）或安全软件向子进程注入了 Hook DLL。可在 PowerShell 运行 `(Get-Process compile).Modules` 查看加载的非系统 DLL，并将 `go.exe`、`compile.exe`、`link.exe`、`vet.exe`、`asm.exe`、`cgo.exe`（以及运行期使用的 `cage.exe`、`Cage.exe`、`mihomo.exe`、`qemu-system-x86_64.exe`、`qemu-img.exe`、`ssh.exe`）加入其排除列表，或构建期间暂停该服务。
+- **低完整性（Low Mandatory Level / Low IL）检出目录导致 `verify-vm-assets` 报 `mkdir %TEMP%\cage-vm-assets-*: Access is denied`**：部分自动化 Agent 沙箱创建的目录带有 `Low Mandatory Level` 标签，从该目录启动的可执行文件继承低完整性级别，无法写入中等完整性的 `%TEMP%`。`build-windows.ps1` 会在开始前调用 `icacls` 与 `whoami /groups` 预检并提示。遇到此情况请将仓库复制到不带低完整性标签的普通本地目录（如 `C:\src\Claude-Cage`）再构建；若仅因默认 `%TEMP%` 对构建子进程不可写，也可在构建前设置 `$env:CAGE_TEMP`（或 `TEMP`/`TMP`）指向可写临时目录。
 
 生成未签名安装包时，用仓库脚本安装校验过的 NSIS，再打包刚构建的应用。脚本先从 SourceForge 默认地址下载，失败或拿到的不是 ZIP 时依次改用几个指定镜像；每个地址只做少量重试且超时较短，所有地址都失败才报错。无论来自哪个地址，ZIP 都要通过固定的 SHA-256 校验才会解压使用。
 

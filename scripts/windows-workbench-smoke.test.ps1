@@ -144,7 +144,17 @@ try {
         if (-not $child.HasExited) { $child.Kill($true); $child.WaitForExit() }
         $child.Dispose()
     }
-    Write-Output 'PASS: isolated temp, safe smoke diagnostics, exit status and executable release.'
+    Assert-SmokeContract (Test-WindowsLowIntegrityText @('C:\sandbox\repo Mandatory Label\Low Mandatory Level:(OI)(CI)(NW)')) 'English icacls Low Mandatory Level was not detected.'
+    Assert-SmokeContract (Test-WindowsLowIntegrityText @('C:\sandbox\repo Mandatory Label\低强制级别:(OI)(CI)(NW)')) 'Chinese icacls Low Mandatory Level was not detected.'
+    Assert-SmokeContract (Test-WindowsLowIntegrityText @('Mandatory Label\Low Mandatory Level Label S-1-16-4096 Mandatory group')) 'whoami /groups S-1-16-4096 SID was not detected.'
+    Assert-SmokeContract (Test-WindowsLowIntegrityText @('S:(ML;OICI;NW;;;LW)')) 'SDDL Low Mandatory Level was not detected.'
+    Assert-SmokeContract (-not (Test-WindowsLowIntegrityText @(
+        'C:\src\Claude-Cage Mandatory Label\Medium Mandatory Level:(OI)(CI)(NW)',
+        'Mandatory Label\Medium Mandatory Level Label S-1-16-8192 Mandatory group',
+        'Mandatory Label\High Mandatory Level Label S-1-16-12288 Mandatory group'
+    ))) 'Medium or High integrity was falsely flagged as Low Mandatory Level.'
+    Assert-WindowsBuildDirectoryIntegrity $directory
+    Write-Output 'PASS: isolated temp, low-IL preflight, safe smoke diagnostics, exit status and executable release.'
 } finally {
     $env:RUNNER_TEMP = $savedRunnerTemp
     Remove-Item -LiteralPath $directory -Recurse
