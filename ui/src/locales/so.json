@@ -3088,6 +3088,7 @@
   "节点不能引用本机文件、网络接口或额外路由": "Noodhku ma tixraaci karo fayl ku jira kombiyuutarkan, interface shabakad ama marin dheeraad ah",
   "节点协议暂不支持": "Hab-maamuuska noodhka weli lama taageero",
   "Clash Verge Ninja 专用的 ninja 协议，Cage 随附的标准 Mihomo 核心无法解析，请向服务商获取同一出口的标准 Mihomo 节点后重新导入": "Borotakoolka ninja waxaa leh Clash Verge Ninja oo keliya, xudunta caadiga ah ee Mihomo ee la socota Cage ma akhrin karto; ka hel bixiyaha adeegga noode Mihomo caadi ah oo isla bixitaan leh, kadibna dib u soo deji",
+  "Clash Neo 专用的 nexo 协议，Cage 随附的标准 Mihomo 核心无法解析，请向服务商获取同一出口的标准 Mihomo 节点后重新导入": "Borotakoolka nexo waxaa leh Clash Neo oo keliya, xudunta caadiga ah ee Mihomo ee la socota Cage ma akhrin karto; ka hel bixiyaha adeegga noode Mihomo caadi ah oo isla bixitaan leh, kadibna dib u soo deji",
   "节点名称为空或过长": "Magaca noodhku wuu maran yahay ama aad buu u dheer yahay",
   "节点名称重复，无法确定代理链引用": "Magaca noodhku wuu soo noqnoqday, lama go'aamin karo tixraaca silsiladda wakiilka",
   "节点字段 {0} 存在重复写法，请仅保留一种": "Goobta noodhka {0} waxay leedahay qoraallo isku mid ah oo soo noqnoqday, fadlan mid keliya ka daa",

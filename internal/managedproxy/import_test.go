@@ -265,7 +265,7 @@ proxy-providers:
 	}
 }
 
-// #837: Clash Verge Ninja's own node type is named, with the migration path,
+// #837, #790: Clash Verge Ninja's and Clash Neo's own node types is named, with the migration path,
 // instead of a generic unsupported protocol; its fields never appear.
 func TestImportNamesClientOnlyNinjaNodes(t *testing.T) {
 	s, _ := Load(t.TempDir())
@@ -273,18 +273,23 @@ func TestImportNamesClientOnlyNinjaNodes(t *testing.T) {
  - {name: good, type: socks5, server: 203.0.113.10, port: 1080}
  - {name: hk-ninja, type: ninja, server: example.com, port: 443, password: secret-password, ninja-obf: secret-obf}
  - {name: upper, type: NINJA, server: example.com, port: 443}
+ - {name: neo, type: nexo, server: example.com, port: 443}
  - {name: other, type: unknown-proto, server: example.com, port: 443}
 `
 	if err := s.Import("ninja", "", []byte(data), "ninja", 0, ""); err != nil || s.Count() != 1 {
 		t.Fatalf("count=%d err=%v", s.Count(), err)
 	}
-	reasons := map[string]string{}
+	reasons, types := map[string]string{}, map[string]string{}
 	for _, issue := range s.Sources[0].Skipped {
-		reasons[issue.Name] = issue.Reason
+		reasons[issue.Name], types[issue.Name] = issue.Reason, issue.Type
 	}
 	ninja := clientOnlyTypes["ninja"]
-	if reasons["hk-ninja"] != ninja || reasons["upper"] != ninja || reasons["other"] != "节点协议暂不支持" {
+	if reasons["hk-ninja"] != ninja || reasons["upper"] != ninja || reasons["neo"] != clientOnlyTypes["nexo"] || reasons["other"] != "节点协议暂不支持" {
 		t.Fatalf("reasons = %v", reasons)
+	}
+	// #790: only the fixed client-only names are reported as the type.
+	if types["hk-ninja"] != "ninja" || types["upper"] != "ninja" || types["neo"] != "nexo" || types["other"] != "" {
+		t.Fatalf("types = %v", types)
 	}
 	report, _ := json.Marshal(s.Sources[0].Skipped)
 	for _, secret := range []string{"secret-password", "secret-obf"} {

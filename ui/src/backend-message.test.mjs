@@ -22,6 +22,7 @@ test("localizeBackendMessage translates ErrLocalProxyNode and dynamic backend er
     `节点 "local-socks" 需要迁移：${errLocalNode}`,
     `没有可导入的节点，已跳过 2 个；第 1 个节点 "socks1"：${errLocalNode}；第 2 个节点 "bad"：节点协议暂不支持`,
     `没有可导入的节点，已跳过 1 个；第 1 个节点 "hk"：Clash Verge Ninja 专用的 ninja 协议，Cage 随附的标准 Mihomo 核心无法解析，请向服务商获取同一出口的标准 Mihomo 节点后重新导入`,
+    `没有可导入的节点，已跳过 1 个；第 1 个节点 "neo"：Clash Neo 专用的 nexo 协议，Cage 随附的标准 Mihomo 核心无法解析，请向服务商获取同一出口的标准 Mihomo 节点后重新导入`,
     `订阅更新移除或跳过了当前出口或中转节点 "HK-01"：节点未包含在更新中；原配置已保留，请先应用其他节点再更新`,
     "订阅服务器返回 HTTP 403",
     "测速失败：代理核心返回 HTTP 504",
