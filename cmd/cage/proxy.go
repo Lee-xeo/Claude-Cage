@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"os"
@@ -92,4 +93,31 @@ func managedGateFiles(profile string) ([]string, error) {
 	containers, _ := filepath.Glob(filepath.Join(profile, "state", "container", "*", "cage-gate.json"))
 	files = append(files, containers...)
 	return files, nil
+}
+
+func checkProxyTransport(ctx context.Context, profile string, cfg cage.Config) error {
+	return checkProxyTransportWith(ctx, profile, cfg, managedproxy.CheckRuntimeBinding, cage.ProbeExitIP, managedproxy.WindowsNetworkConflictHint)
+}
+
+func checkProxyTransportWith(
+	ctx context.Context,
+	profile string,
+	cfg cage.Config,
+	checkBinding func(context.Context, string) managedproxy.BindingStatus,
+	probe func(context.Context, cage.Config) (string, error),
+	conflictHint func(context.Context, string) string,
+) error {
+	status := checkBinding(ctx, profile)
+	if status.Drifted() {
+		return fmt.Errorf("proxy transport check failed: %s", status.Message())
+	}
+	if _, err := probe(ctx, cfg); err != nil {
+		if !errors.Is(err, context.Canceled) && (errors.Is(err, cage.ErrExitProbeTimeout) || errors.Is(err, cage.ErrProxyConnectFailed) || errors.Is(err, cage.ErrTLSHandshakeFailed)) {
+			if hint := conflictHint(ctx, status.Bound); hint != "" {
+				return fmt.Errorf("proxy transport check failed (no direct fallback): %w %s", err, hint)
+			}
+		}
+		return fmt.Errorf("proxy transport check failed (no direct fallback): %w", err)
+	}
+	return nil
 }

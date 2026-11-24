@@ -191,9 +191,10 @@ func BoundInterface(path string) (string, error) {
 	return config.Interface, nil
 }
 
-// BindingMatches reports whether the runtime config at path matches both the
-// expected physical uplink and any per-node host route interfaces (such as
-// Tailscale or directly attached private subnets) for direct proxy nodes.
+// BindingMatches reports whether the runtime config at path matches the
+// expected physical uplink, any per-node host route interfaces (such as
+// Tailscale or directly attached private subnets) for direct proxy nodes, and
+// the saved interface IPv4/index binding snapshot when present.
 func BindingMatches(path, physical string) bool {
 	if physical == "" {
 		return false
@@ -202,6 +203,14 @@ func BindingMatches(path, physical string) bool {
 	if err != nil {
 		return false
 	}
+	if !bindingConfigMatches(data, physical) {
+		return false
+	}
+	matched, _ := interfaceBindingMatches(path, data, physical)
+	return matched
+}
+
+func bindingConfigMatches(data []byte, physical string) bool {
 	var config struct {
 		Interface string `yaml:"interface-name"`
 		Proxies   []struct {

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"runtime"
+	"slices"
 	"time"
 	"unsafe"
 
@@ -48,14 +50,14 @@ func windowsPhysicalInterface(ctx context.Context) (string, error) {
 	return name, nil
 }
 
-func windowsPhysicalAdapters(ctx context.Context) (map[uint32]windowsPhysicalAdapter, error) {
+func visitWindowsAdapters(ctx context.Context, visit func(*windows.IpAdapterAddresses) bool) error {
 	size := uint32(15000) // Recommended initial buffer for GetAdaptersAddresses.
 	flags := uint32(windows.GAA_FLAG_SKIP_ANYCAST | windows.GAA_FLAG_SKIP_MULTICAST | windows.GAA_FLAG_SKIP_DNS_SERVER)
 	var buffer []byte
 	var first *windows.IpAdapterAddresses
 	for attempts := 0; ; attempts++ {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		buffer = make([]byte, size)
 		first = (*windows.IpAdapterAddresses)(unsafe.Pointer(&buffer[0]))
@@ -66,27 +68,36 @@ func windowsPhysicalAdapters(ctx context.Context) (map[uint32]windowsPhysicalAda
 			continue
 		}
 		if errors.Is(err, windows.ERROR_NO_DATA) {
-			return nil, nil
+			return nil
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 		break
 	}
-
-	var list []windowsAdapterInfo
 	for adapter := first; adapter != nil; adapter = adapter.Next {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
+		if !visit(adapter) {
+			break
+		}
+	}
+	runtime.KeepAlive(buffer)
+	return nil
+}
+
+func windowsPhysicalAdapters(ctx context.Context) (map[uint32]windowsPhysicalAdapter, error) {
+	var list []windowsAdapterInfo
+	err := visitWindowsAdapters(ctx, func(adapter *windows.IpAdapterAddresses) bool {
 		if adapter.IfIndex == 0 || adapter.OperStatus != windows.IfOperStatusUp {
-			continue
+			return true
 		}
 		row := windows.MibIfRow2{InterfaceIndex: adapter.IfIndex}
 		// WithoutStatistics avoids asking the driver for counters that we do not need.
 		if err := windows.GetIfEntry2Ex(windows.MibIfEntryNormalWithoutStatistics, &row); err != nil ||
 			row.OperStatus != windows.IfOperStatusUp {
-			continue
+			return true
 		}
 		info := windowsAdapterInfo{
 			index:    adapter.IfIndex,
@@ -101,22 +112,47 @@ func windowsPhysicalAdapters(ctx context.Context) (map[uint32]windowsPhysicalAda
 			info.name = windows.UTF16PtrToString(adapter.FriendlyName)
 		}
 		list = append(list, info)
+		return true
+	})
+	if err != nil {
+		return nil, err
 	}
-	runtime.KeepAlive(buffer)
 	return windowsUplinkAdapters(list), nil
+}
+
+func preferredWindowsIPv4(address *windows.IpAdapterUnicastAddress) (net.IP, bool) {
+	if address.DadState != windows.IpDadStatePreferred || address.Address.Sockaddr == nil {
+		return nil, false
+	}
+	ip := address.Address.IP()
+	v4 := ip.To4()
+	if v4 == nil || ip.IsLinkLocalUnicast() || ip.IsLoopback() || ip.IsUnspecified() {
+		return nil, false
+	}
+	return v4, true
 }
 
 func hasPreferredWindowsIPv4(first *windows.IpAdapterUnicastAddress) bool {
 	for address := first; address != nil; address = address.Next {
-		if address.DadState != windows.IpDadStatePreferred || address.Address.Sockaddr == nil {
-			continue
-		}
-		ip := address.Address.IP()
-		if ip.To4() != nil && !ip.IsLinkLocalUnicast() && !ip.IsLoopback() && !ip.IsUnspecified() {
+		if _, ok := preferredWindowsIPv4(address); ok {
 			return true
 		}
 	}
 	return false
+}
+
+func preferredWindowsIPv4Addrs(first *windows.IpAdapterUnicastAddress) []string {
+	var addrs []string
+	for address := first; address != nil; address = address.Next {
+		if v4, ok := preferredWindowsIPv4(address); ok {
+			addrs = append(addrs, v4.String())
+		}
+	}
+	if len(addrs) == 0 {
+		return nil
+	}
+	slices.Sort(addrs)
+	return slices.Compact(addrs)
 }
 
 func selectWindowsPhysicalInterface(adapters map[uint32]windowsPhysicalAdapter, routes []windows.MibIpForwardRow2) string {

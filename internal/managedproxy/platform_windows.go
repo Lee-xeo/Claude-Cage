@@ -56,6 +56,7 @@ func identifyCore(handle windows.Handle) (string, int64, error) {
 func stopWindowsCore(profile string) error {
 	path := windowsCoreRecordPath(profile)
 	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		removeInterfaceBindingState(profile)
 		return nil
 	}
 	if err := host.CheckPrivateFile(path); err != nil {
@@ -144,6 +145,7 @@ func removeStaleCore(profile, path string) error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return &coreError{stage: "record.remove", err: err}
 	}
+	removeInterfaceBindingState(profile)
 	return nil
 }
 
@@ -205,6 +207,7 @@ func startWindowsCore(ctx context.Context, profile string, s Store) error {
 	if err := Write(path, b); err != nil {
 		return err
 	}
+	saveInterfaceBindingState(path, b, name)
 	if err := removeWindowsCoreSocket(profile); err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,13 +14,19 @@ import (
 	"github.com/sylvinus/agent-vm/internal/usererror"
 )
 
-var physicalProxyInterface = managedproxy.PhysicalInterface
-var proxyBindingMatches = managedproxy.BindingMatches
+var (
+	physicalProxyInterface     = managedproxy.PhysicalInterface
+	proxyBindingMatches        = managedproxy.BindingMatches
+	proxyBindingAddressChanged = managedproxy.BindingAddressChanged
+	checkProxyRuntimeBinding   = managedproxy.CheckRuntimeBinding
+	windowsNetworkConflictHint = managedproxy.WindowsNetworkConflictHint
+)
 
 type proxyInterfaceObservation struct {
 	name, configuration, jobID string
 	bound                      string
 	bindingMatches             bool
+	addressChanged             bool
 	bindingErr                 error
 	err                        error
 }
@@ -54,6 +61,9 @@ func (s *Server) observeProxyInterface(ctx context.Context) proxyInterfaceObserv
 	observed.name, observed.err = physicalProxyInterface(ctx)
 	if observed.err == nil && observed.bindingErr == nil && observed.bound == observed.name {
 		observed.bindingMatches = proxyBindingMatches(configPath, observed.name)
+		if !observed.bindingMatches {
+			observed.addressChanged = proxyBindingAddressChanged(configPath, observed.name)
+		}
 	}
 	return observed
 }
@@ -103,7 +113,11 @@ func (s *Server) applyProxyInterfaceObservation(observed proxyInterfaceObservati
 	// Revoke the previous report before the asynchronous recovery can start.
 	reason := "物理网卡已变化，正在重新绑定代理并检查出口"
 	if observed.bound == observed.name && !lost {
-		reason = "代理节点路由接口已变化，正在重新绑定代理并检查出口"
+		if observed.addressChanged {
+			reason = "物理网卡地址或状态已变化，正在重新绑定代理并检查出口"
+		} else {
+			reason = "代理节点路由接口已变化，正在重新绑定代理并检查出口"
+		}
 	}
 	if err := s.closeProxyGate(reason); err != nil {
 		return
@@ -143,4 +157,85 @@ func (s *Server) rebindProxyInterface() (returned error) {
 		return err
 	}
 	return s.applyProxy(p, cfg, nil, false)
+}
+
+func (s *Server) ensureStoppedProxyBinding(ctx context.Context) error {
+	if s.vmRunning() || s.jobs.snapshot().Running {
+		return nil
+	}
+	cfg, err := loadConfig(s.configPath)
+	if err != nil || s.proxyStore.Applied(s.profile, cfg.ProxyURL, cfg.ProxyRevision) != nil {
+		return nil
+	}
+	configPath := filepath.Join(managedproxy.Dir(s.profile), "config.yaml")
+	if _, err := os.Stat(configPath); err != nil {
+		return nil
+	}
+	isCoreRunning := func(p managedproxy.Store) bool {
+		runCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		return proxyCoreRunning(runCtx, s.profile, p)
+	}
+	p, err := s.proxyStore.Load(s.profile)
+	if err != nil || !isCoreRunning(p) {
+		return nil
+	}
+	name, err := physicalProxyInterface(ctx)
+	if err != nil {
+		return fmt.Errorf("代理核心绑定的出口网卡已失效：%w", err)
+	}
+	if proxyBindingMatches(configPath, name) {
+		return nil
+	}
+
+	s.op.Lock()
+	defer s.op.Unlock()
+	if s.vmRunning() || s.jobs.snapshot().Running {
+		return nil
+	}
+	cfg, err = loadConfig(s.configPath)
+	if err != nil {
+		return nil
+	}
+	p, err = managedproxy.Applied(s.profile, cfg.ProxyURL, cfg.ProxyRevision)
+	if err != nil || !isCoreRunning(p) {
+		return nil
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		return nil
+	}
+	name, err = physicalProxyInterface(ctx)
+	if err != nil {
+		return fmt.Errorf("代理核心绑定的出口网卡已失效：%w", err)
+	}
+	if proxyBindingMatches(configPath, name) {
+		return nil
+	}
+
+	previous, oldCfg := p, cfg
+	p.GuestDNS, p.BootstrapDNS = cfg.DNSEndpoints(), cfg.BootstrapEndpoints()
+	if err := validateProxyCore(ctx, s.profile, p); err != nil {
+		return err
+	}
+	if err := managedproxy.Stop(s.profile); err != nil {
+		return err
+	}
+	p.Revision = managedproxy.Token()
+	cfg.ProxyRevision = p.Revision
+	if err := p.Save(s.profile); err != nil {
+		_ = previous.Save(s.profile)
+		return err
+	}
+	if err := writePrivate(s.configPath, cfg); err != nil {
+		_ = previous.Save(s.profile)
+		_ = writePrivate(s.configPath, oldCfg)
+		return err
+	}
+	if err := startProxyCore(ctx, s.profile, p); err != nil {
+		_ = previous.Save(s.profile)
+		_ = writePrivate(s.configPath, oldCfg)
+		return err
+	}
+	diagnostics.Log("info", "proxy", "rebound managed proxy core to current physical interface while environment was stopped")
+	return nil
 }

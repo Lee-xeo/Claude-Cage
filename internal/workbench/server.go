@@ -881,6 +881,10 @@ func (s *Server) proposedWithOptions(w http.ResponseWriter, r *http.Request) (sa
 	return savedProfile{c, p}, input.SaveStaticDraft, true
 }
 func (s *Server) probe(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureStoppedProxyBinding(r.Context()); err != nil {
+		requestError(w, err)
+		return
+	}
 	v, ok := s.proposed(w, r)
 	if !ok {
 		return
@@ -895,6 +899,12 @@ func (s *Server) probe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		if !errors.Is(err, context.Canceled) && (errors.Is(err, cage.ErrExitProbeTimeout) || errors.Is(err, cage.ErrProxyConnectFailed) || errors.Is(err, cage.ErrTLSHandshakeFailed)) {
+			bound, _ := managedproxy.BoundInterface(filepath.Join(managedproxy.Dir(s.profile), "config.yaml"))
+			if hint := windowsNetworkConflictHint(r.Context(), bound); hint != "" {
+				err = fmt.Errorf("%w %s", err, hint)
+			}
+		}
 		requestError(w, err)
 		return
 	}

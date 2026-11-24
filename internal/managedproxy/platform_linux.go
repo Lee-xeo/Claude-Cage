@@ -156,6 +156,7 @@ func stopLinuxProcess(record linuxCoreRecord, core string) error {
 func stopLinuxCore(profile string) error {
 	path := linuxCoreRecordPath(profile)
 	if err := host.CheckPrivateFile(path); os.IsNotExist(err) {
+		removeInterfaceBindingState(profile)
 		return nil
 	} else if err != nil {
 		return err
@@ -176,7 +177,11 @@ func stopLinuxCore(profile string) error {
 		return err
 	}
 	_ = os.Remove(Socket(profile))
-	return os.Remove(path)
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	removeInterfaceBindingState(profile)
+	return nil
 }
 
 func startLinuxCore(ctx context.Context, profile string, s Store) error {
@@ -217,6 +222,7 @@ func startLinuxCore(ctx context.Context, profile string, s Store) error {
 	if err := Write(path, b); err != nil {
 		return err
 	}
+	saveInterfaceBindingState(path, b, name)
 	_ = os.Remove(Socket(profile))
 	log := diagnostics.New(profile).Stream("proxy", "warn")
 

@@ -274,6 +274,7 @@ func Stop(profile string) error {
 		return stopLinuxCore(profile)
 	}
 	if _, err := os.Stat(servicePath(profile)); os.IsNotExist(err) {
+		removeInterfaceBindingState(profile)
 		return nil
 	}
 	if runtime.GOOS != "darwin" {
@@ -281,11 +282,13 @@ func Stop(profile string) error {
 	}
 	domain := "gui/" + strconv.Itoa(os.Getuid())
 	if exec.Command("launchctl", "print", domain+"/"+label(profile)).Run() != nil {
+		removeInterfaceBindingState(profile)
 		return nil
 	}
 	if exec.Command("launchctl", "bootout", domain, servicePath(profile)).Run() != nil {
 		return errors.New("未能停止 Cage 专属代理进程")
 	}
+	removeInterfaceBindingState(profile)
 	return nil
 }
 func Start(ctx context.Context, profile string, s Store) error {
@@ -342,6 +345,7 @@ func Start(ctx context.Context, profile string, s Store) error {
 	if err = Write(path, b); err != nil {
 		return err
 	}
+	saveInterfaceBindingState(path, b, name)
 	_ = os.Remove(Socket(profile))
 	executable, err := os.Executable()
 	if err != nil {

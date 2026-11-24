@@ -602,10 +602,10 @@ func run() int {
 		// Use the same fixed exit services as the network check, so one
 		// blocked endpoint does not fail this check on its own.
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-		_, err := cage.ProbeExitIP(ctx, cfg)
+		err := checkProxyTransport(ctx, filepath.Dir(path), cfg)
 		cancel()
 		if err != nil {
-			return fail(fmt.Errorf("proxy transport check failed (no direct fallback): %w", err))
+			return fail(err)
 		}
 		fmt.Println("Proxy transport OK. Guest traffic still requires VM acceptance checks.")
 		return 0
