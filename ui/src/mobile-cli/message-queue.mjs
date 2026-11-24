@@ -1,4 +1,12 @@
 export const activeTurn = (status) => status === "running" || status === "stopping" || status === "queued";
+export const abnormalTurn = (status) => status === "stopped" || status === "failed" || status === "interrupted";
+
+export function activeTurnIdForQueue(snapshot, pendingSubmission) {
+  const last = snapshot?.turns?.at(-1);
+  if (activeTurn(last?.status) && last?.id) return last.id;
+  if (pendingSubmission?.request_id) return pendingSubmission.request_id;
+  return null;
+}
 
 export function canSendImmediately({
   running,
@@ -79,7 +87,60 @@ export function removeQueuedMessage(queue, requestId) {
 export function shouldPauseQueueAfterTurn(prevTurn, nextTurn, queueLength) {
   if (!queueLength || !prevTurn || !nextTurn) return false;
   if (!activeTurn(prevTurn.status)) return false;
-  return ["stopped", "failed", "interrupted"].includes(nextTurn.status);
+  return abnormalTurn(nextTurn.status);
+}
+
+export function reconcileQueueWithSnapshot({
+  prevTurn,
+  snapshot,
+  queueLength,
+  paused,
+  waitingTurnId,
+  pendingRequestId,
+}) {
+  if (!queueLength) {
+    return { paused: false, waitingTurnId: null };
+  }
+  if (paused) {
+    return { paused: true, waitingTurnId: null };
+  }
+  const turns = snapshot?.turns || [];
+  const last = turns.at(-1) || null;
+  if (shouldPauseQueueAfterTurn(prevTurn, last, queueLength)) {
+    return { paused: true, waitingTurnId: null };
+  }
+  if (waitingTurnId) {
+    const awaited = turns.find((turn) => turn.id === waitingTurnId);
+    if (awaited) {
+      if (abnormalTurn(awaited.status)) {
+        return { paused: true, waitingTurnId: null };
+      }
+      if (activeTurn(awaited.status)) {
+        return { paused: false, waitingTurnId };
+      }
+      return {
+        paused: false,
+        waitingTurnId: activeTurn(last?.status) && last?.id ? last.id : (pendingRequestId || null),
+      };
+    }
+    if (pendingRequestId && waitingTurnId === pendingRequestId) {
+      return { paused: false, waitingTurnId };
+    }
+    if (abnormalTurn(last?.status)) {
+      return { paused: true, waitingTurnId: null };
+    }
+    if (activeTurn(last?.status) && last?.id) {
+      return { paused: false, waitingTurnId: last.id };
+    }
+    return { paused: false, waitingTurnId: null };
+  }
+  if (activeTurn(last?.status) && last?.id) {
+    return { paused: false, waitingTurnId: last.id };
+  }
+  if (pendingRequestId) {
+    return { paused: false, waitingTurnId: pendingRequestId };
+  }
+  return { paused: false, waitingTurnId: null };
 }
 
 export function reconcileDispatchError({ error, item, draft, queue, previousConflictId }) {

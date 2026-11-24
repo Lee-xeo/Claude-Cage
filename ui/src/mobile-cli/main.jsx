@@ -7,7 +7,7 @@ import { deviceCommand } from "./device-navigation.mjs";
 import cageLogo from "../logo.png";
 import { accessDenied, request, sessionPath } from "./transport.mjs";
 import { recoverPendingMessage, retryableSessionError, sessionFailureMessage, sessionRetryDelay, sessionRetryLimit } from "./session-recovery.mjs";
-import { activeTurn as active, canDrainQueue, canSendImmediately, dequeueMessage, enqueueMessage, reconcileDispatchError, removeQueuedMessage, shouldPauseQueueAfterTurn } from "./message-queue.mjs";
+import { activeTurn as active, activeTurnIdForQueue, canDrainQueue, canSendImmediately, dequeueMessage, enqueueMessage, reconcileDispatchError, reconcileQueueWithSnapshot, removeQueuedMessage } from "./message-queue.mjs";
 import { SessionActionDialog, sortSessions } from "./session-row";
 import { ArchivedSessions } from "../cli-sessions";
 import { SessionAccount } from "../session-account";
@@ -323,6 +323,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
   const draftRef = useRef(draft);
   const queueRef = useRef(queue);
   const queuePausedRef = useRef(queuePaused);
+  const waitingTurnIdRef = useRef(drafts.get(id)?.queue?.length && !drafts.get(id)?.paused ? drafts.get(id)?.waitingTurnId || null : null);
   const conflictIdRef = useRef(null);
   const submission = useRef(drafts.get(id)?.pending || null);
   const actionBusy = useRef(false);
@@ -332,11 +333,12 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
   const follow = useRef(true);
   const last = session?.turns?.at(-1);
   const running = active(last?.status);
-  const persistDraftState = useCallback((nextText, nextPending, nextQueue, nextPaused) => {
+  const persistDraftState = useCallback((nextText, nextPending, nextQueue, nextPaused, nextWaitingTurnId) => {
     const queueList = nextQueue || [];
     const paused = Boolean(nextPaused && queueList.length > 0);
+    const waitingTurnId = queueList.length > 0 && !paused ? nextWaitingTurnId || null : null;
     if (nextText || nextPending || queueList.length > 0) {
-      drafts.set(id, { text: nextText, pending: nextPending || null, queue: queueList, paused });
+      drafts.set(id, { text: nextText, pending: nextPending || null, queue: queueList, paused, waitingTurnId });
     } else {
       drafts.delete(id);
     }
@@ -350,20 +352,39 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
     const current = latest.current;
     if (current && snapshot.generation !== current.generation && expectedGeneration !== current.generation) return;
     const stale = Boolean(current && snapshot.generation === current.generation && snapshot.revision < current.revision);
-    const pausedByTurn = !stale && !queuePausedRef.current && shouldPauseQueueAfterTurn(current?.turns?.at(-1), snapshot.turns?.at(-1), queueRef.current.length);
-    const nextPaused = pausedByTurn ? true : queuePausedRef.current;
-    if (pausedByTurn) {
-      queuePausedRef.current = true;
-      setQueuePaused(true);
-    }
-    if (submission.current && (snapshot.acknowledged_request_id === submission.current.request_id || snapshot.turns?.some((turn) => turn.id === submission.current.request_id))) {
+    const acked = Boolean(submission.current && (snapshot.acknowledged_request_id === submission.current.request_id || snapshot.turns?.some((turn) => turn.id === submission.current.request_id)));
+    if (acked) {
       submission.current = null;
       conflictIdRef.current = null;
       setPendingMessage(null);
-      persistDraftState(draftRef.current, null, queueRef.current, nextPaused);
       setUncertain(false); setActionError(""); setSendProgress("");
-    } else if (pausedByTurn) {
-      persistDraftState(draftRef.current, submission.current, queueRef.current, nextPaused);
+    }
+    let nextPaused = queuePausedRef.current;
+    let nextWaitingTurnId = waitingTurnIdRef.current;
+    let queueStateChanged = false;
+    if (!stale) {
+      const reconciled = reconcileQueueWithSnapshot({
+        prevTurn: current?.turns?.at(-1) || null,
+        snapshot,
+        queueLength: queueRef.current.length,
+        paused: queuePausedRef.current,
+        waitingTurnId: waitingTurnIdRef.current,
+        pendingRequestId: submission.current?.request_id || null,
+      });
+      if (reconciled.paused !== queuePausedRef.current) {
+        nextPaused = reconciled.paused;
+        queuePausedRef.current = reconciled.paused;
+        setQueuePaused(reconciled.paused);
+        queueStateChanged = true;
+      }
+      if (reconciled.waitingTurnId !== waitingTurnIdRef.current) {
+        nextWaitingTurnId = reconciled.waitingTurnId;
+        waitingTurnIdRef.current = reconciled.waitingTurnId;
+        queueStateChanged = true;
+      }
+    }
+    if (acked || queueStateChanged) {
+      persistDraftState(draftRef.current, submission.current, queueRef.current, nextPaused, nextWaitingTurnId);
     }
     if (stale) return;
     latest.current = snapshot; setSession(snapshot); onSnapshot(snapshot);
@@ -496,7 +517,10 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
       const generation = latest.current?.generation;
       submission.current = item;
       setPendingMessage(item);
-      persistDraftState(draftRef.current, item, queueRef.current, queuePausedRef.current);
+      if (queueRef.current.length > 0 && !queuePausedRef.current) {
+        waitingTurnIdRef.current = item.request_id;
+      }
+      persistDraftState(draftRef.current, item, queueRef.current, queuePausedRef.current, waitingTurnIdRef.current);
       const snapshot = await request(sessionPath(id) + "/messages", { body: item });
       if (live.current) { conflictIdRef.current = null; accept(snapshot, generation); setReload(n => n + 1); }
     } catch (error) {
@@ -528,8 +552,15 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
           queuePausedRef.current = true;
           setQueuePaused(true);
         }
+        if (nextPaused || queueRef.current.length === 0) {
+          waitingTurnIdRef.current = null;
+        } else if (next.keepPending) {
+          waitingTurnIdRef.current = item.request_id;
+        } else {
+          waitingTurnIdRef.current = activeTurnIdForQueue(latest.current, submission.current);
+        }
         setWaitingSync(next.waitingSync);
-        persistDraftState(draftRef.current, submission.current, queueRef.current, nextPaused);
+        persistDraftState(draftRef.current, submission.current, queueRef.current, nextPaused, waitingTurnIdRef.current);
         setUncertain(next.uncertain);
         setActionError(next.actionError);
         if (!next.uncertain) setSendProgress("");
@@ -545,19 +576,21 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
     if (nextQueue.length === 0) {
       nextPaused = false;
       queuePausedRef.current = false;
+      waitingTurnIdRef.current = null;
       conflictIdRef.current = null;
       setQueuePaused(false);
       setWaitingSync(false);
     }
-    persistDraftState(draftRef.current, submission.current, nextQueue, nextPaused);
+    persistDraftState(draftRef.current, submission.current, nextQueue, nextPaused, waitingTurnIdRef.current);
   }, [persistDraftState]);
   const resumeQueue = useCallback(() => {
     conflictIdRef.current = null;
     queuePausedRef.current = false;
+    waitingTurnIdRef.current = queueRef.current.length > 0 ? activeTurnIdForQueue(latest.current, submission.current) : null;
     setQueuePaused(false);
     setWaitingSync(false);
     setActionError("");
-    persistDraftState(draftRef.current, submission.current, queueRef.current, false);
+    persistDraftState(draftRef.current, submission.current, queueRef.current, false, waitingTurnIdRef.current);
   }, [persistDraftState]);
   useEffect(() => {
     if (!canDrainQueue({
@@ -578,7 +611,8 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
     if (!head) return;
     queueRef.current = rest;
     setQueue(rest);
-    persistDraftState(draftRef.current, submission.current, rest, queuePausedRef.current);
+    waitingTurnIdRef.current = rest.length > 0 ? head.request_id : null;
+    persistDraftState(draftRef.current, submission.current, rest, queuePausedRef.current, waitingTurnIdRef.current);
     void dispatchMessage(head);
   }, [visible, ready, session, running, busy, confirming, uncertain, readProgress, readError, waitingSync, queue, queuePaused, dispatchMessage, persistDraftState]);
   const send = async (event) => {
@@ -606,14 +640,18 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
     const nextQueue = enqueueMessage(queueRef.current, item);
     queueRef.current = nextQueue;
     setQueue(nextQueue);
-    persistDraftState("", submission.current, nextQueue, queuePausedRef.current);
+    if (!waitingTurnIdRef.current && !queuePausedRef.current) {
+      waitingTurnIdRef.current = activeTurnIdForQueue(latest.current, submission.current);
+    }
+    persistDraftState("", submission.current, nextQueue, queuePausedRef.current, waitingTurnIdRef.current);
   };
   const stop = async () => {
     if (actionBusy.current || last?.status !== "running") return;
     if (queueRef.current.length > 0 && !queuePausedRef.current) {
       queuePausedRef.current = true;
+      waitingTurnIdRef.current = null;
       setQueuePaused(true);
-      persistDraftState(draftRef.current, submission.current, queueRef.current, true);
+      persistDraftState(draftRef.current, submission.current, queueRef.current, true, null);
     }
     actionBusy.current = true; setBusy(true); setActionError("");
     const generation = latest.current?.generation;
@@ -682,7 +720,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
           {turn.denied_tools?.length > 0 && <div className="turn-tools">以下工具需要授权，本次调用已拒绝。<span>{turn.denied_tools.join("、")}</span></div>}
           {["failed", "interrupted", "stopped"].includes(turn.status) && <p className="note">{labels[turn.status]}</p>}
         </article>
-      </React.Fragment>)}</TranscriptContext.Provider>
+      </React.Fragment>)}
       {showPending && <article className="message user queued" aria-label="正在发送的消息">
         <div className="queued-meta">
           <span>{uncertain ? (confirming ? "确认送达中…" : "送达未确认") : "发送中…"}</span>
@@ -698,7 +736,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
           </div>
         </div>
         <MessageBody text={item.text} />
-      </article>)}
+      </article>)}</TranscriptContext.Provider>
     </section>
     <form className="compose" onSubmit={send}>
       {actionError && <Notice onRetry={uncertain ? retry : undefined} label="再次连接">{actionError}</Notice>}
@@ -709,7 +747,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
           onChange={(e) => {
             const value = e.target.value;
             draftRef.current = value;
-            persistDraftState(value, submission.current, queueRef.current, queuePausedRef.current);
+            persistDraftState(value, submission.current, queueRef.current, queuePausedRef.current, waitingTurnIdRef.current);
             setDraft(value);
           }} onKeyDown={(e) => {
             if (e.key === "Enter" && !e.nativeEvent.isComposing && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); }

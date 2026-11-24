@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  activeTurnIdForQueue,
   canDrainQueue,
   canSendImmediately,
   dequeueMessage,
   enqueueMessage,
   reconcileDispatchError,
+  reconcileQueueWithSnapshot,
   removeQueuedMessage,
   requeueAtFront,
   shouldPauseQueueAfterTurn,
@@ -161,4 +163,96 @@ test("reconcileDispatchError marks network and 5xx failures as uncertain without
   assert.deepEqual(netErr.queue, [m2]);
   assert.equal(netErr.draft, "draft");
   assert.equal(netErr.reload, true);
+});
+
+test("activeTurnIdForQueue prefers the active turn and falls back to pending submission", () => {
+  assert.equal(activeTurnIdForQueue({ turns: [{ id: "t1", status: "running" }] }, { request_id: "r1" }), "t1");
+  assert.equal(activeTurnIdForQueue({ turns: [{ id: "t1", status: "completed" }] }, { request_id: "r1" }), "r1");
+  assert.equal(activeTurnIdForQueue({ turns: [{ id: "t1", status: "completed" }] }, null), null);
+});
+
+test("reconcileQueueWithSnapshot pauses queued messages after switching back to an abnormally ended turn", () => {
+  for (const status of ["failed", "stopped", "interrupted"]) {
+    const result = reconcileQueueWithSnapshot({
+      prevTurn: null,
+      snapshot: { turns: [{ id: "t1", status }] },
+      queueLength: 1,
+      paused: false,
+      waitingTurnId: "t1",
+      pendingRequestId: null,
+    });
+    assert.deepEqual(result, { paused: true, waitingTurnId: null });
+  }
+
+  const failedBeforeLaterTurn = reconcileQueueWithSnapshot({
+    prevTurn: null,
+    snapshot: { turns: [{ id: "t1", status: "failed" }, { id: "t2", status: "completed" }] },
+    queueLength: 1,
+    paused: false,
+    waitingTurnId: "t1",
+    pendingRequestId: null,
+  });
+  assert.deepEqual(failedBeforeLaterTurn, { paused: true, waitingTurnId: null });
+
+  const truncatedAbnormal = reconcileQueueWithSnapshot({
+    prevTurn: null,
+    snapshot: { turns: [{ id: "t9", status: "interrupted" }] },
+    queueLength: 1,
+    paused: false,
+    waitingTurnId: "t1",
+    pendingRequestId: null,
+  });
+  assert.deepEqual(truncatedAbnormal, { paused: true, waitingTurnId: null });
+});
+
+test("reconcileQueueWithSnapshot resumes cleanly after completed turn and tracks active turns", () => {
+  const completed = reconcileQueueWithSnapshot({
+    prevTurn: null,
+    snapshot: { turns: [{ id: "t1", status: "completed" }] },
+    queueLength: 2,
+    paused: false,
+    waitingTurnId: "t1",
+    pendingRequestId: null,
+  });
+  assert.deepEqual(completed, { paused: false, waitingTurnId: null });
+
+  const stillRunning = reconcileQueueWithSnapshot({
+    prevTurn: null,
+    snapshot: { turns: [{ id: "t1", status: "running" }] },
+    queueLength: 1,
+    paused: false,
+    waitingTurnId: "t1",
+    pendingRequestId: null,
+  });
+  assert.deepEqual(stillRunning, { paused: false, waitingTurnId: "t1" });
+
+  const completedThenDesktopRunning = reconcileQueueWithSnapshot({
+    prevTurn: null,
+    snapshot: { turns: [{ id: "t1", status: "completed" }, { id: "t2", status: "running" }] },
+    queueLength: 1,
+    paused: false,
+    waitingTurnId: "t1",
+    pendingRequestId: null,
+  });
+  assert.deepEqual(completedThenDesktopRunning, { paused: false, waitingTurnId: "t2" });
+
+  const pendingNotYetAdmitted = reconcileQueueWithSnapshot({
+    prevTurn: null,
+    snapshot: { turns: [{ id: "t0", status: "completed" }] },
+    queueLength: 1,
+    paused: false,
+    waitingTurnId: "r1",
+    pendingRequestId: "r1",
+  });
+  assert.deepEqual(pendingNotYetAdmitted, { paused: false, waitingTurnId: "r1" });
+
+  const discoveredRunningAfterConflict = reconcileQueueWithSnapshot({
+    prevTurn: null,
+    snapshot: { turns: [{ id: "t2", status: "running" }] },
+    queueLength: 1,
+    paused: false,
+    waitingTurnId: null,
+    pendingRequestId: null,
+  });
+  assert.deepEqual(discoveredRunningAfterConflict, { paused: false, waitingTurnId: "t2" });
 });
