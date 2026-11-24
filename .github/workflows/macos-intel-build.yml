@@ -54,10 +54,20 @@ jobs:
       - name: TEMPORARY cold guest interpreter timing (remove before merge)
         run: |
           home="$(mktemp -d)"
-          t() { local s=$(perl -MTime::HiRes=time -e 'printf "%.3f", time'); "$@" >/dev/null 2>&1; local rc=$?; local e=$(perl -MTime::HiRes=time -e 'printf "%.3f", time'); echo "$(perl -e "printf '%.3f', $e-$s")s rc=$rc :: $*"; }
-          xcode-select -p || true
-          for i in 1 2 3; do t env -i HOME="$home" PATH=/usr/bin:/bin /usr/bin/python3 -I -c ''; done
           home2="$(mktemp -d)"
+          now() { perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
+          t() {
+            local s e rc
+            s="$(now)"
+            "$@" >/dev/null 2>&1
+            rc=$?
+            e="$(now)"
+            echo "$(perl -e "printf '%.3f', $e-$s")s rc=$rc :: $*"
+          }
+          xcode-select -p || true
+          t env -i HOME="$home" PATH=/usr/bin:/bin /usr/bin/python3 -I -c ''
+          t env -i HOME="$home" PATH=/usr/bin:/bin /usr/bin/python3 -I -c ''
+          t env -i HOME="$home" PATH=/usr/bin:/bin /usr/bin/python3 -I -c ''
           t env -i HOME="$home2" PATH=/usr/bin:/bin /usr/bin/python3 -I -c ''
           t env -i HOME="$home2" PATH=/usr/bin:/bin /bin/bash -lc "exec python3 -I -c ''"
           t env -i HOME="$home2" PATH=/usr/bin:/bin /bin/bash -lc true
