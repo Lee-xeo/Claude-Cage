@@ -105,6 +105,12 @@ func TestGuestRun(t *testing.T) {
 	if code := se.run("run", "V=x", "sh", "-c", "echo v=$V"); code != 0 || !strings.Contains(se.out(), "v=x") {
 		t.Errorf("assignment: %d %s", code, se.out())
 	}
+	// Without a terminal, standard output is the command's alone: the
+	// resource lines are on standard error.
+	if code := se.run("run", "printf", "%s\n", "cage-check"); code != 0 || se.stdout.String() != "cage-check\n" ||
+		!strings.Contains(se.stderr.String(), "  Resources: ") || !strings.Contains(se.stderr.String(), "  Base VM: built ") {
+		t.Errorf("stdout: %d %q, stderr: %q", code, se.stdout.String(), se.stderr.String())
+	}
 }
 
 // A project runtime script that is a link out of the project runs in the

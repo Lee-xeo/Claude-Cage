@@ -131,7 +131,7 @@ func (e *app) codeCmd(ctx context.Context, opts VMOpts, args []string) int {
 		fmt.Fprintf(e.io.Stderr, "Error: unknown argument for code: %s\nUsage: agent-vm [vm options] code\n", a)
 		return 1
 	}
-	return e.inVM(ctx, opts, (*start).codeSession)
+	return e.inVM(ctx, opts, true, (*start).codeSession)
 }
 
 func (s *start) codeSession() int {

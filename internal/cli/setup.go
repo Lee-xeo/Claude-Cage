@@ -485,7 +485,7 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 		fmt.Fprintf(e.io.Stderr, "Error: Failed to create base VM. Full log: %s\n", logPath)
 		return 1
 	}
-	(&start{app: e, ctx: ctx, name: building}).printResources()
+	(&start{app: e, ctx: ctx, name: building}).printResources(e.io.Stdout)
 
 	fmt.Fprintln(e.io.Stdout, "Starting the selected base system...")
 	if !windowed(func(w io.Writer) error { return e.startVM(vm.WithFirstBoot(ctx), b, building, w) }) {
