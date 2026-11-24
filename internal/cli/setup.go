@@ -242,7 +242,7 @@ func (e *app) swapBase(ctx context.Context, b vm.Backend) bool {
 	defer unlock()
 	if d := filepath.Join(LimaHome(e.state), vmname.Template); isDirNoYAML(d) {
 		fmt.Fprintf(w, "Detected partial VM state at %s (no lima.yaml): cleaning up.\n", d)
-		if err := os.RemoveAll(d); err != nil {
+		if err := host.RemoveAllWritable(d); err != nil {
 			fmt.Fprintf(w, "Error: could not remove %s: %v\n", d, err)
 			return false
 		}
@@ -415,7 +415,7 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 	// A build an earlier setup left, finished or not, is not this one's.
 	if d := filepath.Join(LimaHome(e.state), building); isDirNoYAML(d) {
 		fmt.Fprintf(e.io.Stderr, "Detected partial VM state at %s (no lima.yaml): cleaning up.\n", d)
-		if err := os.RemoveAll(d); err != nil {
+		if err := host.RemoveAllWritable(d); err != nil {
 			fmt.Fprintf(e.io.Stderr, "Error: could not remove %s: %v\n", d, err)
 			return 1
 		}

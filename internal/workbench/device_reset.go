@@ -831,9 +831,9 @@ func (s *Server) executeLimaRebuild(ctx context.Context, nextProfile *guestprofi
 				_ = remove(path)
 			}
 		}
-		removeNew(hadInst, manifest.HasInstance, instSrc, os.RemoveAll)
-		removeNew(hadBase, manifest.HasBaseTemplate, baseSrc, os.RemoveAll)
-		_ = os.RemoveAll(filepath.Join(limaHome, "base-building"))
+		removeNew(hadInst, manifest.HasInstance, instSrc, host.RemoveAllWritable)
+		removeNew(hadBase, manifest.HasBaseTemplate, baseSrc, host.RemoveAllWritable)
+		_ = host.RemoveAllWritable(filepath.Join(limaHome, "base-building"))
 		removeNew(hadVer, manifest.HasBaseVersion, baseVerSrc, os.Remove)
 		removeNew(hadBuilt, manifest.HasBaseBuiltBy, baseBuiltSrc, os.Remove)
 		removeNew(hadProf, manifest.HasGuestProfile, profileSrc, os.Remove)
@@ -843,7 +843,7 @@ func (s *Server) executeLimaRebuild(ctx context.Context, nextProfile *guestprofi
 		ok = restoreOne(manifest.HasBaseBuiltBy, baseBuiltDst, baseBuiltSrc) && ok
 		ok = restoreOne(manifest.HasGuestProfile, profileDst, profileSrc) && ok
 		if ok {
-			_ = os.RemoveAll(archiveDir)
+			_ = host.RemoveAllWritable(archiveDir)
 		} else {
 			// Never delete the archive when any piece could not be put back.
 			diagnostics.Log("error", "device-reset", "rollback incomplete; archive kept for manual recovery")
@@ -893,7 +893,7 @@ func (s *Server) executeLimaRebuild(ctx context.Context, nextProfile *guestprofi
 	finalArchiveID := manifest.ID
 	if irreversible {
 		s.setMessage("新机已验证就绪，正在彻底清理旧环境归档…")
-		if rmErr := os.RemoveAll(archiveDir); rmErr != nil {
+		if rmErr := host.RemoveAllWritable(archiveDir); rmErr != nil {
 			diagnostics.Log("warn", "device-reset", "failed to remove archive after irreversible rebuild: "+rmErr.Error())
 		}
 		finalArchiveID = ""
@@ -1252,7 +1252,7 @@ func (s *Server) restoreDeviceArchive(archiveID string) error {
 		_ = os.Remove(filepath.Join(swapDir, "manifest.json"))
 		_ = os.Remove(swapDir)
 	}
-	_ = os.RemoveAll(archiveDir)
+	_ = host.RemoveAllWritable(archiveDir)
 	s.setMessage("正在启动恢复后的旧环境…")
 	return s.hookStartEnv(false)
 }
@@ -1322,7 +1322,7 @@ func (s *Server) deviceResetDeleteArchiveHandler(w http.ResponseWriter, r *http.
 			}
 		}
 	}
-	if err := os.RemoveAll(archiveDir); err != nil {
+	if err := host.RemoveAllWritable(archiveDir); err != nil {
 		requestError(w, fmt.Errorf("删除归档目录失败：%w", err))
 		return
 	}
