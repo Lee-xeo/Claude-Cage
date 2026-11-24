@@ -106,6 +106,21 @@
   border-color: color-mix(in srgb, var(--success) 25%, transparent);
   background: color-mix(in srgb, var(--success) 12%, transparent);
 }
+.proxy-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  margin: 18px 0 16px;
+  padding-bottom: 8px;
+  flex-wrap: wrap;
+}
+.proxy-tabs-row .proxy-tabs {
+  border-bottom: 0;
+  margin: 0;
+  padding-bottom: 0;
+}
 .proxy-tabs {
   display: flex;
   gap: 4px;
@@ -682,7 +697,7 @@ button.proxy-region-group-header:hover:not(:disabled) {
   background: var(--paper);
   box-shadow: var(--shadow-xs);
   padding: 18px;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 .proxy-route-heading,
 .proxy-route-actions,
@@ -692,13 +707,17 @@ button.proxy-region-group-header:hover:not(:disabled) {
   align-items: center;
   gap: 12px;
 }
+.proxy-route h4,
+.proxy-node-heading h4,
 .settings-content .proxy-route h4,
 .settings-content .proxy-node-heading h4 {
   margin: 0;
   font-size: 14px;
+  font-weight: 600;
+  color: var(--strong);
 }
 .proxy-route-heading p {
-  margin: 6px 0 0;
+  margin: 5px 0 0;
   font-size: 13px;
   color: var(--muted);
 }
@@ -737,18 +756,23 @@ button.proxy-region-group-header:hover:not(:disabled) {
   align-items: flex-start;
   gap: 12px;
   position: relative;
-  padding-bottom: 16px;
+  padding: 8px 10px 18px 4px;
+  border-radius: 10px;
+  transition: background-color var(--duration-fast) var(--ease-out);
   animation: proxy-hop-in 160ms ease-out;
 }
+.proxy-route-hop.is-target {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
 .proxy-route-hop:last-child {
-  padding-bottom: 0;
+  padding-bottom: 8px;
 }
 .proxy-route-hop:not(:last-child)::after {
   content: "";
   position: absolute;
-  top: 29px;
-  bottom: 5px;
-  left: 12px;
+  top: 37px;
+  bottom: -2px;
+  inset-inline-start: 16px;
   width: 1px;
   background: var(--line);
 }
@@ -759,12 +783,20 @@ button.proxy-region-group-header:hover:not(:disabled) {
   height: 25px;
   margin-top: 2px;
   flex: none;
-  border: 1px solid var(--line);
+  border: 1.5px solid var(--line);
   border-radius: 50%;
+  background: var(--paper);
   font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
+  z-index: 1;
 }
-.is-exit .proxy-hop-number {
+.proxy-route-hop.is-target .proxy-hop-number {
+  border-color: var(--accent);
+  color: var(--strong);
+}
+.proxy-route-hop.is-exit .proxy-hop-number {
   background: var(--strong);
   border-color: var(--strong);
   color: var(--paper);
@@ -773,13 +805,67 @@ button.proxy-region-group-header:hover:not(:disabled) {
   flex: 1;
   min-width: 0;
 }
-.settings-content
+.proxy-hop-label-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.proxy-hop-label-row label,
+.settings-page
+  .settings-content
   .proxy-manager
-  .proxy-hop-control
+  .proxy-hop-label-row
   label:not(.check-line):not(.choice):not(.toggle-row) {
-  margin: 3px 0 7px;
+  margin: 0;
   font-size: 13px;
   font-weight: 600;
+  color: var(--strong);
+  line-height: 1.4;
+}
+.proxy-hop-role-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.proxy-hop-role-tag.is-relay {
+  background: var(--chrome);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.proxy-hop-role-tag.is-exit {
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--strong);
+}
+.settings-page .settings-content button.proxy-hop-pick-btn,
+button.proxy-hop-pick-btn {
+  margin-inline-start: auto;
+  min-height: 24px;
+  padding: 2px 9px;
+  font-size: 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+}
+.settings-page .settings-content button.proxy-hop-pick-btn:hover:not(:disabled),
+button.proxy-hop-pick-btn:hover:not(:disabled) {
+  color: var(--strong);
+  background: var(--hover);
+}
+.settings-page .settings-content button.proxy-hop-pick-btn.is-active,
+button.proxy-hop-pick-btn.is-active {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: var(--accent-soft);
+  color: var(--strong);
+  font-weight: 560;
 }
 .proxy-hop-control .inline-select {
   display: block;
@@ -787,21 +873,32 @@ button.proxy-region-group-header:hover:not(:disabled) {
 }
 .proxy-hop-control .inline-select-trigger {
   width: 100%;
-  text-align: left;
+  text-align: start;
 }
 .proxy-hop-control small {
   display: block;
   font-size: 12px;
   color: var(--muted);
-  margin-top: 7px;
+  margin-top: 6px;
+  line-height: 1.55;
 }
 .proxy-hop-remove {
   flex: none;
-  margin-top: 28px;
+  margin-top: 26px;
 }
-.proxy-route-add {
-  margin-left: 37px;
-  margin-bottom: 16px;
+.proxy-route-chain-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-inline-start: 41px;
+  margin-bottom: 14px;
+}
+.settings-page .settings-content .proxy-route-chain-tools button,
+.proxy-route-chain-tools button {
+  font-size: 12px;
+  min-height: 30px;
+  padding: 4px 10px;
 }
 .proxy-route-preview {
   display: flex;
@@ -809,21 +906,64 @@ button.proxy-region-group-header:hover:not(:disabled) {
   flex-wrap: wrap;
   gap: 7px;
   border-top: 1px solid var(--line);
-  padding-top: 15px;
+  padding: 14px 2px 2px;
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.6;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
 .proxy-route-preview svg {
   flex: none;
 }
-.proxy-route-preview strong {
-  color: var(--strong);
+.proxy-flow-endpoint {
   font-weight: 500;
+  color: var(--muted);
+}
+.proxy-flow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--chrome);
+  border: 1px solid var(--line);
+  color: var(--strong);
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 100%;
+}
+.proxy-flow-chip.is-exit {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+}
+.proxy-flow-chip em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-weight: 550;
+}
+.proxy-flow-chip strong {
+  color: var(--strong);
+  font-weight: 560;
+}
+button.proxy-flow-chip.is-empty {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+  min-height: 26px;
+  padding: 2px 10px;
+  white-space: normal;
+  cursor: pointer;
+}
+button.proxy-flow-chip.is-empty:hover:not(:disabled) {
+  border-color: var(--strong);
+  color: var(--strong);
+  background: var(--hover);
 }
 .proxy-route-actions {
-  margin-top: 18px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-subtle);
 }
 .proxy-route-actions > span {
   color: var(--muted);
@@ -838,9 +978,29 @@ button.proxy-region-group-header:hover:not(:disabled) {
   transition: background 140ms;
 }
 .proxy-node-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--chrome);
+  border: 1px solid var(--line-subtle);
   color: var(--muted);
   font-size: 11px;
+  font-weight: 550;
   white-space: nowrap;
+}
+.proxy-node-role.is-exit {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 28%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+.proxy-node-role.is-relay {
+  color: var(--strong);
+  border-color: var(--line);
+  background: var(--chrome);
+}
+.proxy-node.is-relay-node {
+  background: color-mix(in srgb, var(--chrome) 72%, var(--paper));
 }
 .proxy-summary .proxy-current-route {
   font-size: 12px;
@@ -848,6 +1008,593 @@ button.proxy-region-group-header:hover:not(:disabled) {
   opacity: 1;
   color: var(--muted);
 }
+
+/* ── Guided Setup Onboarding UI ──────────────────────────────────────── */
+.proxy-setup-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  padding: 10px 12px;
+  margin: 0 0 16px;
+  background: var(--chrome);
+  border: 1px solid var(--line-subtle);
+  border-radius: 12px;
+}
+.proxy-setup-steps > li:not(.proxy-setup-step-sep) {
+  flex: 1;
+  min-width: 0;
+}
+.proxy-setup-steps > li > button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: start;
+  white-space: normal;
+  color: var(--muted);
+}
+.proxy-setup-steps > li > button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--strong);
+}
+.proxy-setup-step-dot {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  background: var(--paper);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.proxy-setup-steps > li.is-current .proxy-setup-step-dot {
+  background: var(--strong);
+  border-color: var(--strong);
+  color: var(--paper);
+}
+.proxy-setup-steps > li.is-done .proxy-setup-step-dot {
+  background: color-mix(in srgb, var(--success) 14%, var(--paper));
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  color: var(--success);
+}
+.proxy-setup-step-text {
+  display: grid;
+  min-width: 0;
+}
+.proxy-setup-step-text strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--strong);
+  line-height: 1.3;
+}
+.proxy-setup-step-text small {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.35;
+}
+.proxy-setup-step-sep {
+  flex: none;
+  color: var(--inactive);
+  display: grid;
+  place-items: center;
+}
+
+.proxy-scenario-section {
+  margin: 0 0 16px;
+}
+.proxy-scenario-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.proxy-scenario-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--strong);
+}
+.proxy-guide-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.proxy-guide-toggle:hover:not(:disabled) {
+  color: var(--strong);
+}
+.proxy-scenario-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.proxy-scenario-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 14px 15px;
+  border: 1.5px solid var(--line);
+  border-radius: 13px;
+  background: var(--paper);
+  text-align: start;
+  white-space: normal;
+  color: var(--ink);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.proxy-scenario-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--strong) 38%, var(--line));
+  background: var(--paper);
+  box-shadow: var(--shadow-xs);
+}
+.proxy-scenario-card[aria-pressed="true"] {
+  border-color: var(--strong);
+  background: color-mix(in srgb, var(--accent) 4%, var(--paper));
+  box-shadow: var(--shadow-xs);
+}
+.proxy-scenario-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.proxy-scenario-title-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.proxy-scenario-card strong {
+  font-size: 14px;
+  font-weight: 620;
+  color: var(--strong);
+}
+.proxy-scenario-tag {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 560;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--strong);
+}
+.proxy-scenario-check {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  background: var(--paper);
+}
+.proxy-scenario-card[aria-pressed="true"] .proxy-scenario-check {
+  background: var(--strong);
+  border-color: var(--strong);
+  color: var(--paper);
+}
+.proxy-mini-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--chrome);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.proxy-mini-flow svg {
+  flex: none;
+  color: var(--inactive);
+}
+.proxy-mini-flow mark {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-weight: 560;
+  color: var(--strong);
+}
+.proxy-mini-flow mark.is-exit {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+}
+.proxy-scenario-card p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.proxy-help-callout {
+  margin: 12px 0 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--chrome);
+  border: 1px solid var(--line-subtle);
+}
+.proxy-help-callout ul {
+  margin: 8px 0 0;
+  padding-inline-start: 18px;
+}
+.proxy-help-callout li + li {
+  margin-top: 6px;
+}
+.proxy-help-notes strong + p {
+  margin-bottom: 10px;
+}
+
+.proxy-inline-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--chrome);
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.proxy-inline-callout > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.proxy-inline-callout.is-warning {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
+  background: color-mix(in srgb, var(--warning) 7%, var(--paper));
+}
+.proxy-inline-callout.is-warning > svg {
+  color: var(--warning);
+}
+.proxy-inline-callout.is-warning > span {
+  flex: 1;
+}
+.proxy-inline-callout.is-warning > button {
+  flex: none;
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.proxy-inline-callout.is-guide > div {
+  flex: 1;
+  min-width: 0;
+}
+.proxy-inline-callout.is-guide p {
+  margin: 0 0 10px;
+  color: var(--strong);
+  font-size: 12.5px;
+}
+.proxy-inline-callout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.proxy-inline-callout-actions button {
+  min-height: 32px;
+  padding: 4px 11px;
+  font-size: 12px;
+}
+
+.proxy-empty-hub {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--paper);
+  box-shadow: var(--shadow-xs);
+  padding: 18px;
+}
+.proxy-empty-hub-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.proxy-empty-hub-head h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--strong);
+}
+.proxy-empty-hub-head p {
+  margin: 5px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.proxy-empty-hub-head > button {
+  flex: none;
+}
+.proxy-role-primer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--chrome);
+  border: 1px solid var(--line-subtle);
+  margin-bottom: 14px;
+}
+.proxy-role-primer-item p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.proxy-import-methods {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.proxy-method-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--chrome);
+  text-align: start;
+  white-space: normal;
+  color: var(--ink);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+.proxy-method-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--strong) 35%, var(--line));
+  background: var(--paper);
+}
+.proxy-method-card svg {
+  color: var(--strong);
+  margin-bottom: 2px;
+}
+.proxy-method-card strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--strong);
+}
+.proxy-method-card span {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.proxy-pick-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  margin: 10px 0 12px;
+  border-radius: 10px;
+  background: var(--chrome);
+  border: 1px solid var(--line-subtle);
+}
+.proxy-pick-bar-label {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.proxy-pick-bar-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.settings-page .settings-content button.proxy-pick-pill,
+.proxy-pick-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+}
+.proxy-pick-pill-num {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--chrome);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.proxy-pick-pill strong {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.proxy-pick-pill small {
+  color: var(--muted);
+  font-size: 11.5px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proxy-pick-pill[aria-pressed="true"] {
+  background: var(--strong);
+  border-color: var(--strong);
+  color: var(--paper);
+}
+.proxy-pick-pill[aria-pressed="true"] .proxy-pick-pill-num {
+  background: color-mix(in srgb, var(--paper) 20%, transparent);
+  color: var(--paper);
+}
+.proxy-pick-pill[aria-pressed="true"] small {
+  color: color-mix(in srgb, var(--paper) 82%, transparent);
+}
+
+.proxy-host-download-wrap.is-recommended {
+  padding: 10px 12px;
+  margin: 12px 0;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  background: color-mix(in srgb, var(--accent) 4%, var(--chrome));
+}
+.proxy-host-download-tip,
+.proxy-manual-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.proxy-manual-tip {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--chrome);
+  border: 1px solid var(--line-subtle);
+}
+.proxy-host-download-tip svg,
+.proxy-manual-tip svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.proxy-setup-advanced {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-subtle);
+}
+.proxy-setup-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.proxy-setup-advanced-toggle svg:last-child {
+  transition: transform 150ms var(--ease-out);
+}
+.proxy-setup-advanced-toggle svg.rotated {
+  transform: rotate(180deg);
+}
+.proxy-setup-advanced-body {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.proxy-setup-advanced-body label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 550;
+  margin-bottom: 10px;
+}
+.proxy-setup-advanced-body input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* Keep source forms inside the installation flow cleanly aligned */
+.initialization .proxy-import {
+  background: var(--paper);
+  box-shadow: var(--shadow-xs);
+}
+.initialization .proxy-import label:not(.check-line) {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--strong);
+}
+.initialization .proxy-import input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.initialization .proxy-import select {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--ink);
+  font: inherit;
+}
+.initialization .proxy-import .field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.initialization .proxy-import .check-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--strong);
+  margin: 4px 0;
+}
+.initialization .proxy-import .check-line input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+}
+
+/* Flip directional flow icons under RTL */
+:dir(rtl) .proxy-mini-flow svg,
+:dir(rtl) .proxy-flow-arrow,
+:dir(rtl) .proxy-setup-step-sep svg {
+  transform: scaleX(-1);
+}
+
+:root[data-preset="high-contrast"] .proxy-scenario-card[aria-pressed="true"],
+:root[data-preset="high-contrast"] .proxy-route-hop.is-target {
+  background: var(--paper);
+}
+
 @keyframes proxy-hop-in {
   from {
     opacity: 0;
@@ -875,11 +1622,31 @@ button.proxy-region-group-header:hover:not(:disabled) {
   .proxy-route-actions > div button {
     flex: 1;
   }
+  .proxy-route-chain-tools {
+    margin-inline-start: 0;
+  }
   .proxy-node-role {
     display: none;
   }
   .proxy-route-preview {
     gap: 5px;
+  }
+  .proxy-scenario-grid,
+  .proxy-role-primer,
+  .proxy-import-methods,
+  .initialization .proxy-import .field-row {
+    grid-template-columns: 1fr;
+  }
+  .proxy-setup-steps {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+  .proxy-setup-step-sep {
+    display: none;
+  }
+  .proxy-empty-hub-head {
+    flex-direction: column;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -887,7 +1654,10 @@ button.proxy-region-group-header:hover:not(:disabled) {
     animation: none;
   }
   .proxy-route-mode button,
-  .proxy-route-actions .primary {
+  .proxy-route-actions .primary,
+  .proxy-scenario-card,
+  .proxy-method-card,
+  .proxy-setup-advanced-toggle svg:last-child {
     transition: none;
   }
 }

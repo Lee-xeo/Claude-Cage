@@ -1,15 +1,25 @@
-.local-config-import { padding: 20px; border: 1px solid var(--line); border-radius: 12px; margin: 20px 0; }
+.local-config-import { padding: 20px; border: 1px solid var(--line); border-radius: 12px; margin: 20px 0; background: var(--paper); }
+.local-config-import--setup { padding: 16px 18px; margin: 14px 0 18px; box-shadow: var(--shadow-xs); }
+.local-config-import--compact { padding: 10px 14px; margin: 14px 0 16px; border-radius: 10px; background: var(--chrome); border-color: var(--line-subtle); }
+.local-config-compact-row { display: flex; align-items: center; gap: 10px; }
+.local-config-compact-row > svg { flex: none; color: var(--muted); }
+.local-config-compact-row > p { flex: 1; min-width: 0; margin: 0; font-size: 13px; color: var(--muted); }
+.local-config-compact-row > button { flex: none; }
 .local-config-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.local-config-heading h4 { margin: 0; font-size: 16px; color: var(--strong); font-weight: 550; }
-.local-config-import p { margin: 10px 0; }
+.local-config-heading h4 { margin: 0; font-size: 15px; color: var(--strong); font-weight: 600; }
+.local-config-import p { margin: 8px 0; font-size: 13px; color: var(--muted); }
 .local-config-import [role="status"], .local-config-import button { display: flex; align-items: center; gap: 6px; }
-.local-config-list { list-style: none; padding: 0; margin: 16px 0 0; }
-.local-config-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); }
+.local-config-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.local-config-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line-subtle); }
 .local-config-list li > div { min-width: 0; overflow-wrap: anywhere; }
-.local-config-list strong { color: var(--strong); font-weight: 550; }
+.local-config-list strong { color: var(--strong); font-weight: 560; font-size: 13px; }
 .local-config-list li p { margin: 4px 0 0; font-size: 12px; }
 .local-config-list li > button { flex-shrink: 0; }
 .local-config-note { font-size: 12px; color: var(--muted); }
 .local-config-error { color: var(--danger); overflow-wrap: anywhere; }
 .local-config-warning { color: var(--ink); }
-@media(max-width: 500px) { .local-config-import { padding: 14px; } .local-config-list li { align-items: flex-start; flex-direction: column; gap: 10px; } }
+@media(max-width: 560px) {
+  .local-config-import { padding: 14px; }
+  .local-config-compact-row { flex-wrap: wrap; }
+  .local-config-list li { align-items: flex-start; flex-direction: column; gap: 10px; }
+}

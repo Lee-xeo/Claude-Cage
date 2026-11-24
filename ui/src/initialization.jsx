@@ -83,6 +83,7 @@ function Initialization({ initial, onComplete }) {
   const [help, setHelp] = useState(false);
   const [dialog, setDialog] = useState(null);
   const [proxyDirty, setProxyDirty] = useState(false);
+  const [proxySetupState, setProxySetupState] = useState(null);
   const alive = useRef(true);
   const pollNow = useRef(null);
   const actionPending = useRef(false);
@@ -260,10 +261,22 @@ function Initialization({ initial, onComplete }) {
   const progress = !status?.ready && job.setup_progress ? { ...job, setup_progress: job.setup_progress } : null;
   const title = step === "system" ? "为 Cage 准备独立环境" : step === "proxy" ? "连接你的网络代理" : showReady ? "Cage 已准备就绪" : !busy && networkPending ? "系统已安装，完成使用检查" : stopped ? "安装已停止，可以继续" : failed ? "继续完成环境安装" : busy ? "正在准备你的环境" : "安装并检查客机环境";
   const index = steps.findIndex(([key]) => key === step);
+  const proxyReadyToInstall = !busy && !proxyDirty && !needsProxySetup(null, status, proxy) && !connectionError;
+  const proxyFooterHint = (() => {
+    if (proxyReadyToInstall) return { ready: true, text: tr("代理已就绪") };
+    if (proxySetupState?.sourceDirty) return { ready: false, text: tr("完成或取消当前来源编辑后即可安装") };
+    if (proxySetupState?.blockReason === "need-more-nodes" || proxySetupState?.blockReason === "incomplete-route") {
+      return { ready: false, text: proxySetupState.chainMode ? tr("请先补齐中转与出口节点，并点击「应用代理」") : tr("请选择节点并点击「应用代理」，即可开始安装") };
+    }
+    if (proxyDirty || proxySetupState?.blockReason === "unapplied") return { ready: false, text: tr("请先点击上方「应用代理」生效") };
+    if (proxySetupState?.blockReason === "empty") return { ready: false, text: tr("请先导入节点并应用代理，即可开始安装") };
+    if (needsProxySetup(null, status, proxy)) return { ready: false, text: tr("请选择节点并点击「应用代理」，即可开始安装") };
+    return null;
+  })();
   return <InitializationFrame>
     <section className="initialization-content">
       <ol className="initialization-steps" aria-label={tr("初始化步骤")}>{steps.map(([key, label], position) => <li key={key} aria-current={step === key ? "step" : undefined}><span>{position < index ? <Check size={14} /> : position + 1}</span>{tr(label)}</li>)}</ol>
-      <div className="initialization-title"><h1>{tr(title)}</h1><p>{step === "system" ? tr("Cage 会在这台电脑里创建一套独立的 Debian 系统，供终端、浏览器和编辑器使用。不需要更换磁盘时，可以保留默认存储位置。") : step === "proxy" ? tr("导入具体节点。使用代理链时，在 Cage 中依次选择中转和最终出口。") : showReady ? tr("系统、开发组件和网络检查均已完成，可以进入工作台开始使用。") : networkPending ? tr("系统已经装好，无需重新安装。按下方指引完成检查，就能进入工作台。") : tr("Cage 会自动下载系统、安装工具，再引导你完成授权。需要你操作时会显示具体步骤；中断后可以继续原任务。")}</p></div>
+      <div className="initialization-title"><h1>{tr(title)}</h1><p>{step === "system" ? tr("Cage 会在这台电脑里创建一套独立的 Debian 系统，供终端、浏览器和编辑器使用。不需要更换磁盘时，可以保留默认存储位置。") : step === "proxy" ? tr("Cage 会用内置代理独立接管环境网络，不影响主机其他软件。直接用单个节点，或通过「中转代理 + 出口节点」连接住宅 IP 都可以。") : showReady ? tr("系统、开发组件和网络检查均已完成，可以进入工作台开始使用。") : networkPending ? tr("系统已经装好，无需重新安装。按下方指引完成检查，就能进入工作台。") : tr("Cage 会自动下载系统、安装工具，再引导你完成授权。需要你操作时会显示具体步骤；中断后可以继续原任务。")}</p></div>
       {connectionError && <div className="initialization-notice" role="alert"><SafetyMessage message={connectionError} /><button onClick={() => pollNow.current?.()}>{tr("重新连接")}</button></div>}
       {!status ? <p role="status"><LoaderCircle size={18} className="spin" />{tr("正在读取安装状态…")}</p> : <>
         <div className="initialization-stage" key={step}>
@@ -274,7 +287,7 @@ function Initialization({ initial, onComplete }) {
               <GuestProfileOptions value={guestProfile} onChange={setGuestProfile} disabled={busy} system={choice?.guest_system} />
             </>}
           </>}
-          {step === "proxy" && <><ProxySettings initializing status={status} onConfirm={confirm} onDirty={setProxyDirty} onApplied={async () => { setProxy(await api("/proxy")); pollNow.current?.(); }} /></>}
+          {step === "proxy" && <><ProxySettings initializing status={status} onConfirm={confirm} onDirty={setProxyDirty} onSetupState={setProxySetupState} onApplied={async () => { setProxy(await api("/proxy")); pollNow.current?.(); }} /></>}
           {step === "install" && (showReady ? <div className="initialization-ready"><ShieldCheck size={36} /><h2>{tr(entering ? "正在进入工作台" : "环境已就绪")}</h2><p role={entering ? "status" : undefined}>{tr(entering ? "正在等待后台检查结束并确认环境状态，请稍候…" : "独立系统已安装，工具、文件和登录状态会持续保存。以后打开 Cage 可直接进入工作台。")}</p></div> : <>
             {needsRestart && <section className="initialization-notice" aria-label={tr("需要重启环境")}><h2>{tr("下一步：重启环境并重新检测")}</h2><p>{tr("环境设置已变化。请先保存文件，再点击下方按钮。重启并通过检查前，外网保持关闭。")}</p><button className="primary" disabled={busy || Boolean(connectionError)} onClick={restart}>{status.vm_running ? tr("重启环境并重新检测") : tr("启动环境并重新检测")}</button></section>}
             {progress ? <SetupProgress job={progress} onDetails={() => setDetails(true)} onStop={stop} onRetry={needsRestart ? restart : install} disconnected={Boolean(connectionError) || submitting} /> : <div className="initialization-operation" role="status">{busy && <LoaderCircle size={22} className="spin" />}<p>{measuring ? tr("正在经所选代理测量 Debian 软件源的下载速度，最多约 20 秒…") : stopped ? tr("安装已停止，已有下载和磁盘会保留。点击「继续安装」接着完成。") : job.message || (status.vm_running ? tr("请完成客机连接和网络检查。") : tr("准备继续原安装，已有文件和磁盘会保留。"))}</p>{!busy && !job.error && !mirrors && !needsRestart && <button className="primary" disabled={Boolean(connectionError)} onClick={install}>{status.ready ? tr("重新启动并检查") : tr("继续安装")}</button>}{busy && !measuring && <button onClick={stop} disabled={submitting}>{tr("停止安装")}</button>}</div>}
@@ -296,7 +309,17 @@ function Initialization({ initial, onComplete }) {
         <footer className="initialization-actions">
           {step === "system" ? <span /> : <button className="text-button" disabled={busy} onClick={back}><ChevronLeft size={16} />{tr("上一步")}</button>}
           {step === "system" && <button className="primary" disabled={busy || !storage?.directory.trim() || choice === undefined || !validGuestChoice(choice) || Boolean(connectionError)} onClick={nextFromSystem}>{submitting && <LoaderCircle size={16} className="spin" />}{tr("下一步：配置代理")}</button>}
-          {step === "proxy" && <button className="primary" disabled={busy || proxyDirty || !account?.guest_system && !pending && !validGuestChoice(choice) || needsProxySetup(null, status, proxy) || Boolean(connectionError)} onClick={install}>{submitting ? <LoaderCircle size={16} className="spin" /> : null}{tr("开始安装")}</button>}
+          {step === "proxy" && (
+            <div className="initialization-proxy-cta">
+              {proxyFooterHint && (
+                <span className={`initialization-proxy-hint${proxyFooterHint.ready ? " is-ready" : ""}`} aria-live="polite">
+                  {proxyFooterHint.ready && <Check size={14} aria-hidden="true" />}
+                  {proxyFooterHint.text}
+                </span>
+              )}
+              <button className="primary" disabled={busy || proxyDirty || !account?.guest_system && !pending && !validGuestChoice(choice) || needsProxySetup(null, status, proxy) || Boolean(connectionError)} onClick={install}>{submitting ? <LoaderCircle size={16} className="spin" /> : null}{tr("开始安装")}</button>
+            </div>
+          )}
           {step === "install" && showReady && <button className="primary" disabled={busy || Boolean(connectionError)} aria-busy={entering} onClick={enter}>{entering && <LoaderCircle size={16} className="spin" />}{tr(entering ? "正在进入…" : "进入工作台")}</button>}
         </footer>
       </>}
