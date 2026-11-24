@@ -101,3 +101,33 @@ func TestImageDownloadSummaryNamesHostProxyFailure(t *testing.T) {
 		t.Fatalf("summary = %q, want %q\nfrom %s", got, want, strings.Join(lines, "\n"))
 	}
 }
+
+// #841: hostproxy stops a download before any dial when the host's proxy
+// settings or PAC cannot be resolved. These are its messages, as net/http
+// returns them from the Proxy function.
+func TestImageDownloadSummaryNamesHostProxySettingsFailure(t *testing.T) {
+	for _, message := range []string{
+		"无法解析主机系统代理或 PAC，请检查 Clash 等代理软件后重试；未切换直连",
+		"此构建无法读取 macOS 系统代理，请使用正式原生构建或设置 HTTPS_PROXY；未切换直连",
+		"无法读取主机桌面代理设置，请检查代理软件或设置 HTTPS_PROXY；未切换直连",
+		"此 Linux 构建暂不解析桌面 PAC，请启用主机 TUN 或设置 HTTPS_PROXY 后继续下载",
+		"无法读取主机系统代理，未切换直连：The operation timed out",
+		"无法解析主机自动代理：timeout",
+		"主机自动代理返回空地址，未切换直连",
+		"主机 PAC/自动代理解析失败，未切换直连，请检查代理软件：x",
+		"主机代理地址无效，请检查系统代理设置",
+		"主机代理协议不受支持，请使用 HTTP 或 SOCKS5 系统代理",
+		"主机代理设置无效，请检查系统代理设置",
+	} {
+		client := &http.Client{Transport: &http.Transport{Proxy: func(*http.Request) (*url.URL, error) { return nil, errors.New(message) }}}
+		location := debianImageMirrors[0].base + "debian.qcow2"
+		_, err := client.Get(location)
+		if err == nil {
+			t.Fatal("request without a proxy decision succeeded")
+		}
+		got := ImageDownloadSummary(fmt.Errorf("failed to download `%s`: %w", location, err))
+		if want := ImageDownloadMarker + " official:proxy-config:none"; got != want {
+			t.Errorf("%q: summary = %q, want %q", message, got, want)
+		}
+	}
+}

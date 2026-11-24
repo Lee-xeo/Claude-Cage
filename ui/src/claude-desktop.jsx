@@ -1,118 +1,18 @@
-import { InlineSelect } from "./inline-select";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Download,
-  ChevronDown,
-  ChevronUp,
   Monitor,
   PanelLeftOpen,
-  Power,
   RefreshCw,
 } from "lucide-react";
 import { BrowserUploads } from "./browser-uploads";
 import { ProjectDialog } from "./project-dialog";
 import { api, nativeAvailable } from "./api";
 import { SafetyMessage } from "./safety-message";
-import { DeviceCheckButton } from "./device-checks";
 import { RemoteView } from "./views";
 import { useWindowVisibility } from "./window-visibility";
 import "./claude-desktop.css";
 import { useTranslation } from "./interface-language.mjs";
-
-const desktopZooms = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
-
-export function useDesktopZoom() {
-  const [zoom, setZoom] = useState(() => {
-    try {
-      const stored = localStorage.getItem("cage-desktop-zoom");
-      const value = Number(stored);
-      return desktopZooms.includes(value) ? value : 1;
-    } catch { return 1; }
-  });
-  return [zoom, setZoom];
-}
-
-export function DesktopToolbar({ desktop, platform, title = "Claude Desktop", zoom, setZoom, onConfirm, onStop, busy, refresh, sidebarCollapsed, onExpand, children }) {
-  const tr = useTranslation();
-  const [hidden, setHidden] = useState(() => {
-    try { return localStorage.getItem("cage-desktop-toolbar-hidden") === "true"; }
-    catch { return false; }
-  });
-  const toggleToolbar = (value) => {
-    setHidden(value);
-    try { localStorage.setItem("cage-desktop-toolbar-hidden", String(value)); }
-    catch { /* Keep the preference for this session. */ }
-  };
-  if (hidden && desktop?.running) {
-    return (
-      <div className="desktop-toolbar-reveal">
-        {sidebarCollapsed && <button className="icon-button" aria-label={tr("展开侧栏")} title={tr("展开侧栏")} onClick={onExpand}><PanelLeftOpen size={15} /></button>}
-        <button className="icon-button" aria-label={tr("显示 Desktop 工具栏")} title={tr("显示 Desktop 工具栏")} onClick={() => toggleToolbar(false)}><ChevronDown size={15} /></button>
-      </div>
-    );
-  }
-  return (
-      <header className="claude-desktop-toolbar">
-        {sidebarCollapsed && (
-          <button
-            className="icon-button"
-            aria-label={tr("展开侧栏")}
-            onClick={onExpand}
-          >
-            <PanelLeftOpen size={17} />
-          </button>
-        )}
-        <Monitor size={18} />
-        <strong>{title}</strong>
-        <span className="desktop-version">
-          {desktop?.version ? `v${desktop.version}` : platform}
-        </span>
-        <span className="desktop-toolbar-spacer" />
-        {children}
-        <DeviceCheckButton target="desktop" disabled={busy || !desktop?.running} />
-        {desktop?.running && (
-          <label className="desktop-display-size">
-            {tr("显示大小")}
-            <InlineSelect aria-label={tr("Desktop 显示大小")} value={zoom} onValueChange={(next) => {
-              const value = Number(next);
-              setZoom(value);
-              try { localStorage.setItem("cage-desktop-zoom", String(value)); } catch { /* Session-only preference. */ }
-            }}>
-              {desktopZooms.map((value) => <option key={value} value={value}>{Math.round(value * 100)}%{value === 1 ? tr("（默认）") : ""}</option>)}
-            </InlineSelect>
-          </label>
-        )}
-        {desktop?.running && onStop && (
-          <button
-            className="quiet-button"
-            disabled={busy}
-            onClick={async () => {
-              if (
-                await onConfirm({
-                  title: "关闭 Claude Desktop？",
-                  body: "请先保存应用内的工作。浏览器和 Cage 终端会继续运行。",
-                  confirm: "关闭应用",
-                })
-              )
-                onStop();
-            }}
-          >
-            <Power size={15} />
-            {tr("关闭应用")}
-          </button>
-        )}
-        <button
-          className="icon-button"
-          aria-label={tr("刷新") + " " + title + " " + tr("状态")}
-          disabled={busy}
-          onClick={refresh}
-        >
-          <RefreshCw size={15} />
-        </button>
-        {desktop?.running && <button className="icon-button" aria-label={tr("隐藏 Desktop 工具栏")} title={tr("隐藏 Desktop 工具栏")} onClick={() => toggleToolbar(true)}><ChevronUp size={15} /></button>}
-      </header>
-  );
-}
 
 export function ClaudeDesktop({
   uploads = [],
@@ -122,16 +22,17 @@ export function ClaudeDesktop({
   remoteRef,
   onStatus,
   onFallback,
-  onConfirm,
   onDetails,
   onExpand,
   sidebarCollapsed,
+  refreshSignal = 0,
+  autoStart = true,
+  onRunningChange,
 }) {
   const tr = useTranslation();
   const [closedChooser, setClosedChooser] = useState("");
   const defaultUploads = uploads.filter((item) => !item.desktop || item.desktop === "default");
   const directoryRequest = defaultUploads.find((item) => item.directory && item.id !== closedChooser);
-  const [zoom, setZoom] = useDesktopZoom();
   const windowVisible = useWindowVisibility();
   const screenVisible = visible && windowVisible;
   const [desktop, setDesktop] = useState(null);
@@ -142,6 +43,7 @@ export function ClaudeDesktop({
   const opened = useRef(false);
   const statusRequest = useRef(null);
   const statusRevision = useRef(0);
+  const lastRunning = useRef(null);
   const ownJob = status.job?.kind?.startsWith("claude-desktop-");
   const busy = submitting || Boolean(status.job?.running) || Boolean(jobID);
   const refresh = async (valid = () => true) => {
@@ -175,6 +77,18 @@ export function ClaudeDesktop({
     }
   };
   useEffect(() => {
+    if (!desktop) return;
+    const running = Boolean(desktop.running);
+    if (lastRunning.current !== running) {
+      lastRunning.current = running;
+      onRunningChange?.(running);
+    }
+  }, [desktop, onRunningChange]);
+  useEffect(() => {
+    if (!refreshSignal || !status.vm_running) return;
+    void refresh();
+  }, [refreshSignal, status.vm_running]);
+  useEffect(() => {
     if (!screenVisible || !status.vm_running || status.job?.running) return;
     let disposed = false;
     let timer;
@@ -183,7 +97,7 @@ export function ClaudeDesktop({
       if (disposed) return;
       if (value && !opened.current) {
         opened.current = true;
-        if (value.installed && !value.running && !value.failed && !jobID)
+        if (autoStart && value.installed && !value.running && !value.failed && !jobID)
           await run("start");
       }
       if (!disposed) timer = setTimeout(poll, 5000);
@@ -206,6 +120,18 @@ export function ClaudeDesktop({
   }, [status.job]);
   return (
     <section className="claude-desktop-view" aria-label="Claude Desktop">
+      {sidebarCollapsed && (
+        <div className="desktop-sidebar-reveal">
+          <button
+            className="icon-button"
+            aria-label={tr("展开侧栏")}
+            title={tr("展开侧栏")}
+            onClick={onExpand}
+          >
+            <PanelLeftOpen size={15} />
+          </button>
+        </div>
+      )}
       {!nativeAvailable() && <BrowserUploads requests={defaultUploads} onStatus={onStatus} />}
       {directoryRequest && <ProjectDialog
         key={directoryRequest.id}
@@ -221,12 +147,6 @@ export function ClaudeDesktop({
           await onProjectOpened(workspace);
         }}
       />}
-      <DesktopToolbar desktop={desktop} platform="Linux" zoom={zoom} setZoom={setZoom}
-        onConfirm={onConfirm} onStop={() => run("stop")} busy={busy} refresh={() => refresh()} sidebarCollapsed={sidebarCollapsed} onExpand={onExpand}>
-        {desktop?.installed && <button className="quiet-button" disabled={busy} onClick={async () => {
-          if (!desktop.running || await onConfirm({ title: "更新 Claude Desktop？", body: "请先保存应用内的工作。更新会关闭 Claude Desktop，从官方软件源安装可用版本，再重新打开；登录资料继续保留。", confirm: "更新应用" })) run("update");
-        }}>{tr("更新应用")}</button>}
-      </DesktopToolbar>
       {(error || statusError || desktop?.failed) && (
         <div className="connection-banner" role="alert">
           <SafetyMessage message={error || statusError || (desktop?.failure_reason === "oom-kill"
@@ -250,7 +170,6 @@ export function ClaudeDesktop({
           <RemoteView
             ref={remoteRef}
             desktop
-            zoom={zoom}
             visible={visible}
             keyboard={status.keyboard}
             onStatus={onStatus}
@@ -306,7 +225,7 @@ export function ClaudeDesktop({
                 </button>
               )}
             </div>
-            {desktop?.installed && <p>{tr("Linux 版通过系统软件源更新。可点击上方“更新应用”，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。")}</p>}
+            {desktop?.installed && <p>{tr("Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。")}</p>}
             <p className="desktop-note">
               {tr("关闭应用后释放图形会话资源，登录状态保留在 Cage 环境中。需要额外虚拟机的 Cowork 功能暂未适配。")}
             </p>

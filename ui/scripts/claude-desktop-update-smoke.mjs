@@ -25,32 +25,32 @@ await page.route("**/api/claude-desktop**", async route => {
 try {
   state.status.vm_running = state.status.ready = true;
   state.status.guest_system = "debian-13";
+  await page.route("**/api/environment/versions", route => route.fulfill({ json: {
+    vm_running: true, controller: { version: "0.2.0" }, components: { status: "current", update_required: false },
+    tools: { claude: { current: "1.0.0", required: "1.0.0" } }, tools_update_allowed: true,
+  } }));
   await page.reload();
-  await page.getByRole("button", { name: "Claude Desktop", exact: true }).click();
-  const toolbar = page.locator(".claude-desktop-toolbar");
-  await toolbar.getByRole("button", { name: "更新应用", exact: true }).click();
+  await page.getByRole("button", { name: /^设置/ }).click();
+  await page.getByRole("button", { name: "环境与恢复", exact: true }).click();
+  const versions = page.getByRole("region", { name: "环境版本" });
+  await versions.getByText("v4.4212.0", { exact: true }).waitFor();
+  await versions.getByRole("button", { name: "更新 Claude Desktop", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "取消", exact: true }).click();
   assert.deepEqual(actions, [], "cancelling must preserve the running application");
   assert.equal(desktop.running, true);
-  await toolbar.getByRole("button", { name: "更新应用", exact: true }).click();
+  await versions.getByRole("button", { name: "更新 Claude Desktop", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "更新应用", exact: true }).click();
-  await page.getByRole("alert").filter({ hasText: "下载失败" }).waitFor();
+  await versions.getByRole("alert").filter({ hasText: "下载失败" }).waitFor();
   assert.deepEqual(actions, ["update"], "failed update must not start a partial installation");
   assert.equal(desktop.version, "4.4212.0");
-  await page.getByRole("button", { name: "打开 Claude Desktop", exact: true }).waitFor();
   failUpdate = false;
-  await toolbar.getByRole("button", { name: "更新应用", exact: true }).click();
-  await toolbar.getByText("v4.4213.0", { exact: true }).waitFor();
-  await toolbar.getByRole("button", { name: "关闭应用", exact: true }).waitFor();
+  await versions.getByRole("button", { name: "更新 Claude Desktop", exact: true }).click();
+  await versions.getByText("v4.4213.0", { exact: true }).waitFor();
   assert.deepEqual(actions, ["update", "update", "start"]);
   assert.equal(desktop.installed, true);
-  state.status.guest_system = "windows-11";
-  await page.reload();
-  await page.getByRole("button", { name: "Claude Desktop", exact: true }).click();
-  await toolbar.getByText("v4.4213.0", { exact: true }).waitFor();
-  assert.equal(await toolbar.getByRole("button", { name: "更新应用", exact: true }).count(), 0, "Windows uses its official in-app updater");
+  assert.equal(desktop.running, true);
   assert.deepEqual(errors, []);
-  console.log("PASS: Linux update confirmation/cancel, failure preservation, retry/reopen, Windows in-app update boundary");
+  console.log("PASS: settings version entry, Linux update confirmation/cancel, failure preservation, retry/reopen");
 } finally {
   await browser.close();
 }

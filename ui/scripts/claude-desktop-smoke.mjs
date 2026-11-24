@@ -75,26 +75,29 @@ try {
   assert.equal(desktop.installed, false);
   failInstall = false;
   await page.getByRole("button", { name: "下载并安装", exact: true }).click();
-  await page.getByRole("button", { name: "关闭应用", exact: true }).waitFor();
+  const desktopButton = page.getByRole("button", { name: "Claude Desktop", exact: true });
+  const desktopView = page.locator(".claude-desktop-view");
+  const desktopCanvas = page.locator(".claude-desktop-view .remote-canvas");
+  await desktopCanvas.waitFor();
+  assert.equal(await page.locator(".claude-desktop-toolbar").count(), 0, "Desktop workspace must not render a top toolbar");
   assert.deepEqual(actions, ["install", "install", "start"]);
-  const desktopToolbar = page.locator(".claude-desktop-toolbar");
   const sendBrowserState = (focus) => page.evaluate((snapshot) => {
     window.desktopBrowserEvents.onmessage({ data: JSON.stringify(snapshot) });
   }, { tabs: state.tabs, active: state.active, focus });
   await sendBrowserState(false);
-  await desktopToolbar.waitFor();
+  await desktopView.waitFor();
   const loginTab = { id: "desktop-login", kind: "web", title: "Desktop sign in", url: "https://claude.com/cai/login/app-google-auth" };
   state.tabs.push(loginTab);
   state.active = loginTab.id;
   await sendBrowserState(true);
-  await desktopToolbar.waitFor({ state: "hidden" });
+  await desktopView.waitFor({ state: "hidden" });
   assert.equal(desktop.running, true, "opening an external login page must preserve Desktop");
-  await page.getByRole("button", { name: "Claude Desktop", exact: true }).click();
+  await desktopButton.click();
   await sendBrowserState(false);
-  await desktopToolbar.waitFor();
+  await desktopView.waitFor();
   state.tabs.push({ ...loginTab, id: "desktop-login-poll" });
   state.active = "desktop-login-poll";
-  await desktopToolbar.waitFor({ state: "hidden" });
+  await desktopView.waitFor({ state: "hidden" });
   assert.equal(await page.getByRole("textbox", { name: "网页地址或搜索" }).inputValue(), loginTab.url);
   await page.getByRole("button", { name: "打开浏览器", exact: true }).click();
   assert.equal(
@@ -102,10 +105,9 @@ try {
     true,
     "changing views must not stop the desktop",
   );
-  await page
-    .getByRole("button", { name: "Claude Desktop", exact: true })
-    .click();
-  await page.getByRole("button", { name: "关闭应用", exact: true }).click();
+  await desktopButton.click();
+  await desktopButton.hover();
+  await page.getByRole("group", { name: "Claude Desktop 的操作" }).getByRole("button", { name: "关闭应用", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "关闭应用", exact: true })
@@ -115,11 +117,15 @@ try {
     .waitFor();
   assert.equal(desktop.running, false);
   const stoppedActions = actions.length;
-  await page.getByRole("button", { name: "刷新 Claude Desktop 状态" }).click();
+  await page.getByRole("button", { name: "打开浏览器", exact: true }).click();
+  await desktopButton.click();
+  await page
+    .getByRole("button", { name: "打开 Claude Desktop", exact: true })
+    .waitFor();
   assert.equal(
     actions.length,
     stoppedActions,
-    "refresh must not reopen a stopped app",
+    "revisiting a stopped app must not reopen it",
   );
   await page.getByRole("button", { name: /^设置/ }).click();
   await page
@@ -136,13 +142,13 @@ try {
   await page.getByRole("button", { name: /^在 .* 新建终端$/ }).click();
   await page
     .getByRole("menu")
-    .getByRole("menuitem", { name: "Claude 终端", exact: true })
+    .getByRole("menuitem", { name: /Claude 终端/ })
     .waitFor();
   await page.screenshot({
     path: fileURLToPath(new URL("terminal-choice.png", output)),
   });
   await page
-    .getByRole("menuitem", { name: "Claude 终端", exact: true })
+    .getByRole("menuitem", { name: /Claude 终端/ })
     .click();
   const terminalRequests = () =>
     state.requests.filter(

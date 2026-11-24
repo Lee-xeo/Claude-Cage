@@ -12,6 +12,7 @@ import {
   Network,
   PanelLeftClose,
   Plus,
+  Power,
   RefreshCw,
   Settings,
   Server,
@@ -77,6 +78,8 @@ export function WorkspaceSidebar({
   claudeAccountsOpen,
   onClaudeWeb,
   onClaudeDesktop,
+  defaultDesktopRunning,
+  onDefaultDesktopStop,
   accountDesktops,
   onDesktopRename,
   desktopOpen,
@@ -187,7 +190,43 @@ export function WorkspaceSidebar({
             <img src={claudeLogo} width="18" height="18" alt="" />
           </button>
         </div>
-        {accountDesktops ? <DesktopList model={accountDesktops} disabled={!running || busy} selected={desktopOpen} onDefault={onClaudeDesktop} onRename={onDesktopRename} /> : <button className={`sidebar-link ${desktopOpen?"selected":""}`} onClick={onClaudeDesktop} disabled={!running||busy}><Monitor size={17}/>Claude Desktop</button>}
+        {accountDesktops ? (
+          <DesktopList
+            model={accountDesktops}
+            disabled={!running || busy}
+            selected={desktopOpen}
+            defaultRunning={defaultDesktopRunning}
+            onDefault={onClaudeDesktop}
+            onDefaultStop={onDefaultDesktopStop}
+            onRename={onDesktopRename}
+          />
+        ) : (
+          <div className={`account-desktop-row ${desktopOpen ? "active" : ""}`}>
+            <button
+              className="sidebar-link"
+              onClick={onClaudeDesktop}
+              disabled={!running || busy}
+            >
+              <Monitor size={17} />
+              Claude Desktop
+              {defaultDesktopRunning ? <span className="account-desktop-status" aria-hidden="true">●</span> : null}
+            </button>
+            {defaultDesktopRunning && onDefaultDesktopStop && (
+              <div className="terminal-row-actions" role="group" aria-label={tr("{0} 的操作", "Claude Desktop")}>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={tr("关闭应用")}
+                  title={tr("关闭应用")}
+                  disabled={!running || busy}
+                  onClick={(event) => onDefaultDesktopStop(null, event.currentTarget)}
+                >
+                  <Power size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <button className={`sidebar-link ${claudeAccountsOpen ? "selected" : ""}`} onClick={onClaudeAccounts}
           aria-current={claudeAccountsOpen ? "page" : undefined}>
           <UsersRound size={17} />{tr("Claude 账号管理")}

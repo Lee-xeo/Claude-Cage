@@ -6,83 +6,27 @@
   height: 100%;
   min-height: 0;
 }
-.desktop-toolbar-reveal {
+.desktop-sidebar-reveal {
   position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 8px;
+  inset-inline-start: 8px;
   z-index: 5;
   display: flex;
   background: var(--toolbar);
   color: var(--toolbar-ink);
   border: 1px solid var(--line);
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
+  border-radius: 8px;
   box-shadow: var(--shadow-xs);
-  opacity: 0.72;
+  opacity: 0.78;
   transition: opacity var(--duration-fast) var(--ease-out);
 }
-.desktop-toolbar-reveal:hover,
-.desktop-toolbar-reveal:focus-within {
+.desktop-sidebar-reveal:hover,
+.desktop-sidebar-reveal:focus-within {
   opacity: 1;
 }
-.desktop-toolbar-reveal .icon-button {
-  min-width: 28px;
-  min-height: 22px;
-  padding: 3px 6px;
-}
-.claude-desktop-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 4px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--toolbar);
-  color: var(--toolbar-ink);
-  min-height: var(--workbench-header-height);
-}
-.claude-desktop-toolbar > strong {
-  font-size: 0.9286rem;
-  font-weight: 500;
-}
-.desktop-version,
 .desktop-note {
   color: var(--muted);
   font-size: 12px;
-}
-.desktop-toolbar-spacer {
-  flex: 1;
-}
-.desktop-display-size {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.desktop-display-size .inline-select {
-  position: relative;
-  width: 11.5em;
-}
-.desktop-display-size .inline-select-list {
-  position: absolute;
-  top: 100%;
-  inset-inline: 0;
-  z-index: 1;
-}
-.desktop-display-size .inline-select-trigger {
-  width: auto;
-  padding: 5px 7px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-}
-@media (max-width: 900px) {
-  .desktop-display-size { font-size: 0; }
-  .desktop-display-size .inline-select { font-size: 12px; }
 }
 .desktop-screen {
   position: relative;
@@ -157,7 +101,7 @@
 .account-desktop-status {margin-inline-start:auto;flex:none;color:var(--muted);font-size:.7rem;}
 .account-desktop-list .sidebar-link > svg,.account-desktop-title > svg,.account-desktop-pane header > button {flex:none;}
 .account-desktop-label {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.account-desktop-panes {height:100%;min-width:0;}
+.account-desktop-panes {position:relative;height:100%;min-width:0;}
 .account-desktop-pane {display:flex;flex:1;flex-direction:column;min-width:0;position:relative;}
 .account-desktop-pane + .account-desktop-pane {border-inline-start:1px solid var(--line);}
 .account-desktop-pane header {align-items:center;justify-content:space-between;gap:10px;padding:6px 12px;border-bottom:1px solid var(--line);}

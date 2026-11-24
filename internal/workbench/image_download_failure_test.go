@@ -38,6 +38,15 @@ func TestImageDownloadFailureNamesHostProxy(t *testing.T) {
 	}
 }
 
+// #841: unresolvable host proxy settings or PAC are named as such, and the
+// next step points at those settings rather than at a different Cage node.
+func TestImageDownloadFailureNamesHostProxySettings(t *testing.T) {
+	reason, next, ok := imageDownloadFailure(vm.ImageDownloadMarker + " official:proxy-config:none nju:proxy-config:none")
+	if !ok || !strings.Contains(reason, "Debian 官方源（无法解析宿主机代理设置）") || !strings.Contains(next, "PAC") || !strings.Contains(next, "未改为直连") || strings.Contains(next, "换一个节点") {
+		t.Fatalf("reason %q next %q", reason, next)
+	}
+}
+
 // Only the fixed codes are accepted: a line that adds any other text is not a
 // summary and never reaches the message.
 func TestImageDownloadFailureRejectsOtherText(t *testing.T) {

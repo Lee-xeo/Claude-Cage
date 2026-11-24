@@ -57,7 +57,7 @@ Debian 13 基础镜像约 320–325 MiB，按处理器架构下载一份。虚�
 
 浏览器图形后端可选自动、Vulkan、OpenGL 或软件渲染；Linux 主机还可尝试 VirGL 加速。实际效果取决于环境中的设备与驱动。浏览器也可手动关闭 WebGL 或阻止 Canvas 图像读取，可能影响部分网站。
 
-启动后可在安全检查面板检测浏览器和 Claude Desktop；Desktop 工具栏也有“检测环境”。检测会列出实际证据、软件回退及未观测项。这些设置随环境保存，开始安装后不能再改，详见[环境创建配置](https://github.com/Lee-xeo/Claude-Cage/blob/main/docs/guest-profile.md)。
+启动后可在安全检查面板检测浏览器和 Claude Desktop。检测会列出实际证据、软件回退及未观测项。这些设置随环境保存，开始安装后不能再改，详见[环境创建配置](https://github.com/Lee-xeo/Claude-Cage/blob/main/docs/guest-profile.md)。
 
 ## 更新、重装与数据保留
 
