@@ -71,8 +71,8 @@ export function shouldRetryOnQueueAction({
   confirming,
   queuePaused = false,
 }) {
-  if (queuePaused) return false;
-  return Boolean(readError || connectionError || (uncertain && !confirming));
+  if (queuePaused || confirming) return false;
+  return Boolean(readError || connectionError || uncertain);
 }
 
 export function enqueueMessage(queue, item) {

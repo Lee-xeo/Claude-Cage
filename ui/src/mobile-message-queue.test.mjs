@@ -80,9 +80,24 @@ test("shouldRetryOnQueueAction triggers reconnect only when polling or recovery 
     confirming: false,
   }), true);
 
-  // Do not abort an already-running pending-message recovery attempt.
+  // Do not abort an already-running pending-message recovery attempt, even if
+  // /open or read errors are also present.
   assert.equal(shouldRetryOnQueueAction({
     readError: "",
+    connectionError: "",
+    uncertain: true,
+    confirming: true,
+  }), false);
+
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "",
+    connectionError: "会话连接暂未就绪，请重试。",
+    uncertain: true,
+    confirming: true,
+  }), false);
+
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "已自动重连5次，仍未恢复。",
     connectionError: "",
     uncertain: true,
     confirming: true,
