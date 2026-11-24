@@ -27,9 +27,7 @@ func linuxPhysicalInterface(ctx context.Context) (string, error) {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
 			continue
 		}
-		// PCI, USB and virtio NICs have a device parent. TUN, WireGuard,
-		// bridges and container veth pairs do not. Virtio cloud NICs qualify.
-		if _, err := os.Stat(filepath.Join("/sys/class/net", iface.Name, "device")); err != nil {
+		if !isPhysicalLink("/sys/class/net", iface.Name) {
 			continue
 		}
 		addresses, _ := iface.Addrs()
@@ -41,6 +39,38 @@ func linuxPhysicalInterface(ctx context.Context) (string, error) {
 		}
 	}
 	return selectLinuxPhysicalInterface(string(routes), usable)
+}
+
+// 链路聚合与 VLAN 的最大嵌套层数，同时防止异常的 lower_* 链接成环。
+const maxLowerLinkDepth = 8
+
+// isPhysicalLink 判断网卡是否落在物理或云主机网卡上。PCI、USB 与 virtio
+// 网卡带 device 父设备；bond、team、VLAN 和网桥没有，但其下层网卡以
+// lower_<name> 呈现，至少一个下层网卡带 device 时同样接受。TUN、WireGuard、
+// veth 及成员只有 veth 的网桥（如 docker0）追不到物理网卡，继续排除。
+func isPhysicalLink(sysRoot, name string) bool {
+	return physicalLinkAt(sysRoot, name, 0)
+}
+
+func physicalLinkAt(sysRoot, name string, depth int) bool {
+	if depth > maxLowerLinkDepth || name == "" || strings.ContainsAny(name, "/\x00") {
+		return false
+	}
+	dir := filepath.Join(sysRoot, name)
+	if _, err := os.Stat(filepath.Join(dir, "device")); err == nil {
+		return true
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		lower, ok := strings.CutPrefix(entry.Name(), "lower_")
+		if ok && physicalLinkAt(sysRoot, lower, depth+1) {
+			return true
+		}
+	}
+	return false
 }
 
 func selectLinuxPhysicalInterface(routes string, usable map[string]bool) (string, error) {
