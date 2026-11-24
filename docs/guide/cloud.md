@@ -17,6 +17,8 @@ keywords: 云端 远程部署 VPS SSH 无KVM rootless 服务器 主机 指纹 �
 
 当前目标为 Linux x86_64，具备 systemd 用户服务、cgroup v2、rootless 用户命名空间、至少 65,536 个 subordinate UID/GID，以及 `/dev/fuse`、`/dev/net/tun`。普通 SSH 用户需要相应权限；还需 OpenSSH、curl、tar、sha256sum、iproute2 与 iptables 等基础工具。
 
+用户管理器 `user@<UID>.service` 须委派 `cpu`、`memory`、`pids` 控制器。Ubuntu 22.04 等发行版默认不委派 `cpu`，部署预检会提示；由管理员添加含 `Delegate=cpu memory pids` 的 drop-in，执行 `systemctl daemon-reload` 后重新登录或重启该用户管理器。
+
 完整前提和维护命令见[部署说明](https://github.com/Lee-xeo/Claude-Cage/blob/main/deploy/cloud/README.md)。权限缺失应修复服务器配置，不要改用特权容器或把 Docker socket 暴露给工作环境。
 
 需要在退出 SSH 后持续运行或在服务器重启后恢复服务时，由服务器管理员配置 systemd 用户服务、linger 与相应启动策略。

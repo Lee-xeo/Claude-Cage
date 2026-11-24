@@ -108,6 +108,13 @@ var ephemeralPorts = [2]int{32768, 60999}
 // to where it started.
 var hostToolsPort = [2]int{18962, 18962}
 
+// guestOnlyPorts are the guest's own services on its loopback that only
+// programs in the guest use: the editor (code-server, 18080) and the web
+// VNC client (websockify, 16080). Never forwarded: the host reaches neither
+// through its own loopback, and a forward would only hold that port on the
+// host, or fail when something there already holds it.
+var guestOnlyPorts = [][2]int{{16080, 16080}, {18080, 18080}}
+
 // ShellOpts is a command run in a running VM.
 type ShellOpts struct {
 	// Workdir is where the command runs; it fails when it cannot cd there.

@@ -379,6 +379,7 @@ func watchHostAgentEvents(ctx context.Context, inst *limatype.Instance, haStdout
 	ctx, touch, idleExpired := withIdleDeadline(ctx, watchHostAgentIdleTimeout(ctx))
 	defer touch(false)
 	var lastProgress string
+	var lastCloudInit *hostagentevents.CloudInitProgress
 
 	var (
 		printedSSHLocalPort  bool
@@ -400,8 +401,11 @@ func watchHostAgentEvents(ctx context.Context, inst *limatype.Instance, haStdout
 			inst.SSHLocalPort = ev.Status.SSHLocalPort
 		}
 
-		if showProgress && ev.Status.CloudInitProgress != nil {
+		// Every event repeats the last cloud-init progress (see bootProgress),
+		// so print it only when it changes, and "done" only once.
+		if showProgress && ev.Status.CloudInitProgress != nil && (lastCloudInit == nil || *ev.Status.CloudInitProgress != *lastCloudInit) {
 			progress := ev.Status.CloudInitProgress
+			lastCloudInit = progress
 			if progress.Active && progress.LogLine == "" {
 				logrus.Infof("Cloud-init provisioning started...")
 			}
@@ -410,7 +414,7 @@ func watchHostAgentEvents(ctx context.Context, inst *limatype.Instance, haStdout
 				logrus.Infof("[cloud-init] %s", progress.LogLine)
 			}
 
-			if progress.Completed {
+			if progress.Completed && !cloudInitCompleted {
 				cloudInitCompleted = true
 				logrus.Infof("Cloud-init progress monitoring done.")
 			}

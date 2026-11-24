@@ -21,11 +21,24 @@ manual() {
   else return 1
   fi
 }
+# 镜像构建与工作环境在用户管理器下设置 CPU、内存和进程上限，需要
+# user@UID.service 委派 cpu、memory、pids。读不到 ControlGroup 或控制器
+# 文件时无法判定，放行并由后续步骤报告。CGROUP_FS_ROOT 仅供测试改读别处。
+delegated() {
+  local group controllers controller
+  group=$(systemctl --user show -p ControlGroup --value 2>/dev/null) || return 0
+  [[ "$group" == /* ]] || return 0
+  controllers=$(cat -- "${CGROUP_FS_ROOT:-/sys/fs/cgroup}$group/cgroup.controllers" 2>/dev/null) || return 0
+  for controller in cpu memory pids; do
+    [[ " $controllers " == *" $controller "* ]] || return 1
+  done
+}
 preflight() {
   [[ $(uname -s) == Linux && $(uname -m) == x86_64 && $(id -u) != 0 ]] || exit 61
   [[ -c /dev/fuse && -c /dev/net/tun && -f /sys/fs/cgroup/cgroup.controllers ]] || exit 62
   for tool in newuidmap newgidmap iptables ip tar sha256sum systemctl flock; do command -v "$tool" >/dev/null || exit 62; done
   systemctl --user show-environment >/dev/null || exit 63
+  delegated || exit 77
   for map in /etc/subuid /etc/subgid; do
     awk -F: -v user="$(id -un)" -v uid="$(id -u)" '($1==user || $1==uid) && $3>=65536 {ok=1} END {exit !ok}' "$map" || exit 62
   done

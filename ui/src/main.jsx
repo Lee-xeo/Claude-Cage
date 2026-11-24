@@ -35,6 +35,7 @@ import { EnvironmentShield } from "./environment-shield";
 import { TailscalePanel } from "./tailscale";
 import { HostPluginsPanel, pluginPages, pluginPageTitle, useHostPlugins } from "./host-plugins";
 import { PluginView } from "./plugin-view";
+import { PluginDesktopApp } from "./plugin-desktop-app";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { useCLISessions, desktopSessionRequest, sessionsChanged } from "./cli-sessions";
 import { SessionAccount } from "./session-account";
@@ -1900,7 +1901,12 @@ function App() {
                 <h1 id={managementPage + "-title"} tabIndex={-1}>{managementPage === "tailscale" ? "Tailscale" : managementPage === "plugins" && pluginPage ? pluginPageTitle(hostPlugins, pluginPage) : managementPage === "plugin-view" ? openPage?.title || tr("插件页面") : tr("Claude 账号管理")}</h1>
               </header>
               <div className="management-content">
-                {managementPage === "plugin-view" ? <PluginView key={`${currentClient.connection_id || "local"}:${pluginView}`} plugin={openPage?.plugin || pluginView.split("/")[0]} view={openPage?.view || { id: pluginView.split("/")[1] || "" }}
+                {managementPage === "plugin-view" && openPage?.kind === "desktop-app" ? <PluginDesktopApp key={`${currentClient.connection_id || "local"}:${pluginView}`}
+                  plugin={openPage.plugin} app={openPage.app} status={status} uploads={desktopFiles.uploads} visible={!settingsOpen && windowVisible}
+                  keyboard={status.keyboard} systemClipboard={browser.capabilities?.systemClipboard !== false}
+                  onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })} onConfirm={confirm} onDetails={() => setDetails(true)}
+                  onProjectOpened={async () => { await refreshSettings(); await refreshStatus.current?.(); }} />
+                : managementPage === "plugin-view" ? <PluginView key={`${currentClient.connection_id || "local"}:${pluginView}`} plugin={openPage?.plugin || pluginView.split("/")[0]} view={openPage?.view || { id: pluginView.split("/")[1] || "" }}
                   onConfirm={confirm} onNotify={notify} onOpenUrl={async url => Boolean(await openBrowserPage(url, false))} />
                 : managementPage === "plugins" ? pluginPage && <HostPluginsPanel model={hostPlugins} page={pluginPage} onPage={openPluginPage} status={status} onConfirm={confirm} /> : managementPage === "tailscale" ? <TailscalePanel status={status}
                   onOpenBrowser={async url => Boolean(await openBrowserPage(url, false))}

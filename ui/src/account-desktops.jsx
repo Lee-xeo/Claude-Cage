@@ -344,8 +344,14 @@ export function DesktopList({ model, disabled, selected, defaultRunning = false,
   );
 }
 
-function DesktopPane({
+// DesktopPane shows one Desktop instance's display. A plugin's desktop
+// application uses it too, with its own address and labels.
+export function DesktopPane({
   account,
+  path: instancePath = entry(account.id),
+  heading,
+  inputLabel = "Claude Desktop 输入",
+  closeLabel = "关闭实例",
   ready = true,
   visible,
   windowVisible = true,
@@ -388,7 +394,7 @@ function DesktopPane({
     if (!clipboardState.connected) return;
     clipboardReady.current = false;
     const clipboard = shareClipboard({
-      connect: () => new WebSocket(runtimeSocketURL(entry(account.id) + "/clipboard")),
+      connect: () => new WebSocket(runtimeSocketURL(instancePath + "/clipboard")),
       native,
       onStatus: (text) => current.current.onStatus?.(text),
       setActive: (active) => { clipboardReady.current = Boolean(active); },
@@ -400,7 +406,7 @@ function DesktopPane({
       clipboardRef.current = null;
       clipboard.dispose();
     };
-  }, [account.id, account.generation, clipboardState.connected]);
+  }, [account.id, account.generation, clipboardState.connected, instancePath]);
   useEffect(() => {
     clipboardRef.current?.setVisible(clipboardState.pollingVisible);
   }, [clipboardState.pollingVisible]);
@@ -424,7 +430,7 @@ function DesktopPane({
     const valid = () => live && current.current.visible;
     setMessage("正在连接…");
     setSizeError(false);
-    const path = entry(account.id);
+    const path = instancePath;
     const stopSizing = () => {
       sizing?.dispose();
       sizing = undefined;
@@ -520,7 +526,7 @@ function DesktopPane({
                 },
                 valid,
               ),
-              inputLabel: "Claude Desktop 输入",
+              inputLabel,
               tabId: () => `desktop:${account.id}`,
               mode: () => current.current.keyboard,
               isActive: valid,
@@ -555,7 +561,7 @@ function DesktopPane({
       rfb.current = null;
       client?.disconnect();
     };
-  }, [account.id, account.generation, screenVisible, attempt]);
+  }, [account.id, account.generation, screenVisible, attempt, instancePath]);
   return (
     <section
       className="account-desktop-pane"
@@ -567,10 +573,10 @@ function DesktopPane({
     >
       <header>
         <strong className="account-desktop-title" title={title(account)}>
-          <DesktopAccountLabel account={account} />
+          {heading ?? <DesktopAccountLabel account={account} />}
         </strong>
         <button disabled={busy} onClick={close}>
-          {tr("关闭实例")}
+          {tr(closeLabel)}
         </button>
       </header>
       <div className="account-desktop-screen" ref={box} />

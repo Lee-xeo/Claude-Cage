@@ -106,7 +106,7 @@ NuGet 报 `Central Directory corrupt` 或 `Received an unexpected EOF or 0 bytes
 
 应用输出到 `_output/windows-amd64/app`。本地默认自检目录是仓库内的 `_output/workbench-smoke`。源码如果检出到 AppData 或重解析到其他私有目录，构建会在开始前提示把 `RUNNER_TEMP` 指向 AppData 外的普通本地目录，例如 `D:\CageBuildTemp`。若自检失败，构建输出会显示已识别的共享目录错误、候选应用目录和诊断路径。可查看 `smoke.json` 和 `profile/logs/events.jsonl`。`prepareStatus=prepared` 是自检结束时后台的停止确认。
 
-生成未签名安装包时，用仓库脚本安装校验过的 NSIS，再打包刚构建的应用。
+生成未签名安装包时，用仓库脚本安装校验过的 NSIS，再打包刚构建的应用。脚本先从 SourceForge 默认地址下载，失败或拿到的不是 ZIP 时依次改用几个指定镜像；每个地址只做少量重试且超时较短，所有地址都失败才报错。无论来自哪个地址，ZIP 都要通过固定的 SHA-256 校验才会解压使用。
 
 ```powershell
 $tools = Join-Path (Get-Location).Path '_output/windows-tools'

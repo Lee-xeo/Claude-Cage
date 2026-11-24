@@ -1,0 +1,330 @@
+Dial forwarded ports through the current guest agent client.
+
+A forwarded listener is opened once, with a dialer bound to the guest agent
+client that first reported the port. When the guest agent reconnects, the
+host agent closes that client and creates a new one, and the guest reports
+the same ports again, which leaves the existing listener (and its dialer) in
+place. Every later connection then failed with "the client connection is
+closing" until the VM was restarted. The host agent now keeps one dialer
+that looks up the current client on each dial, for TCP and UDP alike.
+
+diff --git a/pkg/hostagent/hostagent.go b/pkg/hostagent/hostagent.go
+index 74711994..627747a4 100644
+--- a/pkg/hostagent/hostagent.go
++++ b/pkg/hostagent/hostagent.go
+@@ -64,6 +64,8 @@ type HostAgent struct {
+ 	sshConfig         *ssh.SSHConfig
+ 	portForwarder     *portForwarder // legacy SSH port forwarder
+ 	grpcPortForwarder *portfwd.Forwarder
++	// grpcTunnelDialer dials through the current guest agent client.
++	grpcTunnelDialer func(ctx context.Context, network, addr string) (net.Conn, error)
+ 
+ 	onClose   []func() error // LIFO
+ 	onCloseMu sync.Mutex
+@@ -272,6 +274,7 @@ func New(ctx context.Context, instName string, stdout io.Writer, signalCh chan o
+ 		guestAgentAliveCh: make(chan struct{}),
+ 		showProgress:      o.showProgress,
+ 	}
++	a.grpcTunnelDialer = portfwd.DialContextToCurrentGRPCTunnel(a.getClient)
+ 	a.grpcPortForwarder = portfwd.NewPortForwarder(rules, ignoreTCP, ignoreUDP, func(ev *events.PortForwardEvent) {
+ 		a.emitPortForwardEvent(context.Background(), ev)
+ 	})
+@@ -920,10 +923,13 @@ func isGuestAgentSocketAccessible(ctx context.Context, client *guestagentclient.
+ }
+ 
+ // getClient returns the current guest agent client under the clientMu lock,
+-// so callers observe a consistent (non-mid-transition) snapshot.
++// so callers observe a consistent (non-mid-transition) snapshot. It only
++// reads, so port forwarding dials (one per accepted connection) do not
++// serialize on each other; they still wait while getOrCreateClient probes or
++// replaces the client, which the probe timeout bounds.
+ func (a *HostAgent) getClient() *guestagentclient.GuestAgentClient {
+-	a.clientMu.Lock()
+-	defer a.clientMu.Unlock()
++	a.clientMu.RLock()
++	defer a.clientMu.RUnlock()
+ 	return a.client
+ }
+ 
+@@ -999,8 +1005,9 @@ func (a *HostAgent) processGuestAgentEvents(ctx context.Context, client *guestag
+ 		if useSSHFwd {
+ 			a.portForwarder.OnEvent(ctx, ev)
+ 		} else {
+-			dialContext := portfwd.DialContextToGRPCTunnel(client)
+-			a.grpcPortForwarder.OnEvent(ctx, dialContext, ev)
++			// Dial through whichever client is current, not the one that
++			// reported the port: the listener stays open across reconnects.
++			a.grpcPortForwarder.OnEvent(ctx, a.grpcTunnelDialer, ev)
+ 		}
+ 		return nil
+ 	}
+diff --git a/pkg/hostagent/portforward_test.go b/pkg/hostagent/portforward_test.go
+index de699417..25aafbdb 100644
+--- a/pkg/hostagent/portforward_test.go
++++ b/pkg/hostagent/portforward_test.go
+@@ -5,7 +5,10 @@ package hostagent
+ 
+ import (
+ 	"context"
++	"net"
++	"strconv"
+ 	"testing"
++	"time"
+ 
+ 	"google.golang.org/grpc"
+ 	"google.golang.org/grpc/test/bufconn"
+@@ -14,6 +17,8 @@ import (
+ 
+ 	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
+ 	guestagentclient "github.com/lima-vm/lima/v2/pkg/guestagent/api/client"
++	"github.com/lima-vm/lima/v2/pkg/limatype"
++	"github.com/lima-vm/lima/v2/pkg/portfwd"
+ )
+ 
+ // invalidIPGuestService streams one port event whose IP is not an IP address.
+@@ -54,3 +59,143 @@ func TestProcessGuestAgentEventsRejectsInvalidIP(t *testing.T) {
+ 	err = a.processGuestAgentEvents(t.Context(), client)
+ 	assert.ErrorContains(t, err, "invalid IP")
+ }
++
++// portGuestService reports one forwarded TCP port and records every tunnel
++// it is asked to open.
++type portGuestService struct {
++	api.UnimplementedGuestServiceServer
++
++	port    int32
++	tunnels chan<- string
++}
++
++func (*portGuestService) GetInfo(context.Context, *emptypb.Empty) (*api.Info, error) {
++	return &api.Info{}, nil
++}
++
++func (s *portGuestService) GetEvents(_ *emptypb.Empty, stream api.GuestService_GetEventsServer) error {
++	return stream.Send(&api.Event{
++		AddedLocalPorts: []*api.IPPort{{Ip: "127.0.0.1", Port: s.port, Protocol: "tcp"}},
++	})
++}
++
++func (s *portGuestService) Tunnel(stream api.GuestService_TunnelServer) error {
++	msg, err := stream.Recv()
++	if err != nil {
++		return err
++	}
++	s.tunnels <- msg.GuestAddr
++	for {
++		if _, err := stream.Recv(); err != nil {
++			return nil
++		}
++	}
++}
++
++func newBufconnGuestAgentClient(t *testing.T, guestService api.GuestServiceServer) *guestagentclient.GuestAgentClient {
++	t.Helper()
++	listener := bufconn.Listen(1024 * 1024)
++	server := grpc.NewServer(grpc.Creds(guestagentclient.NewCredentials()))
++	api.RegisterGuestServiceServer(server, guestService)
++	go func() {
++		_ = server.Serve(listener)
++	}()
++	t.Cleanup(func() {
++		server.Stop()
++		_ = listener.Close()
++	})
++	client, err := guestagentclient.NewGuestAgentClient(listener.DialContext)
++	assert.NilError(t, err)
++	t.Cleanup(func() { _ = client.Close() })
++	return client
++}
++
++func freeTCPPort(t *testing.T) int {
++	t.Helper()
++	l, err := net.Listen("tcp", "127.0.0.1:0")
++	assert.NilError(t, err)
++	port := l.Addr().(*net.TCPAddr).Port
++	assert.NilError(t, l.Close())
++	return port
++}
++
++// A forwarded listener outlives the guest agent client that reported its port.
++// After the host agent replaces that client, a new connection to the same
++// listener must be carried by the new client, even before (or without) the
++// guest reporting the port again (#826).
++func TestPortForwardListenerFollowsReplacedGuestAgentClient(t *testing.T) {
++	port := freeTCPPort(t)
++	staleTunnels := make(chan string, 4)
++	stale := newBufconnGuestAgentClient(t, &portGuestService{port: int32(port), tunnels: staleTunnels})
++	freshTunnels := make(chan string, 4)
++	fresh := newBufconnGuestAgentClient(t, &portGuestService{port: int32(port), tunnels: freshTunnels})
++
++	rules := []limatype.PortForward{{
++		GuestIPMustBeZero: new(false),
++		GuestIP:           net.IPv4(127, 0, 0, 1),
++		GuestPortRange:    [2]int{port, port},
++		HostIP:            net.IPv4(127, 0, 0, 1),
++		HostPortRange:     [2]int{port, port},
++		Proto:             limatype.ProtoTCP,
++	}}
++	a := &HostAgent{
++		guestAgentAliveCh: make(chan struct{}),
++		grpcPortForwarder: portfwd.NewPortForwarder(rules, false, false, nil),
++	}
++	a.grpcTunnelDialer = portfwd.DialContextToCurrentGRPCTunnel(a.getClient)
++	t.Cleanup(func() { _ = a.grpcPortForwarder.Close() })
++
++	a.clientMu.Lock()
++	a.client = stale
++	a.clientMu.Unlock()
++	// The stale client's event stream reports the port once and then ends,
++	// as it does when the guest agent goes away.
++	err := a.processGuestAgentEvents(t.Context(), stale)
++	assert.Assert(t, err != nil)
++
++	hostAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
++	connect := func() net.Conn {
++		t.Helper()
++		deadline := time.Now().Add(5 * time.Second)
++		for {
++			conn, err := net.DialTimeout("tcp", hostAddr, time.Second)
++			if err == nil {
++				return conn
++			}
++			if time.Now().After(deadline) {
++				t.Fatalf("listener %s did not open: %v", hostAddr, err)
++			}
++			time.Sleep(20 * time.Millisecond)
++		}
++	}
++	conn := connect()
++	select {
++	case <-staleTunnels:
++	case <-time.After(5 * time.Second):
++		t.Fatal("the first client did not carry the tunnel")
++	}
++	assert.NilError(t, conn.Close())
++
++	// Reconnect: close the stale client and install a new one, as
++	// getOrCreateClient does. No new port event arrives.
++	a.clientMu.Lock()
++	assert.NilError(t, a.client.Close())
++	a.client = fresh
++	a.clientMu.Unlock()
++
++	conn = connect()
++	defer conn.Close()
++	_, err = conn.Write([]byte("ping"))
++	assert.NilError(t, err)
++	select {
++	case got := <-freshTunnels:
++		assert.Equal(t, got, hostAddr)
++	case <-time.After(5 * time.Second):
++		t.Fatal("the listener did not dial through the replaced client")
++	}
++	select {
++	case got := <-staleTunnels:
++		t.Fatalf("the closed client carried a tunnel to %s", got)
++	default:
++	}
++}
+diff --git a/pkg/portfwd/client.go b/pkg/portfwd/client.go
+index dcb40ad2..c4dc034d 100644
+--- a/pkg/portfwd/client.go
++++ b/pkg/portfwd/client.go
+@@ -45,6 +45,17 @@ func HandleUDPConnection(ctx context.Context, dialContext func(ctx context.Conte
+ }
+ 
+ func DialContextToGRPCTunnel(client *guestagentclient.GuestAgentClient) func(ctx context.Context, network, addr string) (net.Conn, error) {
++	return DialContextToCurrentGRPCTunnel(func() *guestagentclient.GuestAgentClient { return client })
++}
++
++// DialContextToCurrentGRPCTunnel is DialContextToGRPCTunnel for a guest agent
++// client that can be replaced: current is called on every dial. A forwarded
++// listener outlives the client it was opened with (the host agent replaces the
++// client when the guest agent reconnects, and the guest then reports the same
++// ports again, which leaves the existing listeners in place), so binding one
++// client here would make every later connection fail with "the client
++// connection is closing".
++func DialContextToCurrentGRPCTunnel(current func() *guestagentclient.GuestAgentClient) func(ctx context.Context, network, addr string) (net.Conn, error) {
+ 	// gvisor-tap-vsock's UDPProxy demultiplexes client connections internally based on their source address.
+ 	// It calls this dialer function only when it receives a datagram from a new, unrecognized client.
+ 	// For each new client, we must return a new net.Conn, which in our case is a new gRPC stream.
+@@ -53,6 +64,10 @@ func DialContextToGRPCTunnel(client *guestagentclient.GuestAgentClient) func(ctx
+ 	return func(_ context.Context, network, addr string) (net.Conn, error) {
+ 		// Passed context.Context is used for timeout on initiate connection, not for the lifetime of the connection.
+ 		// Use a dedicated context so CloseRead can unblock a goroutine waiting in stream.Recv().
++		client := current()
++		if client == nil {
++			return nil, fmt.Errorf("could not open tunnel for addr: %s error: the guest agent is not connected", addr)
++		}
+ 		streamCtx, cancel := context.WithCancel(context.Background())
+ 		stream, err := client.Tunnel(streamCtx)
+ 		if err != nil {
+diff --git a/pkg/portfwd/client_test.go b/pkg/portfwd/client_test.go
+index f465856c..2d1a950c 100644
+--- a/pkg/portfwd/client_test.go
++++ b/pkg/portfwd/client_test.go
+@@ -8,10 +8,13 @@ import (
+ 	"errors"
+ 	"io"
+ 	"net"
++	"sync"
+ 	"testing"
+ 	"time"
+ 
+ 	"google.golang.org/grpc"
++	"google.golang.org/grpc/codes"
++	"google.golang.org/grpc/status"
+ 	"google.golang.org/grpc/test/bufconn"
+ 	"gotest.tools/v3/assert"
+ 
+@@ -47,6 +50,50 @@ func TestDialContextToGRPCTunnelClosesStreamFromTCPProxy(t *testing.T) {
+ 	}
+ }
+ 
++// A listener keeps its dialer across guest agent reconnects, so the dialer
++// must use the client that is current when a connection arrives.
++func TestDialContextToCurrentGRPCTunnelFollowsReplacedClient(t *testing.T) {
++	staleDone := make(chan error, 1)
++	stale := newTestGuestAgentClient(t, &testGuestService{tunnelDone: staleDone})
++	freshDone := make(chan error, 1)
++	fresh := newTestGuestAgentClient(t, &testGuestService{tunnelDone: freshDone})
++	defer fresh.Close()
++
++	var mu sync.Mutex
++	current := stale
++	dial := DialContextToCurrentGRPCTunnel(func() *guestagentclient.GuestAgentClient {
++		mu.Lock()
++		defer mu.Unlock()
++		return current
++	})
++
++	// The host agent closes the stale client and installs a new one.
++	assert.NilError(t, stale.Close())
++	_, err := dial(t.Context(), "tcp", "127.0.0.1:80")
++	assert.ErrorContains(t, err, "client connection is closing")
++	mu.Lock()
++	current = fresh
++	mu.Unlock()
++
++	conn, err := dial(t.Context(), "tcp", "127.0.0.1:80")
++	assert.NilError(t, err)
++	assert.NilError(t, conn.Close())
++	select {
++	case err := <-freshDone:
++		// Closing right away can cancel the stream before the guest reads it
++		// to the end; either way the stream reached the new client.
++		assert.Assert(t, err == nil || status.Code(err) == codes.Canceled, err)
++	case <-time.After(time.Second):
++		assert.Assert(t, false, "the new client did not carry the tunnel")
++	}
++
++	mu.Lock()
++	current = nil
++	mu.Unlock()
++	_, err = dial(t.Context(), "tcp", "127.0.0.1:80")
++	assert.ErrorContains(t, err, "not connected")
++}
++
+ // recvOnlyTunnelClient implements only Recv of the bidi stream; the other
+ // methods are never called by GrpcClientRW.Read.
+ type recvOnlyTunnelClient struct {

@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -159,7 +161,8 @@ func (p *projectShare) close() {
 }
 
 // The local SFTP server owns the host authorization boundary for the mount. The remote shell receives only that directory's byte stream.
-func startProjectTransport(cmd *exec.Cmd, path string) (*projectShare, error) {
+// owner 是客机挂载呈现的属主，nil 时按未知处理，客机的 chown 照旧原样交给宿主。
+func startProjectTransport(cmd *exec.Cmd, path string, owner *reversesshfs.Owner) (*projectShare, error) {
 	output, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -176,7 +179,11 @@ func startProjectTransport(cmd *exec.Cmd, path string) (*projectShare, error) {
 	}
 	go func() {
 		defer close(share.done)
-		_ = reversesshfs.ServeConfined(share.transport, path, false, nil)
+		if owner != nil {
+			_ = reversesshfs.ServeConfinedAs(share.transport, path, *owner, false, nil)
+		} else {
+			_ = reversesshfs.ServeConfined(share.transport, path, false, nil)
+		}
 		share.stop()
 		_ = cmd.Wait()
 	}()
@@ -224,9 +231,12 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 	quoted := shellescape.Quote(guestPath(path))
 	// Stale FUSE mounts can remain after a control-service restart. Only reconnect
 	// this explicitly authorized path, without changing other projects' mounts.
-	if _, err = s.guest(ctx, prepareProjectMountCommand(quoted)); err != nil {
+	prepared, err := s.guest(ctx, prepareProjectMountCommand(quoted))
+	if err != nil {
 		return errors.New("无法在 Cage 中准备项目目录")
 	}
+	// 挂载与 SFTP 服务使用同一组客机 UID/GID：客机工具把文件 chown 给自己时，宿主视为属主不变。
+	owner := parseGuestOwner(prepared)
 	probe, err := os.CreateTemp(path, ".cage-mount-probe-*")
 	if err != nil {
 		return fmt.Errorf("无法验证项目目录的读写权限：%w", err)
@@ -245,9 +255,9 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 	s.mu.Lock()
 	cache := s.preferences.ProjectFileCache
 	s.mu.Unlock()
-	script := "exec sshfs " + shellescape.Quote(":"+filepath.ToSlash(path)) + " " + quoted + " -o " + projectShareOptions(cache)
+	script := "exec sshfs " + shellescape.Quote(":"+filepath.ToSlash(path)) + " " + quoted + " -o " + projectShareOptions(owner, cache)
 	cmd := s.sshCommand(s.lifetimeContext(), "-T", s.sshTarget(), "--", script)
-	share, err := startProjectTransport(cmd, path)
+	share, err := startProjectTransport(cmd, path, owner)
 	if err != nil {
 		return err
 	}
@@ -287,7 +297,24 @@ func prepareProjectMountCommand(quoted string) string {
 	mounted := "findmnt -rn --nocanonicalize --mountpoint " + quoted + " >/dev/null 2>&1"
 	return "if " + mounted + " || mountpoint -q -- " + quoted + " 2>/dev/null; then " +
 		"fusermount3 -uz " + quoted + " 2>/dev/null || sudo -n umount -l -- " + quoted + " 2>/dev/null || ! " + mounted + "; " +
-		"fi && sudo mkdir -p -- " + quoted + " && sudo chown \"$(id -u):$(id -g)\" -- " + quoted
+		"fi && sudo mkdir -p -- " + quoted + " && sudo chown \"$(id -u):$(id -g)\" -- " + quoted + " && id -u && id -g"
+}
+
+// parseGuestOwner 从 prepareProjectMountCommand 的输出末尾读出客机用户的 UID 与 GID，读不出时返回 nil。
+func parseGuestOwner(output []byte) *reversesshfs.Owner {
+	fields := strings.Fields(string(output))
+	if len(fields) < 2 {
+		return nil
+	}
+	uid, err := strconv.ParseUint(fields[len(fields)-2], 10, 32)
+	if err != nil {
+		return nil
+	}
+	gid, err := strconv.ParseUint(fields[len(fields)-1], 10, 32)
+	if err != nil {
+		return nil
+	}
+	return &reversesshfs.Owner{UID: uint32(uid), GID: uint32(gid)}
 }
 
 // projectShareOptions are the sshfs options of a project folder in a Linux
@@ -299,8 +326,12 @@ func prepareProjectMountCommand(quoted string) string {
 // are always read from the host. The cache is the kernel's rather than
 // sshfs's own because only the kernel's can be dropped on request
 // (refreshProjectFiles).
-func projectShareOptions(cache bool) string {
-	options := `slave,allow_other,cache=no,nodev,nosuid,uid="$(id -u)",gid="$(id -g)"`
+func projectShareOptions(owner *reversesshfs.Owner, cache bool) string {
+	ids := `uid="$(id -u)",gid="$(id -g)"`
+	if owner != nil {
+		ids = fmt.Sprintf("uid=%d,gid=%d", owner.UID, owner.GID)
+	}
+	options := `slave,allow_other,cache=no,nodev,nosuid,` + ids
 	if cache {
 		options += fmt.Sprintf(",entry_timeout=%d,attr_timeout=%d", projectFileCacheSeconds, projectFileCacheSeconds)
 	}

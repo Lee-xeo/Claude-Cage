@@ -17,4 +17,6 @@ func newRootedServer(io.ReadWriteCloser, string, bool, []string) (*sftp.RequestS
 
 func (*rootedHandlers) Close() error { return nil }
 
+func (*rootedHandlers) presentAs(Owner) {}
+
 func (*rootedHandlers) expectRemove(string) bool { return false }

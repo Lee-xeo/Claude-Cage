@@ -46,6 +46,18 @@ func TestShareLinkProtocols(t *testing.T) {
 			"name": "Legacy", "type": "ss", "server": "legacy.example.com", "port": 8000, "cipher": "chacha20-ietf-poly1305", "password": "legacy"}},
 		{"ss-obfs", "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:p")) + "@obfs.example.com:80/?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dcdn.example.com#Obfs", map[string]any{
 			"name": "Obfs", "type": "ss", "server": "obfs.example.com", "port": 80, "cipher": "aes-128-gcm", "password": "p", "plugin": "obfs", "plugin-opts": map[string]any{"mode": "http", "host": "cdn.example.com"}}},
+		{"ss-obfs-shadowrocket-raw-semicolons", "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:p")) + "@obfs.example.com:80?plugin=obfs-local;obfs=http;obfs-host=cdn.example.com#Obfs", map[string]any{
+			"name": "Obfs", "type": "ss", "server": "obfs.example.com", "port": 80, "cipher": "aes-128-gcm", "password": "p", "plugin": "obfs", "plugin-opts": map[string]any{"mode": "http", "host": "cdn.example.com"}}},
+		{"ss-obfs-with-other-params", "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:p")) + "@obfs.example.com:80/?foo=bar&plugin=simple-obfs;obfs=tls;obfs-host=cdn.example.com&baz=1#Obfs", map[string]any{
+			"name": "Obfs", "type": "ss", "server": "obfs.example.com", "port": 80, "cipher": "aes-128-gcm", "password": "p", "plugin": "obfs", "plugin-opts": map[string]any{"mode": "tls", "host": "cdn.example.com"}}},
+		{"ss-obfs-then-other-params", "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:p")) + "@obfs.example.com:80?plugin=obfs-local;obfs=http;obfs-host=cdn.example.com&foo=bar#Obfs", map[string]any{
+			"name": "Obfs", "type": "ss", "server": "obfs.example.com", "port": 80, "cipher": "aes-128-gcm", "password": "p", "plugin": "obfs", "plugin-opts": map[string]any{"mode": "http", "host": "cdn.example.com"}}},
+		{"ss-empty-plugin", "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:p")) + "@ss.example.com:8388/?plugin=&foo=bar#Plain", map[string]any{
+			"name": "Plain", "type": "ss", "server": "ss.example.com", "port": 8388, "cipher": "aes-128-gcm", "password": "p"}},
+		{"ss-no-plugin-other-params", "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:p")) + "@ss.example.com:8388/?foo=bar#Plain", map[string]any{
+			"name": "Plain", "type": "ss", "server": "ss.example.com", "port": 8388, "cipher": "aes-128-gcm", "password": "p"}},
+		{"ss-legacy-obfs-raw-semicolons", "ss://" + base64.StdEncoding.EncodeToString([]byte("aes-128-gcm:p@legacy.example.com:80")) + "?plugin=obfs-local;obfs=http;obfs-host=cdn.example.com#Legacy", map[string]any{
+			"name": "Legacy", "type": "ss", "server": "legacy.example.com", "port": 80, "cipher": "aes-128-gcm", "password": "p", "plugin": "obfs", "plugin-opts": map[string]any{"mode": "http", "host": "cdn.example.com"}}},
 		{"hysteria2", "hysteria2://auth-pass@hy.example.com:443/?sni=hy.example.com&insecure=1&obfs=salamander&obfs-password=ob&mport=20000-30000#HY2", map[string]any{
 			"name": "HY2", "type": "hysteria2", "server": "hy.example.com", "port": 443, "password": "auth-pass", "sni": "hy.example.com", "skip-cert-verify": true,
 			"obfs": "salamander", "obfs-password": "ob", "mport": "20000-30000"}},
@@ -83,6 +95,9 @@ func TestShareLinkRejectsAmbiguousEntries(t *testing.T) {
 		{"vmess-not-json", "vmess://not-base64!!", "v2rayN"},
 		{"vmess-quic", vmessLink(t, map[string]any{"add": "h.example.com", "port": 443, "id": "u", "net": "quic"}), "传输方式暂不支持"},
 		{"ss-v2ray-plugin", "ss://YWVzLTEyOC1nY206cA@h.example.com:443/?plugin=v2ray-plugin%3Bmode%3Dwebsocket#V", "插件暂不支持"},
+		{"ss-v2ray-plugin-raw-semicolons", "ss://YWVzLTEyOC1nY206cA@h.example.com:443?plugin=v2ray-plugin;mode=websocket;host=h.example.com#V", "插件暂不支持"},
+		{"ss-obfs-raw-bad-mode", "ss://YWVzLTEyOC1nY206cA@h.example.com:80?plugin=obfs-local;obfs=bogus#O", "obfs 模式无效"},
+		{"ss-plugin-bad-escape", "ss://YWVzLTEyOC1nY206cA@h.example.com:80?plugin=obfs-local%3Bobfs%3Dhttp%ZZ#O", "插件参数无效"},
 		{"tuic-v4-token", "tuic://token@h.example.com:443#T", "uuid:password"},
 		{"no-port", "trojan://p@h.example.com#N", "格式无效"},
 		{"bad-port", "anytls://p@h.example.com:70000#N", "格式无效"},

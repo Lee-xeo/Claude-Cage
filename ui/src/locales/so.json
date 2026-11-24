@@ -3223,5 +3223,20 @@
   "麦克风采集未能启动，请检查本机音频设备后重试": "Waa la bilaabi waayay duubista makarafoonka. Hubi qalabka codka maxalliga ah oo mar kale isku day",
   "更新 Claude Desktop": "Cusbooneysii Claude Desktop",
   "官方软件源": "Isha software-ka rasmiga ah",
-  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "Nooca Linux waxaa lagu cusboonaysiiyaa isha software-ka nidaamka. Waxaad ka cusboonaysiin kartaa \"Dejinta → Deegaanka iyo soo kabashada\", ama terminal-ka Cage ku socodsii sudo apt update && sudo apt install --only-upgrade claude-desktop."
+  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "Nooca Linux waxaa lagu cusboonaysiiyaa isha software-ka nidaamka. Waxaad ka cusboonaysiin kartaa \"Dejinta → Deegaanka iyo soo kabashada\", ama terminal-ka Cage ku socodsii sudo apt update && sudo apt install --only-upgrade claude-desktop.",
+  "{0} 未能启动。可重新打开，或点“更新应用”安装官方最新版本；仍失败时可能需要升级插件。": "{0} ma bilaabmin. Dib u fur, ama riix “Cusbooneysii abka” si aad u rakibto noocii ugu dambeeyay ee rasmiga ah; haddii ay weli fashilanto, waxaa laga yaabaa in plugin-ka loo baahdo in la cusbooneysiiyo.",
+  "{0} 输入": "Gelinta {0}",
+  "卸载 {0}？": "Ka saar {0}?",
+  "卸载会删除应用文件。登录、设置和项目留在环境中，重新安装后继续使用。": "Ka saarista waxay tirtirtaa faylasha abka. Gelitaanka, dejinta iyo mashaariicdu waxay ku hadhayaan deegaanka, waana la isticmaali karaa marka dib loo rakibo.",
+  "卸载应用": "Ka saar abka",
+  "在环境中安装并运行厂商的官方桌面应用，默认使用最新版本，可在侧栏打开、更新或卸载。应用的登录与数据保留在环境里。": "Waxay deegaanka ku rakibtaa oo ku socodsiisaa abka desktop-ka rasmiga ah ee soo-saaraha, si caadi ah noocii ugu dambeeyay; ka fur, cusbooneysii ama ka saar barta dhinaca. Gelitaanka iyo xogta abku waxay ku hadhayaan deegaanka.",
+  "在环境中运行官方应用。应用从官方渠道安装，默认使用最新版本，登录与数据保留在环境里。": "Waxay deegaanka ku socodsiisaa abka rasmiga ah. Waxaa laga rakibaa ilaha rasmiga ah, si caadi ah noocii ugu dambeeyay; gelitaanka iyo xogtu waxay ku hadhayaan deegaanka.",
+  "官方最新版": "Noocii rasmiga ahaa ee ugu dambeeyay",
+  "应用「{0}」": "Abka “{0}”",
+  "打开应用": "Fur abka",
+  "更新 {0}？": "Cusbooneysii {0}?",
+  "环境内存不足，{0} 已被系统关闭。请在设置中检查计算资源后重新打开。": "Xusuusta deegaanka ayaa ku filnaan weysay, nidaamkuna wuu xidhay {0}. Ka hubi kheyraadka xisaabinta dejinta, kadibna dib u fur.",
+  "请先保存应用内的工作。更新会关闭应用，安装官方最新版本后重新打开；登录与设置继续保留。": "Marka hore keydi shaqadaada abka. Cusbooneysiintu waxay xidhaysaa abka, rakibaysaa noocii rasmiga ahaa ee ugu dambeeyay, kadibna dib u furaysaa; gelitaanka iyo dejintu way hadhayaan.",
+  "请先保存应用内的工作。浏览器和终端会继续运行。": "Marka hore keydi shaqadaada abka. Biraawsarka iyo terminaalladu way sii shaqaynayaan.",
+  "桌面应用": "Abka desktop-ka"
 }

@@ -50,6 +50,25 @@ case "${1:-}" in
       set -- /new "$1"
     fi
     ;;
+  [a-z]*:*)
+    # A plugin's desktop application takes the sign-in links of its schemes.
+    # The link goes on stdin: sudo records its arguments in the journal.
+    scheme=${1%%:*}
+    case "$scheme" in
+      *[!a-z0-9+.-]*) ;;
+      *)
+        if [ -r /usr/local/lib/desktop-apps/schemes ] && awk -v s="$scheme" '$1 == s {found = 1} END {exit !found}' /usr/local/lib/desktop-apps/schemes; then
+          if [ "$(id -un)" = cage ]; then
+            printf '%s' "$1" | /usr/local/bin/desktop-app-open --stdin
+          else
+            printf '%s' "$1" | sudo -n -H -u cage /usr/local/bin/desktop-app-open --stdin
+          fi
+          exit $?
+        fi
+        ;;
+    esac
+    exec /usr/local/bin/cage-desktop-files --open "$1"
+    ;;
   *)
     # File operations belong to the desktop session, never the browser control
     # token. The host resolves them only within Cage project directories.

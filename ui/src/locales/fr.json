@@ -3223,5 +3223,20 @@
   "麦克风采集未能启动，请检查本机音频设备后重试": "Impossible de démarrer la capture du microphone. Vérifiez le périphérique audio local puis réessayez",
   "更新 Claude Desktop": "Mettre à jour Claude Desktop",
   "官方软件源": "Source officielle",
-  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "La version Linux se met à jour via les sources logicielles du système. Vous pouvez la mettre à jour dans « Paramètres → Environnement et récupération », ou exécuter sudo apt update && sudo apt install --only-upgrade claude-desktop dans le terminal Cage."
+  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "La version Linux se met à jour via les sources logicielles du système. Vous pouvez la mettre à jour dans « Paramètres → Environnement et récupération », ou exécuter sudo apt update && sudo apt install --only-upgrade claude-desktop dans le terminal Cage.",
+  "{0} 未能启动。可重新打开，或点“更新应用”安装官方最新版本；仍失败时可能需要升级插件。": "{0} n'a pas pu démarrer. Rouvrez-la, ou cliquez sur « Mettre à jour l'application » pour installer la dernière version officielle ; si l'échec persiste, il faudra peut-être mettre à jour le plugin.",
+  "{0} 输入": "Saisie dans {0}",
+  "卸载 {0}？": "Désinstaller {0} ?",
+  "卸载会删除应用文件。登录、设置和项目留在环境中，重新安装后继续使用。": "La désinstallation supprime les fichiers de l'application. Connexion, réglages et projets restent dans l'environnement et resservent après une réinstallation.",
+  "卸载应用": "Désinstaller l'application",
+  "在环境中安装并运行厂商的官方桌面应用，默认使用最新版本，可在侧栏打开、更新或卸载。应用的登录与数据保留在环境里。": "Installe et exécute dans l'environnement l'application de bureau officielle de l'éditeur, en dernière version par défaut ; ouvrez-la, mettez-la à jour ou désinstallez-la depuis la barre latérale. Sa connexion et ses données restent dans l'environnement.",
+  "在环境中运行官方应用。应用从官方渠道安装，默认使用最新版本，登录与数据保留在环境里。": "Exécute l'application officielle dans l'environnement. Elle est installée depuis la source officielle, en dernière version par défaut ; sa connexion et ses données restent dans l'environnement.",
+  "官方最新版": "Dernière version officielle",
+  "应用「{0}」": "Application « {0} »",
+  "打开应用": "Ouvrir l'application",
+  "更新 {0}？": "Mettre à jour {0} ?",
+  "环境内存不足，{0} 已被系统关闭。请在设置中检查计算资源后重新打开。": "Mémoire de l'environnement insuffisante : le système a fermé {0}. Vérifiez les ressources de calcul dans les réglages, puis rouvrez-la.",
+  "请先保存应用内的工作。更新会关闭应用，安装官方最新版本后重新打开；登录与设置继续保留。": "Enregistrez d'abord votre travail dans l'application. La mise à jour ferme l'application, installe la dernière version officielle puis la rouvre ; connexion et réglages sont conservés.",
+  "请先保存应用内的工作。浏览器和终端会继续运行。": "Enregistrez d'abord votre travail dans l'application. Le navigateur et les terminaux continuent de fonctionner.",
+  "桌面应用": "Application de bureau"
 }

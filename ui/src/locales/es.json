@@ -3223,5 +3223,20 @@
   "麦克风采集未能启动，请检查本机音频设备后重试": "No se pudo iniciar la captura del micrófono. Comprueba el dispositivo de audio local y vuelve a intentarlo",
   "更新 Claude Desktop": "Actualizar Claude Desktop",
   "官方软件源": "Fuente oficial",
-  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "La versión para Linux se actualiza desde las fuentes de software del sistema. Puede actualizarla en «Configuración → Entorno y recuperación» o ejecutar sudo apt update && sudo apt install --only-upgrade claude-desktop en la terminal de Cage."
+  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "La versión para Linux se actualiza desde las fuentes de software del sistema. Puede actualizarla en «Configuración → Entorno y recuperación» o ejecutar sudo apt update && sudo apt install --only-upgrade claude-desktop en la terminal de Cage.",
+  "{0} 未能启动。可重新打开，或点“更新应用”安装官方最新版本；仍失败时可能需要升级插件。": "{0} no pudo iniciarse. Vuelve a abrirla o pulsa «Actualizar aplicación» para instalar la última versión oficial; si sigue fallando, puede que haya que actualizar el plugin.",
+  "{0} 输入": "Entrada de {0}",
+  "卸载 {0}？": "¿Desinstalar {0}?",
+  "卸载会删除应用文件。登录、设置和项目留在环境中，重新安装后继续使用。": "Desinstalar elimina los archivos de la aplicación. El inicio de sesión, los ajustes y los proyectos se quedan en el entorno y siguen disponibles al reinstalar.",
+  "卸载应用": "Desinstalar aplicación",
+  "在环境中安装并运行厂商的官方桌面应用，默认使用最新版本，可在侧栏打开、更新或卸载。应用的登录与数据保留在环境里。": "Instala y ejecuta en el entorno la aplicación de escritorio oficial del fabricante, en su última versión por defecto; ábrela, actualízala o desinstálala desde la barra lateral. Su sesión y sus datos se quedan en el entorno.",
+  "在环境中运行官方应用。应用从官方渠道安装，默认使用最新版本，登录与数据保留在环境里。": "Ejecuta la aplicación oficial en el entorno. Se instala desde la fuente oficial, en su última versión por defecto; la sesión y los datos se quedan en el entorno.",
+  "官方最新版": "Última versión oficial",
+  "应用「{0}」": "Aplicación «{0}»",
+  "打开应用": "Abrir aplicación",
+  "更新 {0}？": "¿Actualizar {0}?",
+  "环境内存不足，{0} 已被系统关闭。请在设置中检查计算资源后重新打开。": "El entorno se quedó sin memoria y el sistema cerró {0}. Revisa los recursos de cómputo en los ajustes y vuelve a abrirla.",
+  "请先保存应用内的工作。更新会关闭应用，安装官方最新版本后重新打开；登录与设置继续保留。": "Guarda primero tu trabajo en la aplicación. La actualización cierra la aplicación, instala la última versión oficial y la vuelve a abrir; la sesión y los ajustes se conservan.",
+  "请先保存应用内的工作。浏览器和终端会继续运行。": "Guarda primero tu trabajo en la aplicación. El navegador y los terminales siguen funcionando.",
+  "桌面应用": "Aplicación de escritorio"
 }

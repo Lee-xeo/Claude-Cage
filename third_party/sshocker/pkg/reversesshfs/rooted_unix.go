@@ -275,7 +275,7 @@ func (h *rootedHandlers) setstat(r *sftp.Request) error {
 			return &os.PathError{Op: "chmod", Path: r.Filepath, Err: err}
 		}
 	}
-	if flags.UidGid {
+	if flags.UidGid && !h.keepsOwner(attrs) {
 		if err := unix.Fchownat(dirfd, base, int(attrs.UID), int(attrs.GID), unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return &os.PathError{Op: "chown", Path: r.Filepath, Err: err}
 		}
@@ -310,7 +310,7 @@ func (h *rootedHandlers) fsetstat(f *os.File, r *sftp.Request) error {
 			return &os.PathError{Op: "chmod", Path: f.Name(), Err: err}
 		}
 	}
-	if flags.UidGid {
+	if flags.UidGid && !h.keepsOwner(attrs) {
 		if err := unix.Fchown(fd, int(attrs.UID), int(attrs.GID)); err != nil {
 			return &os.PathError{Op: "chown", Path: f.Name(), Err: err}
 		}

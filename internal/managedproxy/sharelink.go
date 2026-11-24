@@ -400,7 +400,11 @@ func parseShadowsocksLink(line string) (map[string]any, error) {
 		return nil, errShareLinkInvalid
 	}
 	p["cipher"], p["password"] = method, password
-	if plugin := u.Query().Get("plugin"); plugin != "" {
+	plugin, err := rawQueryValue(u.RawQuery, "plugin")
+	if err != nil {
+		return nil, errors.New("Shadowsocks 分享链接的插件参数无效")
+	}
+	if plugin != "" {
 		fields := strings.Split(plugin, ";")
 		opts := map[string]string{}
 		for _, field := range fields[1:] {
@@ -421,6 +425,21 @@ func parseShadowsocksLink(line string) (map[string]any, error) {
 		}
 	}
 	return p, nil
+}
+
+// rawQueryValue returns the first value of key in a raw query. Unlike
+// url.ParseQuery it keeps pairs whose value has bare semicolons, the way
+// Shadowrocket and other clients export SIP002 plugin options
+// (plugin=obfs-local;obfs=http), which ParseQuery drops silently.
+func rawQueryValue(rawQuery, key string) (string, error) {
+	for _, pair := range strings.Split(rawQuery, "&") {
+		k, v, _ := strings.Cut(pair, "=")
+		if k, err := url.QueryUnescape(k); err != nil || k != key {
+			continue
+		}
+		return url.QueryUnescape(v)
+	}
+	return "", nil
 }
 
 func decodeBase64(s string) (string, bool) {

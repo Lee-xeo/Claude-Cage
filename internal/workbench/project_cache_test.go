@@ -6,17 +6,37 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lima-vm/sshocker/pkg/reversesshfs"
 	"github.com/sylvinus/agent-vm/internal/cage"
 )
 
 func TestProjectShareOptionsCacheNamesAndAttributes(t *testing.T) {
-	off, on := projectShareOptions(false), projectShareOptions(true)
+	off, on := projectShareOptions(nil, false), projectShareOptions(nil, true)
 	// sshfs's own cache stays off in both: nothing can drop it on request.
 	if !strings.Contains(off, "cache=no") || strings.Contains(off, "timeout") {
 		t.Fatalf("uncached share: %q", off)
 	}
 	if on != off+",entry_timeout=20,attr_timeout=20" {
 		t.Fatalf("cached share: %q", on)
+	}
+}
+
+// 挂载呈现的属主与 SFTP 服务视为不变的属主是同一组客机 ID。
+func TestProjectShareOwnerFromPrepareOutput(t *testing.T) {
+	owner := parseGuestOwner([]byte("ignored\n501\n20\n"))
+	if owner == nil || *owner != (reversesshfs.Owner{UID: 501, GID: 20}) {
+		t.Fatalf("owner: %+v", owner)
+	}
+	if got := projectShareOptions(owner, false); !strings.HasSuffix(got, ",uid=501,gid=20") || strings.Contains(got, "$(") {
+		t.Fatalf("options: %q", got)
+	}
+	for _, out := range []string{"", "1000\n", "x\n1000\n", "1000\n-1\n", "4294967296\n1\n"} {
+		if owner := parseGuestOwner([]byte(out)); owner != nil {
+			t.Fatalf("%q: %+v", out, owner)
+		}
+	}
+	if got := projectShareOptions(nil, false); !strings.Contains(got, `uid="$(id -u)",gid="$(id -g)"`) {
+		t.Fatalf("fallback options: %q", got)
 	}
 }
 

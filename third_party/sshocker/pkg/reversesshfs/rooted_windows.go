@@ -552,7 +552,8 @@ type fileBasicInformation struct {
 
 func (h *rootedHandlers) setstat(r *sftp.Request) error {
 	flags := r.AttrFlags()
-	if flags.UidGid {
+	// Windows 无法 chown；只要求保持呈现属主时不改属主，其余属性照常设置。
+	if flags.UidGid && !h.keepsOwner(r.Attributes()) {
 		return &os.PathError{Op: "chown", Path: r.Filepath, Err: syscall.EWINDOWS}
 	}
 	access := uint32(windows.FILE_READ_ATTRIBUTES | windows.FILE_WRITE_ATTRIBUTES)
@@ -570,7 +571,7 @@ func (h *rootedHandlers) setstat(r *sftp.Request) error {
 
 // fsetstat applies a FSETSTAT to the file f of the handle.
 func (h *rootedHandlers) fsetstat(f *os.File, r *sftp.Request) error {
-	if r.AttrFlags().UidGid {
+	if r.AttrFlags().UidGid && !h.keepsOwner(r.Attributes()) {
 		return &os.PathError{Op: "chown", Path: f.Name(), Err: syscall.EWINDOWS}
 	}
 	return setstatHandle(windows.Handle(f.Fd()), r)
