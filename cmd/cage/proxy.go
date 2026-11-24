@@ -4,11 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"os"
 	"path/filepath"
 )
+
+var (
+	checkProxyInterfaceBinding = managedproxy.CheckInterfaceBinding
+	probeProxyExitIP           = cage.ProbeExitIP
+)
+
+func checkProxyTransport(ctx context.Context, profile string, cfg cage.Config) error {
+	configPath := filepath.Join(managedproxy.Dir(profile), "config.yaml")
+	if err := checkProxyInterfaceBinding(ctx, configPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		var stale *managedproxy.StaleInterfaceError
+		if errors.As(err, &stale) {
+			return fmt.Errorf("%w（可运行 cage proxy-start 重新绑定）", err)
+		}
+		return err
+	}
+	_, err := probeProxyExitIP(ctx, cfg)
+	return err
+}
 
 func proxyCommand(command, profile string, cfg cage.Config) error {
 	if command == "proxy-stop" {

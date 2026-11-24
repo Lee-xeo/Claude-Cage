@@ -300,3 +300,89 @@ func TestNodeRouteInterfaceDriftRevokesGateAndRebinds(t *testing.T) {
 		t.Fatalf("queued=%v gate=%+v", queued, status)
 	}
 }
+
+func TestStoppedVMDeadInterfaceAutoRebindsRunningCore(t *testing.T) {
+	s, _ := interfaceMonitorServer(t)
+	if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+		t.Fatal(err)
+	}
+	prevPhysical, prevAvailable, prevRunning, prevValidate, prevStart :=
+		physicalProxyInterface, proxyInterfaceAvailable, proxyInterfaceCoreRunning, validateProxyCore, startProxyCore
+	t.Cleanup(func() {
+		physicalProxyInterface, proxyInterfaceAvailable, proxyInterfaceCoreRunning, validateProxyCore, startProxyCore =
+			prevPhysical, prevAvailable, prevRunning, prevValidate, prevStart
+	})
+	probes := 0
+	physicalProxyInterface = func(context.Context) (string, error) { probes++; return "wlp4s0", nil }
+	proxyInterfaceAvailable = func(name string) bool { return name == "en0" }
+	proxyInterfaceCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+	validateProxyCore = func(context.Context, string, managedproxy.Store) error { return nil }
+	rebound := false
+	startProxyCore = func(_ context.Context, profile string, _ managedproxy.Store) error {
+		rebound = true
+		return os.WriteFile(filepath.Join(profile, "proxy", "config.yaml"), []byte("interface-name: wlp4s0\n"), 0600)
+	}
+
+	// While en0 is still available, idle stopped-VM ticks skip physical probing.
+	if observed := s.observeProxyInterface(context.Background()); probes != 0 || observed.configuration != "" {
+		t.Fatalf("healthy stopped VM probed host route: probes=%d observed=%+v", probes, observed)
+	}
+
+	// Once en0 disappears while the core is running, the monitor detects the
+	// replacement uplink and automatically rebinds the core.
+	proxyInterfaceAvailable = func(string) bool { return false }
+	observed := s.observeProxyInterface(context.Background())
+	if probes != 1 || !observed.stoppedCoreDeadInterface || observed.name != "wlp4s0" {
+		t.Fatalf("dead interface not observed: probes=%d observed=%+v", probes, observed)
+	}
+	s.op.Lock()
+	s.applyProxyInterfaceObservation(observed)
+	s.op.Unlock()
+	job := awaitJobIdle(t, &s.jobs)
+	if job.Error != "" || !rebound {
+		t.Fatalf("stopped-VM dead interface did not rebind: rebound=%v job=%+v", rebound, job)
+	}
+	if bound, err := managedproxy.BoundInterface(filepath.Join(s.profile, "proxy", "config.yaml")); err != nil || bound != "wlp4s0" {
+		t.Fatalf("bound interface after rebind = %q (%v), want wlp4s0", bound, err)
+	}
+}
+
+func TestEnsureProxyInterfaceBeforeUseRebindsStoppedAndReportsRunningVM(t *testing.T) {
+	s, _ := interfaceMonitorServer(t)
+	prevPhysical, prevRunning, prevStart := physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore
+	t.Cleanup(func() {
+		physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore = prevPhysical, prevRunning, prevStart
+	})
+	physicalProxyInterface = func(context.Context) (string, error) { return "wlp4s0", nil }
+	proxyInterfaceCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+	restarts := 0
+	startProxyCore = func(_ context.Context, profile string, _ managedproxy.Store) error {
+		restarts++
+		return os.WriteFile(filepath.Join(profile, "proxy", "config.yaml"), []byte("interface-name: wlp4s0\n"), 0600)
+	}
+
+	// While VM is running, do not restart behind the gate; return StaleInterfaceError.
+	err := s.ensureProxyInterfaceBeforeUse(context.Background())
+	var stale *managedproxy.StaleInterfaceError
+	if !errors.As(err, &stale) || restarts != 0 {
+		t.Fatalf("running VM got err=%v restarts=%d, want StaleInterfaceError and 0 restarts", err, restarts)
+	}
+
+	// /api/proxy/logs surfaces the stale-interface diagnostic clearly.
+	w := request(s, "GET", "/api/proxy/logs", s.origin, "", true)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "en0") || !strings.Contains(w.Body.String(), "wlp4s0") {
+		t.Fatalf("proxy logs missing stale-interface warning: %d %s", w.Code, w.Body.String())
+	}
+
+	// With VM stopped, explicit probe/delay use automatically rebinds the core.
+	if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || restarts != 1 {
+		t.Fatalf("stopped VM rebind failed: err=%v restarts=%d", err, restarts)
+	}
+	// Now bound to wlp4s0, subsequent checks are a fast-path no-op.
+	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || restarts != 1 {
+		t.Fatalf("already-rebound check restarted again: err=%v restarts=%d", err, restarts)
+	}
+}

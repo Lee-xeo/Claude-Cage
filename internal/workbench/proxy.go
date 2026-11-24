@@ -666,6 +666,10 @@ func (s *Server) proxyDelay(w http.ResponseWriter, r *http.Request) {
 			requestError(w, errors.New(reason))
 			return
 		}
+		if err := s.ensureProxyInterfaceBeforeUse(r.Context()); err != nil {
+			requestError(w, err)
+			return
+		}
 		delay, err := measureProxyDelay(r.Context(), s.profile, in.NodeID)
 		if err != nil {
 			requestError(w, err)
@@ -693,6 +697,10 @@ func (s *Server) proxyDelay(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seen[id] = true
+	}
+	if err := s.ensureProxyInterfaceBeforeUse(r.Context()); err != nil {
+		requestError(w, err)
+		return
 	}
 	blocked := p.BlockedNodes()
 	results := make([]proxyDelayResult, len(in.NodeIDs))
@@ -779,8 +787,13 @@ func (s *Server) proxyLogs(w http.ResponseWriter, r *http.Request) {
 	// Whitelisted lifecycle messages avoid publishing upstream raw log lines,
 	// which can contain subscription secrets, credentials and host paths.
 	lines := []string{"客机公网 UDP、IPv6、ICMP：阻断", "业务 DNS：经选定节点转发", "代理基础设施 DNS：" + strings.Join(p.NodeResolvers(), "、") + "（主机网络，并行查询）"}
-	if managedproxy.Running(r.Context(), s.profile, p) {
+	if proxyInterfaceCoreRunning(r.Context(), s.profile, p) {
 		lines = append(lines, "内置核心运行中；已读回当前节点选择")
+		if cfg, cfgErr := loadConfig(s.configPath); cfgErr == nil && s.proxyStore.Applied(s.profile, cfg.ProxyURL, cfg.ProxyRevision) == nil {
+			if bindErr := s.checkProxyInterfaceBinding(r.Context()); bindErr != nil && !os.IsNotExist(bindErr) {
+				lines = append(lines, bindErr.Error())
+			}
+		}
 	} else {
 		lines = append(lines, "内置核心未就绪；不会直连回退")
 		if _, err := proxyCorePath(); err != nil {

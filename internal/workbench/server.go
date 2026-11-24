@@ -889,6 +889,10 @@ func (s *Server) probe(w http.ResponseWriter, r *http.Request) {
 		requestError(w, err)
 		return
 	}
+	if err := s.ensureProxyInterfaceBeforeUse(r.Context()); err != nil {
+		requestError(w, err)
+		return
+	}
 	loc, err := probeLocation(r.Context(), v.Config, v.Preferences.locationOptions())
 	if finishErr := s.finishLocationProbe(v.Config, loc, err); finishErr != nil {
 		requestError(w, finishErr)
