@@ -17,6 +17,9 @@ func newStorageFixture(t *testing.T) (string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("LOCALAPPDATA", filepath.Join(root, "AppData", "Local"))
+	t.Setenv("APPDATA", filepath.Join(root, "AppData", "Roaming"))
+	t.Setenv("USERPROFILE", root)
 	profile := filepath.Join(root, "profile")
 	if err := os.Mkdir(profile, 0700); err != nil {
 		t.Fatal(err)

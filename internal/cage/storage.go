@@ -359,6 +359,12 @@ func validateStorageTarget(profile, directory, app, platform string) error {
 	if err != nil {
 		return err
 	}
+	if platform == "windows" {
+		excluded := windowsTargetStorageExcludedRoots()
+		if windowsStoragePathExcluded(directory, excluded) || windowsStoragePathExcluded(target, excluded) {
+			return errors.New("Windows 环境存储不能放在 AppData 或系统临时目录中，否则虚拟机会因本机套接字受限而无法启动；请选择 AppData 之外的本地文件夹")
+		}
+	}
 	// Check the actual mount, including junctions and symlinked parents.
 	existing := target
 	for {
