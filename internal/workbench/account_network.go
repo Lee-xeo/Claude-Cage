@@ -499,15 +499,41 @@ func (s *Server) routeSelected(ctx context.Context, a claudeAccount, command str
 	return wrapAccountNamespace("ip netns exec net-"+a.ID+" unshare -m", "export CAGE_ACCOUNT_BROWSER="+opener+" BROWSER="+opener+regionExports+"; "+command), nil
 }
 
-// No shell supplied by the caller runs before setpriv drops root privileges.
-func wrapAccountNamespace(namespace, command string) string {
-	enter := `set -eu
+const accountNamespaceMaskSockets = `set -eu
 mount --make-rprivate /
 for endpoint in /run/systemd/resolve/io.systemd.Resolve /run/nscd/socket /run/dbus/system_bus_socket; do
   if [ -S "$endpoint" ]; then mount --bind /dev/null "$endpoint"; fi
-done
-exec setpriv --reuid="$SUDO_UID" --regid="$SUDO_GID" --init-groups /bin/bash -c 'script=$ROUTE_COMMAND; unset ROUTE_COMMAND SUDO_COMMAND SUDO_UID SUDO_GID SUDO_USER; exec /bin/bash -c "$script"'`
-	return "exec env ROUTE_COMMAND=" + shellescape.Quote(command) + " sudo --preserve-env=ROUTE_COMMAND,HOME,USER,LOGNAME,TERM " + namespace + " /bin/bash -c " + shellescape.Quote(enter)
+done`
+
+const accountNamespaceRunPayload = `script=$ROUTE_COMMAND; unset ROUTE_COMMAND SUDO_COMMAND SUDO_UID SUDO_GID SUDO_USER; exec /bin/bash -c "$script"`
+
+// No shell supplied by the caller runs before setpriv drops root privileges.
+// Used for persistent root-owned account namespaces (`ip netns exec net-<id>`)
+// which inherently require passwordless sudo / CAP_SYS_ADMIN in the guest.
+func wrapAccountNamespace(namespace, command string) string {
+	enter := accountNamespaceMaskSockets + "\n" + `exec setpriv --reuid="$SUDO_UID" --regid="$SUDO_GID" --init-groups /bin/bash -c '` + accountNamespaceRunPayload + `'`
+	return "exec env ROUTE_COMMAND=" + shellescape.Quote(command) + " sudo -n --preserve-env=ROUTE_COMMAND,HOME,USER,LOGNAME,TERM " + namespace + " /bin/bash -c " + shellescape.Quote(enter)
+}
+
+// wrapOfflineAccountNamespace isolates local identity discovery in an empty
+// network namespace and private mount namespace (masking host resolver/IPC
+// sockets) without sending traffic. It prefers privileged `unshare -nm`
+// (dropping back to the invoking UID via setpriv) when available, and falls
+// back to unprivileged `unshare -Urnm` without setpriv in non-root guests
+// where `unshare -nm` returns EPERM (#814). It never falls back to running
+// unisolated.
+func wrapOfflineAccountNamespace(command string) string {
+	enterPrivileged := accountNamespaceMaskSockets + "\n" + `exec setpriv --reuid="$SUDO_UID" --regid="$SUDO_GID" --init-groups /bin/bash -c '` + accountNamespaceRunPayload + `'`
+	enterDirect := accountNamespaceMaskSockets + "\n" + accountNamespaceRunPayload
+	probePrivileged := `set -eu; mount --make-rprivate /; exec setpriv --reuid="$SUDO_UID" --regid="$SUDO_GID" --init-groups true`
+	return "ROUTE_COMMAND=" + shellescape.Quote(command) + "; export ROUTE_COMMAND\n" +
+		"if [ \"$(id -u)\" -eq 0 ] && unshare -nm /bin/bash -c 'set -eu; mount --make-rprivate /' 2>/dev/null; then\n" +
+		"  exec unshare -nm /bin/bash -c " + shellescape.Quote(enterDirect) + "\n" +
+		"fi\n" +
+		"if command -v sudo >/dev/null 2>&1 && sudo -n --preserve-env=ROUTE_COMMAND,HOME,USER,LOGNAME,TERM unshare -nm /bin/bash -c " + shellescape.Quote(probePrivileged) + " 2>/dev/null; then\n" +
+		"  exec sudo -n --preserve-env=ROUTE_COMMAND,HOME,USER,LOGNAME,TERM unshare -nm /bin/bash -c " + shellescape.Quote(enterPrivileged) + "\n" +
+		"fi\n" +
+		"exec unshare -Urnm /bin/bash -c " + shellescape.Quote(enterDirect)
 }
 
 func (s *Server) setLoginDraftNode(id, node string) error {

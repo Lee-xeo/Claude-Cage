@@ -97,36 +97,47 @@ func (s *Server) guest(ctx context.Context, script string) ([]byte, error) {
 }
 
 func (s *Server) guestControl(ctx context.Context, script, diagnosticSource string) ([]byte, error) {
+	data, _, err := s.guestControlOutput(ctx, script, diagnosticSource, diagnosticSource != "")
+	return data, err
+}
+
+func (s *Server) guestControlWithStderr(ctx context.Context, script string) ([]byte, string, error) {
+	return s.guestControlOutput(ctx, script, "", true)
+}
+
+func (s *Server) guestControlOutput(ctx context.Context, script, diagnosticSource string, captureStderr bool) ([]byte, string, error) {
 	// SSH enters the user's default shell. Run control scripts in Bash so
 	// zsh initialization cannot change their redirection or error behavior.
 	command := "exec /bin/bash --noprofile --norc -c " + shellescape.Quote(script)
 	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", command)
 	var stderr fileControlStderr
-	if diagnosticSource != "" {
+	if captureStderr {
 		cmd.Stderr = &stderr
-		defer func() {
-			if len(stderr.data) > 0 {
-				_ = diagnostics.New(s.profile).Record("warn", diagnosticSource, "guest control stderr: "+string(stderr.data))
-			}
-		}()
+		if diagnosticSource != "" {
+			defer func() {
+				if len(stderr.data) > 0 {
+					_ = diagnostics.New(s.profile).Record("warn", diagnosticSource, "guest control stderr: "+string(stderr.data))
+				}
+			}()
+		}
 	}
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if err = cmd.Start(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	data, readErr := io.ReadAll(io.LimitReader(pipe, (64<<10)+1))
 	if readErr != nil || len(data) > 64<<10 {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return nil, errors.New("guest control response exceeded its limit")
+		return nil, string(stderr.data), errors.New("guest control response exceeded its limit")
 	}
 	if err = cmd.Wait(); err != nil {
-		return nil, err
+		return nil, string(stderr.data), err
 	}
-	return data, nil
+	return data, string(stderr.data), nil
 }
 func (s *Server) attach() error {
 	if err := s.requireStorageReady(); err != nil {
