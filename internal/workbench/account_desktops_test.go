@@ -156,8 +156,8 @@ func TestDesktopDeleteHTTP(t *testing.T) {
 	if w := request(s, "DELETE", "/api/desktop-instances/"+instanceID, s.origin, "", false); w.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated delete: %d", w.Code)
 	}
-	if w := request(s, "DELETE", "/api/desktop-instances/default", s.origin, "", true); w.Code != http.StatusBadRequest {
-		t.Fatalf("default delete must be rejected: %d", w.Code)
+	if w := request(s, "DELETE", "/api/desktop-instances/default", s.origin, "", true); w.Code != http.StatusConflict {
+		t.Fatalf("stopped vm default delete must return 409: %d", w.Code)
 	}
 	if w := request(s, "DELETE", "/api/desktop-instances/"+instanceID, s.origin, "", true); w.Code != http.StatusConflict {
 		t.Fatalf("stopped vm delete must return 409: %d", w.Code)
@@ -171,24 +171,41 @@ func TestDesktopDeleteHTTP(t *testing.T) {
 		calls = append(calls, action+":"+id)
 		return errors.New("无法清理客机内的 Desktop 实例数据，暂未删除记录，请重试")
 	}
+	if w := request(s, "DELETE", "/api/desktop-instances/default", s.origin, "", true); w.Code != http.StatusBadGateway {
+		t.Fatalf("failed default guest cleanup: %d %s", w.Code, w.Body.String())
+	}
+	list, err := s.loadClaudeAccounts()
+	if err != nil || list.DefaultDesktopRemoved {
+		t.Fatalf("registry mutated after failed default guest delete: %+v %v", list, err)
+	}
 	if w := request(s, "DELETE", "/api/desktop-instances/"+instanceID, s.origin, "", true); w.Code != http.StatusBadGateway {
 		t.Fatalf("failed guest cleanup: %d %s", w.Code, w.Body.String())
 	}
-	list, err := s.loadClaudeAccounts()
+	list, err = s.loadClaudeAccounts()
 	if err != nil || list.Accounts[0].DesktopInstanceID != instanceID || list.DesktopLabels[instanceID] != "自定义桌面" {
 		t.Fatalf("registry mutated after failed guest delete: %+v %v", list, err)
 	}
-	// Successful guest cleanup removes desktop binding and label while preserving the account.
+	// Successful guest cleanup deletes default and isolated instances until only one remains.
 	s.desktopAction = func(_ context.Context, id string, _ claudeAccount, action string) error {
 		calls = append(calls, action+":"+id)
 		return nil
 	}
 	beforeRev := s.desktopCatalogRevision.Load()
+	if w := request(s, "DELETE", "/api/desktop-instances/default", s.origin, "", true); w.Code != http.StatusOK {
+		t.Fatalf("delete default instance: %d %s", w.Code, w.Body.String())
+	}
+	if w := request(s, "DELETE", "/api/desktop-instances/default", s.origin, "", true); w.Code != http.StatusNotFound {
+		t.Fatalf("second default delete must return 404: %d", w.Code)
+	}
+	if _, err := s.defaultDesktopScope(context.Background()); err == nil {
+		t.Fatal("deleted default desktop must not be launchable via defaultDesktopScope")
+	}
 	if w := request(s, "DELETE", "/api/desktop-instances/"+instanceID, s.origin, "", true); w.Code != http.StatusOK {
 		t.Fatalf("delete bound instance: %d %s", w.Code, w.Body.String())
 	}
-	if w := request(s, "DELETE", "/api/desktop-instances/"+pendingID, s.origin, "", true); w.Code != http.StatusOK {
-		t.Fatalf("delete pending instance: %d %s", w.Code, w.Body.String())
+	// Pending is now the sole remaining instance and cannot be deleted.
+	if w := request(s, "DELETE", "/api/desktop-instances/"+pendingID, s.origin, "", true); w.Code != http.StatusBadRequest {
+		t.Fatalf("last remaining desktop delete must return 400: %d %s", w.Code, w.Body.String())
 	}
 	if w := request(s, "DELETE", "/api/desktop-instances/"+instanceID, s.origin, "", true); w.Code != http.StatusNotFound {
 		t.Fatalf("second delete must return 404: %d", w.Code)
@@ -197,12 +214,19 @@ func TestDesktopDeleteHTTP(t *testing.T) {
 		t.Fatal("delete did not advance desktopCatalogRevision")
 	}
 	list, err = s.loadClaudeAccounts()
-	if err != nil || len(list.Accounts) != 1 || list.Accounts[0].ID != accountID || list.Accounts[0].DesktopInstanceID != "" || list.PendingDesktop != "" || len(list.DesktopLabels) != 0 {
+	if err != nil || !list.DefaultDesktopRemoved || len(list.Accounts) != 1 || list.Accounts[0].ID != accountID || list.Accounts[0].DesktopInstanceID != "" || list.PendingDesktop != pendingID || list.DesktopLabels[pendingID] != "待删桌面" || list.DesktopLabels[instanceID] != "" {
 		t.Fatalf("unexpected state after delete: %+v %v", list, err)
 	}
-	wantCalls := []string{"delete:" + instanceID, "delete:" + instanceID, "delete:" + pendingID}
+	wantCalls := []string{"delete:default", "delete:" + instanceID, "delete:default", "delete:" + instanceID}
 	if strings.Join(calls, ",") != strings.Join(wantCalls, ",") {
 		t.Fatalf("unexpected desktopAction calls: %v", calls)
+	}
+	// When only default remains, default itself cannot be deleted either.
+	if err := s.saveClaudeAccounts(claudeAccountList{Accounts: []claudeAccount{{ID: accountID, Label: "工作"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if w := request(s, "DELETE", "/api/desktop-instances/default", s.origin, "", true); w.Code != http.StatusBadRequest {
+		t.Fatalf("sole remaining default delete must return 400: %d %s", w.Code, w.Body.String())
 	}
 }
 
@@ -339,6 +363,49 @@ func TestLinuxAccountDesktopDeleteScript(t *testing.T) {
 	}
 	if !strings.Contains(string(logged), "stop desktop-"+targetID+".service") || !strings.Contains(string(logged), "reset-failed desktop-"+targetID+".service") {
 		t.Fatalf("expected systemctl stop and reset-failed, got:\n%s", logged)
+	}
+	// Deleting the default desktop stops cage-claude-desktop.service and clears default app data and keyring without touching other desktops or Claude Code CLI data.
+	defaultDirs := []string{
+		filepath.Join(home, ".config/Claude"),
+		filepath.Join(home, ".cache/Claude"),
+		filepath.Join(home, ".local/share/Claude"),
+		filepath.Join(home, ".local/share/keyrings"),
+	}
+	cliDir := filepath.Join(home, ".claude")
+	for _, dir := range append(append([]string{}, defaultDirs...), cliDir) {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(home, ".config/Claude/locked"), []byte("x"), 0400); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cliDir, "history.jsonl"), []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runDelete("default")
+	for _, dir := range defaultDirs {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("default desktop dir %s still exists: %v", dir, err)
+		}
+	}
+	if _, err := os.Stat(otherDir); err != nil {
+		t.Fatalf("other profile dir was affected by default delete: %v", err)
+	}
+	if _, err := os.Stat(accountDir); err != nil {
+		t.Fatalf("claude account CLI config was affected by default delete: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cliDir, "history.jsonl")); err != nil {
+		t.Fatalf("default Claude Code history was affected by default delete: %v", err)
+	}
+	// Deleting default again when its directories do not exist succeeds cleanly.
+	runDelete("default")
+	logged, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logged), "stop cage-claude-desktop.service") || !strings.Contains(string(logged), "reset-failed cage-claude-desktop.service") {
+		t.Fatalf("expected cage-claude-desktop.service stop and reset-failed, got:\n%s", logged)
 	}
 }
 

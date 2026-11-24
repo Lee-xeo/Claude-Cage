@@ -67,15 +67,16 @@ type claudeGuestSnapshot struct {
 }
 
 type claudeAccountList struct {
-	PendingDesktop    string            `json:"pending_desktop,omitempty"`
-	DesktopRedirects  map[string]string `json:"desktop_redirects,omitempty"`
-	DesktopLabels     map[string]string `json:"desktop_labels,omitempty"`
-	DismissedDefaults []string          `json:"dismissed_defaults,omitempty"`
-	PendingProxyNode  string            `json:"pending_proxy_node,omitempty"`
-	LastNumber        uint32            `json:"last_number,omitempty"`
-	Accounts          []claudeAccount   `json:"accounts"`
-	PendingLogin      string            `json:"pending_login,omitempty"`
-	Scheduling        claudeScheduling  `json:"scheduling"`
+	DefaultDesktopRemoved bool              `json:"default_desktop_removed,omitempty"`
+	PendingDesktop        string            `json:"pending_desktop,omitempty"`
+	DesktopRedirects      map[string]string `json:"desktop_redirects,omitempty"`
+	DesktopLabels         map[string]string `json:"desktop_labels,omitempty"`
+	DismissedDefaults     []string          `json:"dismissed_defaults,omitempty"`
+	PendingProxyNode      string            `json:"pending_proxy_node,omitempty"`
+	LastNumber            uint32            `json:"last_number,omitempty"`
+	Accounts              []claudeAccount   `json:"accounts"`
+	PendingLogin          string            `json:"pending_login,omitempty"`
+	Scheduling            claudeScheduling  `json:"scheduling"`
 }
 
 type claudeScheduling struct {

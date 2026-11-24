@@ -3239,5 +3239,7 @@
   "环境内存不足，{0} 已被系统关闭。请在设置中检查计算资源后重新打开。": "Xusuusta deegaanka ayaa ku filnaan weysay, nidaamkuna wuu xidhay {0}. Ka hubi kheyraadka xisaabinta dejinta, kadibna dib u fur.",
   "请先保存应用内的工作。更新会关闭应用，安装官方最新版本后重新打开；登录与设置继续保留。": "Marka hore keydi shaqadaada abka. Cusbooneysiintu waxay xidhaysaa abka, rakibaysaa noocii rasmiga ahaa ee ugu dambeeyay, kadibna dib u furaysaa; gelitaanka iyo dejintu way hadhayaan.",
   "请先保存应用内的工作。浏览器和终端会继续运行。": "Marka hore keydi shaqadaada abka. Biraawsarka iyo terminaalladu way sii shaqaynayaan.",
-  "桌面应用": "Abka desktop-ka"
+  "桌面应用": "Abka desktop-ka",
+  "至少保留一个 Desktop 实例，不能删除最后一个": "Ugu yaraan hal tusaale Desktop ah waa in la hayaa; kan u dambeeya lama tirtiri karo",
+  "默认 Desktop 已删除，请从实例列表打开其他 Desktop": "Desktop-ka caadiga ah waa la tirtiray; fadlan ka fur Desktop kale liiska tusaalooyinka"
 }

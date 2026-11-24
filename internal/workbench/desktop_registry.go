@@ -51,7 +51,39 @@ func (list claudeAccountList) validateDesktopBindings() error {
 			return errors.New("Desktop 名称记录无效")
 		}
 	}
+	if list.DefaultDesktopRemoved {
+		if used["default"] || list.DesktopLabels["default"] != "" || list.DesktopRedirects["default"] != "" {
+			return errors.New("已删除的默认 Desktop 记录无效")
+		}
+	}
 	return nil
+}
+
+func (list *claudeAccountList) hasDefaultDesktop() bool {
+	return !list.DefaultDesktopRemoved && list.DesktopRedirects["default"] == ""
+}
+
+func (list *claudeAccountList) hasDesktop(id string) bool {
+	if id == "default" {
+		return list.hasDefaultDesktop()
+	}
+	return validClaudeID(id) && (list.desktopOwner(id) != nil || list.PendingDesktop == id)
+}
+
+func (list *claudeAccountList) desktopCount() int {
+	count := 0
+	if list.hasDefaultDesktop() {
+		count++
+	}
+	for _, a := range list.Accounts {
+		if a.DesktopInstanceID != "" && a.DesktopInstanceID != "default" {
+			count++
+		}
+	}
+	if list.PendingDesktop != "" {
+		count++
+	}
+	return count
 }
 
 func (list *claudeAccountList) desktopOwner(id string) *claudeAccount {
@@ -85,10 +117,7 @@ func (list *claudeAccountList) renameDesktop(id, raw string) (desktopEntry, erro
 	if !validDesktopLabel(label) {
 		return desktopEntry{}, errors.New("Desktop 名称需要 1 至 100 个字符，不能含控制字符")
 	}
-	if !validDesktopInstance(id) || list.DesktopRedirects[id] != "" {
-		return desktopEntry{}, os.ErrNotExist
-	}
-	if id != "default" && list.desktopOwner(id) == nil && list.PendingDesktop != id {
+	if !validDesktopInstance(id) || list.DesktopRedirects[id] != "" || !list.hasDesktop(id) {
 		return desktopEntry{}, os.ErrNotExist
 	}
 	if list.DesktopLabels == nil {
@@ -99,28 +128,40 @@ func (list *claudeAccountList) renameDesktop(id, raw string) (desktopEntry, erro
 }
 
 func (list *claudeAccountList) deleteDesktop(id string) bool {
-	if id == "" || id == "default" {
+	if !list.hasDesktop(id) || list.desktopCount() <= 1 {
 		return false
 	}
-	found := false
+	if id == "default" {
+		list.DefaultDesktopRemoved = true
+		if owner := list.desktopOwner("default"); owner != nil {
+			owner.DesktopInstanceID = ""
+			owner.DesktopStatus = ""
+		}
+		delete(list.DesktopLabels, "default")
+		for old, target := range list.DesktopRedirects {
+			if old == "default" || target == "default" {
+				delete(list.DesktopRedirects, old)
+			}
+		}
+		return true
+	}
 	if list.PendingDesktop == id {
 		list.PendingDesktop = ""
-		found = true
 	}
 	if owner := list.desktopOwner(id); owner != nil {
 		owner.DesktopInstanceID = ""
 		owner.DesktopStatus = ""
-		found = true
 	}
-	if found {
-		delete(list.DesktopLabels, id)
-		for old, target := range list.DesktopRedirects {
-			if old == id || target == id {
-				delete(list.DesktopRedirects, old)
-			}
+	if list.DesktopRedirects["default"] == id {
+		list.DefaultDesktopRemoved = true
+	}
+	delete(list.DesktopLabels, id)
+	for old, target := range list.DesktopRedirects {
+		if old == id || target == id {
+			delete(list.DesktopRedirects, old)
 		}
 	}
-	return found
+	return true
 }
 
 func (list *claudeAccountList) createDesktop(account string) (desktopEntry, error) {
@@ -227,11 +268,7 @@ func (s *Server) updateAccountDesktopMetadata(w http.ResponseWriter, r *http.Req
 
 func (s *Server) deleteAccountDesktop(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if id == "default" {
-		http.Error(w, "默认 Desktop 不能删除", http.StatusBadRequest)
-		return
-	}
-	if !validClaudeID(id) {
+	if !validDesktopInstance(id) {
 		http.NotFound(w, r)
 		return
 	}
@@ -251,7 +288,11 @@ func (s *Server) deleteAccountDesktop(w http.ResponseWriter, r *http.Request) {
 	m := &s.claudeAccounts
 	m.mu.Lock()
 	list, err := s.loadClaudeAccounts()
-	exists := err == nil && (list.desktopOwner(id) != nil || list.PendingDesktop == id)
+	exists := err == nil && list.hasDesktop(id)
+	remaining := 0
+	if err == nil {
+		remaining = list.desktopCount()
+	}
 	m.mu.Unlock()
 	if err != nil {
 		requestError(w, err)
@@ -261,20 +302,34 @@ func (s *Server) deleteAccountDesktop(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if remaining <= 1 {
+		http.Error(w, "至少保留一个 Desktop 实例，不能删除最后一个", http.StatusBadRequest)
+		return
+	}
 	if err := s.changeAccountDesktop(s.operationContext(), id, claudeAccount{}, "delete"); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	m.mu.Lock()
 	list, err = s.loadClaudeAccounts()
+	deleted := false
 	if err == nil {
-		list.deleteDesktop(id)
-		err = s.saveClaudeAccounts(list)
+		deleted = list.deleteDesktop(id)
+		if deleted {
+			err = s.saveClaudeAccounts(list)
+		}
 	}
 	m.mu.Unlock()
 	if err != nil {
 		requestError(w, err)
 		return
+	}
+	if !deleted {
+		http.Error(w, "至少保留一个 Desktop 实例，不能删除最后一个", http.StatusBadRequest)
+		return
+	}
+	if id == "default" {
+		s.desktopStatus.invalidate()
 	}
 	jsonReply(w, map[string]bool{"ok": true})
 }
@@ -297,6 +352,9 @@ func (list *claudeAccountList) migrateDesktopInstances(observed map[string]deskt
 // Reconcile only a native client's completed identity observation. A missing
 // observation, failed callback, navigation or unavailable guest proves nothing.
 func (list *claudeAccountList) bindDesktop(id string, observation claudeGuestSnapshot) (changed bool, destination string, restart bool) {
+	if id == "default" && list.DefaultDesktopRemoved {
+		return false, id, false
+	}
 	owner := list.desktopOwner(id)
 	if !observation.LoggedIn {
 		if owner != nil && owner.DesktopStatus != "signed_out" {
@@ -392,7 +450,7 @@ func (s *Server) reconcileDesktops(ctx context.Context, observed map[string]desk
 			m.mu.Unlock()
 			return err
 		}
-		if redirect := list.DesktopRedirects[id]; redirect != "" {
+		if redirect := list.DesktopRedirects[id]; redirect != "" || (id == "default" && list.DefaultDesktopRemoved) {
 			m.mu.Unlock()
 			// A previously retired default service can be reopened by legacy UI.
 			if id == "default" {
@@ -492,7 +550,7 @@ func (s *Server) desktopCatalog(w http.ResponseWriter, r *http.Request) {
 		e.Generation = observed[id].Generation
 		instances = append(instances, e)
 	}
-	if _, exists := observed["default"]; (exists || list.desktopOwner("default") != nil || list.DesktopLabels["default"] != "") && list.DesktopRedirects["default"] == "" {
+	if list.hasDefaultDesktop() {
 		add("default")
 	}
 	for _, a := range list.Accounts {
@@ -505,7 +563,7 @@ func (s *Server) desktopCatalog(w http.ResponseWriter, r *http.Request) {
 	if list.PendingDesktop != "" {
 		add(list.PendingDesktop)
 	}
-	jsonReply(w, map[string]any{"supported": supported, "accounts": accounts, "instances": instances, "redirects": list.DesktopRedirects})
+	jsonReply(w, map[string]any{"supported": supported, "accounts": accounts, "instances": instances, "redirects": list.DesktopRedirects, "default_removed": list.DefaultDesktopRemoved})
 }
 
 // The legacy window retains its original HOME, keyring and Desktop data. Add
@@ -517,6 +575,9 @@ func (s *Server) defaultDesktopScope(ctx context.Context) (string, error) {
 	m.mu.Unlock()
 	if err != nil {
 		return "", err
+	}
+	if list.DefaultDesktopRemoved {
+		return "", errors.New("默认 Desktop 已删除，请从实例列表打开其他 Desktop")
 	}
 	if list.DesktopRedirects["default"] != "" {
 		return "", errors.New("此 Desktop 已归入已有实例，请从实例列表打开")

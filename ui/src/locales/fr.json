@@ -3239,5 +3239,7 @@
   "环境内存不足，{0} 已被系统关闭。请在设置中检查计算资源后重新打开。": "Mémoire de l'environnement insuffisante : le système a fermé {0}. Vérifiez les ressources de calcul dans les réglages, puis rouvrez-la.",
   "请先保存应用内的工作。更新会关闭应用，安装官方最新版本后重新打开；登录与设置继续保留。": "Enregistrez d'abord votre travail dans l'application. La mise à jour ferme l'application, installe la dernière version officielle puis la rouvre ; connexion et réglages sont conservés.",
   "请先保存应用内的工作。浏览器和终端会继续运行。": "Enregistrez d'abord votre travail dans l'application. Le navigateur et les terminaux continuent de fonctionner.",
-  "桌面应用": "Application de bureau"
+  "桌面应用": "Application de bureau",
+  "至少保留一个 Desktop 实例，不能删除最后一个": "Au moins une instance Desktop doit être conservée ; la dernière ne peut pas être supprimée",
+  "默认 Desktop 已删除，请从实例列表打开其他 Desktop": "Le Desktop par défaut a été supprimé ; ouvrez un autre Desktop depuis la liste des instances"
 }
