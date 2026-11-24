@@ -9,7 +9,7 @@ import (
 
 // The summary line carries only fixed codes; anything else is not accepted,
 // so process output never becomes an arbitrary user-facing message.
-var imageDownloadLine = regexp.MustCompile(`^` + vm.ImageDownloadMarker + `((?: (?:official|nju|ustc|other):(?:http-[1-5][0-9][0-9]|eof|timeout|tls|dns|refused|proxy|checksum|other):(?:kept|none))+)\s*$`)
+var imageDownloadLine = regexp.MustCompile(`^` + vm.ImageDownloadMarker + `((?: (?:official|nju|ustc|other):(?:http-[1-5][0-9][0-9]|eof|timeout|tls|dns|refused|proxy|proxy-config|checksum|other):(?:kept|none))+)\s*$`)
 
 var imageMirrorNames = map[string]string{
 	"official": "Debian 官方源",
@@ -19,17 +19,18 @@ var imageMirrorNames = map[string]string{
 }
 
 var imageCauseNames = map[string]string{
-	"http-403": "HTTP 403，服务器拒绝访问",
-	"http-404": "HTTP 404，文件不存在",
-	"http-429": "HTTP 429，请求过于频繁",
-	"eof":      "连接被中途断开",
-	"timeout":  "连接超时",
-	"tls":      "TLS 或证书错误",
-	"dns":      "域名解析失败",
-	"refused":  "连接被拒绝",
-	"proxy":    "无法连接宿主机代理",
-	"checksum": "文件校验不符，下载内容已丢弃",
-	"other":    "其他错误",
+	"http-403":     "HTTP 403，服务器拒绝访问",
+	"http-404":     "HTTP 404，文件不存在",
+	"http-429":     "HTTP 429，请求过于频繁",
+	"eof":          "连接被中途断开",
+	"timeout":      "连接超时",
+	"tls":          "TLS 或证书错误",
+	"dns":          "域名解析失败",
+	"refused":      "连接被拒绝",
+	"proxy":        "无法连接宿主机代理",
+	"proxy-config": "无法解析宿主机代理设置",
+	"checksum":     "文件校验不符，下载内容已丢弃",
+	"other":        "其他错误",
 }
 
 // imageDownloadFailure explains a failed Debian image download by location:
@@ -44,10 +45,11 @@ func imageDownloadFailure(output string) (reason, next string, ok bool) {
 	if len(tokens) == 0 {
 		return "", "", false
 	}
-	parts, kept, hostProxy := make([]string, 0, len(tokens)), false, false
+	parts, kept, hostProxy, hostProxyConfig := make([]string, 0, len(tokens)), false, false, false
 	for _, token := range tokens {
 		fields := strings.Split(token, ":")
 		hostProxy = hostProxy || fields[1] == "proxy"
+		hostProxyConfig = hostProxyConfig || fields[1] == "proxy-config"
 		cause, known := imageCauseNames[fields[1]]
 		if !known {
 			cause = "HTTP " + strings.TrimPrefix(fields[1], "http-")
@@ -67,6 +69,9 @@ func imageDownloadFailure(output string) (reason, next string, ok bool) {
 		// The image is fetched by the host through its own proxy settings,
 		// so a different Cage node cannot fix this failure.
 		next = "镜像由宿主机经系统代理或 HTTP_PROXY、HTTPS_PROXY、ALL_PROXY 环境变量下载，不经过 Cage 节点，换节点无效。请确认这些设置指向正在运行的代理端口（macOS 还要检查 launchctl getenv 返回的用户域变量），再继续安装"
+	}
+	if hostProxyConfig {
+		next = "镜像由宿主机经系统代理下载，不经过 Cage 节点，换节点无效。宿主机的系统代理或自动代理（PAC）设置无法读取或解析，下载已停止且未改为直连。请检查系统代理与 PAC 设置以及提供它们的代理软件，或设置 HTTPS_PROXY 后再继续安装"
 	}
 	if kept {
 		next += "；已下载的部分会保留，继续安装时从断点续传"

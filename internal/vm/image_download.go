@@ -68,6 +68,11 @@ func imageDownloadCause(text string) string {
 		code     string
 		patterns []string
 	}{
+		// hostproxy stops the download, without falling back to a direct
+		// connection, when the host's proxy settings or PAC cannot be read or
+		// resolved; its messages name the host proxy this way. Checked first:
+		// a wrapped cause may itself mention a timeout.
+		{"proxy-config", []string{"主机系统代理", "主机代理", "主机自动代理", "主机桌面代理", "主机 pac", "macos 系统代理", "桌面 pac"}},
 		// net/http names a failed dial to the host's HTTP or SOCKS proxy this
 		// way; the mirror itself was never reached.
 		{"proxy", []string{"proxyconnect", "socks connect"}},
