@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Monitor,
   Columns2,
+  PanelLeftOpen,
   Pencil,
   Power,
   Plus,
@@ -200,7 +201,7 @@ export function useAccountDesktops(onShow, onHide, notify, confirm, visible, rev
   };
 }
 
-export function DesktopList({ model, disabled, selected, onDefault, onRename }) {
+export function DesktopList({ model, disabled, selected, defaultRunning = false, onDefault, onDefaultStop, onRename }) {
   const tr = useTranslation();
   const { catalog, expanded, panes, pending } = model;
   const [creating, setCreating] = useState(false);
@@ -208,6 +209,7 @@ export function DesktopList({ model, disabled, selected, onDefault, onRename }) 
   const instances = catalog?.instances ?? catalog?.accounts ?? [];
   const original = instances.find(a => a.id === "default");
   const defaultEntry = original || { id: "default", label: tr("默认 Desktop") };
+  const isDefaultRunning = Boolean(defaultEntry.running || defaultRunning);
   const defaultSelected = selected && panes.length === 0;
   const focusRowActions = (event) => {
     event.preventDefault();
@@ -244,16 +246,26 @@ export function DesktopList({ model, disabled, selected, onDefault, onRename }) 
                 }}
               >
                 <DesktopAccountLabel account={defaultEntry} />
-                {defaultEntry.running ? <span className="account-desktop-status" aria-hidden="true">●</span> : null}
+                {isDefaultRunning ? <span className="account-desktop-status" aria-hidden="true">●</span> : null}
               </button>
-              {catalog?.supported && onRename && (
+              {((isDefaultRunning && onDefaultStop) || (catalog?.supported && onRename)) && (
                 <div className="terminal-row-actions" role="group" aria-label={tr("{0} 的操作", title(defaultEntry))}>
-                  <DesktopRowAction
-                    label={tr("重命名")}
-                    icon={Pencil}
-                    disabled={Boolean(pending) || disabled}
-                    onClick={() => onRename(defaultEntry)}
-                  />
+                  {isDefaultRunning && onDefaultStop && (
+                    <DesktopRowAction
+                      label={tr("关闭")}
+                      icon={Power}
+                      disabled={Boolean(pending) || disabled}
+                      onClick={(event) => onDefaultStop(defaultEntry, event.currentTarget)}
+                    />
+                  )}
+                  {catalog?.supported && onRename && (
+                    <DesktopRowAction
+                      label={tr("重命名")}
+                      icon={Pencil}
+                      disabled={Boolean(pending) || disabled}
+                      onClick={() => onRename(defaultEntry)}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -563,9 +575,12 @@ export const DesktopPanes = forwardRef(function DesktopPanes(
     onProjectOpened,
     onStatus,
     onFallback,
+    sidebarCollapsed,
+    onExpand,
   },
   ref,
 ) {
+  const tr = useTranslation();
   const [focusedID, setFocusedID] = useState("");
   const [closedChooser, setClosedChooser] = useState("");
   const controls = useRef(new Map());
@@ -599,6 +614,18 @@ export const DesktopPanes = forwardRef(function DesktopPanes(
   const directoryRequest = paneUploads.find((item) => item.directory && item.id !== closedChooser);
   return (
     <div className="account-desktop-panes">
+      {sidebarCollapsed && (
+        <div className="desktop-sidebar-reveal">
+          <button
+            className="icon-button"
+            aria-label={tr("展开侧栏")}
+            title={tr("展开侧栏")}
+            onClick={onExpand}
+          >
+            <PanelLeftOpen size={15} />
+          </button>
+        </div>
+      )}
       {!nativeAvailable() && <BrowserUploads requests={paneUploads} onStatus={onStatus} />}
       {directoryRequest && status && (
         <ProjectDialog

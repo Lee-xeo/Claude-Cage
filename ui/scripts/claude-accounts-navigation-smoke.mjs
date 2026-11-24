@@ -62,7 +62,7 @@ for (const [platform, system] of [["darwin", "macos"], ["win32", "windows-11"], 
     assert.equal(state.requests.filter(request => request.path === "/browser/new").length, 0);
     await openAccounts();
     await nav.getByRole("button", { name: "Claude Desktop", exact: true }).click();
-    await page.locator(".claude-desktop-toolbar").waitFor();
+    await page.locator(".claude-desktop-view").waitFor();
     await openAccounts();
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await page.getByRole("navigation", { name: "设置分组" }).waitFor();

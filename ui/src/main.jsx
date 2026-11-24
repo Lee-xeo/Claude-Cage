@@ -8,7 +8,7 @@ import {
   nextSidebarWidth,
 } from "./sidebar-width.mjs";
 import logo from "./logo.png";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Clock3,
   FolderOpen,
@@ -43,7 +43,7 @@ import { TERMINAL_LIMIT, liveTerminalCount } from "./session-order.mjs";
 import { InitializationGate } from "./initialization";
 import { ProjectRecovery } from "./project-recovery";
 import { DesktopPanes, useAccountDesktops } from "./account-desktops";
-import { mergedDefaultInstance } from "./account-desktop-state.mjs";
+import { desktopTitle, mergedDefaultInstance } from "./account-desktop-state.mjs";
 import { ClaudeDesktop } from "./claude-desktop";
 import { ClaudeAccountsPanel, useClaudeAccounts } from "./claude-accounts";
 import { AccountProvider, AccountGate, useAccount } from "./account";
@@ -119,6 +119,9 @@ function App() {
   const [pluginView, setPluginView] = useState("");
   const [tailnetLogin, setTailnetLogin] = useState(null);
   const [desktopOpen, setDesktopOpen] = useState(false);
+  const [defaultDesktopRunning, setDefaultDesktopRunning] = useState(false);
+  const [defaultDesktopStopped, setDefaultDesktopStopped] = useState(false);
+  const [defaultDesktopSignal, setDefaultDesktopSignal] = useState(0);
   const [terminalChoice, setTerminalChoice] = useState(null);
   const [openingSession, setOpeningSession] = useState("");
   const [sessionAccount, setSessionAccount] = useState(null);
@@ -362,6 +365,40 @@ function App() {
   const accountDesktops = useAccountDesktops(
     () => {setManagementPage(""); setHome(false); setDesktopOpen(true);},
     () => {setDesktopOpen(false); setHome(true);}, notify, (...args) => confirm(...args), desktopOpen && running && status?.account_desktops_supported && !managementPage, status?.desktop_catalog_revision);
+  useEffect(() => {
+    if (!running) {
+      setDefaultDesktopRunning(false);
+      setDefaultDesktopStopped(false);
+    }
+  }, [running]);
+  const handleDefaultDesktopRunning = useCallback((isRunning) => {
+    setDefaultDesktopRunning(isRunning);
+    if (isRunning) setDefaultDesktopStopped(false);
+    if (status?.account_desktops_supported) void accountDesktops.refresh(true);
+  }, [status?.account_desktops_supported, accountDesktops.refresh]);
+  const stopDefaultDesktop = async (entry, anchor = null) => {
+    if (!(await confirm({
+      title: entry?.label ? tr("关闭 {0}？", desktopTitle(entry)) : "关闭 Claude Desktop？",
+      body: "请先保存应用内的工作。浏览器和 Cage 终端会继续运行。",
+      confirm: "关闭应用",
+      anchor,
+    }))) return;
+    try {
+      let job = await api("/claude-desktop/stop", {});
+      while (job?.running) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        job = await api("/agent/jobs/" + job.id);
+      }
+      if (job?.error || job?.canceled) throw new Error(job.error || tr("操作已取消"));
+      setDefaultDesktopRunning(false);
+      setDefaultDesktopStopped(true);
+      setDefaultDesktopSignal((n) => n + 1);
+      if (status?.account_desktops_supported) void accountDesktops.refresh(true);
+      await refreshStatus.current?.();
+    } catch (e) {
+      notify(e.message);
+    }
+  };
   const viewingAccountDesktop = desktopOpen && accountDesktops.panes.length > 0;
   const audioEnabled = running && !viewingAccountDesktop && !storageRecovery && !status?.environment_update_required && !connectionError;
   const audio = useAudioOutput(audioEnabled);
@@ -1791,6 +1828,8 @@ function App() {
             }}
             desktopOpen={!managementPage && desktopOpen}
             onClaudeWeb={() => openBrowserPage("https://claude.ai/")}
+            defaultDesktopRunning={defaultDesktopRunning}
+            onDefaultDesktopStop={stopDefaultDesktop}
             accountDesktops={status.account_desktops_supported ? accountDesktops : null}
             onDesktopRename={(desktop) => setRename({ id: desktop.id, title: desktop.label || "", desktop: true })}
             onClaudeDesktop={() => {
@@ -1894,15 +1933,20 @@ function App() {
               onProjectOpened={async () => { await refreshSettings(); await refreshStatus.current?.(); }}
               onStatus={notify}
               onFallback={(text, message) => setTransfer({ text, message })}
+              sidebarCollapsed={sidebarCollapsed}
+              onExpand={() => persist("cage-sidebar-collapsed", false, setSidebarCollapsed)}
             />}
             {!storageRecovery && desktopOpen && !accountDesktops.panes.length && <ClaudeDesktop
               uploads={desktopFiles.uploads}
               onProjectOpened={async () => { await refreshSettings(); await refreshStatus.current?.(); }}
               status={status} visible={!settingsOpen && !managementPage} remoteRef={remote}
               onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })}
-              onConfirm={confirm} onDetails={() => setDetails(true)}
+              onDetails={() => setDetails(true)}
               sidebarCollapsed={sidebarCollapsed}
               onExpand={() => persist("cage-sidebar-collapsed", false, setSidebarCollapsed)}
+              refreshSignal={defaultDesktopSignal}
+              autoStart={!defaultDesktopStopped}
+              onRunningChange={handleDefaultDesktopRunning}
             />}
             {status.environment_update_required && !busy && (
               <div className="environment-update-banner" role="status">

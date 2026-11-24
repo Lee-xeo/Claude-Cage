@@ -3220,5 +3220,8 @@
   "未检测到可用的本机麦克风": "Aucun microphone local disponible n'a été détecté",
   "当前窗口不支持麦克风采集": "Cette fenêtre ne prend pas en charge la capture du microphone",
   "本机麦克风已断开，请检查设备后点击重试": "Le microphone local a été déconnecté. Vérifiez le périphérique puis cliquez pour réessayer",
-  "麦克风采集未能启动，请检查本机音频设备后重试": "Impossible de démarrer la capture du microphone. Vérifiez le périphérique audio local puis réessayez"
+  "麦克风采集未能启动，请检查本机音频设备后重试": "Impossible de démarrer la capture du microphone. Vérifiez le périphérique audio local puis réessayez",
+  "更新 Claude Desktop": "Mettre à jour Claude Desktop",
+  "官方软件源": "Source officielle",
+  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "La version Linux se met à jour via les sources logicielles du système. Vous pouvez la mettre à jour dans « Paramètres → Environnement et récupération », ou exécuter sudo apt update && sudo apt install --only-upgrade claude-desktop dans le terminal Cage."
 }

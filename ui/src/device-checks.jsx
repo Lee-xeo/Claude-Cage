@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { api } from "./api";
-import { Modal } from "./modal";
 import { SafetyMessage } from "./safety-message";
 import "./device-checks.css";
 import { activeInterfaceLanguage, useTranslation } from "./interface-language.mjs";
@@ -39,10 +38,4 @@ export function DeviceChecks({ target, disabled = false }) {
       <ul className="device-check-results">{report.checks.map(check => <li key={check.id} data-state={check.state}><strong>{check.title}</strong><span>{labels[check.state] ? tr(labels[check.state]) : tr("未观测")}</span><p>{check.evidence}</p></li>)}</ul>
     </div>}
   </section>;
-}
-
-export function DeviceCheckButton({ target = "desktop", disabled = false }) {
-  const tr = useTranslation();
-  const [open, setOpen] = useState(false);
-  return <><button disabled={disabled} onClick={() => setOpen(true)}>{tr("检测环境")}</button>{open && <Modal title={tr("设备配置与渲染检测")} onClose={() => setOpen(false)}><div className="modal-body"><DeviceChecks target={target} /></div></Modal>}</>;
 }

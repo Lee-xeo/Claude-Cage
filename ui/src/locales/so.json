@@ -3220,5 +3220,8 @@
   "未检测到可用的本机麦克风": "Lama helin makarafoon maxalli ah oo diyaar ah",
   "当前窗口不支持麦克风采集": "Daaqaddani ma taageerto duubista makarafoonka",
   "本机麦克风已断开，请检查设备后点击重试": "Makarafoonka maxalliga ah wuu go'ay. Hubi qalabka ka dibna guji si aad mar kale isugu daydo",
-  "麦克风采集未能启动，请检查本机音频设备后重试": "Waa la bilaabi waayay duubista makarafoonka. Hubi qalabka codka maxalliga ah oo mar kale isku day"
+  "麦克风采集未能启动，请检查本机音频设备后重试": "Waa la bilaabi waayay duubista makarafoonka. Hubi qalabka codka maxalliga ah oo mar kale isku day",
+  "更新 Claude Desktop": "Cusbooneysii Claude Desktop",
+  "官方软件源": "Isha software-ka rasmiga ah",
+  "Linux 版通过系统软件源更新。可在“设置 → 环境与恢复”中更新，或在 Cage 终端运行 sudo apt update && sudo apt install --only-upgrade claude-desktop。": "Nooca Linux waxaa lagu cusboonaysiiyaa isha software-ka nidaamka. Waxaad ka cusboonaysiin kartaa \"Dejinta → Deegaanka iyo soo kabashada\", ama terminal-ka Cage ku socodsii sudo apt update && sudo apt install --only-upgrade claude-desktop."
 }

@@ -13,10 +13,11 @@ const accounts = [
   { id: accountA, account_id: accountA, number: 1, label: "工作账号", running: false, dedicated: false },
 ];
 let instances = [
-  { id: "default", number: 0, label: "默认 Desktop", running: false, dedicated: false },
+  { id: "default", number: 0, label: "默认 Desktop", running: true, dedicated: false },
   { id: instanceA, account_id: accountA, number: 1, label: "工作账号", running: false, dedicated: false },
   { id: pendingB, number: 0, label: "待登录 Desktop", running: false, dedicated: false },
 ];
+let defaultStopped = 0;
 let failDelete = false;
 const deletedIDs = [];
 
@@ -24,6 +25,13 @@ try {
   state.status.ready = state.status.vm_running = true;
   state.status.account_desktops_supported = true;
   state.status.desktop_catalog_revision = 1;
+
+  await page.route("**/api/claude-desktop/stop", async (route) => {
+    defaultStopped++;
+    const def = instances.find((item) => item.id === "default");
+    if (def) def.running = false;
+    return route.fulfill({ json: { id: "job-default-stop", running: false } });
+  });
 
   await page.route("**/api/desktop-instances**", async (route) => {
     const req = route.request();
@@ -72,6 +80,13 @@ try {
   const defaultActions = page.getByRole("group", { name: "默认 Desktop 的操作" });
   await defaultActions.getByRole("button", { name: "重命名", exact: true }).waitFor();
   assert.equal(await defaultActions.getByRole("button", { name: "删除", exact: true }).count(), 0);
+  await defaultActions.getByRole("button", { name: "关闭", exact: true }).click();
+  const stopDefaultDialog = page.getByRole("dialog", { name: "关闭 默认 Desktop？" });
+  await stopDefaultDialog.getByRole("button", { name: "关闭应用", exact: true }).click();
+  await stopDefaultDialog.waitFor({ state: "hidden" });
+  assert.equal(defaultStopped, 1);
+  await defaultButton.hover();
+  assert.equal(await defaultActions.getByRole("button", { name: "关闭", exact: true }).count(), 0);
   await defaultActions.getByRole("button", { name: "重命名", exact: true }).click();
   const renameDialog = page.getByRole("dialog", { name: "重命名 Desktop" });
   await renameDialog.getByRole("textbox", { name: "Desktop 名称" }).fill("主力桌面");
@@ -79,10 +94,12 @@ try {
   await renameDialog.waitFor({ state: "hidden" });
   await page.getByRole("button", { name: "主力桌面", exact: true }).waitFor();
 
-  // Start the bound instance so its pane is open, then rename it and verify both sidebar and pane header update.
+  // Start the bound instance so its pane is open, then verify sidebar collapse/expand and rename.
   await page.getByRole("button", { name: "#01 工作账号 · 未启动", exact: true }).click();
   const pane = page.locator(`#desktop-pane-${instanceA}`);
   await pane.waitFor();
+  await page.getByRole("button", { name: "收起侧栏", exact: true }).click();
+  await page.getByRole("button", { name: "展开侧栏", exact: true }).click();
   const runningRowButton = page.getByRole("button", { name: "#01 工作账号 · 运行中", exact: true });
   await runningRowButton.focus();
   await page.keyboard.press("Shift+F10");
