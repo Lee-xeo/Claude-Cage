@@ -21,6 +21,7 @@ import { shareClipboard } from "./shared-clipboard.mjs";
 import { desktopInputChannel } from "./desktop-input-channel.mjs";
 import { installRemoteInput } from "./remote-input";
 import { guestKeys } from "./guest-keys.mjs";
+import { followDisplaySize } from "./remote-display.mjs";
 import { runtimeSocketURL } from "./client-context.mjs";
 import { translate, useTranslation } from "./interface-language.mjs";
 import { localizeBackendMessage } from "./backend-message.mjs";
@@ -377,7 +378,9 @@ function DesktopPane({
   const current = useRef({ visible: screenVisible && focused, keyboard, systemClipboard, onStatus, onFallback });
   current.current = { visible: screenVisible && focused, keyboard, systemClipboard, onStatus, onFallback };
   const [message, setMessage] = useState("");
+  const [sizeError, setSizeError] = useState(false);
   const [attempt, retry] = useState(0);
+  const sizingRef = useRef(null);
   useEffect(() => {
     if (!focused) input.current?.deactivate();
   }, [focused]);
@@ -416,12 +419,19 @@ function DesktopPane({
     let live = true,
       client,
       keys,
-      channel;
+      channel,
+      sizing;
     const valid = () => live && current.current.visible;
     setMessage("正在连接…");
+    setSizeError(false);
     const path = entry(account.id);
+    const stopSizing = () => {
+      sizing?.dispose();
+      sizing = undefined;
+      sizingRef.current = null;
+    };
     api(path + "/vnc-credentials")
-      .then(({ password, native_input }) => {
+      .then(({ password, native_input, display_scale, dynamic_scale }) => {
         if (!live) return;
         client = new RFB(container, runtimeSocketURL(path + "/vnc"), {
           credentials: { password },
@@ -430,11 +440,23 @@ function DesktopPane({
         keys = guestKeys(client.sendKey.bind(client));
         client.sendKey = keys.sendKey;
         client.scaleViewport = true;
-        client.resizeSession = true;
+        // The workbench sizes the display in screen pixels and sets its density;
+        // noVNC's own request would use CSS pixels at 96 DPI.
+        client.resizeSession = false;
         client.focusOnClick = true;
         client.addEventListener("connect", () => {
           if (!live) return;
           setMessage("");
+          stopSizing();
+          // A session started by an earlier version keeps 96 DPI and reports
+          // display_scale 1: its pane is sized in CSS pixels as before.
+          sizing = followDisplaySize({
+            client, container, desktop: true, density: display_scale ?? 1, follow: dynamic_scale === true,
+            resize: (size) => api(path + "/resize", size),
+            onError: () => { if (live) setSizeError(true); },
+            onSuccess: () => { if (live) setSizeError(false); },
+          });
+          sizingRef.current = sizing;
           input.current?.dispose();
           channel?.dispose();
           channel = desktopInputChannel(() => new WebSocket(runtimeSocketURL(path + "/input")));
@@ -512,6 +534,7 @@ function DesktopPane({
         });
         client.addEventListener("disconnect", () => {
           keys?.stop();
+          stopSizing();
           input.current?.dispose();
           input.current = null;
           channel?.dispose();
@@ -524,6 +547,7 @@ function DesktopPane({
       });
     return () => {
       live = false;
+      stopSizing();
       input.current?.dispose();
       input.current = null;
       channel?.dispose();
@@ -550,6 +574,12 @@ function DesktopPane({
         </button>
       </header>
       <div className="account-desktop-screen" ref={box} />
+      {sizeError && !message && (
+        <div className="account-desktop-message" role="alert">
+          {tr("画面尺寸未能同步，显示比例可能不准确。")}{" "}
+          <button onClick={() => sizingRef.current?.retry()}>{tr("重试调整")}</button>
+        </div>
+      )}
       {message && (
         <div className="account-desktop-message" role="status">
           {localizeBackendMessage(message, tr)}{" "}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setTimeout as pause } from "node:timers/promises";
-import { displayGeometry, displaySizeSync, watchPixelRatio } from "./remote-display.mjs";
+import { displayGeometry, displaySizeSync, followDisplaySize, watchPixelRatio } from "./remote-display.mjs";
 
 test("normal size preserves logical pixels; zoom changes workspace, large displays retain aspect ratio", () => {
   assert.deepEqual(displayGeometry({ width: 1000, height: 700 }, { desktop: true }), { width: 2000, height: 1400 });
@@ -170,4 +170,102 @@ test("automatic desktop fits the window at native readable scale and bounds larg
   const large = displayGeometry({ width: 6000, height: 4000 }, { desktop: true, zoom: "auto", density: 3 });
   assert.ok(large.width * large.height <= 12_000_000);
   assert.ok(Math.abs(large.width / large.height - 1.5) < 0.002);
+});
+
+function displayFixture({ ratio = 2, framebuffer = { width: 0, height: 0 } } = {}) {
+  const listeners = new Set(), observers = [];
+  let now = 10_000, interval = null;
+  const view = {
+    devicePixelRatio: ratio,
+    matchMedia: (text) => ({ text, addEventListener() {}, removeEventListener() {} }),
+    setInterval: () => (interval = 3),
+    clearInterval: (id) => { if (id === interval) interval = null; },
+    performance: { now: () => now },
+    ResizeObserver: class { constructor(callback) { this.callback = callback; this.connected = false; observers.push(this); } observe() { this.connected = true; } disconnect() { this.connected = false; } },
+  };
+  const container = {
+    getBoundingClientRect: () => ({ width: 1000, height: 700 }),
+    addEventListener: (type, listener) => listeners.add(listener),
+    removeEventListener: (type, listener) => listeners.delete(listener),
+  };
+  const client = { cageFramebufferSize: framebuffer, scaleViewport: false };
+  return {
+    view, container, client, observers, listeners,
+    click: () => { for (const listener of listeners) listener(); },
+    advance: (ms) => { now += ms; },
+    watching: () => interval !== null,
+  };
+}
+
+test("an instance that follows its viewer is sized in screen pixels at their density", async () => {
+  const fixture = displayFixture({ ratio: 2 });
+  const requests = [];
+  const sizing = followDisplaySize({
+    ...fixture, desktop: true, density: 2, follow: true,
+    resize: async (size) => { requests.push(size); return { ok: true, scale: size.scale }; },
+  });
+  try {
+    await pause(200);
+    assert.deepEqual(requests, [{ width: 2000, height: 1400, scale: 2 }]);
+    // A 4K screen at 150%.
+    fixture.view.devicePixelRatio = 1.5;
+    fixture.observers[0].callback();
+    await pause(200);
+    assert.deepEqual(requests.at(-1), { width: 1500, height: 1050, scale: 1.5 });
+  } finally { sizing.dispose(); }
+  assert.equal(fixture.observers[0].connected, false);
+  assert.equal(fixture.listeners.size, 0);
+  assert.equal(fixture.watching(), false);
+});
+
+test("an instance that keeps its density is sized for that density", async () => {
+  // A guest that answered without the requested density stops being asked for one.
+  let fixture = displayFixture({ ratio: 2 });
+  const requests = [];
+  let sizing = followDisplaySize({
+    ...fixture, desktop: true, density: 2, follow: true,
+    resize: async (size) => { requests.push(size); return { ok: true }; },
+  });
+  try {
+    await pause(400);
+    assert.deepEqual(requests, [{ width: 2000, height: 1400, scale: 2 }, { width: 2000, height: 1400 }]);
+  } finally { sizing.dispose(); }
+  // A session started by an earlier version keeps 96 DPI: CSS pixels, as before.
+  fixture = displayFixture({ ratio: 2 });
+  requests.length = 0;
+  sizing = followDisplaySize({
+    ...fixture, desktop: true, density: 1, follow: false,
+    resize: async (size) => { requests.push(size); return { ok: true }; },
+  });
+  try {
+    await pause(200);
+    assert.deepEqual(requests, [{ width: 1000, height: 700 }]);
+  } finally { sizing.dispose(); }
+});
+
+test("a guest that kept another size is asked again, at most every three seconds", async () => {
+  const fixture = displayFixture({ ratio: 2, framebuffer: { width: 2560, height: 1600 } });
+  let requests = 0;
+  const sizing = followDisplaySize({
+    ...fixture, desktop: true, density: 2, follow: true, verifyDelay: 20,
+    resize: async (size) => { requests++; return { scale: size.scale }; },
+  });
+  try {
+    await pause(250);
+    // Once after the change.
+    assert.equal(requests, 2);
+    fixture.click();
+    await pause(50);
+    assert.equal(requests, 2);
+    fixture.advance(3000);
+    fixture.click();
+    await pause(50);
+    assert.equal(requests, 3);
+    // A matching framebuffer is left alone.
+    fixture.client.cageFramebufferSize = { width: 2000, height: 1400 };
+    fixture.advance(3000);
+    fixture.click();
+    await pause(50);
+    assert.equal(requests, 3);
+  } finally { sizing.dispose(); }
 });

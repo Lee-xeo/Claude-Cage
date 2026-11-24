@@ -206,6 +206,74 @@ func TestDesktopDeleteHTTP(t *testing.T) {
 	}
 }
 
+func TestDesktopInstanceResizeHTTP(t *testing.T) {
+	s := testServer(t)
+	instanceID := strings.Repeat("b", 24)
+	if err := s.saveClaudeAccounts(claudeAccountList{
+		Accounts: []claudeAccount{{ID: strings.Repeat("a", 24), Label: "工作", Number: 2, DesktopInstanceID: instanceID}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/desktop-instances/" + instanceID + "/resize"
+	if w := request(s, "POST", path, "https://claude.ai", `{"width":1000,"height":800,"scale":2}`, true); w.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin resize: %d", w.Code)
+	}
+	if w := request(s, "GET", path, s.origin, "", true); w.Code != http.StatusNotFound && w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("resize by GET: %d", w.Code)
+	}
+	for _, body := range []string{
+		`{"width":100,"height":800}`,
+		`{"width":1000,"height":9000}`,
+		`{"width":1000,"height":800,"scale":5}`,
+		`{"width":1000,"height":800,"scale":0.5}`,
+		`{"width":1000,"height":800,"scale":"2;reboot"}`,
+		`{"width":1000,"height":800,"display":":0"}`,
+	} {
+		if w := request(s, "POST", path, s.origin, body, true); w.Code != http.StatusBadRequest {
+			t.Fatalf("invalid resize %s: %d", body, w.Code)
+		}
+	}
+	if w := request(s, "POST", path, s.origin, `{"width":1000,"height":800,"scale":1.5}`, true); w.Code != http.StatusConflict {
+		t.Fatalf("resize with a stopped environment: %d", w.Code)
+	}
+	if err := writePrivate(filepath.Join(s.instanceDir(), "cage-running.json"), map[string]int{"pid": os.Getpid()}); err != nil {
+		t.Fatal(err)
+	}
+	if w := request(s, "POST", "/api/desktop-instances/"+strings.Repeat("f", 24)+"/resize", s.origin, `{"width":1000,"height":800}`, true); w.Code != http.StatusNotFound {
+		t.Fatalf("resize of another instance: %d", w.Code)
+	}
+}
+
+func TestDesktopInstanceCredentialsReportDensity(t *testing.T) {
+	for _, tc := range []struct {
+		output  string
+		ok      bool
+		dynamic bool
+		density float64
+	}{
+		// A session started by an earlier version keeps 96 DPI.
+		{"abcd12341", true, false, 1},
+		{"abcd12340 2\n", true, true, 2},
+		{"abcd12341 1.5\n", true, true, 1.5},
+		// A missing configured density falls back to the default one.
+		{"abcd12340 ", true, true, 2},
+		{"abcd1234", false, false, 0},
+		{"abcd12342", false, false, 0},
+		{"abcd12341x", false, false, 0},
+	} {
+		reply, ok := accountDesktopCredentials([]byte(tc.output))
+		if ok != tc.ok {
+			t.Fatalf("%q: ok %v", tc.output, ok)
+		}
+		if !ok {
+			continue
+		}
+		if reply["password"] != "abcd1234" || reply["native_input"] != (tc.output[8] == '1') || reply["dynamic_scale"] != tc.dynamic || reply["display_scale"] != tc.density {
+			t.Fatalf("%q: %v", tc.output, reply)
+		}
+	}
+}
+
 func TestLinuxAccountDesktopDeleteScript(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("bash script runs in Linux guest")
@@ -301,6 +369,10 @@ func TestLinuxAccountDesktopScriptWiresPortalAndIsolatedInput(t *testing.T) {
 		"unset CAGE_LANGUAGE",
 		"dbus-update-activation-environment DISPLAY XAUTHORITY HOME XDG_RUNTIME_DIR TZ LANG LC_ALL",
 		`--lang=${desktop_lang}`,
+		// The viewer's density reaches the instance through its settings manager.
+		`printf '%s\n' "$!" > "$XDG_RUNTIME_DIR/xsettings.pid"`,
+		`"$XDG_RUNTIME_DIR/base-display-scale"`,
+		`"$XDG_RUNTIME_DIR/xsettings.fixed"`,
 	} {
 		if !strings.Contains(linuxAccountDesktop, want) {
 			t.Fatalf("linux-account-desktop.sh missing %q", want)

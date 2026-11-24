@@ -226,22 +226,45 @@ func validDisplayDensity(scale float64) bool {
 	return scale == 0 || scale >= 0.75 && scale <= 4
 }
 
-func (s *Server) claudeDesktopResize(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Width  int     `json:"width"`
-		Height int     `json:"height"`
-		Scale  float64 `json:"scale"`
-	}
+// A viewer's request for its pane: pixels, and the density to render them at.
+type displaySize struct {
+	Width  int     `json:"width"`
+	Height int     `json:"height"`
+	Scale  float64 `json:"scale"`
+}
+
+// readDisplaySize validates the request and formats its density for the guest
+// script: empty for a viewer that leaves the display's density alone.
+func readDisplaySize(w http.ResponseWriter, r *http.Request) (displaySize, string, bool) {
+	var input displaySize
 	if !readJSON(w, r, &input) {
-		return
+		return input, "", false
 	}
 	if input.Width < 320 || input.Height < 240 || input.Width > 8192 || input.Height > 8192 || !validDisplayDensity(input.Scale) {
 		http.Error(w, "画面尺寸无效", 400)
-		return
+		return input, "", false
 	}
 	scale := ""
 	if input.Scale != 0 {
 		scale = strconv.FormatFloat(input.Scale, 'f', -1, 64)
+	}
+	return input, scale, true
+}
+
+// The reply names the density only when the display applied the requested
+// one; a fixed-density display leaves the viewer to size for its own.
+func displayResizeReply(w http.ResponseWriter, input displaySize, scale string, output []byte) {
+	reply := map[string]any{"ok": true}
+	if applied, _, _ := strings.Cut(string(output), "\n"); scale != "" && strings.TrimSpace(applied) == "scale "+scale {
+		reply["scale"] = input.Scale
+	}
+	jsonReply(w, reply)
+}
+
+func (s *Server) claudeDesktopResize(w http.ResponseWriter, r *http.Request) {
+	input, scale, ok := readDisplaySize(w, r)
+	if !ok {
+		return
 	}
 	script := desktopResizeScript(input.Width, input.Height, scale)
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
@@ -251,46 +274,27 @@ func (s *Server) claudeDesktopResize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Claude Desktop 画面尺寸未能调整", 502)
 		return
 	}
-	reply := map[string]any{"ok": true}
-	if applied, _, _ := strings.Cut(string(output), "\n"); scale != "" && strings.TrimSpace(applied) == "scale "+scale {
-		reply["scale"] = input.Scale
-	}
-	jsonReply(w, reply)
+	displayResizeReply(w, input, scale, output)
 }
 
 // Fixed commands and validated numbers only; no host shell executes input.
 // scale is empty for a viewer that leaves the display's density alone.
 func desktopResizeScript(wid, hei int, scale string) string {
-	return fmt.Sprintf(`set -eu
-export DISPLAY=:78 XAUTHORITY=/run/cage-desktop/Xauthority
-exec 9>/run/cage-desktop/resize.lock
-flock 9
-requested=%s
-manager=
-if test -r /run/cage-desktop/xsettings.pid; then
-  manager=$(cat /run/cage-desktop/xsettings.pid)
-  if test "$(cat "/proc/$manager/comm" 2>/dev/null)" != xsettingsd; then manager=; fi
-fi
-# A fixed-density session ignores the request, and its viewer sizes for that
-# density. A viewer that names none sized its display for the configured one.
-scale=
-if test -n "$manager"; then
-  scale=${requested:-$(cat /run/cage-desktop/base-display-scale 2>/dev/null || echo 2)}
-  if test -n "$requested"; then echo "scale $scale"; fi
-fi
-printf '%%s %%s %%s\n' %d %d "$scale" > /run/cage-desktop/desktop-size
+	const run = "/run/cage-desktop"
+	return displayResizeScript(run, "export DISPLAY=:78 XAUTHORITY="+run+"/Xauthority\n",
+		fmt.Sprintf(`printf '%%s %%s %%s\n' %d %d "$scale" > `+run+`/desktop-size
 # A phone holds the display. Its release applies this size and density.
 if test -f /run/cage-phone-desktop/layout.json; then exit 0; fi
-if test -n "$manager" && test "$(cat /run/cage-desktop/display-scale 2>/dev/null)" != "$scale"; then
-  dpi=$(awk -v scale="$scale" 'BEGIN {printf "%%.0f", scale * 96 * 1024}')
-  # A session started by an earlier version has no list of its other settings.
-  { printf 'Xft/DPI %%s\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI %%s\n' "$dpi" "$dpi"
-    cat /run/cage-desktop/xsettings.fixed 2>/dev/null || printf 'Gtk/DecorationLayout ":"\n'; } > /run/cage-desktop/xsettings.conf.new
-  mv /run/cage-desktop/xsettings.conf.new /run/cage-desktop/xsettings.conf
-  kill -HUP "$manager"
-  printf '%%s\n' "$scale" > /run/cage-desktop/display-scale
-fi
-name=cage-%dx%d
+`, wid, hei), "", wid, hei, scale)
+}
+
+// displayResizeScript applies a viewer's size and density to the display
+// whose runtime directory is run. prelude locates the display; hold runs once
+// the request is decided and may defer it; enter, when set, is the command
+// prefix that runs the mode commands (read from stdin) where the display is
+// reachable.
+func displayResizeScript(run, prelude, hold, enter string, wid, hei int, scale string) string {
+	modes := fmt.Sprintf(`name=cage-%dx%d
 if ! xrandr --query | grep -q " $name "; then
   xrandr --newmode "$name" %.3f %d %d %d %d %d %d %d %d +HSync -VSync
   xrandr --addmode VNC-0 "$name"
@@ -298,7 +302,34 @@ fi
 xrandr --output VNC-0 --mode "$name"
 for old in $(xrandr --query | awk '/^ +cage-/ {print $1}'); do
   if [ "$old" != "$name" ]; then xrandr --delmode VNC-0 "$old"; xrandr --rmmode "$old"; fi
-done`, scale, wid, hei, wid, hei, float64((wid+32)*(hei+8)*60)/1000000, wid, wid+8, wid+16, wid+32, hei, hei+1, hei+2, hei+8)
+done
+`, wid, hei, float64((wid+32)*(hei+8)*60)/1000000, wid, wid+8, wid+16, wid+32, hei, hei+1, hei+2, hei+8)
+	if enter != "" {
+		modes = enter + " <<'CAGE_DISPLAY_MODES'\n" + modes + "CAGE_DISPLAY_MODES\n"
+	}
+	return "set -eu\n" + prelude + "exec 9>" + run + "/resize.lock\nflock 9\nrequested=" + scale + `
+manager=
+if test -r ` + run + `/xsettings.pid; then
+  manager=$(cat ` + run + `/xsettings.pid)
+  if test "$(cat "/proc/$manager/comm" 2>/dev/null)" != xsettingsd; then manager=; fi
+fi
+# A fixed-density session ignores the request, and its viewer sizes for that
+# density. A viewer that names none sized its display for the configured one.
+scale=
+if test -n "$manager"; then
+  scale=${requested:-$(cat ` + run + `/base-display-scale 2>/dev/null || echo 2)}
+  if test -n "$requested"; then echo "scale $scale"; fi
+fi
+` + hold + `if test -n "$manager" && test "$(cat ` + run + `/display-scale 2>/dev/null)" != "$scale"; then
+  dpi=$(awk -v scale="$scale" 'BEGIN {printf "%.0f", scale * 96 * 1024}')
+  # A session started by an earlier version has no list of its other settings.
+  { printf 'Xft/DPI %s\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI %s\n' "$dpi" "$dpi"
+    cat ` + run + `/xsettings.fixed 2>/dev/null || printf 'Gtk/DecorationLayout ":"\n'; } > ` + run + `/xsettings.conf.new
+  mv ` + run + `/xsettings.conf.new ` + run + `/xsettings.conf
+  kill -HUP "$manager"
+  printf '%s\n' "$scale" > ` + run + `/display-scale
+fi
+` + modes
 }
 
 func (s *Server) claudeDesktopVNC(w http.ResponseWriter, r *http.Request) {

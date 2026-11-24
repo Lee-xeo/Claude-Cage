@@ -95,3 +95,73 @@ export function displaySizeSync(resize, { onError = () => {}, onSuccess = () => 
     dispose() { disposed = true; clearTimeout(timer); },
   };
 }
+
+// Keeps a guest display sized for the pane showing it, at the density of the
+// screen when the guest follows its viewer (follow). resize(size) applies a
+// size and resolves to the guest's reply; a reply without the requested
+// density means the guest kept its own, and the viewer sizes for that one.
+// The guest may also keep another size than this viewer asked for: a second
+// viewer resized it, or its display restarted at the default size. It is
+// asked again once after each change and when the user clicks, at most every
+// three seconds, so two viewers never take turns. Returns update, retry and
+// dispose.
+export function followDisplaySize({
+  client, container, resize, desktop = false, zoom = () => 1, density, follow = false,
+  onError = () => {}, onSuccess = () => {}, view = window, verifyDelay = 1500,
+}) {
+  let followScreen = follow, disposed = false, verifyTimer, reasserted = -Infinity;
+  const reassert = () => {
+    const want = sizeSync.target(), shown = client.cageFramebufferSize;
+    if (disposed || !want || !shown?.width || (shown.width === want.width && shown.height === want.height)) return;
+    if (view.performance.now() - reasserted < 3000) return;
+    reasserted = view.performance.now();
+    sizeSync.retry();
+  };
+  const update = () => {
+    if (disposed) return;
+    sizeSync.update(displayGeometry(container.getBoundingClientRect(), {
+      desktop, zoom: zoom(), density,
+      pixelRatio: followScreen ? view.devicePixelRatio : undefined,
+    }));
+  };
+  const sizeSync = displaySizeSync(
+    async (size) => {
+      const reply = await resize(size);
+      if (size.scale !== undefined && reply?.scale !== size.scale && followScreen) {
+        followScreen = false;
+        update();
+      }
+    },
+    {
+      onError,
+      onSuccess: () => {
+        onSuccess();
+        clearTimeout(verifyTimer);
+        verifyTimer = setTimeout(reassert, verifyDelay);
+      },
+    },
+  );
+  container.addEventListener("pointerdown", reassert, true);
+  const observer = new view.ResizeObserver(update);
+  observer.observe(container);
+  const unwatch = watchPixelRatio(() => {
+    // Rescale the current frame for the new screen at once; the guest's
+    // frame for it follows.
+    if (!disposed) client.scaleViewport = true;
+    update();
+  }, view);
+  update();
+  return {
+    update,
+    retry: () => sizeSync.retry(),
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      sizeSync.dispose();
+      clearTimeout(verifyTimer);
+      container.removeEventListener("pointerdown", reassert, true);
+      observer.disconnect();
+      unwatch();
+    },
+  };
+}

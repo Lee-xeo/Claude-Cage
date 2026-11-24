@@ -20,7 +20,7 @@ import { terminalClipboardText } from "./terminal-clipboard.mjs";
 import { sendFiles, shellFilePaths } from "./file-transfer";
 import { installRemoteInput } from "./remote-input";
 import { useWindowVisibility } from "./window-visibility";
-import { displayGeometry, displaySizeSync, watchPixelRatio } from "./remote-display.mjs";
+import { followDisplaySize } from "./remote-display.mjs";
 import { guestKeys } from "./guest-keys.mjs";
 import { RefreshCw, Clipboard, ArrowUpRight } from "lucide-react";
 import { SessionAccount } from "./session-account";
@@ -66,14 +66,9 @@ export const RemoteView = forwardRef(function RemoteView(
     if (!container) return;
     let disposed = false,
       client,
-      resizeObserver,
-      unwatchDensity,
-      sizeSync,
+      sizing,
       keys,
-      reconnectTimer,
-      verifyTimer,
-      stopReassert,
-      reasserted = -Infinity;
+      reconnectTimer;
     setConnection("connecting");
     setSizeError(false);
     const retry = () => {
@@ -89,8 +84,6 @@ export const RemoteView = forwardRef(function RemoteView(
     api(`${desktopPrefix}/vnc-credentials`)
       .then(({ password, display_scale, dynamic_scale, pixel_wheel }) => {
         if (disposed) return;
-        // Such a guest renders at the density of the screen showing it.
-        let followScreen = dynamic_scale === true;
         client = new RFB(
           container,
           runtimeSocketURL(`${desktopPrefix}/vnc`),
@@ -116,54 +109,14 @@ export const RemoteView = forwardRef(function RemoteView(
           if (disposed) return;
           failures.current = 0;
           setConnection("connected");
-          sizeSync = displaySizeSync(
-            async (size) => {
-              const reply = await api(desktop ? "/claude-desktop/resize" : "/browser/resize", size);
-              // The guest kept its own density: size the display for that one.
-              if (size.scale !== undefined && reply?.scale !== size.scale && followScreen) {
-                followScreen = false;
-                resize();
-              }
-            },
-            {
-              onError: () => setSizeError(true),
-              onSuccess: () => {
-                setSizeError(false);
-                clearTimeout(verifyTimer);
-                verifyTimer = setTimeout(reassert, 1500);
-              },
-            },
-          );
-          // The guest may keep another size than this viewer asked for: a
-          // second viewer resized it, or its display restarted at the default
-          // size. Ask again once after each change and when the user clicks,
-          // at most every three seconds, so two viewers never take turns.
-          const reassert = () => {
-            const want = sizeSync?.target(), shown = client.cageFramebufferSize;
-            if (disposed || !want || !shown.width || (shown.width === want.width && shown.height === want.height)) return;
-            if (performance.now() - reasserted < 3000) return;
-            reasserted = performance.now();
-            sizeSync.retry();
-          };
-          container.addEventListener("pointerdown", reassert, true);
-          stopReassert = () => container.removeEventListener("pointerdown", reassert, true);
-          const resize = () => {
-            if (disposed) return;
-            sizeSync.update(displayGeometry(container.getBoundingClientRect(), {
-              desktop, zoom: current.current.zoom, density: display_scale,
-              pixelRatio: followScreen ? window.devicePixelRatio : undefined,
-            }));
-          };
-          displayResize.current = { update: resize, retry: () => sizeSync.retry() };
-          resizeObserver = new ResizeObserver(resize);
-          resizeObserver.observe(container);
-          unwatchDensity = watchPixelRatio(() => {
-            // Rescale the current frame for the new screen at once; the guest's
-            // frame for it follows.
-            if (!disposed) client.scaleViewport = true;
-            resize();
+          sizing = followDisplaySize({
+            client, container, desktop, density: display_scale, follow: dynamic_scale === true,
+            zoom: () => current.current.zoom,
+            resize: (size) => api(desktop ? "/claude-desktop/resize" : "/browser/resize", size),
+            onError: () => setSizeError(true),
+            onSuccess: () => setSizeError(false),
           });
-          resize();
+          displayResize.current = sizing;
           const preparePaste = () => {
             const id = current.current.tabId;
             return prepareClipboardPaste(desktop ? "desktop" : "browser", id, {
@@ -262,11 +215,7 @@ export const RemoteView = forwardRef(function RemoteView(
           if (disposed) return;
           input.current?.dispose();
           input.current = null;
-          sizeSync?.dispose();
-          clearTimeout(verifyTimer);
-          stopReassert?.();
-          resizeObserver?.disconnect();
-          unwatchDensity?.();
+          sizing?.dispose();
           displayResize.current = null;
           retry();
         });
@@ -279,13 +228,9 @@ export const RemoteView = forwardRef(function RemoteView(
       });
     return () => {
       disposed = true;
-      sizeSync?.dispose();
+      sizing?.dispose();
       displayResize.current = null;
       clearTimeout(reconnectTimer);
-      clearTimeout(verifyTimer);
-      stopReassert?.();
-      resizeObserver?.disconnect();
-      unwatchDensity?.();
       input.current?.dispose();
       input.current = null;
       keys?.stop();

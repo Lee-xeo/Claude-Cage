@@ -146,7 +146,18 @@ cookie=$(mcookie)
 xauth -f "$XAUTHORITY" add :0 . "$cookie"
 od -An -N4 -tx1 /dev/urandom | tr -d ' \n' > "$XDG_RUNTIME_DIR/password"
 tigervncpasswd -f < "$XDG_RUNTIME_DIR/password" > "$XDG_RUNTIME_DIR/vnc-password"
-Xtigervnc -displayfd 3 3>"$XDG_RUNTIME_DIR/display" -geometry 1280x800 -depth 24 -rfbport -1 -rfbunixpath "$XDG_RUNTIME_DIR/vnc.sock" -rfbunixmode 0600 -auth "$XAUTHORITY" -nolisten tcp -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/vnc-password" &
+# The viewer sets the density of the screen showing it through the settings
+# manager; until then the configured one applies. Record both for the viewer.
+display_scale=2
+if [[ -r /etc/claude-cage/display-scale && $(< /etc/claude-cage/display-scale) == 1.5 ]]; then
+  display_scale=1.5
+fi
+printf '%s\n' "$display_scale" > "$XDG_RUNTIME_DIR/display-scale"
+printf '%s\n' "$display_scale" > "$XDG_RUNTIME_DIR/base-display-scale"
+dpi=$(awk -v scale="$display_scale" 'BEGIN {printf "%.0f", scale * 96 * 1024}')
+# Start with the logical size an earlier version had at 96 DPI.
+geometry=$(awk -v scale="$display_scale" 'BEGIN {printf "%dx%d", 1280 * scale, 800 * scale}')
+Xtigervnc -displayfd 3 3>"$XDG_RUNTIME_DIR/display" -geometry "$geometry" -depth 24 -rfbport -1 -rfbunixpath "$XDG_RUNTIME_DIR/vnc.sock" -rfbunixmode 0600 -auth "$XAUTHORITY" -nolisten tcp -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/vnc-password" &
 for _ in {1..100}; do test -s "$XDG_RUNTIME_DIR/display" && break; sleep .05; done
 export DISPLAY=":$(cat "$XDG_RUNTIME_DIR/display")"
 xauth -f "$XAUTHORITY" add "$DISPLAY" . "$cookie"
@@ -166,9 +177,12 @@ cat > "$XDG_RUNTIME_DIR/windows.xml" <<'XML'
 <openbox_config xmlns="http://openbox.org/3.4/rc"><desktops><number>1</number></desktops><applications><application type="normal"><decor>no</decor><maximized>yes</maximized></application></applications></openbox_config>
 XML
 openbox --config-file "$XDG_RUNTIME_DIR/windows.xml" >/dev/null 2>&1 &
-# Electron draws its own GTK controls; Openbox decorations alone do not hide them.
-printf 'Gtk/DecorationLayout ":"\n' > "$XDG_RUNTIME_DIR/xsettings.conf"
+# Settings that stay as they are when the density changes. Electron draws its
+# own GTK controls; Openbox decorations alone do not hide them.
+printf 'Gtk/DecorationLayout ":"\n' > "$XDG_RUNTIME_DIR/xsettings.fixed"
+{ printf 'Xft/DPI %s\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI %s\n' "$dpi" "$dpi"; cat "$XDG_RUNTIME_DIR/xsettings.fixed"; } > "$XDG_RUNTIME_DIR/xsettings.conf"
 xsettingsd --config="$XDG_RUNTIME_DIR/xsettings.conf" &
+printf '%s\n' "$!" > "$XDG_RUNTIME_DIR/xsettings.pid"
 python3 - <<'PYSETTINGS'
 from Xlib import display
 import time
