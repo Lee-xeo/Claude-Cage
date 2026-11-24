@@ -64,6 +64,8 @@ type HostAgent struct {
 	sshConfig         *ssh.SSHConfig
 	portForwarder     *portForwarder // legacy SSH port forwarder
 	grpcPortForwarder *portfwd.Forwarder
+	// grpcTunnelDialer dials through the current guest agent client.
+	grpcTunnelDialer func(ctx context.Context, network, addr string) (net.Conn, error)
 
 	onClose   []func() error // LIFO
 	onCloseMu sync.Mutex
@@ -272,6 +274,7 @@ func New(ctx context.Context, instName string, stdout io.Writer, signalCh chan o
 		guestAgentAliveCh: make(chan struct{}),
 		showProgress:      o.showProgress,
 	}
+	a.grpcTunnelDialer = portfwd.DialContextToCurrentGRPCTunnel(a.getClient)
 	a.grpcPortForwarder = portfwd.NewPortForwarder(rules, ignoreTCP, ignoreUDP, func(ev *events.PortForwardEvent) {
 		a.emitPortForwardEvent(context.Background(), ev)
 	})
@@ -920,10 +923,13 @@ func isGuestAgentSocketAccessible(ctx context.Context, client *guestagentclient.
 }
 
 // getClient returns the current guest agent client under the clientMu lock,
-// so callers observe a consistent (non-mid-transition) snapshot.
+// so callers observe a consistent (non-mid-transition) snapshot. It only
+// reads, so port forwarding dials (one per accepted connection) do not
+// serialize on each other; they still wait while getOrCreateClient probes or
+// replaces the client, which the probe timeout bounds.
 func (a *HostAgent) getClient() *guestagentclient.GuestAgentClient {
-	a.clientMu.Lock()
-	defer a.clientMu.Unlock()
+	a.clientMu.RLock()
+	defer a.clientMu.RUnlock()
 	return a.client
 }
 
@@ -999,8 +1005,9 @@ func (a *HostAgent) processGuestAgentEvents(ctx context.Context, client *guestag
 		if useSSHFwd {
 			a.portForwarder.OnEvent(ctx, ev)
 		} else {
-			dialContext := portfwd.DialContextToGRPCTunnel(client)
-			a.grpcPortForwarder.OnEvent(ctx, dialContext, ev)
+			// Dial through whichever client is current, not the one that
+			// reported the port: the listener stays open across reconnects.
+			a.grpcPortForwarder.OnEvent(ctx, a.grpcTunnelDialer, ev)
 		}
 		return nil
 	}
