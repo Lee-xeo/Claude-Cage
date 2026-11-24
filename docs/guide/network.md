@@ -122,7 +122,7 @@ proxies:
 
 macOS 主机只从 `networksetup` 报告的硬件端口中选择具有可用 IPv4 地址的物理出口；`utun`、`bridge`、`vmen`、`vmenet`、`vmnet`、`tap`、`lima`、`awdl`、`llw`、`p2p`、`gif`、`stf`、`anpi`、`ap` 等隧道、桥接和虚拟机接口即使带有地址或默认路由，也不会被绑定为代理出口。
 
-Windows 主机只选择带可用 IPv4 和默认路由的硬件网卡；VPN、TUN、虚拟机 NAT 等虚拟网卡不会被选中。物理网卡桥接到 Hyper-V 外部虚拟交换机时，物理网卡本身没有 IPv4，Cage 改用与它 MAC 地址相同、带 IPv4 默认路由的管理用 `vEthernet` 网卡。
+Windows 主机只选择带可用 IPv4 和默认路由的硬件网卡；VPN、TUN、虚拟机 NAT 等虚拟网卡不会被选中。物理网卡桥接到 Hyper-V 外部虚拟交换机时，物理网卡本身没有 IPv4，Cage 改用与它 MAC 地址相同、带 IPv4 默认路由的管理用 `vEthernet` 网卡。若主机没有可用的硬件 IPv4 网卡或同 MAC 孪生网卡（例如物理口直通或独享给 Hyper-V 软路由虚拟机），Cage 会回退接受带有效单播 MAC、首选 IPv4 与默认路由的宿主 Hyper-V 虚拟以太网适配器（`Hyper-V Virtual Ethernet Adapter`）；未配置默认路由的 `Default Switch` 以及 TUN、VPN、TAP 等其他虚拟网卡仍会被排除。
 
 如果直连节点使用 Tailscale 私网地址（`100.64.0.0/10`、`fd7a:115c:a1e0::/48`）或主机另一张网卡直连私网网段中的地址，Cage 会仅将该节点绑定到主机路由所指向的对应网卡（例如 Windows 的 `Tailscale`、macOS 的 `utun*`、Linux 的 `tailscale0`），同时保持 DNS 和公网代理节点继续绑定在物理网卡上。通过 `dialer-proxy` 中转的后跳节点不会改绑本机网卡。
 

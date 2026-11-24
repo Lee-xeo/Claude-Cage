@@ -100,6 +100,9 @@ func windowsPhysicalAdapters(ctx context.Context) (map[uint32]windowsPhysicalAda
 		if adapter.FriendlyName != nil {
 			info.name = windows.UTF16PtrToString(adapter.FriendlyName)
 		}
+		if adapter.Description != nil {
+			info.description = windows.UTF16PtrToString(adapter.Description)
+		}
 		list = append(list, info)
 	}
 	runtime.KeepAlive(buffer)
