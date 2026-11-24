@@ -15,6 +15,24 @@ import (
 
 const proxyFailure = `time="2026-11-14T10:20:30+08:00" level=warning msg="[TCP] dial CAGE (match Match/) 192.0.2.8:63839 --> api.github.com:443 error: static.example-provider.io:1337 connect error: dns resolve failed: context deadline exceeded"`
 
+func TestRedactBacktickQuotedLimaSocketPaths(t *testing.T) {
+	const prefix = "Error: instance name `base-building` too long: `"
+	const suffix = "` must be less than UNIX_PATH_MAX=108 characters, but is 175"
+	for _, path := range []string{
+		`C:\Users\Test User\Cage\state\lima\base-building\ssh.sock.1234`,
+		`C:/Users/Test User/Cage/state/lima/base-building/ssh.sock.1234`,
+		`\\example\share\Test User\Cage\state\lima\base-building\ssh.sock.1234`,
+		"/Users/alice/Cage Data/state/lima/base-building/ssh.sock.1234",
+		"/home/alice/Cage Data/state/lima/base-building/ssh.sock.1234",
+		"/data/alice's Cage:work/state/lima/base-building/ssh.sock.1234",
+	} {
+		got := Redact(prefix + path + suffix)
+		if want := prefix + "[home path]" + suffix; got != want || Redact(got) != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	}
+}
+
 func TestRedactProxyAddresses(t *testing.T) {
 	for _, tc := range []struct{ input, want string }{
 		{"static.example-provider.io:1337 api.github.com", "[host] [host]"},
@@ -169,7 +187,8 @@ func TestGuestRunnerRedactsProxyAddresses(t *testing.T) {
 	if err := os.WriteFile(script, []byte(GuestRunner()), 0600); err != nil {
 		t.Fatal(err)
 	}
-	input := proxyFailure + "\n[::ffff:192.0.2.8]:443 fe80::1%en0 0123456789abcdef01234567 token=private-token"
+	input := proxyFailure + "\n[::ffff:192.0.2.8]:443 fe80::1%en0 0123456789abcdef01234567 token=private-token" +
+		"\nError: socket path `/Users/alice/deep folder/state/ssh.sock.1234` is too long: >= UNIX_PATH_MAX=104"
 	cmd := exec.Command("uv", "run", "--no-project", "python", script, "/bin/sh", "-c", `printf '%s\n' "$1"`, "sh", input)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

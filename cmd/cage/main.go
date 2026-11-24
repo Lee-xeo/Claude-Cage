@@ -26,7 +26,6 @@ import (
 	"github.com/sylvinus/agent-vm/internal/hostproxy"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
-	"github.com/sylvinus/agent-vm/internal/paths"
 	"github.com/sylvinus/agent-vm/internal/uilocale"
 	"github.com/sylvinus/agent-vm/internal/workbench"
 	"io"
@@ -515,6 +514,7 @@ func run() int {
 	os.Setenv(cage.ConfigEnv, path)
 	profile := filepath.Dir(path)
 	state := filepath.Join(profile, "state")
+	limaHome := filepath.Join(state, "lima")
 	os.Unsetenv("CAGE_LIMA_CACHE_DIR")
 	os.Unsetenv("CAGE_LOGICAL_LIMA_HOME")
 	if !containerenv.Configured(profile) {
@@ -529,19 +529,17 @@ func run() int {
 		// Keep image caches on the same volume the initialization page shows,
 		// including the default location. The saved path survives app updates.
 		os.Setenv("CAGE_LIMA_CACHE_DIR", filepath.Join(location.Directory, "cache", "lima"))
+		limaHome, err = cage.ProfileLimaHome(profile, location.Custom)
+		if err != nil {
+			return fail(err)
+		}
 		if location.Custom {
-			// Resolve the profile prefix once, as Lima did before migration.
-			// Keep state itself logical so its original disk and socket paths survive.
-			realProfile, err := paths.Resolve(profile)
-			if err != nil {
-				return fail(err)
-			}
-			state = filepath.Join(realProfile, "state")
-			os.Setenv("CAGE_LOGICAL_LIMA_HOME", filepath.Join(state, "lima"))
+			state = filepath.Dir(limaHome)
+			os.Setenv("CAGE_LOGICAL_LIMA_HOME", limaHome)
 		}
 	}
 	os.Setenv("AGENT_VM_STATE_DIR", state)
-	os.Setenv("AGENT_VM_LIMA_HOME", filepath.Join(state, "lima"))
+	os.Setenv("AGENT_VM_LIMA_HOME", limaHome)
 	// Do not inherit host proxy settings or credentials into VM operations.
 	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "ftp_proxy", "no_proxy", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"} {
 		os.Unsetenv(name)

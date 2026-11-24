@@ -410,9 +410,14 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 			_ = s.closeProxyGate(failure.Message)
 			return failure
 		}
-	} else if err := mountableEnvironmentDir(s.environmentDir()); err != nil {
+	} else {
 		// A container's share is sshfs over a quoted path, a VM's is Lima's.
-		return err
+		if err := mountableEnvironmentDir(s.environmentDir()); err != nil {
+			return err
+		}
+		if err := cage.ValidateProfileLimaSocketPaths(s.profile); err != nil {
+			return err
+		}
 	}
 	cfg, err := loadConfig(s.configPath)
 	if err != nil {

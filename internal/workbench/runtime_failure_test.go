@@ -1,11 +1,44 @@
 package workbench
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sylvinus/agent-vm/internal/cage"
 )
+
+func TestStartEnvironmentRejectsLimaSocketPathBeforeProxy(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), strings.Repeat("private-path-", 9))
+	if err := os.MkdirAll(profile, 0700); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{profile: profile, configPath: filepath.Join(profile, "config.json")}
+	data, err := json.Marshal(cage.EnvironmentRecord{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profile, "environment.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// No configuration or proxy exists yet. The path diagnostic should come
+	// first and never include the private directory.
+	err = s.startEnvironment(false)
+	if !errors.Is(err, cage.ErrLimaSocketPathTooLong) || !strings.Contains(err.Error(), "更短的本地目录") ||
+		strings.Contains(err.Error(), profile) {
+		t.Fatalf("start did not report a path-free Lima preflight failure: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(profile, "container.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.startEnvironment(false); err == nil || errors.Is(err, cage.ErrLimaSocketPathTooLong) {
+		t.Fatalf("container should report its own invalid config without checking Lima: %v", err)
+	}
+}
 
 func TestRunCagePreservesOriginalVMError(t *testing.T) {
 	if os.Getenv("CAGE_TEST_START_FAILURE_HELPER") == "1" {

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	agentvm "github.com/sylvinus/agent-vm"
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/state"
 	"github.com/sylvinus/agent-vm/internal/vm"
@@ -44,6 +45,31 @@ func (te *testEnv) setupBase(args []string) int {
 	skipPrereqs = true
 	defer func() { skipPrereqs = saved }()
 	return te.main(context.Background(), args)
+}
+
+func TestSetupRejectsLimaSocketPathBeforeBuilding(t *testing.T) {
+	stateDir := t.TempDir()
+	home := filepath.Join(stateDir, strings.Repeat("private-path-", 9))
+	t.Setenv("AGENT_VM_STATE_DIR", stateDir)
+	t.Setenv("AGENT_VM_LIMA_HOME", home)
+	t.Setenv("LIMA_HOME", "")
+	t.Setenv("CAGE_LOGICAL_LIMA_HOME", "")
+	t.Setenv(cage.ConfigEnv, filepath.Join(stateDir, "config.json"))
+	saved := skipPrereqs
+	skipPrereqs = true
+	t.Cleanup(func() { skipPrereqs = saved })
+
+	got := run(t, "setup", "--preinstall=none")
+	if got.Code != 1 || !strings.Contains(got.Stderr, cage.LimaSocketPathReason) ||
+		!strings.Contains(got.Stderr, "更短的本地目录") || strings.Contains(got.Stderr, stateDir) ||
+		strings.Contains(got.Stdout, "Creating base VM") {
+		t.Fatalf("setup should refuse the path before creating a VM: %+v", got)
+	}
+	for _, path := range []string{home, filepath.Join(stateDir, "logs")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("setup created Lima or setup state before preflight: %v", err)
+		}
+	}
 }
 
 func exportsOf(t *testing.T, stdin []string) map[string]string {

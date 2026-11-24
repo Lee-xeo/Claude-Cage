@@ -26,8 +26,10 @@ var patterns = []struct {
 	{regexp.MustCompile(`\b(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b`), "[redacted token]"},
 	// Imported proxy names are replaced with 24-character node IDs at runtime.
 	{regexp.MustCompile(`\b(?:[a-fA-F0-9]{24,}|[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12})\b`), "[redacted id]"},
-	{regexp.MustCompile(`(?i)[a-z]:[\\/][^\r\n"'<>:]+`), "[home path]"},
-	{regexp.MustCompile(`(?i)/(?:Users|home|Volumes|mnt|media|private|tmp|var|opt|Applications|usr|etc|run)/[^\r\n"'<>:]+`), "[home path]"},
+	// Lima formats socket paths with Go's %#q, usually as backtick strings.
+	{regexp.MustCompile("(?i)`(?:[a-z]:[\\\\/]|/|\\\\\\\\)[^`\\r\\n]+`"), "`[home path]`"},
+	{regexp.MustCompile("(?i)[a-z]:[\\\\/][^\\r\\n\"'<>:`]+"), "[home path]"},
+	{regexp.MustCompile("(?i)/(?:Users|home|Volumes|mnt|media|private|tmp|var|opt|Applications|usr|etc|run)/[^\\r\\n\"'<>:`]+"), "[home path]"},
 	{regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`), "[email]"},
 	// IPv6 must precede IPv4 so mapped addresses are removed as a whole. These
 	// expressions also run in GuestRunner's Python re engine.

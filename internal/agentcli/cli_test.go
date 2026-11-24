@@ -9,7 +9,64 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sylvinus/agent-vm/internal/cage"
 )
+
+func TestAgentDoctorReportsLimaSocketPathWithServiceStopped(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), strings.Repeat("private-path-", 9))
+	path := filepath.Join(profile, "config.json")
+	var output bytes.Buffer
+	if err := os.MkdirAll(profile, 0700); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(cage.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	checks := func() []map[string]string {
+		t.Helper()
+		output.Reset()
+		code := Main([]string{"doctor", "--config", path}, strings.NewReader(""), &output)
+		var reply struct {
+			Profile string `json:"config_path"`
+			Data    struct {
+				Checks []map[string]string `json:"checks"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(output.Bytes(), &reply); code != 0 || err != nil || reply.Profile != path {
+			t.Fatalf("invalid doctor reply (exit %d): %v", code, err)
+		}
+		return reply.Data.Checks
+	}
+	find := func(checks []map[string]string, code string) map[string]string {
+		for _, check := range checks {
+			if check["code"] == code {
+				return check
+			}
+		}
+		return nil
+	}
+	code := "lima_socket_path_too_long"
+	failure := find(checks(), code)
+	if failure["status"] != "blocked" || failure["next_action"] != "use_shorter_local_config_or_storage_path" ||
+		!strings.Contains(failure["message"], cage.LimaSocketPathReason) ||
+		!strings.Contains(failure["message"], "更短的本地目录") || strings.Contains(failure["message"], profile) {
+		t.Fatalf("missing actionable, path-free doctor result: %+v", failure)
+	}
+	if _, err := os.Stat(filepath.Join(profile, "state")); !os.IsNotExist(err) {
+		t.Fatalf("doctor created VM state: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(profile, "container.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := find(checks(), code); got != nil {
+		t.Fatalf("container reported a Lima path check: %+v", got)
+	}
+}
 
 func TestAgentCLIProtocolAndInit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "profile", "config.json")

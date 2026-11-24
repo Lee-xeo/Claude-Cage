@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/version"
@@ -188,7 +189,7 @@ func runAgent(args []string, stdin io.Reader, stdout io.Writer, clientOnly bool)
 			response, err := workbench.AgentRequest(ctx, path, workbench.AgentTarget{Scope: *scope, Connection: *connection}, "GET", endpoint, nil, "", "")
 			return finish(map[string]any{"scope": *scope, "snapshot": response.Data, "note": "Read-only snapshot of the explicit target. No repairs were applied."}, err)
 		}
-		return finish(agentDoctor(ctx, path), nil)
+		return finish(agentDoctor(ctx, path, clientOnly), nil)
 	case "diagnostics":
 		if !filepath.IsAbs(*output) {
 			return bad("diagnostics requires --output with an absolute local ZIP path.")
@@ -412,7 +413,7 @@ func environmentCheck(state json.RawMessage) (code, status, next string) {
 	return "environment_ready", "ok", ""
 }
 
-func agentDoctor(ctx context.Context, path string) map[string]any {
+func agentDoctor(ctx context.Context, path string, clientOnly bool) map[string]any {
 	result := map[string]any{"note": "Read-only snapshot. No repairs were applied; missing services were not started."}
 	checks := []map[string]any{}
 	add := func(code, status, next string) {
@@ -425,8 +426,19 @@ func agentDoctor(ctx context.Context, path string) map[string]any {
 	} else {
 		add("config_valid", "ok", "")
 	}
+	profile := filepath.Dir(path)
+	if !clientOnly && !containerenv.Configured(profile) {
+		switch err := cage.ValidateProfileLimaSocketPaths(profile); {
+		case errors.Is(err, cage.ErrLimaSocketPathTooLong):
+			checks = append(checks, map[string]any{"code": "lima_socket_path_too_long", "status": "blocked", "next_action": "use_shorter_local_config_or_storage_path", "message": err.Error()})
+		case err != nil:
+			checks = append(checks, map[string]any{"code": "lima_home_unavailable", "status": "blocked", "next_action": "diagnostics", "message": err.Error()})
+		default:
+			add("lima_socket_path", "ok", "")
+		}
+	}
 	for _, name := range []string{"account.json", "proxy/sources.json"} {
-		if err := host.CheckPrivateFile(filepath.Join(filepath.Dir(path), filepath.FromSlash(name))); err != nil && !os.IsNotExist(err) {
+		if err := host.CheckPrivateFile(filepath.Join(profile, filepath.FromSlash(name))); err != nil && !os.IsNotExist(err) {
 			add("private_file_permissions", "blocked", "repair_profile_permissions")
 		}
 	}
