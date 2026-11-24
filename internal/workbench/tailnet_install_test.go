@@ -7,7 +7,22 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// Set in the stand-in process so the helper below only sleeps, playing the
+// still-running earlier program.
+const tailnetSleepHelperEnv = "GO_WANT_TAILNET_SLEEP_HELPER"
+
+// TestTailnetInstallSleepHelper is not a test on its own: in a copy of the test
+// binary started with the variable above, it sleeps while the copy is replaced.
+func TestTailnetInstallSleepHelper(t *testing.T) {
+	if os.Getenv(tailnetSleepHelperEnv) != "1" {
+		t.Skip("helper process only")
+	}
+	time.Sleep(60 * time.Second)
+	os.Exit(0)
+}
 
 func TestTailnetInstallAtomicallyReplacesRunningPayloadAndPreservesIdentity(t *testing.T) {
 	if os.PathSeparator != '/' {
@@ -22,7 +37,13 @@ func TestTailnetInstallAtomicallyReplacesRunningPayloadAndPreservesIdentity(t *t
 	if err := os.MkdirAll(sudoers, 0700); err != nil {
 		t.Fatal(err)
 	}
-	old, err := os.ReadFile("/bin/sleep")
+	// Copy this test binary as the stand-in, not the system sleep: a copied
+	// system program can hang on macOS arm64 and block Wait.
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := os.ReadFile(self)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,11 +62,21 @@ func TestTailnetInstallAtomicallyReplacesRunningPayloadAndPreservesIdentity(t *t
 		t.Fatal(err)
 	}
 	// This is a real open executable inode, rather than a mocked install result.
-	running := exec.Command(former, "60")
+	running := exec.Command(former, "-test.run=^TestTailnetInstallSleepHelper$")
+	running.Env = append(os.Environ(), tailnetSleepHelperEnv+"=1")
 	if err = running.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = running.Process.Kill(); _ = running.Wait() }()
+	defer func() {
+		_ = running.Process.Kill()
+		waited := make(chan struct{})
+		go func() { _ = running.Wait(); close(waited) }()
+		select {
+		case <-waited:
+		case <-time.After(10 * time.Second):
+			t.Error("the replaced process did not exit after being killed")
+		}
+	}()
 	if err = os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\nexec \"$@\"\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
