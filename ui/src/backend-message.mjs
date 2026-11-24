@@ -45,6 +45,7 @@ export const backendMessageKeys = [
   "节点名称为空或过长",
   "节点名称重复，无法确定代理链引用",
   "节点协议暂不支持",
+  "Clash Verge Ninja 专用的 ninja 协议，Cage 随附的标准 Mihomo 核心无法解析，请向服务商获取同一出口的标准 Mihomo 节点后重新导入",
   "节点服务器缺失或过长",
   "SSH 节点的 private-key 必须直接填写私钥内容，不能引用本机文件",
   "节点不能引用本机文件、网络接口或额外路由",

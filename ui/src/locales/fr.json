@@ -3087,6 +3087,7 @@
   "节点不存在": "Le nœud n'existe pas",
   "节点不能引用本机文件、网络接口或额外路由": "Un nœud ne peut pas référencer de fichiers de cet ordinateur, d'interfaces réseau ni de routes supplémentaires",
   "节点协议暂不支持": "Protocole de nœud non encore pris en charge",
+  "Clash Verge Ninja 专用的 ninja 协议，Cage 随附的标准 Mihomo 核心无法解析，请向服务商获取同一出口的标准 Mihomo 节点后重新导入": "Le protocole ninja est propre à Clash Verge Ninja et le cœur Mihomo standard fourni avec Cage ne peut pas l'analyser ; demandez à votre fournisseur un nœud Mihomo standard ayant la même sortie, puis réimportez-le",
   "节点名称为空或过长": "Le nom du nœud est vide ou trop long",
   "节点名称重复，无法确定代理链引用": "Noms de nœuds en double ; impossible de déterminer les références de la chaîne de proxy",
   "节点字段 {0} 存在重复写法，请仅保留一种": "Le champ de nœud {0} apparaît sous plusieurs formes en double ; n'en conservez qu'une seule",

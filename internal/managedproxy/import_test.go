@@ -264,3 +264,37 @@ proxy-providers:
 		t.Fatalf("inline-only config did not import: %v %v", nodes, err)
 	}
 }
+
+// #837: Clash Verge Ninja's own node type is named, with the migration path,
+// instead of a generic unsupported protocol; its fields never appear.
+func TestImportNamesClientOnlyNinjaNodes(t *testing.T) {
+	s, _ := Load(t.TempDir())
+	data := `proxies:
+ - {name: good, type: socks5, server: 203.0.113.10, port: 1080}
+ - {name: hk-ninja, type: ninja, server: example.com, port: 443, password: secret-password, ninja-obf: secret-obf}
+ - {name: upper, type: NINJA, server: example.com, port: 443}
+ - {name: other, type: unknown-proto, server: example.com, port: 443}
+`
+	if err := s.Import("ninja", "", []byte(data), "ninja", 0, ""); err != nil || s.Count() != 1 {
+		t.Fatalf("count=%d err=%v", s.Count(), err)
+	}
+	reasons := map[string]string{}
+	for _, issue := range s.Sources[0].Skipped {
+		reasons[issue.Name] = issue.Reason
+	}
+	ninja := clientOnlyTypes["ninja"]
+	if reasons["hk-ninja"] != ninja || reasons["upper"] != ninja || reasons["other"] != "节点协议暂不支持" {
+		t.Fatalf("reasons = %v", reasons)
+	}
+	report, _ := json.Marshal(s.Sources[0].Skipped)
+	for _, secret := range []string{"secret-password", "secret-obf"} {
+		if strings.Contains(string(report), secret) {
+			t.Fatal("import diagnosis leaked a field value")
+		}
+	}
+	only, _ := Load(t.TempDir())
+	err := only.Import("ninja", "", []byte("proxies:\n - {name: a, type: ninja, server: example.com, port: 443}\n"), "ninja", 0, "")
+	if err == nil || !strings.Contains(err.Error(), "Clash Verge Ninja") {
+		t.Fatalf("all-ninja import: %v", err)
+	}
+}
