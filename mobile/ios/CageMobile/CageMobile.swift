@@ -636,7 +636,7 @@ private struct ConnectionSheet: View {
                                 .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.connecting)
                         }
                         if !model.status.isEmpty {Section {status}}
-                    }.navigationTitle("配对码")
+                    }.buttonStyle(.automatic).navigationTitle("配对码")
                 }
                 .sheet(item: $disconnecting) {device in
                     VStack(spacing: 20) {
@@ -649,7 +649,7 @@ private struct ConnectionSheet: View {
                             disconnecting = nil
                         }.frame(maxWidth: .infinity, minHeight: 48)
                         Button("保留连接") {disconnecting = nil}.frame(minHeight: 44)
-                    }.padding(24).presentationDetents([.height(300)]).presentationDragIndicator(.visible)
+                    }.buttonStyle(.automatic).padding(24).presentationDetents([.height(300)]).presentationDragIndicator(.visible)
                 }
                 .sheet(isPresented: $scanning, onDismiss: {
                     if previewScanned {previewScanned = false; previewConnected()}
@@ -717,6 +717,7 @@ private struct SettingsScreen: View {
                 DisclosureGroup("中继设置", isExpanded: $relaySettings) {
                     Toggle("使用自建中继", isOn: Binding(get: {model.relay != CMConnection.defaultRelay()},
                                                      set: {model.relay = $0 ? "" : CMConnection.defaultRelay()}))
+                        .tint(.green)
                     if model.relay != CMConnection.defaultRelay() {
                         TextField("自建 VPS 的 HTTPS 地址", text: $model.relay)
                             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -730,14 +731,14 @@ private struct SettingsScreen: View {
                         .disabled(model.fingerprint.isEmpty)
                     Button("导入连接文件") {picking = true}
                     TextField("电脑指纹 sha256:…", text: $model.pin).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Toggle("已核对电脑指纹", isOn: $model.verified)
+                    Toggle("已核对电脑指纹", isOn: $model.verified).tint(.green)
                     Button("保存已核对的主机", action: model.saveTrust).disabled(!model.verified)
                     if model.hasInvitation || model.hasSaved {Button("连接工作台", action: connect).disabled(!model.canConnect)}
                 }
                 if model.canForget {Button("忘记主机", role: .destructive) {confirmingForget = true}}
             }
             if !model.status.isEmpty {Section {Text(model.status).font(.footnote).foregroundStyle(.secondary)}}
-        }.navigationTitle("设置").disabled(model.connecting)
+        }.buttonStyle(.automatic).navigationTitle("设置").disabled(model.connecting)
             .alert("忘记主机？", isPresented: $confirmingForget) {
                 Button("取消", role: .cancel) {}
                 Button("忘记主机", role: .destructive, action: model.forget)
@@ -769,11 +770,11 @@ struct CageMobileApp: App {
                 .navigationDestination(isPresented: $showingSettings) {
                     SettingsScreen(model: model, theme: $theme, connect: model.connect)
                 }
-            }.buttonStyle(CageButtonStyle()).tint(CageStyle.ink).preferredColorScheme(theme.scheme)
+            }.tint(CageStyle.ink).preferredColorScheme(theme.scheme)
                 .sheet(isPresented: $pairing) {
                     ConnectionSheet(model: model, previewConnected: {
                         pairing = false; showingSettings = false; model.startPreview()
-                    }).buttonStyle(CageButtonStyle()).tint(CageStyle.ink).preferredColorScheme(theme.scheme)
+                    }).tint(CageStyle.ink).preferredColorScheme(theme.scheme)
                 }
                 .onChange(of: model.showingWorkspace) { _, connected in
                     if connected {pairing = false; showingSettings = false}
