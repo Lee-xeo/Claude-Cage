@@ -147,7 +147,18 @@ func (s *start) limaIn(workdir string, tty bool, args ...string) int {
 	code, err := b.Shell(s.ctx, s.name, vm.ShellOpts{
 		Workdir: workdir,
 		Args: append([]string{"zsh", "-l", "-c",
-			`case "$1" in *=*|*/*) ;; *) command -v -- "$1" >/dev/null || { print -r -- "agent-vm: $1 is not installed in this VM." >&2; exit 127; } ;; esac; exec env -- "$@"`,
+			`case "$1" in
+				*=*|*/*) ;;
+				*) if ! command -v -- "$1" >/dev/null; then
+					case "$1" in
+						*[[:space:]]*)
+							print -r -- "agent-vm: Executable not found. Pass the executable and arguments separately (run echo hi), or use an explicit shell (run bash -lc 'echo hi | cat')." >&2 ;;
+						*) print -r -- "agent-vm: $1 is not installed in this VM." >&2 ;;
+					esac
+					exit 127
+				fi ;;
+			esac
+			exec env -- "$@"`,
 			"agent-vm"}, args...),
 		Stdin: s.io.Stdin, Stdout: s.io.Stdout, Stderr: s.io.Stderr, Interactive: tty,
 	})
