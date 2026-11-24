@@ -133,3 +133,18 @@ func TestProjectGroupsCannotTakeAnotherNamedProjectsFolders(t *testing.T) {
 		t.Fatal("failed save modified groups", groups)
 	}
 }
+
+func TestProjectGroupRenameOnlyWhenStopped(t *testing.T) {
+	s, a, b := groupFixture(t)
+	saveGroupRequest(t, s, projectGroup{Name: "initial", Folders: []string{a}}, 200)
+	s.ready = false
+	s.projectShares = nil
+	saveGroupRequest(t, s, projectGroup{Workspace: a, Name: "renamed-offline", Folders: []string{a}}, 200)
+	groups, err := s.projectGroups()
+	if err != nil || len(groups) != 1 || groups[0].Name != "renamed-offline" || !slices.Equal(groups[0].Folders, []string{a}) {
+		t.Fatalf("groups=%+v err=%v", groups, err)
+	}
+	// Modifying folders while stopped still requires a ready environment.
+	saveGroupRequest(t, s, projectGroup{Workspace: a, Name: "add-offline", Folders: []string{a, b}}, 409)
+	saveGroupRequest(t, s, projectGroup{Name: "new-offline", Folders: []string{b}}, 409)
+}

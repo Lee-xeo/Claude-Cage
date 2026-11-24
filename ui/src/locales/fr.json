@@ -3246,5 +3246,8 @@
   "收起浮窗": "Replier la fenêtre flottante",
   "浮窗「{0}」": "Fenêtre flottante « {0} »",
   "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et peut ouvrir dans le navigateur intégré : {0}.",
-  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et ne peut pas ouvrir de pages web."
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Ouvre une fenêtre flottante translucide déplaçable au-dessus de l'espace de travail. Elle s'exécute dans un cadre isolé, n'utilise que les outils de ce plugin et ne peut pas ouvrir de pages web.",
+  "重命名项目": "Renommer le projet",
+  "移除项目": "Retirer le projet",
+  "移除 {0}": "Retirer {0}"
 }

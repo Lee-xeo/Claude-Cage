@@ -60,7 +60,7 @@ try {
       assert.equal(state.terminals[0].workspace,a);
       await page.getByRole("button",{name:"添加项目",exact:true}).click();
       dialog=page.getByRole("dialog",{name:"打开项目",exact:true});
-      await dialog.getByRole("button",{name:"编辑名称与文件夹…",exact:true}).click();
+      await dialog.getByRole("button",{name:"编辑 课程系统",exact:true}).click();
       dialog=page.getByRole("dialog",{name:"编辑项目",exact:true});
       assert.equal(await dialog.getByRole("button",{name:"移除文件夹 frontend",exact:true}).isDisabled(),true);
       await dialog.getByRole("button",{name:"移除文件夹 backend",exact:true}).click();
@@ -71,8 +71,8 @@ try {
       await project.getByRole("tab",{name:"终端 1",exact:true}).hover();
       await project.getByRole("button",{name:"关闭终端",exact:true}).click();
       await page.getByRole("dialog").getByRole("button",{name:"关闭终端",exact:true}).click();
-      await page.getByRole("button",{name:"添加项目",exact:true}).click();
-      await page.getByRole("dialog").getByRole("button",{name:"编辑名称与文件夹…",exact:true}).click();
+      await project.getByRole("button",{name:"课程系统 的操作",exact:true}).click();
+      await page.getByRole("menuitem",{name:"编辑项目",exact:true}).click();
       dialog=page.getByRole("dialog",{name:"编辑项目",exact:true});
       await dialog.getByLabel("项目名称",{exact:true}).fill("课程工作区");
       await dialog.getByRole("button",{name:"移除文件夹 backend",exact:true}).click();

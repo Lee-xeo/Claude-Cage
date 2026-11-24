@@ -62,6 +62,7 @@ import {
   splitTab,
   projectName,
   projectGroups,
+  togglePinnedProject,
   tabName,
   sameState,
   mergeTabs,
@@ -170,6 +171,8 @@ function App() {
     [selectedProject, setSelectedProject] = useState(""),
     [savedProjectOrder, setSavedProjectOrder] = useState(() =>
       readLocal(clientStorageKey("cage-sidebar-project-order"), {})),
+    [savedProjectPins, setSavedProjectPins] = useState(() =>
+      readLocal(clientStorageKey("cage-sidebar-project-pins"), {})),
     [savedTabs, setSavedTabs] = useState(readLocal(clientStorageKey("cage-tab-layout"), {})),
     [privateTabMetadata, setPrivateTabMetadata] = useState({}),
     [projectDialog, setProjectDialog] = useState(null),
@@ -1813,6 +1816,7 @@ function App() {
             projects={projects}
             projectGroups={groups}
             projectOrder={savedProjectOrder[tabLayoutKey]}
+            pinnedProjects={savedProjectPins[tabLayoutKey] || []}
             tabs={displayTabs}
             sessions={cliSessions.sessions.map(session => ({ ...session,
               claudeAccountNumber: claudeNumbers.get(session.account_id) }))}
@@ -1845,6 +1849,11 @@ function App() {
             splitDrag={splitDrag}
             onProjectReorder={order => persist("cage-sidebar-project-order",
               { ...savedProjectOrder, [tabLayoutKey]: order }, setSavedProjectOrder)}
+            onProjectPin={path => persist("cage-sidebar-project-pins",
+              { ...savedProjectPins, [tabLayoutKey]: togglePinnedProject(savedProjectPins[tabLayoutKey], path) }, setSavedProjectPins)}
+            onProjectRename={path => setRename({ id: path, title: projectName(path, groups), project: true, error: "" })}
+            onProjectEdit={path => setProjectDialog({ path, mode: "edit" })}
+            onProjectRemove={path => setProjectDialog({ path, mode: "remove" })}
             onSessionReorder={(path, order) => changeTabMetadata({ ...metadata,
               sessionOrder: { ...metadata.sessionOrder, [path]: order } })}
             onProjectSelect={setSelectedProject}
@@ -2350,19 +2359,33 @@ function App() {
           current={settings}
           status={status}
           initialPath={projectDialog.path}
+          initialMode={projectDialog.mode || "browse"}
           onClose={() => setProjectDialog(null)}
           onSettings={() => { setProjectDialog(null); openSettings("project"); }}
           onOpened={openedProject}
           onRemoved={async (removed, workspace) => {
+            const members = groups.find(group => group.workspace === removed)?.folders || [removed];
+            const currentPins = savedProjectPins[tabLayoutKey] || [];
+            if (currentPins.some(path => members.includes(path))) {
+              persist("cage-sidebar-project-pins",
+                { ...savedProjectPins, [tabLayoutKey]: currentPins.filter(path => !members.includes(path)) },
+                setSavedProjectPins);
+            }
+            const currentOrder = savedProjectOrder[tabLayoutKey] || [];
+            if (currentOrder.some(path => members.includes(path))) {
+              persist("cage-sidebar-project-order",
+                { ...savedProjectOrder, [tabLayoutKey]: currentOrder.filter(path => !members.includes(path)) },
+                setSavedProjectOrder);
+            }
             await refreshSettings();
             await refreshStatus.current?.();
-            if ((groups.find(group => group.workspace === removed)?.folders || [removed]).includes(selectedProject)) setSelectedProject(workspace);
+            if (members.includes(selectedProject)) setSelectedProject(workspace);
           }}
         />
       )}
       {rename && (
         <Modal
-          title={rename.desktop ? tr("重命名 Desktop") : tr("重命名标签")}
+          title={rename.project ? tr("重命名项目") : rename.desktop ? tr("重命名 Desktop") : tr("重命名标签")}
           onClose={rename.saving ? undefined : () => setRename(null)}
           footer={
             <>
@@ -2385,6 +2408,22 @@ function App() {
             onSubmit={async (event) => {
               event.preventDefault();
               if (!rename.title.trim() || rename.saving) return;
+              if (rename.project) {
+                const group = groups.find(item => item.workspace === rename.id) || { workspace: rename.id, folders: [rename.id] };
+                setRename((current) => current && { ...current, saving: true, error: "" });
+                try {
+                  await api("/projects/save", {
+                    workspace: group.workspace,
+                    name: rename.title.trim(),
+                    folders: group.folders,
+                  });
+                  await refreshStatus.current?.();
+                  setRename(null);
+                } catch (error) {
+                  setRename((current) => current && { ...current, saving: false, error: error.message });
+                }
+                return;
+              }
               if (rename.desktop) {
                 setRename((current) => current && { ...current, saving: true });
                 try {
@@ -2421,7 +2460,7 @@ function App() {
               setRename(null);
             }}
           >
-            <label htmlFor="tab-title">{rename.desktop ? tr("Desktop 名称") : tr("标签名称")}</label>
+            <label htmlFor="tab-title">{rename.project ? tr("项目名称") : rename.desktop ? tr("Desktop 名称") : tr("标签名称")}</label>
             <input
               id="tab-title"
               autoFocus
@@ -2429,9 +2468,14 @@ function App() {
               maxLength={100}
               value={rename.title}
               onChange={(event) =>
-                setRename({ ...rename, title: event.target.value })
+                setRename({ ...rename, title: event.target.value, error: "" })
               }
             />
+            {rename.error && (
+              <div className="error-message" role="alert">
+                <SafetyMessage message={rename.error} />
+              </div>
+            )}
           </form>
         </Modal>
       )}

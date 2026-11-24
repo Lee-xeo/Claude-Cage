@@ -3246,5 +3246,8 @@
   "收起浮窗": "Laab daaqadda sabbeysa",
   "浮窗「{0}」": "Daaqadda sabbeysa \"{0}\"",
   "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, waxayna biraawsarka gudaha ka furi kartaa: {0}.",
-  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, mana furi karto bogag internet."
+  "在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。": "Waxay goobta shaqada dusheeda ka furtaa daaqad sabbeysa oo nus-muuqata oo la jiidi karo. Waxay ku shaqaysaa qaab gooni ah, waxay isticmaashaa qalabka plugin-kan oo keliya, mana furi karto bogag internet.",
+  "重命名项目": "Magac beddel mashruuca",
+  "移除项目": "Ka saar mashruuca",
+  "移除 {0}": "Ka saar {0}"
 }

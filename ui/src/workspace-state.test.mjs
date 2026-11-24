@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mergeBrowserTabs, mergeTabs, sameState, shouldShowBrowserError } from "./workspace-state.mjs";
+import {
+  isClientProjectPath,
+  mergeBrowserTabs,
+  mergeTabs,
+  orderedProjects,
+  sameState,
+  shouldShowBrowserError,
+  togglePinnedProject,
+} from "./workspace-state.mjs";
 
 test("sameState compares nested JSON values structurally without false negatives", () => {
   assert.equal(sameState(null, null), true);
@@ -61,4 +69,17 @@ test("shouldShowBrowserError hides transient browser errors when the browser vie
   assert.equal(shouldShowBrowserError({ ...base, running: false }), false);
   assert.equal(shouldShowBrowserError({ ...base, connectionError: "连接中断" }), false);
   assert.equal(shouldShowBrowserError({ ...base, browserError: "" }), false);
+});
+
+test("orderedProjects places pinned projects first and respects saved order within each group", () => {
+  const projects = ["/p/a", "/p/b", "/p/c", "/p/d"];
+  assert.deepEqual(orderedProjects(projects, [], ["/p/c"]), ["/p/c", "/p/a", "/p/b", "/p/d"]);
+  assert.deepEqual(
+    orderedProjects(projects, ["/p/d", "/p/b", "/p/c", "/p/a"], ["/p/a", "/p/c"]),
+    ["/p/c", "/p/a", "/p/d", "/p/b"],
+  );
+  assert.deepEqual(togglePinnedProject(["/p/a"], "/p/b"), ["/p/a", "/p/b"]);
+  assert.deepEqual(togglePinnedProject(["/p/a", "/p/b"], "/p/a"), ["/p/b"]);
+  assert.equal(isClientProjectPath("/run/cage-client-projects/0123456789abcdef0123456789abcdef"), true);
+  assert.equal(isClientProjectPath("/projects/alpha"), false);
 });
