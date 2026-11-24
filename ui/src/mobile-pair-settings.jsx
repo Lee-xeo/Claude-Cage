@@ -30,6 +30,7 @@ export function MobilePairSettings({ relay, savedRelay, onChange, onConfirm }) {
   const [token, setToken] = useState("");
   const [code, setCode] = useState(null);
   const [devices, setDevices] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [maxDevices, setMaxDevices] = useState(8);
   const [power, setPower] = useState(null);
   const [mobileAccessBlocked, setMobileAccessBlocked] = useState(false);
@@ -47,6 +48,7 @@ export function MobilePairSettings({ relay, savedRelay, onChange, onConfirm }) {
         if (!active || revision !== statusRevision.current) return;
         const nextDevices = normalizeDevices(state);
         setDevices(nextDevices);
+        setLoaded(true);
         if (typeof state.max_devices === "number" && state.max_devices > 0) {
           setMaxDevices(state.max_devices);
         }
@@ -66,7 +68,10 @@ export function MobilePairSettings({ relay, savedRelay, onChange, onConfirm }) {
           setNotice(state.status);
         }
       } catch (e) {
-        if (active && revision === statusRevision.current) setNotice(e.message);
+        if (active && revision === statusRevision.current) {
+          setLoaded(true);
+          setNotice(e.message);
+        }
       }
     };
     check();
@@ -80,14 +85,20 @@ export function MobilePairSettings({ relay, savedRelay, onChange, onConfirm }) {
     setBusy(true);
     setNotice("");
     setCode(null);
-    pairBaseline.current = deviceSignatureMap(devices);
+    pairBaseline.current = null;
     try {
-      setCode(
-        await api("/mobile-pair", {
-          relay: savedRelay,
-          admin: custom ? token : "",
-        }),
-      );
+      const invitation = await api("/mobile-pair", {
+        relay: savedRelay,
+        admin: custom ? token : "",
+      });
+      const authoritative = Array.isArray(invitation?.devices)
+        ? invitation.devices
+        : normalizeDevices(await api("/mobile-pair"));
+      statusRevision.current++;
+      setDevices(authoritative);
+      setLoaded(true);
+      pairBaseline.current = deviceSignatureMap(authoritative);
+      setCode(invitation);
     } catch (e) {
       pairBaseline.current = null;
       setNotice(e.message);
@@ -203,7 +214,7 @@ export function MobilePairSettings({ relay, savedRelay, onChange, onConfirm }) {
             <button
               type="button"
               className="primary"
-              disabled={busy || relay !== savedRelay || (custom && !relay)}
+              disabled={!loaded || busy || relay !== savedRelay || (custom && !relay)}
               onClick={generate}
             >
               <QrCode size={18} />

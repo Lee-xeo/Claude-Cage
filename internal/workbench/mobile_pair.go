@@ -355,9 +355,7 @@ func (s *Server) stopPhone() {
 	}
 }
 
-func (s *Server) phoneStatus(w http.ResponseWriter, r *http.Request) {
-	p := &s.phones
-	p.mu.Lock()
+func (p *mobilePairing) viewsLocked() []pairedPhoneView {
 	devices := make([]pairedPhoneView, 0, len(p.slots))
 	for _, slot := range p.slots {
 		var info *mobilelink.DeviceInfo
@@ -372,6 +370,13 @@ func (s *Server) phoneStatus(w http.ResponseWriter, r *http.Request) {
 			PairedAt: slot.record.PairedAt,
 		})
 	}
+	return devices
+}
+
+func (s *Server) phoneStatus(w http.ResponseWriter, r *http.Request) {
+	p := &s.phones
+	p.mu.Lock()
+	devices := p.viewsLocked()
 	var firstDevice *mobilelink.DeviceInfo
 	if len(devices) > 0 {
 		firstDevice = devices[0].Device
@@ -518,20 +523,7 @@ func (s *Server) removePhone(w http.ResponseWriter, r *http.Request) {
 		s.stopPowerLocked()
 		p.status = ""
 	}
-	devices := make([]pairedPhoneView, 0, len(p.slots))
-	for _, slot := range p.slots {
-		var info *mobilelink.DeviceInfo
-		if slot.record.Device != nil {
-			copyInfo := *slot.record.Device
-			info = &copyInfo
-		}
-		devices = append(devices, pairedPhoneView{
-			ID:       slot.record.ID,
-			Device:   info,
-			Relay:    slot.record.Relay,
-			PairedAt: slot.record.PairedAt,
-		})
-	}
+	devices := p.viewsLocked()
 	jsonReply(w, map[string]any{"paired": len(p.slots) > 0, "devices": devices})
 }
 
@@ -576,6 +568,7 @@ func (s *Server) pairPhone(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(epoch, 2*time.Minute)
 	p.pending = cancel
 	p.status = "等待扫码"
+	baselineDevices := p.viewsLocked()
 	p.mu.Unlock()
 	complete := false
 	defer func() {
@@ -680,5 +673,10 @@ func (s *Server) pairPhone(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	w.Header().Set("Cache-Control", "no-store")
-	jsonReply(w, map[string]any{"image": "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), "expires": room.ExpiresAt, "manual": mobilelink.ManualPairCodePrefix + base64.RawURLEncoding.EncodeToString([]byte(raw))})
+	jsonReply(w, map[string]any{
+		"image":   "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
+		"expires": room.ExpiresAt,
+		"manual":  mobilelink.ManualPairCodePrefix + base64.RawURLEncoding.EncodeToString([]byte(raw)),
+		"devices": baselineDevices,
+	})
 }
