@@ -14,7 +14,7 @@
 
 当前构建基线为 Linux x86_64、cgroup v2、systemd 用户服务及 rootless Docker 29.9.1。服务器无需 KVM。运行用户须有可用的多 UID/GID 用户命名空间、至少 65,536 个 subordinate UID/GID，以及可访问的 `/dev/fuse`、`/dev/net/tun`。`newuidmap`、`newgidmap` 可通过发行版的 setuid 或文件 capability 实现映射。
 
-宿主需提供 OpenSSH、curl、tar、sha256sum、iproute2 与 iptables；Cage 服务端不依赖 GTK 或 WebKit。实际运行还会检查用户 cgroup 委派和父层资源上限。缺少前提时应修复服务器配置，不能通过 `--privileged`、宿主网络、宿主 PID、Docker socket 挂载或整个宿主 cgroup 的可写绑定启动工作环境。
+宿主需提供 OpenSSH、curl、tar、sha256sum、iproute2 与 iptables；Cage 服务端不依赖 GTK 或 WebKit。部署预检要求 `user@<UID>.service` 委派 `cpu`、`memory`、`pids`（读不到用户管理器 cgroup 时不判定），实际运行还会检查父层资源上限。缺少前提时应修复服务器配置，不能通过 `--privileged`、宿主网络、宿主 PID、Docker socket 挂载或整个宿主 cgroup 的可写绑定启动工作环境。
 
 每个用户的数据根默认为 `~/.claude-cage`。容器引擎的数据固定在 `~/.claude-cage/container-engine/data`，与版本号和可执行文件目录分开。显式使用其他 `CLAUDE_CAGE_CONFIG` 时，须同步修改两个用户服务中的绝对配置路径和引擎数据根；后续升级继续使用同一组路径。
 

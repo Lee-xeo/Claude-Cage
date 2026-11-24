@@ -56,6 +56,7 @@ func deploymentError(err error) error {
 			75: "服务器无法获取固定版本的 Debian 基础镜像，请检查云端网络后重试",
 			76: "服务器安装工具失败。详细日志位于配置目录的 cloud-host/build 下",
 			73: "云端 Cage 用户服务启动失败，请检查服务器用户服务日志",
+			77: "服务器的 systemd 用户服务未委派 cpu、memory、pids 控制器。请管理员为 user@<UID>.service 添加 drop-in（如 /etc/systemd/system/user@.service.d/delegate.conf，写入 [Service] 与 Delegate=cpu memory pids），执行 systemctl daemon-reload 后重新登录或重启该用户管理器，再重新部署",
 		}
 		if message := messages[exit.ExitStatus()]; message != "" {
 			return failure("cloud_setup_failed", message)

@@ -79,6 +79,9 @@ cage_parent=$(systemctl --user show "$cage_slice" -p ControlGroup --value)
    "$(cat "/sys/fs/cgroup$cage_parent/pids.max")" == 512 ]] || {
   echo 'The build parent cgroup limits were not applied.' >&2; exit 1;
 }
+[[ -r "/sys/fs/cgroup$cage_parent/cpu.max" ]] || {
+  echo 'The build parent cgroup has no cpu.max. Delegate cpu memory pids to user@'"$(id -u)"'.service and log in again.' >&2; exit 1;
+}
 read -r cage_cpu_quota cage_cpu_period < "/sys/fs/cgroup$cage_parent/cpu.max"
 [[ "$cage_cpu_quota" =~ ^[0-9]+$ && "$cage_cpu_period" =~ ^[0-9]+$ &&
    "$cage_cpu_quota" -eq $((2 * cage_cpu_period)) ]] || {
