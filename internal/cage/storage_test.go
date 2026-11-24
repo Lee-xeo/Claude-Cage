@@ -248,3 +248,59 @@ func TestStorageResolvesAliasesToPrivateDisk(t *testing.T) {
 		t.Fatalf("private path escaped through alias: %s: %v", physical, err)
 	}
 }
+
+func TestResetBrokenStorageForRebuildDetachesLinkAndPreservesExistingData(t *testing.T) {
+	profile, root := newStorageFixture(t)
+	externalDir := filepath.Join(root, "OldCageData")
+	externalState := filepath.Join(externalDir, "state")
+	keptFile := filepath.Join(externalState, "keep.txt")
+	writeStorageFixture(t, keptFile, []byte("surviving-user-data"))
+	writeStorageFixture(t, filepath.Join(profile, locationFile), []byte(`{"directory":"`+filepath.ToSlash(externalDir)+`","id":"0123456789abcdef0123456789abcdef"}`))
+	writeStorageFixture(t, filepath.Join(profile, pendingFile), []byte(`{"Next":{"Directory":"`+filepath.ToSlash(externalDir)+`","ID":"0123456789abcdef0123456789abcdef"},"Runtime":"windows-hyperv"}`))
+	if err := linkStorage(storageAnchor(profile), externalState); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate broken storage (marker missing + stuck pending journal).
+	if _, err := GetStorageLocation(profile); err == nil {
+		t.Fatal("expected broken storage error before reset")
+	}
+
+	// Refuse while another storage lease is held.
+	lockFile, err := os.OpenFile(filepath.Join(profile, "environment-storage.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked, err := lockStorageFile(lockFile, false)
+	if err != nil || !locked {
+		t.Fatalf("failed to acquire test lease: %v", err)
+	}
+	if err := ResetBrokenStorageForRebuild(profile); err == nil {
+		lockFile.Close()
+		t.Fatal("ResetBrokenStorageForRebuild proceeded while storage lease was held")
+	}
+	lockFile.Close()
+
+	if err := ResetBrokenStorageForRebuild(profile); err != nil {
+		t.Fatalf("ResetBrokenStorageForRebuild failed: %v", err)
+	}
+	loc, err := GetStorageLocation(profile)
+	if err != nil {
+		t.Fatalf("GetStorageLocation failed after reset: %v", err)
+	}
+	if loc.Custom || loc.HasEnvironment || loc.Directory != storageAnchor(profile) {
+		t.Fatalf("unexpected location after reset: %+v", loc)
+	}
+	// Surviving external files must remain completely untouched.
+	assertStorageFile(t, keptFile, []byte("surviving-user-data"))
+	// Detached metadata must be preserved in a recovery archive directory.
+	archives, err := filepath.Glob(filepath.Join(profile, "storage-recovery-archive-*"))
+	if err != nil || len(archives) != 1 {
+		t.Fatalf("expected 1 recovery archive, got %v (%v)", archives, err)
+	}
+	for _, name := range []string{locationFile, pendingFile} {
+		if _, err := os.Stat(filepath.Join(archives[0], name)); err != nil {
+			t.Fatalf("expected %s to be archived in %s: %v", name, archives[0], err)
+		}
+	}
+}

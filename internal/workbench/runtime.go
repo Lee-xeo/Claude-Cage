@@ -24,6 +24,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/hostimage"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/vm"
+	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 var loadConfig = cage.Load
@@ -67,8 +68,32 @@ func (s *Server) environmentPrepared() bool {
 		state, err := environment.State(ctx)
 		return err == nil && state.Exists
 	}
-	_, err := os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version"))
-	return err == nil
+	return s.limaEnvironmentPrepared()
+}
+
+func (s *Server) limaEnvironmentPrepared() bool {
+	// An intact existing VM instance carries its own config and disk and can
+	// start even if the base template or version marker is missing.
+	if dir := s.instanceDir(); dir != "" && limaInstanceReady(dir) {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version")); err != nil {
+		return false
+	}
+	return limaInstanceReady(filepath.Join(s.profile, "state", "lima", vmname.Template))
+}
+
+func limaInstanceReady(dir string) bool {
+	yamlInfo, err := os.Stat(filepath.Join(dir, "lima.yaml"))
+	if err != nil || !yamlInfo.Mode().IsRegular() {
+		return false
+	}
+	for _, disk := range []string{"diffdisk", "basedisk"} {
+		if info, err := os.Stat(filepath.Join(dir, disk)); err == nil && info.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
 }
 func (s *Server) sshCommand(ctx context.Context, args ...string) *exec.Cmd {
 	return s.sshCommandOptions(ctx, false, args...)
@@ -481,7 +506,7 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 	} else if probeErr != nil {
 		s.setMessage("代理出口无法通过检查，正在启动离线环境…")
 	}
-	if _, err = os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version")); !containerenv.Configured(s.profile) && os.IsNotExist(err) {
+	if !containerenv.Configured(s.profile) && !s.limaEnvironmentPrepared() {
 		s.setMessage("首次准备 Linux 环境与开发工具，可能需要数分钟…")
 		job := s.jobs.execution()
 		job.setSetupProgress(&SetupProgress{Phase: "image", System: linuxSystem, Label: "正在准备 " + guestProgressName(linuxSystem) + " 镜像"})
