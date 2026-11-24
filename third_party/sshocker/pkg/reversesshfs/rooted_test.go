@@ -3,6 +3,7 @@
 package reversesshfs
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -73,6 +74,14 @@ func setupRootedHandlers(t *testing.T, readonly bool) (*sftp.Client, string, *ro
 		<-done
 	})
 	return client, root, h
+}
+
+// ownerSetstat 构造同时设置属主与权限的 SETSTAT 请求（SSH_FILEXFER_ATTR_UIDGID|PERMISSIONS）。
+func ownerSetstat(p string, uid, gid, mode uint32) *sftp.Request {
+	r := sftp.NewRequest("Setstat", p)
+	r.Flags = 0x2 | 0x4
+	r.Attrs = binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, uid), gid), mode)
+	return r
 }
 
 func assertUnchanged(t *testing.T, root string) {

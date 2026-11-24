@@ -182,3 +182,54 @@ func TestRootedSymlinkUnsupported(t *testing.T) {
 		t.Fatal("the symlink was created")
 	}
 }
+
+// Windows 无法 chown：把属主设为呈现属主自身或 -1 时视为不变并成功，其他 ID 仍报错。
+func TestRootedChownPresentedOwner(t *testing.T) {
+	c, root, h := setupRootedHandlers(t, false)
+	owner := Owner{UID: 1000, GID: 1000}
+	p := filepath.Join(root, "src", "main.go")
+	// 未告知呈现属主时照旧报错。
+	if err := c.Chown(p, int(owner.UID), int(owner.GID)); err == nil {
+		t.Fatal("chown without a presented owner: no error")
+	}
+	h.presentAs(owner)
+	for _, ids := range [][2]int{{int(owner.UID), int(owner.GID)}, {-1, -1}, {int(owner.UID), -1}} {
+		if err := c.Chown(p, ids[0], ids[1]); err != nil {
+			t.Fatalf("SETSTAT chown %v: %v", ids, err)
+		}
+	}
+	for _, ids := range [][2]int{{0, 0}, {int(owner.UID), 0}, {-1, int(owner.GID) + 1}} {
+		if err := c.Chown(p, ids[0], ids[1]); err == nil {
+			t.Fatalf("SETSTAT chown %v: no error", ids)
+		}
+	}
+	f, err := c.OpenFile(p, os.O_WRONLY)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Chown(int(owner.UID), int(owner.GID)); err != nil {
+		t.Fatalf("FSETSTAT chown: %v", err)
+	}
+	if err := f.Chown(0, 0); err == nil {
+		t.Fatal("FSETSTAT chown 0:0: no error")
+	}
+	f.Close()
+	// 与权限同时设置时权限照常生效：去掉属主写位即只读属性。
+	if err := h.Filecmd(ownerSetstat(p, owner.UID, owner.GID, 0o444)); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(p); err != nil || fi.Mode().Perm()&0o200 != 0 {
+		t.Fatalf("mode: %v, %v", fi, err)
+	}
+	// 恢复可写，TempDir 清理才能删除它。
+	if err := h.Filecmd(ownerSetstat(p, unchangedID, unchangedID, 0o644)); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Filecmd(ownerSetstat(p, 0, owner.GID, 0o444)); err == nil {
+		t.Fatal("SETSTAT to uid 0 with mode: no error")
+	}
+	if err := c.Chown(filepath.Join(root, ".git", "config"), int(owner.UID), int(owner.GID)); err == nil {
+		t.Fatal("chown under a read-only name succeeded")
+	}
+	assertUnchanged(t, root)
+}

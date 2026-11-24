@@ -1,0 +1,287 @@
+--- a/pkg/reversesshfs/rooted.go
++++ b/pkg/reversesshfs/rooted.go
+@@ -33,6 +33,7 @@ type rootedHandlers struct {
+ 	readonlyNames []string
+ 	foldedNames   []string // readonlyNames as FoldName gives them
+ 	guardRoot     string   // the served directory as Guard is told
++	owner         *Owner   // 客端看到的文件属主；nil 表示未呈现为其他身份
+ 	rootedSys
+ 
+ 	mu    sync.Mutex // protects relay
+@@ -81,6 +82,22 @@ func newRootedServerAt(rwc io.ReadWriteCloser, localPath, exportedPath string, r
+ 	return srv, h, nil
+ }
+ 
++// presentAs 记录客端挂载时把文件呈现成的属主（sshfs -o uid=,gid=）。
++func (h *rootedHandlers) presentAs(o Owner) { h.owner = &o }
++
++// unchangedID 是 SFTP 中 UID 或 GID 的 -1：保持不变。
++const unchangedID = ^uint32(0)
++
++// keepsOwner 报告 chown 请求的 UID 与 GID 是否各自等于呈现属主或为 -1。客端只是把文件
++// 交给它本来看到的属主，宿主上的属主无需改变，chown 可以跳过。其他 ID 不在此列，照旧处理。
++func (h *rootedHandlers) keepsOwner(attrs *sftp.FileStat) bool {
++	if h.owner == nil || attrs == nil {
++		return false
++	}
++	return (attrs.UID == h.owner.UID || attrs.UID == unchangedID) &&
++		(attrs.GID == h.owner.GID || attrs.GID == unchangedID)
++}
++
+ func (h *rootedHandlers) Close() error {
+ 	return errors.Join(h.root.Close(), h.rootedSys.close())
+ }
+--- a/pkg/reversesshfs/rooted_others.go
++++ b/pkg/reversesshfs/rooted_others.go
+@@ -17,4 +17,6 @@ func newRootedServer(io.ReadWriteCloser, string, bool, []string) (*sftp.RequestS
+ 
+ func (*rootedHandlers) Close() error { return nil }
+ 
++func (*rootedHandlers) presentAs(Owner) {}
++
+ func (*rootedHandlers) expectRemove(string) bool { return false }
+--- a/pkg/reversesshfs/rooted_test.go
++++ b/pkg/reversesshfs/rooted_test.go
+@@ -3,6 +3,7 @@
+ package reversesshfs
+ 
+ import (
++	"encoding/binary"
+ 	"fmt"
+ 	"io"
+ 	"os"
+@@ -75,6 +76,14 @@ func setupRootedHandlers(t *testing.T, readonly bool) (*sftp.Client, string, *ro
+ 	return client, root, h
+ }
+ 
++// ownerSetstat 构造同时设置属主与权限的 SETSTAT 请求（SSH_FILEXFER_ATTR_UIDGID|PERMISSIONS）。
++func ownerSetstat(p string, uid, gid, mode uint32) *sftp.Request {
++	r := sftp.NewRequest("Setstat", p)
++	r.Flags = 0x2 | 0x4
++	r.Attrs = binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, uid), gid), mode)
++	return r
++}
++
+ func assertUnchanged(t *testing.T, root string) {
+ 	t.Helper()
+ 	fi, err := os.Lstat(filepath.Join(root, ".git"))
+--- a/pkg/reversesshfs/rooted_unix.go
++++ b/pkg/reversesshfs/rooted_unix.go
+@@ -275,7 +275,7 @@ func (h *rootedHandlers) setstat(r *sftp.Request) error {
+ 			return &os.PathError{Op: "chmod", Path: r.Filepath, Err: err}
+ 		}
+ 	}
+-	if flags.UidGid {
++	if flags.UidGid && !h.keepsOwner(attrs) {
+ 		if err := unix.Fchownat(dirfd, base, int(attrs.UID), int(attrs.GID), unix.AT_SYMLINK_NOFOLLOW); err != nil {
+ 			return &os.PathError{Op: "chown", Path: r.Filepath, Err: err}
+ 		}
+@@ -310,7 +310,7 @@ func (h *rootedHandlers) fsetstat(f *os.File, r *sftp.Request) error {
+ 			return &os.PathError{Op: "chmod", Path: f.Name(), Err: err}
+ 		}
+ 	}
+-	if flags.UidGid {
++	if flags.UidGid && !h.keepsOwner(attrs) {
+ 		if err := unix.Fchown(fd, int(attrs.UID), int(attrs.GID)); err != nil {
+ 			return &os.PathError{Op: "chown", Path: f.Name(), Err: err}
+ 		}
+--- a/pkg/reversesshfs/rooted_unix_test.go
++++ b/pkg/reversesshfs/rooted_unix_test.go
+@@ -6,6 +6,7 @@ import (
+ 	"errors"
+ 	"os"
+ 	"path/filepath"
++	"syscall"
+ 	"testing"
+ 	"time"
+ 
+@@ -70,3 +71,86 @@ func TestRenameNoReplace(t *testing.T) {
+ 		t.Fatalf("b: %q, %v", b, err)
+ 	}
+ }
++
++// 客机看到的属主与宿主不同：把文件 chown 给呈现属主自身或 -1 时宿主属主不变并成功，其他 ID 仍报错。
++func TestRootedChownPresentedOwner(t *testing.T) {
++	if os.Geteuid() == 0 {
++		t.Skip("root 可以 chown 给任何 ID，无法验证错误照旧返回")
++	}
++	c, root, h := setupRootedHandlers(t, false)
++	uid, gid := uint32(os.Getuid()), uint32(os.Getgid())
++	// 宿主普通用户无权把文件交给这组 ID：不跳过就会失败。
++	owner := Owner{UID: uid + 1000, GID: gid + 1000}
++	h.presentAs(owner)
++	p := filepath.Join(root, "src", "main.go")
++	hostOwner := func() (uint32, uint32) {
++		t.Helper()
++		fi, err := os.Lstat(p)
++		if err != nil {
++			t.Fatal(err)
++		}
++		st := fi.Sys().(*syscall.Stat_t)
++		return st.Uid, st.Gid
++	}
++	assertHostOwner := func() {
++		t.Helper()
++		if u, g := hostOwner(); u != uid || g != gid {
++			t.Fatalf("宿主属主变成了 %d:%d", u, g)
++		}
++	}
++	for _, ids := range [][2]int{{int(owner.UID), int(owner.GID)}, {-1, -1}, {int(owner.UID), -1}, {-1, int(owner.GID)}} {
++		if err := c.Chown(p, ids[0], ids[1]); err != nil {
++			t.Fatalf("SETSTAT chown %v: %v", ids, err)
++		}
++	}
++	assertHostOwner()
++	for _, ids := range [][2]int{{0, 0}, {int(owner.UID) + 1, int(owner.GID)}, {int(owner.UID), 0}, {-1, int(owner.GID) + 1}} {
++		if err := c.Chown(p, ids[0], ids[1]); err == nil {
++			t.Fatalf("SETSTAT chown %v: no error", ids)
++		}
++	}
++	assertHostOwner()
++
++	// FSETSTAT 同样处理。
++	f, err := c.OpenFile(p, os.O_WRONLY)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer f.Close()
++	if err := f.Chown(int(owner.UID), int(owner.GID)); err != nil {
++		t.Fatalf("FSETSTAT chown: %v", err)
++	}
++	if err := f.Chown(0, 0); err == nil {
++		t.Fatal("FSETSTAT chown 0:0: no error")
++	}
++	assertHostOwner()
++
++	// 与权限同时设置时，权限照常生效；改成其他 ID 时仍报错。
++	if err := h.Filecmd(ownerSetstat(p, owner.UID, owner.GID, 0o600)); err != nil {
++		t.Fatal(err)
++	}
++	if fi, err := os.Lstat(p); err != nil || fi.Mode().Perm() != 0o600 {
++		t.Fatalf("mode: %v, %v", fi, err)
++	}
++	if err := h.Filecmd(ownerSetstat(p, 0, owner.GID, 0o644)); err == nil {
++		t.Fatal("SETSTAT to uid 0 with mode: no error")
++	}
++	assertHostOwner()
++
++	// 受限根目录的检查不变：只读名下的文件仍被拒绝。
++	if err := c.Chown(filepath.Join(root, ".git", "config"), int(owner.UID), int(owner.GID)); err == nil {
++		t.Fatal("chown under a read-only name succeeded")
++	}
++	assertUnchanged(t, root)
++}
++
++// 未告知呈现属主的服务器照旧把 chown 交给宿主。
++func TestRootedChownWithoutPresentedOwner(t *testing.T) {
++	if os.Geteuid() == 0 {
++		t.Skip("root 可以 chown 给任何 ID")
++	}
++	c, root := setupRooted(t, false)
++	if err := c.Chown(filepath.Join(root, "src", "main.go"), os.Getuid()+1000, os.Getgid()+1000); err == nil {
++		t.Fatal("chown to another ID succeeded")
++	}
++}
+--- a/pkg/reversesshfs/rooted_windows.go
++++ b/pkg/reversesshfs/rooted_windows.go
+@@ -552,7 +552,8 @@ type fileBasicInformation struct {
+ 
+ func (h *rootedHandlers) setstat(r *sftp.Request) error {
+ 	flags := r.AttrFlags()
+-	if flags.UidGid {
++	// Windows 无法 chown；只要求保持呈现属主时不改属主，其余属性照常设置。
++	if flags.UidGid && !h.keepsOwner(r.Attributes()) {
+ 		return &os.PathError{Op: "chown", Path: r.Filepath, Err: syscall.EWINDOWS}
+ 	}
+ 	access := uint32(windows.FILE_READ_ATTRIBUTES | windows.FILE_WRITE_ATTRIBUTES)
+@@ -570,7 +571,7 @@ func (h *rootedHandlers) setstat(r *sftp.Request) error {
+ 
+ // fsetstat applies a FSETSTAT to the file f of the handle.
+ func (h *rootedHandlers) fsetstat(f *os.File, r *sftp.Request) error {
+-	if r.AttrFlags().UidGid {
++	if r.AttrFlags().UidGid && !h.keepsOwner(r.Attributes()) {
+ 		return &os.PathError{Op: "chown", Path: f.Name(), Err: syscall.EWINDOWS}
+ 	}
+ 	return setstatHandle(windows.Handle(f.Fd()), r)
+--- a/pkg/reversesshfs/rooted_windows_test.go
++++ b/pkg/reversesshfs/rooted_windows_test.go
+@@ -182,3 +182,54 @@ func TestRootedSymlinkUnsupported(t *testing.T) {
+ 		t.Fatal("the symlink was created")
+ 	}
+ }
++
++// Windows 无法 chown：把属主设为呈现属主自身或 -1 时视为不变并成功，其他 ID 仍报错。
++func TestRootedChownPresentedOwner(t *testing.T) {
++	c, root, h := setupRootedHandlers(t, false)
++	owner := Owner{UID: 1000, GID: 1000}
++	p := filepath.Join(root, "src", "main.go")
++	// 未告知呈现属主时照旧报错。
++	if err := c.Chown(p, int(owner.UID), int(owner.GID)); err == nil {
++		t.Fatal("chown without a presented owner: no error")
++	}
++	h.presentAs(owner)
++	for _, ids := range [][2]int{{int(owner.UID), int(owner.GID)}, {-1, -1}, {int(owner.UID), -1}} {
++		if err := c.Chown(p, ids[0], ids[1]); err != nil {
++			t.Fatalf("SETSTAT chown %v: %v", ids, err)
++		}
++	}
++	for _, ids := range [][2]int{{0, 0}, {int(owner.UID), 0}, {-1, int(owner.GID) + 1}} {
++		if err := c.Chown(p, ids[0], ids[1]); err == nil {
++			t.Fatalf("SETSTAT chown %v: no error", ids)
++		}
++	}
++	f, err := c.OpenFile(p, os.O_WRONLY)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := f.Chown(int(owner.UID), int(owner.GID)); err != nil {
++		t.Fatalf("FSETSTAT chown: %v", err)
++	}
++	if err := f.Chown(0, 0); err == nil {
++		t.Fatal("FSETSTAT chown 0:0: no error")
++	}
++	f.Close()
++	// 与权限同时设置时权限照常生效：去掉属主写位即只读属性。
++	if err := h.Filecmd(ownerSetstat(p, owner.UID, owner.GID, 0o444)); err != nil {
++		t.Fatal(err)
++	}
++	if fi, err := os.Lstat(p); err != nil || fi.Mode().Perm()&0o200 != 0 {
++		t.Fatalf("mode: %v, %v", fi, err)
++	}
++	// 恢复可写，TempDir 清理才能删除它。
++	if err := h.Filecmd(ownerSetstat(p, unchangedID, unchangedID, 0o644)); err != nil {
++		t.Fatal(err)
++	}
++	if err := h.Filecmd(ownerSetstat(p, 0, owner.GID, 0o444)); err == nil {
++		t.Fatal("SETSTAT to uid 0 with mode: no error")
++	}
++	if err := c.Chown(filepath.Join(root, ".git", "config"), int(owner.UID), int(owner.GID)); err == nil {
++		t.Fatal("chown under a read-only name succeeded")
++	}
++	assertUnchanged(t, root)
++}
+--- a/pkg/reversesshfs/serve.go
++++ b/pkg/reversesshfs/serve.go
+@@ -14,6 +14,22 @@ func ServeConfined(transport io.ReadWriteCloser, localPath string, readonly bool
+ 	return server.Serve()
+ }
+ 
++// Owner 是客端挂载时文件呈现成的属主，即 sshfs 的 -o uid=,gid=。
++type Owner struct{ UID, GID uint32 }
++
++// ServeConfinedAs 与 ServeConfined 相同，但客端把文件呈现为 owner 所有：把属主设为 owner
++// 自身（或 -1 不变）的 chown 视为无需变更并成功返回，其余属性照常设置；改成其他 ID 仍照旧报错。
++func ServeConfinedAs(transport io.ReadWriteCloser, localPath string, owner Owner, readonly bool, readonlyNames []string) error {
++	server, root, err := newRootedServer(transport, localPath, readonly, readonlyNames)
++	if err != nil {
++		return err
++	}
++	root.presentAs(owner)
++	defer root.Close()
++	defer server.Close()
++	return server.Serve()
++}
++
+ // ServeConfinedVirtual exposes the selected directory at / without disclosing
+ // its host path. All reads, writes and Guard decisions use the same confined
+ // root and metadata protections as ServeConfined.
