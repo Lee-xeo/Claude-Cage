@@ -51,7 +51,7 @@ jobs:
           node scripts/check-repository-files.mjs
           node scripts/check-script-syntax.mjs
           node scripts/check-version.mjs
-          node --test scripts/check-script-syntax.test.mjs scripts/release-version.test.mjs scripts/release-control.test.mjs scripts/prepare-release-assets.test.mjs scripts/esigner.test.mjs scripts/contribution-invite.test.mjs scripts/issue-system-labels.test.mjs scripts/fetch-build-artifact.test.mjs scripts/is-main-module.test.mjs scripts/bundle-qemu-sources.test.mjs scripts/agent-bootstrap.test.mjs
+          node --test scripts/check-script-syntax.test.mjs scripts/release-version.test.mjs scripts/release-control.test.mjs scripts/prepare-release-assets.test.mjs scripts/esigner.test.mjs scripts/contribution-invite.test.mjs scripts/issue-system-labels.test.mjs scripts/fetch-build-artifact.test.mjs scripts/is-main-module.test.mjs scripts/bundle-qemu-sources.test.mjs scripts/agent-bootstrap.test.mjs scripts/macos-build-env.test.mjs
           pwsh -NoProfile -File scripts/test-windows-signing.ps1
       - name: Validate workflow syntax
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -color
