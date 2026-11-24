@@ -66,10 +66,10 @@ func ValidSettingValue(value string) bool {
 
 // settingsSince and floatingViewsSince are the first application version that
 // reads settings and view presentation fields; older ones reject manifests that
-// have them.
+// have them. 0.2.0 shipped before view presentation existed.
 var (
 	settingsSince      = [3]int{0, 2, 0}
-	floatingViewsSince = [3]int{0, 2, 0}
+	floatingViewsSince = [3]int{0, 2, 1}
 )
 
 var settingEnv = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)

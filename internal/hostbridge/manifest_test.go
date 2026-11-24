@@ -114,18 +114,18 @@ func TestManifestSecondFormat(t *testing.T) {
 		"contributes":{"views":[{"id":"notes","title":"Notes","entry":"index.html"}]}}`)); err != nil {
 		t.Errorf("static page: %v", err)
 	}
-	// A floating view declares presentation: "floating" with optional dimensions and needs >=0.2.0.
-	floating, err := parseManifest([]byte(`{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.0"},"kind":"guest",
+	// A floating view declares presentation: "floating" with optional dimensions and needs >=0.2.1.
+	floating, err := parseManifest([]byte(`{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.1"},"kind":"guest",
 		"contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating","width":312,"height":260}]}}`))
 	if err != nil || floating.Contributes.Views[0].Presentation != ViewPresentationFloating || floating.Contributes.Views[0].Width != 312 || floating.Contributes.Views[0].Height != 260 {
 		t.Errorf("floating view: %+v %v", floating, err)
 	}
 	for name, raw := range map[string]string{
-		"floating needs 0.2.0":      `{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.1.8"},"kind":"guest","contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating"}]}}`,
-		"unknown presentation":      `{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.0"},"kind":"guest","contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"modal"}]}}`,
+		"floating needs 0.2.1":      `{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.0"},"kind":"guest","contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating"}]}}`,
+		"unknown presentation":      `{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.1"},"kind":"guest","contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"modal"}]}}`,
 		"width on page view":        `{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.0"},"kind":"guest","contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","width":320}]}}`,
-		"width too small":           `{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.0"},"kind":"guest","contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating","width":120}]}}`,
-		"height too large":          `{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.0"},"kind":"guest","contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating","height":900}]}}`,
+		"width too small":           `{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.1"},"kind":"guest","contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating","width":120}]}}`,
+		"height too large":          `{"name":"hud","version":"1","description":"A floating view.","permissions":[],"engines":{"cage":">=0.2.1"},"kind":"guest","contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating","height":900}]}}`,
 	} {
 		if _, err := parseManifest([]byte(raw)); err == nil {
 			t.Errorf("%s: accepted", name)
