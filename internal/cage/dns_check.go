@@ -9,8 +9,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/miekg/dns"
@@ -127,7 +129,19 @@ func (e *Egress) checkOneDNSEndpoint(ctx context.Context, client *http.Client, e
 	attemptCtx, cancel := context.WithTimeout(ctx, dnsCheckEndpointTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, endpoint, bytes.NewReader(wire))
+	var tlsStarted, tlsDone atomic.Bool
+	traceCtx := httptrace.WithClientTrace(attemptCtx, &httptrace.ClientTrace{
+		TLSHandshakeStart: func() {
+			tlsStarted.Store(true)
+		},
+		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
+			if err == nil {
+				tlsDone.Store(true)
+			}
+		},
+	})
+
+	req, err := http.NewRequestWithContext(traceCtx, http.MethodPost, endpoint, bytes.NewReader(wire))
 	if err != nil {
 		item.Status = DNSCheckConnection
 		item.Detail = "connection"
@@ -140,7 +154,7 @@ func (e *Egress) checkOneDNSEndpoint(ctx context.Context, client *http.Client, e
 	resp, err := client.Do(req)
 	if err != nil {
 		item.Status = DNSCheckConnection
-		item.Detail = classifyDNSCheckConnectionError(attemptCtx, err)
+		item.Detail = classifyDNSCheckConnectionError(attemptCtx, err, tlsStarted.Load() && !tlsDone.Load())
 		item.DurationMS = time.Since(started).Milliseconds()
 		return item
 	}
@@ -157,7 +171,7 @@ func (e *Egress) checkOneDNSEndpoint(ctx context.Context, client *http.Client, e
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if err != nil {
 		item.Status = DNSCheckConnection
-		item.Detail = classifyDNSCheckConnectionError(attemptCtx, err)
+		item.Detail = classifyDNSCheckConnectionError(attemptCtx, err, false)
 		item.DurationMS = time.Since(started).Milliseconds()
 		return item
 	}
@@ -213,10 +227,13 @@ func (e *Egress) checkOneDNSEndpoint(ctx context.Context, client *http.Client, e
 	return item
 }
 
-func classifyDNSCheckConnectionError(ctx context.Context, err error) string {
+func classifyDNSCheckConnectionError(ctx context.Context, err error, tlsHandshake bool) string {
 	var netErr net.Error
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
 		return "timeout"
+	}
+	if tlsHandshake {
+		return "tls"
 	}
 	var recordErr tls.RecordHeaderError
 	var alertErr tls.AlertError

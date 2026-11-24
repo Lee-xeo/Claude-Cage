@@ -163,8 +163,8 @@ func TestCheckDNSEndpointsClassifiesEachEndpointThroughProxy(t *testing.T) {
 		t.Fatalf("expected OK=false during proxy outage, got %+v", downRes)
 	}
 	for i, ep := range downRes.Endpoints {
-		if ep.Status != DNSCheckConnection {
-			t.Errorf("outage endpoint[%d]: status=%q want=%q", i, ep.Status, DNSCheckConnection)
+		if ep.Status != DNSCheckConnection || ep.Detail != "connection" {
+			t.Errorf("outage endpoint[%d]: status=%q detail=%q want=connection/connection", i, ep.Status, ep.Detail)
 		}
 	}
 }
