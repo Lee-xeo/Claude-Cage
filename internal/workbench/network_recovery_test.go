@@ -231,6 +231,35 @@ func TestNetworkRecoveryHonorsInterveningChanges(t *testing.T) {
 	}
 }
 
+func TestObsoleteNetworkRecoveryLeavesNewerRetryScheduled(t *testing.T) {
+	for _, change := range []string{"reclosed", "resumed"} {
+		t.Run(change, func(t *testing.T) {
+			s, gate := failedMonitoringServer(t)
+			expected := s.recovery
+			switch change {
+			case "reclosed":
+				gate.Close("运行监测未能续期")
+			case "resumed":
+				s.mu.Lock()
+				s.safety.pauseVersion++
+				s.mu.Unlock()
+			}
+			s.scheduleNetworkRecovery(gate.Status())
+			newer := s.recovery
+			if newer.RunID == "" || newer == expected {
+				t.Fatal("newer retry was not scheduled", newer)
+			}
+			err := s.runNetworkRecovery(expected, func() error { t.Fatal("obsolete recovery ran"); return nil })
+			if !errors.Is(err, context.Canceled) {
+				t.Fatal(err)
+			}
+			if s.recovery != newer {
+				t.Fatal("obsolete recovery dropped the newer retry", s.recovery)
+			}
+		})
+	}
+}
+
 func TestNetworkRecoverySuccessfulFullCheckClearsRetry(t *testing.T) {
 	s, gate := failedMonitoringServer(t)
 	expected := s.recovery
