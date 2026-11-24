@@ -179,15 +179,15 @@ os.execv(sys.executable,[sys.executable,"-I",str(p),*sys.argv[1:]])
 	return shellescape.QuoteCommand([]string{"python3", "-I", "-c", bootstrap, mode, argument})
 }
 
-func (s *Server) runCLIChannel(ctx context.Context, mode string, input any, output any) error {
+func (s *Server) runCLIChannel(parent context.Context, mode string, input any, output any) error {
 	started := time.Now()
 	epoch, ok := s.account.access()
 	if !ok {
 		return errMobileLocked
 	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	stop := context.AfterFunc(epoch, cancel)
-	defer func() { stop(); cancel() }()
+	baseCtx, baseCancel := context.WithCancel(parent)
+	stop := context.AfterFunc(epoch, baseCancel)
+	defer func() { stop(); baseCancel() }()
 	data, err := json.Marshal(input)
 	if err != nil {
 		return err
@@ -199,7 +199,9 @@ func (s *Server) runCLIChannel(ctx context.Context, mode string, input any, outp
 	exit := -1
 	transportLost := false
 	sent := false
+	var lastCtxErr error
 	for attempt := 0; ; attempt++ {
+		ctx, cancel := context.WithTimeout(baseCtx, 15*time.Second)
 		result, stderr = bytes.Buffer{}, fileControlStderr{}
 		exit, transportLost, sent = -1, false, false
 		// Session views and discovery run every few seconds for each terminal.
@@ -231,18 +233,20 @@ func (s *Server) runCLIChannel(ctx context.Context, mode string, input any, outp
 				transportLost = exit == 255
 			}
 		}
+		lastCtxErr = ctx.Err()
+		cancel()
 		// A fresh or rebuilt guest lacks this helper version: install it once.
 		if attempt > 0 || err == nil || exit != cliChannelMissing {
 			break
 		}
-		if err = s.installCLIChannel(ctx); err != nil {
+		if err = s.installCLIChannel(baseCtx); err != nil {
 			return err
 		}
 	}
 	if err != nil || json.Unmarshal(result.Bytes(), output) != nil {
 		failure := "guest_response"
 		message := "电脑未能读取会话状态，聊天记录已保留。"
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if errors.Is(lastCtxErr, context.DeadlineExceeded) {
 			failure, message = "timeout", "电脑读取运行环境超时，暂时无法获取会话状态。"
 		} else if err != nil {
 			failure = "guest_command"
@@ -252,7 +256,7 @@ func (s *Server) runCLIChannel(ctx context.Context, mode string, input any, outp
 		}
 		// Record transport and protocol evidence without terminal output,
 		// prompts, account paths or raw SSH/Python error messages.
-		_ = diagnostics.New(s.profile).Record("warn", "cli-channel", fmt.Sprintf("operation=%s failure=%s exit=%d elapsed_ms=%d context=%v output_bytes=%d stderr_bytes=%d shared=%t", mode, failure, exit, time.Since(started).Milliseconds(), ctx.Err(), result.Len(), len(stderr.data), sent))
+		_ = diagnostics.New(s.profile).Record("warn", "cli-channel", fmt.Sprintf("operation=%s failure=%s exit=%d elapsed_ms=%d context=%v output_bytes=%d stderr_bytes=%d shared=%t", mode, failure, exit, time.Since(started).Milliseconds(), lastCtxErr, result.Len(), len(stderr.data), sent))
 		return errors.New(message)
 	}
 	return nil

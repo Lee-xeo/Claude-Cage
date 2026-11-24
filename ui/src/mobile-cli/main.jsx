@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Archive, ArrowLeft, ArrowUp, LoaderCircle, Monitor, RefreshCw, Settings, Square, Terminal } from "lucide-react";
+import { Archive, ArrowLeft, ArrowUp, LoaderCircle, Monitor, RefreshCw, Settings, Square, Terminal, X } from "lucide-react";
 import { RemoteDisplay } from "./remote-browser";
 import { CodeNavigation, ProjectTree, WorkspaceDrawer, workspaceTools } from "./workspace-drawer";
 import { deviceCommand } from "./device-navigation.mjs";
 import cageLogo from "../logo.png";
 import { accessDenied, request, sessionPath } from "./transport.mjs";
 import { recoverPendingMessage, retryableSessionError, sessionFailureMessage, sessionRetryDelay, sessionRetryLimit } from "./session-recovery.mjs";
+import { activeTurn as active, activeTurnIdForQueue, canDrainQueue, canSendImmediately, dequeueMessage, enqueueMessage, reconcileDispatchError, reconcileQueueWithSnapshot, removeQueuedMessage } from "./message-queue.mjs";
 import { SessionActionDialog, sortSessions } from "./session-row";
 import { ArchivedSessions } from "../cli-sessions";
 import { SessionAccount } from "../session-account";
@@ -19,7 +20,6 @@ const labels = {
   running: "正在运行", stopping: "正在停止", completed: "已完成",
   failed: "运行失败", stopped: "已停止", interrupted: "运行中断",
 };
-const active = (status) => status === "running" || status === "stopping" || status === "queued";
 const nativePhone = navigator.userAgent.includes("CageMobile/1");
 const phoneWorkspace = nativePhone || location.pathname === "/";
 const dateFormat = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -308,6 +308,10 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
   const [sendProgress, setSendProgress] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [draft, setDraft] = useState(() => drafts.get(id)?.text || "");
+  const [queue, setQueue] = useState(() => drafts.get(id)?.queue || []);
+  const [queuePaused, setQueuePaused] = useState(() => Boolean(drafts.get(id)?.paused && drafts.get(id)?.queue?.length));
+  const [waitingSync, setWaitingSync] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState(() => drafts.get(id)?.pending || null);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(() => !!drafts.get(id)?.pending);
   const [reload, setReload] = useState(0);
@@ -316,6 +320,11 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
   const readFailures = useRef(0);
   const live = useRef(true);
   const latest = useRef(null);
+  const draftRef = useRef(draft);
+  const queueRef = useRef(queue);
+  const queuePausedRef = useRef(queuePaused);
+  const waitingTurnIdRef = useRef(drafts.get(id)?.queue?.length && !drafts.get(id)?.paused ? drafts.get(id)?.waitingTurnId || null : null);
+  const conflictIdRef = useRef(null);
   const submission = useRef(drafts.get(id)?.pending || null);
   const actionBusy = useRef(false);
   const transcript = useRef(null);
@@ -324,6 +333,16 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
   const follow = useRef(true);
   const last = session?.turns?.at(-1);
   const running = active(last?.status);
+  const persistDraftState = useCallback((nextText, nextPending, nextQueue, nextPaused, nextWaitingTurnId) => {
+    const queueList = nextQueue || [];
+    const paused = Boolean(nextPaused && queueList.length > 0);
+    const waitingTurnId = queueList.length > 0 && !paused ? nextWaitingTurnId || null : null;
+    if (nextText || nextPending || queueList.length > 0) {
+      drafts.set(id, { text: nextText, pending: nextPending || null, queue: queueList, paused, waitingTurnId });
+    } else {
+      drafts.delete(id);
+    }
+  }, [id, drafts]);
   useEffect(() => {
     live.current = true;
     return () => { live.current = false; };
@@ -332,15 +351,47 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
     if (!live.current || snapshot?.id !== id) return;
     const current = latest.current;
     if (current && snapshot.generation !== current.generation && expectedGeneration !== current.generation) return;
-    if (submission.current && (snapshot.acknowledged_request_id === submission.current.request_id || snapshot.turns?.some((turn) => turn.id === submission.current.request_id))) {
-      drafts.delete(id); submission.current = null; setUncertain(false); setDraft(""); setActionError(""); setSendProgress("");
+    const stale = Boolean(current && snapshot.generation === current.generation && snapshot.revision < current.revision);
+    const acked = Boolean(submission.current && (snapshot.acknowledged_request_id === submission.current.request_id || snapshot.turns?.some((turn) => turn.id === submission.current.request_id)));
+    if (acked) {
+      submission.current = null;
+      conflictIdRef.current = null;
+      setPendingMessage(null);
+      setUncertain(false); setActionError(""); setSendProgress("");
     }
-    if (current && snapshot.generation === current.generation && snapshot.revision < current.revision) return;
+    let nextPaused = queuePausedRef.current;
+    let nextWaitingTurnId = waitingTurnIdRef.current;
+    let queueStateChanged = false;
+    if (!stale) {
+      const reconciled = reconcileQueueWithSnapshot({
+        prevTurn: current?.turns?.at(-1) || null,
+        snapshot,
+        queueLength: queueRef.current.length,
+        paused: queuePausedRef.current,
+        waitingTurnId: waitingTurnIdRef.current,
+        pendingRequestId: submission.current?.request_id || null,
+      });
+      if (reconciled.paused !== queuePausedRef.current) {
+        nextPaused = reconciled.paused;
+        queuePausedRef.current = reconciled.paused;
+        setQueuePaused(reconciled.paused);
+        queueStateChanged = true;
+      }
+      if (reconciled.waitingTurnId !== waitingTurnIdRef.current) {
+        nextWaitingTurnId = reconciled.waitingTurnId;
+        waitingTurnIdRef.current = reconciled.waitingTurnId;
+        queueStateChanged = true;
+      }
+    }
+    if (acked || queueStateChanged) {
+      persistDraftState(draftRef.current, submission.current, queueRef.current, nextPaused, nextWaitingTurnId);
+    }
+    if (stale) return;
     latest.current = snapshot; setSession(snapshot); onSnapshot(snapshot);
     const pending = snapshot.turns?.at(-1)?.approval?.id;
     if (checkApproval.current && pending !== checkApproval.current.id) checkApproval.current = null;
     setApprovalFeedback((old) => old?.id === pending ? old : null);
-  }, [id, drafts, onSnapshot]);
+  }, [id, persistDraftState, onSnapshot]);
   const fetchSession = useCallback(async (signal, incremental) => {
     const checking = checkApproval.current;
     const generation = latest.current?.generation;
@@ -354,6 +405,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
         checkApproval.current = null;
         setApprovalFeedback({ id: checking.id, message: "主机仍在等待这次审批。请核对参数后再次选择。" });
       }
+      setWaitingSync(false);
       setReadError("");
       readFailures.current = 0; setReadProgress("");
       return active(latest.current?.turns?.at(-1)?.status) ? 1000 : 4000;
@@ -449,39 +501,158 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
   }, [id, needsConnection, accept, onDenied, reload]);
   useEffect(() => {
     if (follow.current && transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight;
-  }, [session?.revision]);
+  }, [session?.revision, queue.length, pendingMessage?.request_id]);
   useEffect(() => {
     const input = composerInput.current;
     if (!input) return;
     input.style.height = "24px";
     input.style.height = Math.min(input.scrollHeight, 144) + "px";
   }, [draft]);
-  const send = async (event) => {
-    event?.preventDefault();
-    if (actionBusy.current || confirming || readProgress || readError || running || !ready || !session || session.single_turn || session.can_send === false || !draft.trim()) return;
+  const dispatchMessage = useCallback(async (item) => {
+    if (actionBusy.current) return;
     actionBusy.current = true; setBusy(true); setActionError("");
     setSendProgress("正在发送消息…");
     try {
       follow.current = true;
       const generation = latest.current?.generation;
-      submission.current ||= { request_id: crypto.randomUUID(), text: draft.trim() };
-      drafts.set(id, {text:draft, pending:submission.current});
-      const snapshot = await request(sessionPath(id) + "/messages", { body: submission.current });
-      if (live.current) { accept(snapshot, generation); setReload(n => n + 1); }
+      submission.current = item;
+      setPendingMessage(item);
+      if (queueRef.current.length > 0 && !queuePausedRef.current) {
+        waitingTurnIdRef.current = item.request_id;
+      }
+      persistDraftState(draftRef.current, item, queueRef.current, queuePausedRef.current, waitingTurnIdRef.current);
+      const snapshot = await request(sessionPath(id) + "/messages", { body: item });
+      if (live.current) { conflictIdRef.current = null; accept(snapshot, generation); setReload(n => n + 1); }
     } catch (error) {
       if (!live.current) return;
       if (accessDenied(error)) onDenied(error);
       else if (submission.current) {
-        const unknown = !error.status || error.status >= 500;
-        if (!unknown) {submission.current = null; drafts.set(id, {text:draft});}
-        setUncertain(unknown); setActionError(unknown ? "" : error.message);
-        if (!unknown) setSendProgress("");
-        if (unknown) setReload((n) => n + 1);
+        const next = reconcileDispatchError({
+          error,
+          item,
+          draft: draftRef.current,
+          queue: queueRef.current,
+          previousConflictId: conflictIdRef.current,
+        });
+        conflictIdRef.current = next.conflictId;
+        if (!next.keepPending) {
+          submission.current = null;
+          setPendingMessage(null);
+        }
+        if (next.draft !== draftRef.current) {
+          draftRef.current = next.draft;
+          setDraft(next.draft);
+        }
+        if (next.queue !== queueRef.current) {
+          queueRef.current = next.queue;
+          setQueue(next.queue);
+        }
+        const nextPaused = next.paused || queuePausedRef.current;
+        if (next.paused && !queuePausedRef.current) {
+          queuePausedRef.current = true;
+          setQueuePaused(true);
+        }
+        if (nextPaused || queueRef.current.length === 0) {
+          waitingTurnIdRef.current = null;
+        } else if (next.keepPending) {
+          waitingTurnIdRef.current = item.request_id;
+        } else {
+          waitingTurnIdRef.current = activeTurnIdForQueue(latest.current, submission.current);
+        }
+        setWaitingSync(next.waitingSync);
+        persistDraftState(draftRef.current, submission.current, queueRef.current, nextPaused, waitingTurnIdRef.current);
+        setUncertain(next.uncertain);
+        setActionError(next.actionError);
+        if (!next.uncertain) setSendProgress("");
+        if (next.reload) setReload((n) => n + 1);
       }
     } finally { actionBusy.current = false; if (live.current) setBusy(false); }
+  }, [id, accept, onDenied, persistDraftState]);
+  const removeQueued = useCallback((requestId) => {
+    const nextQueue = removeQueuedMessage(queueRef.current, requestId);
+    queueRef.current = nextQueue;
+    setQueue(nextQueue);
+    let nextPaused = queuePausedRef.current;
+    if (nextQueue.length === 0) {
+      nextPaused = false;
+      queuePausedRef.current = false;
+      waitingTurnIdRef.current = null;
+      conflictIdRef.current = null;
+      setQueuePaused(false);
+      setWaitingSync(false);
+    }
+    persistDraftState(draftRef.current, submission.current, nextQueue, nextPaused, waitingTurnIdRef.current);
+  }, [persistDraftState]);
+  const resumeQueue = useCallback(() => {
+    conflictIdRef.current = null;
+    queuePausedRef.current = false;
+    waitingTurnIdRef.current = queueRef.current.length > 0 ? activeTurnIdForQueue(latest.current, submission.current) : null;
+    setQueuePaused(false);
+    setWaitingSync(false);
+    setActionError("");
+    persistDraftState(draftRef.current, submission.current, queueRef.current, false, waitingTurnIdRef.current);
+  }, [persistDraftState]);
+  useEffect(() => {
+    if (!canDrainQueue({
+      visible,
+      ready,
+      session,
+      running,
+      busy: busy || actionBusy.current,
+      confirming,
+      uncertain,
+      readProgress,
+      readError,
+      waitingSync,
+      queueLength: queue.length,
+      queuePaused,
+    })) return;
+    const { head, rest } = dequeueMessage(queueRef.current);
+    if (!head) return;
+    queueRef.current = rest;
+    setQueue(rest);
+    waitingTurnIdRef.current = rest.length > 0 ? head.request_id : null;
+    persistDraftState(draftRef.current, submission.current, rest, queuePausedRef.current, waitingTurnIdRef.current);
+    void dispatchMessage(head);
+  }, [visible, ready, session, running, busy, confirming, uncertain, readProgress, readError, waitingSync, queue, queuePaused, dispatchMessage, persistDraftState]);
+  const send = async (event) => {
+    event?.preventDefault();
+    const text = draft.trim();
+    if (!text || !ready || !session || session.single_turn || session.can_send === false) return;
+    const item = { request_id: crypto.randomUUID(), text };
+    draftRef.current = "";
+    setDraft("");
+    follow.current = true;
+    if (canSendImmediately({
+      running,
+      busy: actionBusy.current || busy,
+      confirming,
+      uncertain,
+      readProgress,
+      readError,
+      waitingSync,
+      queueLength: queueRef.current.length,
+      queuePaused: queuePausedRef.current,
+    })) {
+      await dispatchMessage(item);
+      return;
+    }
+    const nextQueue = enqueueMessage(queueRef.current, item);
+    queueRef.current = nextQueue;
+    setQueue(nextQueue);
+    if (!waitingTurnIdRef.current && !queuePausedRef.current) {
+      waitingTurnIdRef.current = activeTurnIdForQueue(latest.current, submission.current);
+    }
+    persistDraftState("", submission.current, nextQueue, queuePausedRef.current, waitingTurnIdRef.current);
   };
   const stop = async () => {
     if (actionBusy.current || last?.status !== "running") return;
+    if (queueRef.current.length > 0 && !queuePausedRef.current) {
+      queuePausedRef.current = true;
+      waitingTurnIdRef.current = null;
+      setQueuePaused(true);
+      persistDraftState(draftRef.current, submission.current, queueRef.current, true, null);
+    }
     actionBusy.current = true; setBusy(true); setActionError("");
     const generation = latest.current?.generation;
     try { accept(await request(sessionPath(id) + "/stop", { body: { request_id: last.id } }), generation); }
@@ -508,6 +679,18 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
       }
     } finally { actionBusy.current = false; if (live.current) setBusy(false); }
   };
+  const showPending = Boolean(pendingMessage && !session?.turns?.some((turn) => turn.id === pendingMessage.request_id));
+  const willQueue = !canSendImmediately({
+    running,
+    busy,
+    confirming,
+    uncertain,
+    readProgress,
+    readError,
+    waitingSync,
+    queueLength: queue.length,
+    queuePaused,
+  });
   return <>
     <section className="chat-header">
       <div className="title-line">{onBack && <button type="button" className="icon-button" aria-label="返回会话列表" onClick={onBack}><ArrowLeft size={18} /></button>}<h1>{session?.title || "Claude Code 会话"}</h1>{session && <Status value={last?.status} awaitingApproval={last?.status === "running" && last.approval} />}</div>
@@ -522,7 +705,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
       const box = e.currentTarget; follow.current = box.scrollHeight - box.scrollTop - box.clientHeight < 64;
     }}>
       {!session && !readError && <Empty icon={LoaderCircle} title="正在读取会话…" />}
-      {session && !session.turns?.length && <Empty icon={Terminal} title="发送第一条消息">Claude Code 会在所选项目中处理你的请求。</Empty>}
+      {session && !session.turns?.length && !showPending && !queue.length && <Empty icon={Terminal} title="发送第一条消息">Claude Code 会在所选项目中处理你的请求。</Empty>}
       <TranscriptContext.Provider value={transcriptContext}>{session?.turns?.map((turn) => <React.Fragment key={turn.id}>
         <article className="message user" aria-label="你的消息"><MessageBody text={turn.prompt} /></article>
         <article className="message" aria-label="回复">
@@ -537,23 +720,40 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
           {turn.denied_tools?.length > 0 && <div className="turn-tools">以下工具需要授权，本次调用已拒绝。<span>{turn.denied_tools.join("、")}</span></div>}
           {["failed", "interrupted", "stopped"].includes(turn.status) && <p className="note">{labels[turn.status]}</p>}
         </article>
-      </React.Fragment>)}</TranscriptContext.Provider>
+      </React.Fragment>)}
+      {showPending && <article className="message user queued" aria-label="正在发送的消息">
+        <div className="queued-meta">
+          <span>{uncertain ? (confirming ? "确认送达中…" : "送达未确认") : "发送中…"}</span>
+        </div>
+        <MessageBody text={pendingMessage.text} />
+      </article>}
+      {queue.map((item, index) => <article key={item.request_id} className="message user queued" aria-label="排队待发消息">
+        <div className="queued-meta">
+          <span>{queuePaused ? `已暂停排队 · 第 ${index + 1} 条` : `排队中 · 第 ${index + 1} 条`}</span>
+          <div className="queued-actions">
+            {queuePaused && index === 0 && <button type="button" className="queued-resume" onClick={resumeQueue}>继续发送</button>}
+            <button type="button" className="queued-cancel" aria-label="取消排队消息" title="取消发送" onClick={() => removeQueued(item.request_id)}><X size={14} /></button>
+          </div>
+        </div>
+        <MessageBody text={item.text} />
+      </article>)}</TranscriptContext.Provider>
     </section>
     <form className="compose" onSubmit={send}>
       {actionError && <Notice onRetry={uncertain ? retry : undefined} label="再次连接">{actionError}</Notice>}
       {session?.single_turn && <p className="note">当前凭据或路由只能验证本轮。请返回会话列表，新建会话后继续。</p>}
       {!ready && <p className="note">请在电脑上启动 Cage 环境。</p>}
       <div className="composer-field">
-        <textarea ref={composerInput} aria-label="消息" rows="1" placeholder="给 Claude Code 发消息" value={draft} disabled={!session || session.single_turn || !ready || uncertain || busy}
+        <textarea ref={composerInput} aria-label="消息" rows="1" placeholder={running ? "正在运行，可继续输入排队发送" : willQueue ? "可继续输入，将按顺序排队发送" : "给 Claude Code 发消息"} value={draft} disabled={!session || session.single_turn || !ready}
           onChange={(e) => {
             const value = e.target.value;
-            if (value) drafts.set(id, {text:value}); else drafts.delete(id);
+            draftRef.current = value;
+            persistDraftState(value, submission.current, queueRef.current, queuePausedRef.current, waitingTurnIdRef.current);
             setDraft(value);
           }} onKeyDown={(e) => {
             if (e.key === "Enter" && !e.nativeEvent.isComposing && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); }
           }} />
-        {running ? <button type="button" className="composer-action" aria-label={last.status === "stopping" ? "正在停止" : "停止运行"} title={last.status === "stopping" ? "正在停止" : "停止运行"} disabled={busy || last.status !== "running"} onClick={stop}><Square size={17} /></button>
-          : <button type="submit" className="composer-action" aria-label={uncertain ? "再次尝试发送" : "发送"} title={uncertain ? "再次尝试发送" : "发送"} disabled={busy || confirming || !!readProgress || !!readError || !ready || !session || session.single_turn || session.can_send === false || !draft.trim()}><ArrowUp size={21} /></button>}
+        {running && <button type="button" className={draft.trim() ? "composer-action secondary" : "composer-action"} aria-label={last.status === "stopping" ? "正在停止" : "停止运行"} title={last.status === "stopping" ? "正在停止" : "停止运行"} disabled={busy || last.status !== "running"} onClick={stop}><Square size={17} /></button>}
+        {(!running || draft.trim()) && <button type="submit" className="composer-action" aria-label={willQueue ? "加入待发队列" : "发送"} title={willQueue ? "加入待发队列" : "发送"} disabled={!ready || !session || session.single_turn || session.can_send === false || !draft.trim()}><ArrowUp size={21} /></button>}
       </div>
     </form>
   </>;

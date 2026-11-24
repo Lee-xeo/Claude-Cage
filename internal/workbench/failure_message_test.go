@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/host"
 )
 
@@ -75,6 +76,25 @@ func TestExecutionFailureNamesMissingQEMU(t *testing.T) {
 		message := executionFailure("准备 Debian 13 镜像", errors.New("exit status 1"), line).Error()
 		if !strings.Contains(message, "QEMU 组件") || !strings.Contains(message, "PATHEXT") {
 			t.Fatalf("%q -> %q", line, message)
+		}
+	}
+}
+
+func TestExecutionFailureNamesLimaHomeConflict(t *testing.T) {
+	rawSamples := []string{
+		`Error: could not query Lima: agent-vm's Lima home C:\Users\alice\.claude-cage\state\lima is also your own Lima's home: set AGENT_VM_LIMA_HOME to a folder for agent-vm alone`,
+		`agent-vm's Lima home /Users/alice/.claude-cage/state/lima is also your own Lima's home: set AGENT_VM_LIMA_HOME to a folder for agent-vm alone`,
+		`agent-vm's Lima home /home/alice/.claude-cage/state/lima is also your own Lima's home: set AGENT_VM_LIMA_HOME to a folder for agent-vm alone`,
+		`agent-vm's Lima home /data/.claude-cage/state/lima is also your own Lima's home: set AGENT_VM_LIMA_HOME to a folder for agent-vm alone`,
+	}
+	for _, raw := range rawSamples {
+		for _, output := range []string{raw, diagnostics.Redact(raw)} {
+			for _, action := range []string{"停止环境", "启动环境"} {
+				message := executionFailure(action, errors.New("exit status 1"), output).Error()
+				if !strings.Contains(message, "LIMA_HOME") || !strings.Contains(message, "官方安装包") || strings.Contains(message, "可识别") {
+					t.Fatalf("%s %q -> %q", action, output, message)
+				}
+			}
 		}
 	}
 }

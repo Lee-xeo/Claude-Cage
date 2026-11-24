@@ -10,15 +10,41 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/exitpolicy"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
+// settledTempDir is t.TempDir for directories that fixture processes or server
+// goroutines may still write into when the test returns (macOS runners saw
+// "directory not empty" from the plain cleanup). Removal retries briefly.
+func settledTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "cage-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			err := os.RemoveAll(dir)
+			if err == nil || time.Now().After(deadline) {
+				if err != nil {
+					t.Errorf("remove %s: %v", dir, err)
+				}
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	})
+	return dir
+}
+
 func testServer(t *testing.T) *Server {
 	t.Helper()
-	profile := t.TempDir()
+	profile := settledTempDir(t)
 	path := filepath.Join(profile, "config.json")
 	c := cage.DefaultConfig()
 	p, _ := managedproxy.Load(profile)
@@ -40,8 +66,12 @@ func testServer(t *testing.T) *Server {
 	// replace this in-memory fixture with the real persisted account store.
 	account := &localAccount{path: filepath.Join(profile, "account.json"), record: &accountRecord{Version: 1, Username: "Test"}}
 	account.setKey(make([]byte, 32))
-	t.Cleanup(account.lock)
-	return &Server{account: account, profile: profile, configPath: path, origin: "http://localhost:17777", token: strings.Repeat("a", 64), session: strings.Repeat("b", 64), preferences: Preferences{Keyboard: "mac"}}
+	s := &Server{account: account, profile: profile, configPath: path, origin: "http://localhost:17777", token: strings.Repeat("a", 64), session: strings.Repeat("b", 64), preferences: Preferences{Keyboard: "mac"}}
+	t.Cleanup(func() {
+		s.controlSession.close()
+		account.lock()
+	})
+	return s
 }
 
 // Fixtures for network policy tests need a published state without executing

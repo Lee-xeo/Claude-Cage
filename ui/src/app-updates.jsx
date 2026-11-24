@@ -155,7 +155,7 @@ export function AppUpdateDialog({ updates, onStatus }) {
       {state.officialUpgrade && <p>{tr("当前运行的是本地未签名构建。继续安装将切换为官方签名发行版，本地源码改动不会保留；配置、账户、项目和虚拟机磁盘会保留，后续将持续接收官方自动更新。")}</p>}
       <p>{tr("取消可稍后安装，已下载的更新会保留。停止开始后，取消只推迟安装，环境仍会停止。")}</p>
       {stopping && <p role="status"><LoaderCircle size={16} className="spin" />{" " + tr("正在等待环境停止，完成后继续安装…")}</p>}
-      {error && <p className="error-message" role="alert">{tr(error)}</p>}
+      {error && <p className="error-message" role="alert">{localizeBackendMessage(error, tr)}</p>}
     </div>
   </Modal>;
 }
@@ -226,7 +226,7 @@ export function AppUpdateButton({ updates }) {
           </>
         ) : failed ? <RefreshCw size={20} /> : <ArrowDownToLine size={20} />}
       </button>}
-      {(failure || startupFailure) && <div className="app-update-error" role="alert">{failure || startupFailure}{visible ? coolingDown ? tr("。请等待更新源恢复后重试。") : tr("。可点击更新按钮重试。") : ""}</div>}
+      {(failure || startupFailure) && <div className="app-update-error" role="alert">{localizeBackendMessage(failure || startupFailure, tr)}{visible ? coolingDown ? tr("。请等待更新源恢复后重试。") : tr("。可点击更新按钮重试。") : ""}</div>}
     </>
   );
 }

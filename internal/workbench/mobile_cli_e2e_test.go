@@ -64,7 +64,10 @@ func mobileTestSSHRewrite(t *testing.T, s *Server, home string, env []string, re
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { listener.Close() })
+	t.Cleanup(func() {
+		s.controlSession.close()
+		listener.Close()
+	})
 	dir := s.instanceDir()
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)

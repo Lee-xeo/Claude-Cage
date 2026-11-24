@@ -43,6 +43,7 @@ func TestRunCageExplainsCommonFailure(t *testing.T) {
 		{"curl: (60) certificate verify failed", "证书验证"},
 		{"Error: Base VM not found. Run 'agent-vm setup' first.", "基础模板缺失"},
 		{"Error: Base VM setup did not complete. Run 'agent-vm setup' again.", "基础模板尚未安装完成"},
+		{"Error: could not query Lima: agent-vm's Lima home /Users/alice/.claude-cage/state/lima is also your own Lima's home: set AGENT_VM_LIMA_HOME to a folder for agent-vm alone", "LIMA_HOME"},
 		{"unrecognized failure token=private-error-secret", "退出码 7"},
 	} {
 		t.Run(tc.want, func(t *testing.T) {

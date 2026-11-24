@@ -148,6 +148,7 @@ func execute(ctx context.Context, command, dir string, timeout time.Duration, ou
 	cmd := shellCommand(command)
 	cmd.Dir = dir
 	cmd.Stdout, cmd.Stderr = output, output
+	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
 		return commandOutput{}, err
 	}
@@ -158,9 +159,25 @@ func execute(ctx context.Context, command, dir string, timeout time.Duration, ou
 	case waitErr = <-done:
 	case <-ctx.Done():
 		// The command may have started children that hold the output open,
-		// so end the whole tree rather than only the shell.
+		// so end the whole tree rather than only the shell. Retry briefly
+		// while waiting so a descendant that was mid-fork when the first
+		// signal arrived does not survive and hold the output pipe open.
 		killTree(cmd)
-		waitErr = <-done
+		ticker := time.NewTicker(150 * time.Millisecond)
+		defer ticker.Stop()
+		retries := 0
+	waitLoop:
+		for {
+			select {
+			case waitErr = <-done:
+				break waitLoop
+			case <-ticker.C:
+				if retries < 5 {
+					retries++
+					killTree(cmd)
+				}
+			}
+		}
 	}
 
 	result := commandOutput{Output: output.String(), Truncated: output.truncated()}
@@ -171,7 +188,7 @@ func execute(ctx context.Context, command, dir string, timeout time.Duration, ou
 	}
 	var exit *exec.ExitError
 	switch {
-	case waitErr == nil:
+	case waitErr == nil || errors.Is(waitErr, exec.ErrWaitDelay):
 	case errors.As(waitErr, &exit):
 		result.ExitCode = exit.ExitCode()
 	default:
