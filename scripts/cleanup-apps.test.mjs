@@ -24,19 +24,41 @@ async function stop(child) {
   await new Promise((resolve) => { child.once("exit", resolve); child.kill("SIGTERM"); });
 }
 
+async function buildStandInExecutable(directory) {
+  const source = path.join(directory, "standin.c");
+  const executable = path.join(directory, "standin");
+  await writeFile(
+    source,
+    "#include <stdio.h>\n#include <unistd.h>\nint main(void) {\n  puts(\"ready\");\n  fflush(stdout);\n  for (;;) pause();\n}\n",
+  );
+  execFileSync("/usr/bin/xcrun", ["clang", source, "-o", executable], {
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  return executable;
+}
+
 test("cleanup preserves a Cage executable still in use", { skip: process.platform !== "darwin", timeout: 180_000 }, async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "cage-cleanup-running-"));
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "cage-cleanup-standin-"));
   let child;
   try {
     const latest = await app(path.join(directory, "new.app"));
     // A re-signed copy of a system binary such as /bin/sleep is arm64e and may
-    // be killed at exec on Apple silicon; the running Node binary is known to run.
-    const running = await app(path.join(directory, "running.app"), cageID, process.execPath);
+    // be killed at exec on Apple silicon; copying process.execPath breaks when
+    // Node links @rpath/libnode (such as Homebrew Node). Compile a tiny
+    // self-contained host binary instead.
+    const standIn = await buildStandInExecutable(buildDir);
+    const running = await app(path.join(directory, "running.app"), cageID, standIn);
     const executable = path.join(running, "Contents/MacOS/Cage");
-    child = spawn(executable, ["-e", "process.stdout.write('ready\\n'); setInterval(() => {}, 1000)"], { stdio: ["ignore", "pipe", "ignore"] });
+    child = spawn(executable, [], { stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
     await new Promise((resolve, reject) => {
       child.once("error", reject);
-      child.once("exit", (code, signal) => reject(new Error(`The stand-in App exited before it started (${signal || code}).`)));
+      child.once("exit", (code, signal) => {
+        const detail = stderr.trim() ? `: ${stderr.trim()}` : "";
+        reject(new Error(`The stand-in App exited before it started (${signal || code})${detail}.`));
+      });
       child.stdout.once("data", resolve);
     });
     const skipped = [];
@@ -49,6 +71,7 @@ test("cleanup preserves a Cage executable still in use", { skip: process.platfor
     assert.deepEqual(await cleanupApps({ keep: [latest], roots: [directory] }), [running]);
   } finally {
     await stop(child);
+    await rm(buildDir, { recursive: true, force: true });
     await rm(directory, { recursive: true, force: true });
   }
 });

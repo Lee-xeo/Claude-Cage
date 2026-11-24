@@ -345,3 +345,39 @@ func TestCageSetupResumesExistingBuild(t *testing.T) {
 		t.Fatalf("partial build was recreated instead of resumed: %s", log)
 	}
 }
+
+func TestSetupCleansPartialReadOnlyBuildState(t *testing.T) {
+	te := newTestEnv(t, vmtest.New())
+	host.CPUs = func() int { return 64 }
+	host.MemGiB = func() int { return 256 }
+
+	for _, name := range []string{building, vmname.Template} {
+		partial := filepath.Join(LimaHome(te.state), name)
+		nested := filepath.Join(partial, "nested")
+		if err := os.MkdirAll(nested, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(partial, "cloud-config.yaml"), []byte("#cloud-config\n"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(nested, "lima-version"), []byte("2.0.0"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(nested, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = host.RemoveAllWritable(partial) })
+	}
+
+	if code := te.setupBase([]string{"setup", "--preinstall=none"}); code != 0 {
+		t.Fatalf("setup failed to clean read-only partial VM state (%d): %s", code, te.out())
+	}
+	if !strings.Contains(te.out(), "Detected partial VM state") {
+		t.Fatalf("expected partial VM state cleanup log, got: %s", te.out())
+	}
+	for _, name := range []string{building, vmname.Template} {
+		if _, err := os.Lstat(filepath.Join(LimaHome(te.state), name)); !os.IsNotExist(err) {
+			t.Fatalf("partial directory %s still exists: %v", name, err)
+		}
+	}
+}

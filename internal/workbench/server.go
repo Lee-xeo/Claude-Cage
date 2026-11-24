@@ -889,14 +889,23 @@ func (s *Server) probe(w http.ResponseWriter, r *http.Request) {
 		requestError(w, err)
 		return
 	}
-	if err := s.ensureProxyInterfaceBeforeUse(r.Context()); err != nil {
+	old, err := loadConfig(s.configPath)
+	if err != nil {
 		requestError(w, err)
 		return
 	}
-	loc, err := probeLocation(r.Context(), v.Config, v.Preferences.locationOptions())
-	if finishErr := s.finishLocationProbe(v.Config, loc, err); finishErr != nil {
-		requestError(w, finishErr)
-		return
+	if p, loadErr := s.proxyStore.Load(s.profile); loadErr != nil || !needsBootstrapPreflight(old, v.Config, p) {
+		if err := s.ensureProxyInterfaceBeforeUse(r.Context()); err != nil {
+			requestError(w, err)
+			return
+		}
+	}
+	loc, usedPreflight, err := s.probeCandidateLocation(r.Context(), old, v.Config, v.Preferences)
+	if !usedPreflight {
+		if finishErr := s.finishLocationProbe(v.Config, loc, err); finishErr != nil {
+			requestError(w, finishErr)
+			return
+		}
 	}
 	if err != nil {
 		requestError(w, err)

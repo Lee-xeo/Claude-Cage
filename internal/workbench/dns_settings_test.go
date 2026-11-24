@@ -1,14 +1,21 @@
 package workbench
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
 func TestDNSSettingsPersistBesideConfigAndSurviveLegacyClients(t *testing.T) {
@@ -64,4 +71,226 @@ func TestDNSSettingsPersistBesideConfigAndSurviveLegacyClients(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(s.profile, cage.DNSOptionsFile)); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestBootstrapDNSReplacementPreflightsCandidateCoreAndPreservesIsolation(t *testing.T) {
+	setupManaged := func(t *testing.T, s *Server) (cage.Config, managedproxy.Store) {
+		t.Helper()
+		store, err := managedproxy.Load(s.profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Import("src", "", []byte(`proxies: [{name: node-a, type: socks5, server: node.example.com, port: 1080}]`), "src", 0, ""); err != nil {
+			t.Fatal(err)
+		}
+		store.Selected = store.Sources[0].Nodes[0].ID
+		store.Revision = managedproxy.Token()
+		store.BootstrapDNS = []string{"https://1.1.1.1/dns-query"}
+		store.GuestDNS = []string{"https://1.1.1.1/dns-query"}
+		if err := store.Save(s.profile); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := loadConfig(s.configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.ProxyURL = store.Endpoint()
+		cfg.ProxyRevision = store.Revision
+		cfg.DNS = cage.NewDNSOptions(nil, []string{"https://1.1.1.1/dns-query"}, false)
+		cfg.ExitPolicy = cage.ExitPolicy{Mode: "dynamic", Scope: "country", CountryCode: "US"}
+		if err := writePrivate(s.configPath, cfg); err != nil {
+			t.Fatal(err)
+		}
+		if err := cage.SaveDNSOptions(s.configPath, cfg.DNS); err != nil {
+			t.Fatal(err)
+		}
+		if err := cfg.RequireManagedProxy(s.profile); err != nil {
+			t.Fatalf("managed proxy fixture invalid: %v", err)
+		}
+		return cfg, store
+	}
+
+	const candidateEndpoint = "socks5://cage:onetime-secret@127.0.0.1:19876"
+
+	t.Run("working candidate bootstrap DNS recovers when active proxy fails and reloads running core", func(t *testing.T) {
+		s := testServer(t)
+		baseCfg, _ := setupManaged(t, s)
+
+		oldPreflight, oldProbe, oldRunning := startPreflightProxy, probeEnvironmentLocation, proxyCoreRunning
+		oldValidate, oldStart := validateProxyCore, startProxyCore
+		t.Cleanup(func() {
+			startPreflightProxy, probeEnvironmentLocation, proxyCoreRunning = oldPreflight, oldProbe, oldRunning
+			validateProxyCore, startProxyCore = oldValidate, oldStart
+		})
+
+		var preflightStarts, preflightCloses, coreRestarts atomic.Int32
+		var preflightBootstrap []string
+		var reloadedBootstrap []string
+		startPreflightProxy = func(_ context.Context, _ string, candidate managedproxy.Store) (*managedproxy.PreflightProxy, error) {
+			preflightStarts.Add(1)
+			preflightBootstrap = append([]string(nil), candidate.BootstrapDNS...)
+			// Simulate PreflightProxy via exported type cannot set unexported cleanup directly;
+			// instead track probe endpoint and close via wrapper test below.
+			return &managedproxy.PreflightProxy{Endpoint: candidateEndpoint}, nil
+		}
+		probeEnvironmentLocation = func(_ context.Context, c cage.Config, _ Preferences) (Location, error) {
+			if c.ProxyURL == baseCfg.ProxyURL {
+				return Location{}, errors.New("old bootstrap DNS failed TLS handshake")
+			}
+			if c.ProxyURL != candidateEndpoint {
+				t.Fatalf("unexpected probe ProxyURL %q", c.ProxyURL)
+			}
+			preflightCloses.Add(1)
+			return Location{IP: "8.8.8.8", CountryCode: "US", Country: "United States", Timezone: "America/Los_Angeles", CheckedAt: time.Now()}, nil
+		}
+		proxyCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+		validateProxyCore = func(context.Context, string, managedproxy.Store) error { return nil }
+		startProxyCore = func(_ context.Context, _ string, p managedproxy.Store) error {
+			coreRestarts.Add(1)
+			reloadedBootstrap = append([]string(nil), p.BootstrapDNS...)
+			return nil
+		}
+
+		next := baseCfg
+		next.DNS = cage.NewDNSOptions(nil, []string{"https://223.6.6.6/dns-query"}, false)
+		if err := s.applyWithOptions(savedProfile{Config: next, Preferences: s.preferences}, true, false); err != nil {
+			t.Fatalf("applyWithOptions failed to recover with candidate bootstrap DNS: %v", err)
+		}
+		if preflightStarts.Load() != 1 || preflightCloses.Load() != 1 {
+			t.Fatalf("expected 1 preflight start & probe, got starts=%d probes=%d", preflightStarts.Load(), preflightCloses.Load())
+		}
+		if !slices.Equal(preflightBootstrap, []string{"https://223.6.6.6/dns-query"}) {
+			t.Fatalf("preflight received wrong bootstrap DNS: %v", preflightBootstrap)
+		}
+		saved, err := loadConfig(s.configPath)
+		if err != nil || !slices.Equal(saved.BootstrapEndpoints(), []string{"https://223.6.6.6/dns-query"}) {
+			t.Fatalf("candidate bootstrap DNS not persisted: %v %v", saved.BootstrapEndpoints(), err)
+		}
+		if coreRestarts.Load() != 1 || !slices.Equal(reloadedBootstrap, []string{"https://223.6.6.6/dns-query"}) {
+			t.Fatalf("running core not reloaded with saved bootstrap DNS: restarts=%d dns=%v", coreRestarts.Load(), reloadedBootstrap)
+		}
+	})
+
+	t.Run("unreachable candidate and disallowed country reject save without disturbing active gate or location", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			loc      Location
+			probeErr error
+		}{
+			{"unreachable candidate", Location{}, errors.New("candidate bootstrap timeout")},
+			{"disallowed mainland exit", Location{IP: "223.5.5.5", CountryCode: "CN", Country: "China", CheckedAt: time.Now()}, nil},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				s, gate := grantedToolUpdateServer(t)
+				baseCfg, err := loadConfig(s.configPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				store, err := managedproxy.Load(s.profile)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := store.Import("src", "", []byte(`proxies: [{name: node-a, type: socks5, server: node.example.com, port: 1080}]`), "src", 0, ""); err != nil {
+					t.Fatal(err)
+				}
+				store.Selected = store.Sources[0].Nodes[0].ID
+				store.Revision = managedproxy.Token()
+				store.BootstrapDNS = []string{"https://1.1.1.1/dns-query"}
+				if err := store.Save(s.profile); err != nil {
+					t.Fatal(err)
+				}
+				baseCfg.ProxyURL = store.Endpoint()
+				baseCfg.ProxyRevision = store.Revision
+				baseCfg.DNS = cage.NewDNSOptions(nil, []string{"https://1.1.1.1/dns-query"}, false)
+				baseCfg.ExitPolicy = cage.ExitPolicy{Mode: "dynamic", Scope: "country", CountryCode: "US"}
+				if err := writePrivate(s.configPath, baseCfg); err != nil {
+					t.Fatal(err)
+				}
+				if err := cage.SaveDNSOptions(s.configPath, baseCfg.DNS); err != nil {
+					t.Fatal(err)
+				}
+				existingLoc := Location{IP: "8.8.8.8", CountryCode: "US", CheckedAt: time.Now()}
+				s.location = &existingLoc
+				s.locations = map[string]Location{"8.8.8.8": existingLoc}
+
+				oldPreflight, oldProbe := startPreflightProxy, probeEnvironmentLocation
+				t.Cleanup(func() { startPreflightProxy, probeEnvironmentLocation = oldPreflight, oldProbe })
+				startPreflightProxy = func(_ context.Context, _ string, _ managedproxy.Store) (*managedproxy.PreflightProxy, error) {
+					return &managedproxy.PreflightProxy{Endpoint: candidateEndpoint}, nil
+				}
+				probeEnvironmentLocation = func(_ context.Context, c cage.Config, _ Preferences) (Location, error) {
+					if c.ProxyURL != candidateEndpoint {
+						t.Fatalf("probe used active proxy %q instead of preflight", c.ProxyURL)
+					}
+					return tc.loc, tc.probeErr
+				}
+
+				next := baseCfg
+				next.DNS = cage.NewDNSOptions(nil, []string{"https://9.9.9.9/dns-query"}, false)
+				if err := s.applyWithOptions(savedProfile{Config: next, Preferences: s.preferences}, true, false); err == nil {
+					t.Fatal("expected failed candidate preflight to reject save")
+				}
+				saved, err := loadConfig(s.configPath)
+				if err != nil || !slices.Equal(saved.BootstrapEndpoints(), []string{"https://1.1.1.1/dns-query"}) {
+					t.Fatalf("failed preflight mutated saved bootstrap DNS: %v %v", saved.BootstrapEndpoints(), err)
+				}
+				if gate.Status().Mode != cage.GateOpen {
+					t.Fatalf("failed candidate preflight closed active guest gate: %s", gate.Status().Mode)
+				}
+				if s.location == nil || s.location.IP != "8.8.8.8" {
+					t.Fatalf("failed candidate preflight mutated active location: %+v", s.location)
+				}
+			})
+		}
+	})
+
+	t.Run("settings probe uses candidate bootstrap DNS and ordinary save skips preflight core", func(t *testing.T) {
+		s := testServer(t)
+		baseCfg, _ := setupManaged(t, s)
+
+		oldPreflight, oldProbe := startPreflightProxy, probeEnvironmentLocation
+		t.Cleanup(func() { startPreflightProxy, probeEnvironmentLocation = oldPreflight, oldProbe })
+
+		var preflightCalls atomic.Int32
+		startPreflightProxy = func(_ context.Context, _ string, _ managedproxy.Store) (*managedproxy.PreflightProxy, error) {
+			preflightCalls.Add(1)
+			return &managedproxy.PreflightProxy{Endpoint: candidateEndpoint}, nil
+		}
+		probeEnvironmentLocation = func(_ context.Context, c cage.Config, _ Preferences) (Location, error) {
+			if c.ProxyURL == candidateEndpoint {
+				return Location{IP: "8.8.8.8", CountryCode: "US", Country: "United States", Timezone: "America/Los_Angeles", CheckedAt: time.Now()}, nil
+			}
+			return Location{IP: "1.1.1.1", CountryCode: "US", Country: "United States", Timezone: "America/Los_Angeles", CheckedAt: time.Now()}, nil
+		}
+
+		// POST /api/settings/probe with candidate dns_bootstrap_urls uses preflight core.
+		view := settingsView(baseCfg, s.preferences)
+		view.DNSBootstrapURLs = []string{"https://223.6.6.6/dns-query"}
+		body, _ := json.Marshal(view)
+		w := request(s, "POST", "/api/settings/probe", s.origin, string(body), true)
+		if w.Code != 200 {
+			t.Fatalf("probe with candidate bootstrap DNS failed: %d %s", w.Code, w.Body.String())
+		}
+		var probed Location
+		if err := json.Unmarshal(w.Body.Bytes(), &probed); err != nil || probed.IP != "8.8.8.8" {
+			t.Fatalf("probe did not use candidate core: %+v %v", probed, err)
+		}
+		if preflightCalls.Load() != 1 {
+			t.Fatalf("expected 1 preflight call for probe, got %d", preflightCalls.Load())
+		}
+
+		// Ordinary settings save without changing bootstrap DNS does not launch preflight core.
+		ordinary := baseCfg
+		ordinary.Timezone = "America/New_York"
+		if err := s.applyWithOptions(savedProfile{Config: ordinary, Preferences: s.preferences}, true, false); err != nil {
+			t.Fatalf("ordinary save failed: %v", err)
+		}
+		if preflightCalls.Load() != 1 {
+			t.Fatalf("ordinary save unexpectedly started preflight core: calls=%d", preflightCalls.Load())
+		}
+		saved, err := loadConfig(s.configPath)
+		if err != nil || !reflect.DeepEqual(saved.BootstrapEndpoints(), []string{"https://1.1.1.1/dns-query"}) || saved.Timezone != "America/New_York" {
+			t.Fatalf("ordinary save wrong result: %+v %v", saved, err)
+		}
+	})
 }

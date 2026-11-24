@@ -75,7 +75,7 @@ bash scripts/build-app.sh
 
 | 现象 | 处理 |
 | --- | --- |
-| cgo 链接报 `unknown architecture`（例如 `arm64e.x1`） | 默认 SDK 比 clang 新。未设置 `SDKROOT` 时，脚本会改用本机已安装、能成功链接的最新 SDK 并提示所用路径；都不能链接时请更新 Xcode 或 Command Line Tools，或手动设置 `SDKROOT`。 |
+| cgo 链接报 `unknown architecture`（例如 `arm64e.x1`）或 Swift 报 `this SDK is not supported by the compiler` | 默认 SDK 比本机 clang 或 swiftc 新。未设置 `SDKROOT` 时，脚本会改用本机已安装、同时通过 C 链接与 Swift 导入 Cocoa 探测的最新 SDK 并提示所用路径；都不可用时请更新 Xcode 或 Command Line Tools，或手动设置 `SDKROOT`。 |
 | Swift 报 `redefinition of module 'SwiftBridging'` | Command Line Tools 升级后残留了旧的模块映射文件，`usr/include/swift/module.modulemap` 与 `bridging.modulemap` 重复定义。重新安装 Command Line Tools，或用 `xcode-select` 选择完整 Xcode。脚本不修改系统工具链。 |
 | 图标生成阶段出现与 Swift 无关的报错 | `PATH` 上可能有同名的非 Apple `swift`。构建脚本通过 `xcrun` 调用 Swift，若仍失败，检查 `xcode-select -p`。 |
 | 签名报 `resource fork, Finder information, or similar detritus not allowed` | 仓库位于 iCloud Drive 等文件同步目录时，文件会带上扩展属性。脚本在签名前清除应用包内的扩展属性；无法清除时，把仓库移到不受同步管理的目录再构建。 |

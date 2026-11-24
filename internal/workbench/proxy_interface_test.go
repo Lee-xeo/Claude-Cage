@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http/httptest"
@@ -384,5 +385,83 @@ func TestEnsureProxyInterfaceBeforeUseRebindsStoppedAndReportsRunningVM(t *testi
 	// Now bound to wlp4s0, subsequent checks are a fast-path no-op.
 	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || restarts != 1 {
 		t.Fatalf("already-rebound check restarted again: err=%v restarts=%d", err, restarts)
+	}
+}
+
+func TestSettingsProbeRebindsActiveCoreOnlyWithoutBootstrapPreflight(t *testing.T) {
+	s, _ := interfaceMonitorServer(t)
+	if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+		t.Fatal(err)
+	}
+	p, err := managedproxy.Load(s.profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Import("src", "", []byte(`proxies: [{name: node-a, type: socks5, server: node.example.com, port: 1080}]`), "src", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	p.Selected = p.Sources[0].Nodes[0].ID
+	p.Revision = managedproxy.Token()
+	p.BootstrapDNS = []string{"https://1.1.1.1/dns-query"}
+	p.GuestDNS = []string{"https://1.1.1.1/dns-query"}
+	if err := p.Save(s.profile); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(s.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ProxyURL = p.Endpoint()
+	cfg.ProxyRevision = p.Revision
+	cfg.DNS = cage.NewDNSOptions(nil, []string{"https://1.1.1.1/dns-query"}, false)
+	if err := writePrivate(s.configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := cage.SaveDNSOptions(s.configPath, cfg.DNS); err != nil {
+		t.Fatal(err)
+	}
+
+	prevPhysical, prevRunning, prevStart := physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore
+	prevPreflight, prevProbe := startPreflightProxy, probeEnvironmentLocation
+	t.Cleanup(func() {
+		physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore = prevPhysical, prevRunning, prevStart
+		startPreflightProxy, probeEnvironmentLocation = prevPreflight, prevProbe
+	})
+
+	const preflightEndpoint = "socks5://cage:preflight@127.0.0.1:19877"
+	restarts := 0
+	preflights := 0
+	physicalProxyInterface = func(context.Context) (string, error) { return "wlp4s0", nil }
+	proxyInterfaceCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+	startProxyCore = func(_ context.Context, profile string, _ managedproxy.Store) error {
+		restarts++
+		return os.WriteFile(filepath.Join(profile, "proxy", "config.yaml"), []byte("interface-name: wlp4s0\n"), 0600)
+	}
+	startPreflightProxy = func(context.Context, string, managedproxy.Store) (*managedproxy.PreflightProxy, error) {
+		preflights++
+		return &managedproxy.PreflightProxy{Endpoint: preflightEndpoint}, nil
+	}
+	probeEnvironmentLocation = func(_ context.Context, c cage.Config, _ Preferences) (Location, error) {
+		if c.ProxyURL == preflightEndpoint {
+			return Location{IP: "8.8.8.8", CountryCode: "US", CheckedAt: time.Now()}, nil
+		}
+		return Location{IP: "1.1.1.1", CountryCode: "US", CheckedAt: time.Now()}, nil
+	}
+
+	// Candidate bootstrap DNS probe uses isolated preflight core without restarting the active core.
+	candidateView := settingsView(cfg, s.preferences)
+	candidateView.DNSBootstrapURLs = []string{"https://223.6.6.6/dns-query"}
+	body, _ := json.Marshal(candidateView)
+	w := request(s, "POST", "/api/settings/probe", s.origin, string(body), true)
+	if w.Code != 200 || preflights != 1 || restarts != 0 {
+		t.Fatalf("candidate preflight probe got code=%d preflights=%d restarts=%d body=%s", w.Code, preflights, restarts, w.Body.String())
+	}
+
+	// Ordinary probe using the active core auto-rebinds the stale stopped-VM interface first.
+	ordinaryView := settingsView(cfg, s.preferences)
+	body, _ = json.Marshal(ordinaryView)
+	w = request(s, "POST", "/api/settings/probe", s.origin, string(body), true)
+	if w.Code != 200 || preflights != 1 || restarts != 1 {
+		t.Fatalf("ordinary probe got code=%d preflights=%d restarts=%d body=%s", w.Code, preflights, restarts, w.Body.String())
 	}
 }

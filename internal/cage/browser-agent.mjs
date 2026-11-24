@@ -7,7 +7,7 @@ import { open } from "node:fs/promises";
 import http from "node:http";
 import { auditBrowser } from "./browser-audit.mjs";
 import { BrowserVault } from "./browser-vault.mjs";
-import { LoginBrowser, isClaudeSignIn } from "./browser-login.mjs";
+import { LoginBrowser, formatCDPDiagnostic, isClaudeSignIn } from "./browser-login.mjs";
 import { PrivateBrowser } from "./browser-private.mjs";
 import { browserCookies, AccountLoginCookies } from "./browser-cookies.mjs";
 import { BrowserExtensions, extensionUploadLimit } from "./browser-extensions.mjs";
@@ -104,6 +104,7 @@ let navigation = { id: "", back: false, forward: false }, navigationSequence = 0
 // Context IDs and unique blank-page URLs are registered before target creation.
 const auditExclusions = new Set();
 const auditCreations = new Set(), deferredTargetInfo = new Map();
+let openingTargets = 0;
 const loginBrowser = new LoginBrowser(cdp, new AccountLoginCookies("/home/cage-browser/LoginProfiles"));
 const privateBrowser = new PrivateBrowser(cdp, downloadPath);
 const browserExtensions = new BrowserExtensions({ directory: "/home/cage-browser", cdp, control: splitController, protectedID: extensionId });
@@ -225,13 +226,13 @@ function updateTargetInfo(t) {
   const previous = targets.get(t.targetId);
   targets.set(t.targetId, privateBrowser.tab(loginBrowser.tab(rememberOpener(t, previous), previous)));
   if (isNativeNewTab(t.url)) void restoreHomepage(t.targetId).catch(error => console.error("Could not open homepage:", error.message));
-  if (fresh) void session(t.targetId).catch(() => {});
+  if (fresh && !openingTargets) void session(t.targetId).catch(() => {});
   if (t.targetId === activeId) rememberSelection();
   broadcastState();
   if (!activeId) activeId = t.targetId;
   if (ready && fresh && t.openerId)
     void activate(t.targetId, true).catch(() => {});
-  else if (ready && fresh)
+  else if (ready && fresh && !openingTargets)
     void visibility.sync().catch(() => {});
 }
 
@@ -397,15 +398,15 @@ for (const channel of chrome.stdio.slice(3))
     console.error(`Chromium control pipe failed: ${error?.code || error?.name || "unknown"}`);
     process.exit(1);
   });
-async function session(id) {
+async function session(id, timeout = 12000) {
   if (!targets.has(id)) throw new Error("Tab no longer exists");
   if (!sessions.has(id))
     sessions.set(
       id,
-      cdp("Target.attachToTarget", { targetId: id, flatten: true }).then(async (r) => {
+      cdp("Target.attachToTarget", { targetId: id, flatten: true }, undefined, timeout).then(async (r) => {
         uploadSessions.set(r.sessionId, id);
-        await cdp("Page.enable", {}, r.sessionId);
-        await cdp("Page.setInterceptFileChooserDialog", { enabled: true }, r.sessionId);
+        await cdp("Page.enable", {}, r.sessionId, timeout);
+        await cdp("Page.setInterceptFileChooserDialog", { enabled: true }, r.sessionId, timeout);
         await browserClipboard.attach(r.sessionId, id).then(result => {
           if (result?.skipped.length) console.warn("Browser copy observer skipped a modified or replaced document; reload the page to enable copy buttons.");
         }).catch(() => console.warn("Browser copy observer unavailable for this page."));
@@ -545,7 +546,7 @@ async function activate(id, focus = false) {
     // A newly focused tab (such as a login page opened while the browser view
     // is hidden) must still open and navigate even if Openbox lags on window
     // state sync; the subsequent /visibility call re-syncs fullscreen state.
-    console.error("Browser visibility sync deferred during focus:", error?.message || error);
+    console.error("Browser visibility sync deferred during focus:", formatCDPDiagnostic(error));
     await cdp("Target.activateTarget", { targetId: id }).catch(() => {});
   }
   await session(id);
@@ -568,24 +569,29 @@ function checkedURL(value) {
 }
 async function newTab(url = homeURL, incognito = false) {
   const address = checkedURL(url);
-  if (incognito) {
-    const result = await privateBrowser.open("about:blank", async tab => {
-      targets.set(tab.targetId, tab);
-      await activate(tab.targetId, true);
-    });
-    await cdp("Page.navigate", { url: address }, await session(result.id));
-    return result;
+  openingTargets++;
+  try {
+    if (incognito) {
+      const result = await privateBrowser.open("about:blank", async tab => {
+        targets.set(tab.targetId, tab);
+        await activate(tab.targetId, true);
+      });
+      await cdp("Page.navigate", { url: address }, await session(result.id), 12000);
+      return result;
+    }
+    const { targetId } = await cdp("Target.createTarget", {
+      url: "about:blank",
+      background: false,
+    }, undefined, 12000);
+    // The response and discovery event may arrive in either order.
+    if (!targets.has(targetId))
+      targets.set(targetId, { targetId, type: "page", url: "about:blank", title: "" });
+    await activate(targetId, true);
+    await cdp("Page.navigate", { url: address }, await session(targetId), 12000);
+    return { id: targetId };
+  } finally {
+    openingTargets--;
   }
-  const { targetId } = await cdp("Target.createTarget", {
-    url: "about:blank",
-    background: false,
-  });
-  // The response and discovery event may arrive in either order.
-  if (!targets.has(targetId))
-    targets.set(targetId, { targetId, type: "page", url: "about:blank", title: "" });
-  await activate(targetId, true);
-  await cdp("Page.navigate", { url: address }, await session(targetId));
-  return { id: targetId };
 }
 async function browserSettings(section = "general") {
   if (!["general", "appearance", "privacy", "extensions", "about"].includes(section)) throw new Error("设置分类无效");
@@ -935,11 +941,16 @@ const server = http.createServer(async (req, res) => {
       if (req.url === "/login-open" || (req.url === "/new" && (input.route || isClaudeSignIn(input.url)))) {
         const external = req.url === "/new" && !isClaudeSignIn(input.url);
         const privateLogin = !external && !existsSync("/etc/claude-cage/login-browser-mode");
-        return loginBrowser.open(input.login || randomUUID(), input.url, async tab => {
-          targets.set(tab.targetId, loginBrowser.tab(tab));
-          await activate(tab.targetId, true);
-          return session(tab.targetId);
-        }, { private: privateLogin, route: input.route, account: input.account, external });
+        openingTargets++;
+        try {
+          return await loginBrowser.open(input.login || randomUUID(), input.url, async tab => {
+            targets.set(tab.targetId, loginBrowser.tab(tab));
+            await activate(tab.targetId, true);
+            return session(tab.targetId);
+          }, { private: privateLogin, route: input.route, account: input.account, external });
+        } finally {
+          openingTargets--;
+        }
       }
       if (req.url === "/login-finish") {
         await loginBrowser.finish(input.login);
