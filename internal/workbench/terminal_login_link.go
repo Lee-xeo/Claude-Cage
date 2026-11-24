@@ -69,7 +69,7 @@ func (s *Server) terminalLoginLink(w http.ResponseWriter, r *http.Request) {
 		// Match the official CLI helper's private browser and cleanup key.
 		login = terminal.loginGuestID
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
 	s.mu.Lock()
 	reuse := s.preferences.ReuseClaudeLogin
