@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -84,6 +85,11 @@ func installerStubs(t *testing.T) string {
 }
 
 func runInstaller(t *testing.T, target desktopAppTarget) (string, error) {
+	// The installer runs inside the Linux environment and needs its tools
+	// (flock, timeout, python3 on the standard path); hosts only check syntax.
+	if runtime.GOOS != "linux" {
+		t.Skip("the installer runs inside the Linux environment")
+	}
 	stubs := installerStubs(t)
 	variables, err := desktopAppVariables(target)
 	if err != nil {
