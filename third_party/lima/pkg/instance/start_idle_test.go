@@ -1,6 +1,7 @@
 package instance
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	hostagentevents "github.com/lima-vm/lima/v2/pkg/hostagent/events"
 	"github.com/lima-vm/lima/v2/pkg/limatype"
@@ -146,5 +149,59 @@ func TestWatchHostAgentEventsStallsDespiteHeartbeats(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > 10*time.Second {
 		t.Fatalf("heartbeats kept the wait alive for %v", elapsed)
+	}
+}
+
+// Port forwarding and vsock events repeat the last cloud-init progress. Each
+// cloud-init line, and the completion, must be printed once (#828).
+func TestWatchHostAgentEventsPrintsCloudInitProgressOnce(t *testing.T) {
+	var logs bytes.Buffer
+	out, level := logrus.StandardLogger().Out, logrus.GetLevel()
+	logrus.SetOutput(&logs)
+	logrus.SetLevel(logrus.InfoLevel)
+	t.Cleanup(func() {
+		logrus.SetOutput(out)
+		logrus.SetLevel(level)
+	})
+
+	dir := t.TempDir()
+	stdout, stderr := filepath.Join(dir, "ha.stdout.log"), filepath.Join(dir, "ha.stderr.log")
+	begin := time.Now().Add(-time.Second)
+	heartbeat := &hostagentevents.PortForwardEvent{}
+	started := &hostagentevents.CloudInitProgress{Active: true}
+	line := &hostagentevents.CloudInitProgress{Active: true, LogLine: "Setting up git ..."}
+	done := &hostagentevents.CloudInitProgress{Completed: true, LogLine: "Cloud-init v. 1 finished"}
+	monitorDone := &hostagentevents.CloudInitProgress{Completed: true, LogLine: "Cloud-init monitoring completed successfully"}
+	for _, status := range []hostagentevents.Status{
+		{SSHLocalPort: 60022, CloudInitProgress: started},
+		{SSHLocalPort: 60022, CloudInitProgress: started, PortForward: heartbeat},
+		{SSHLocalPort: 60022, CloudInitProgress: line},
+		{SSHLocalPort: 60022, CloudInitProgress: line, PortForward: heartbeat},
+		{SSHLocalPort: 60022, CloudInitProgress: line, Vsock: &hostagentevents.VsockEvent{}},
+		{SSHLocalPort: 60022, CloudInitProgress: done},
+		{SSHLocalPort: 60022, CloudInitProgress: done, PortForward: heartbeat},
+		{SSHLocalPort: 60022, CloudInitProgress: monitorDone},
+		{SSHLocalPort: 60022, CloudInitProgress: monitorDone, PortForward: heartbeat},
+		{Running: true, SSHLocalPort: 60022, CloudInitProgress: monitorDone},
+	} {
+		writeHostAgentEvent(t, stdout, status)
+	}
+	ctx := WithWatchHostAgentIdleTimeout(WithWatchHostAgentTimeout(context.Background(), 30*time.Second), 10*time.Second)
+	plain := true
+	inst := &limatype.Instance{Name: "test", Dir: dir, Config: &limatype.LimaYAML{Plain: &plain}}
+	if err := watchHostAgentEvents(ctx, inst, stdout, stderr, begin, true); err != nil {
+		t.Fatal(err)
+	}
+	got := logs.String()
+	for text, want := range map[string]int{
+		"Cloud-init provisioning started...":                        1,
+		"[cloud-init] Setting up git ...":                           1,
+		"[cloud-init] Cloud-init v. 1 finished":                     1,
+		"[cloud-init] Cloud-init monitoring completed successfully": 1,
+		"Cloud-init progress monitoring done.":                      1,
+	} {
+		if n := strings.Count(got, text); n != want {
+			t.Errorf("%q printed %d times, want %d:\n%s", text, n, want, got)
+		}
 	}
 }
