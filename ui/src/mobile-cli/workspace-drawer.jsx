@@ -60,7 +60,29 @@ export function ProjectTree({catalog, projectPath, sessionID, expanded, toggle, 
   </section>;
 }
 
-export function WorkspaceDrawer({open, active, name, onClose, onTool, onExit, onSettings, nativePhone, children}) {
+function WorkspaceSidebarBody({active, name, onTool, onExit, onSettings, nativePhone, children}) {
+  return <>
+    <header className="drawer-heading"><Monitor size={18} /><h2>{name || "远程工作台"}</h2></header>
+    <div className="drawer-content">
+      <nav className="workspace-tools" aria-label="远程工具">{workspaceTools.map(({id, name:toolName, icon:Icon}) =>
+        <button key={id} type="button" className="tool-link" aria-current={id === active ? "page" : undefined} onClick={() => onTool(id)}>
+          <Icon size={19} /><span>{toolName}</span>
+        </button>)}</nav>
+      {children}
+    </div>
+    <footer className="drawer-footer"><button className="drawer-exit" type="button" onClick={onSettings}><Settings size={18}/>设置</button>
+      <a className="drawer-exit" href={nativePhone ? "cage://home" : "/"}
+      onClick={event => {if (onExit()) event.preventDefault();}}><LogOut size={18}/>退出</a></footer>
+  </>;
+}
+
+export function WorkspaceSidebar(props) {
+  return <aside className="workspace-sidebar" aria-label="工作区侧栏">
+    <WorkspaceSidebarBody {...props} />
+  </aside>;
+}
+
+export function WorkspaceDrawer({open, onClose, ...bodyProps}) {
   const panel = useRef(null);
   useEffect(() => {
     const dialog = panel.current;
@@ -83,16 +105,6 @@ export function WorkspaceDrawer({open, active, name, onClose, onTool, onExit, on
       const rect = panel.current.getBoundingClientRect();
       if (event.clientX < rect.left || event.clientX >= rect.right || event.clientY < rect.top || event.clientY >= rect.bottom) onClose();
     }}>
-    <header className="drawer-heading"><Monitor size={18} /><h2>{name || "远程工作台"}</h2></header>
-    <div className="drawer-content">
-      <nav className="workspace-tools" aria-label="远程工具">{workspaceTools.map(({id, name:toolName, icon:Icon}) =>
-        <button key={id} type="button" className="tool-link" aria-current={id === active ? "page" : undefined} onClick={() => onTool(id)}>
-          <Icon size={19} /><span>{toolName}</span>
-        </button>)}</nav>
-      {children}
-    </div>
-    <footer className="drawer-footer"><button className="drawer-exit" type="button" onClick={onSettings}><Settings size={18}/>设置</button>
-      <a className="drawer-exit" href={nativePhone ? "cage://home" : "/"}
-      onClick={event => {if (onExit()) event.preventDefault();}}><LogOut size={18}/>退出</a></footer>
+    <WorkspaceSidebarBody {...bodyProps} />
   </dialog>;
 }

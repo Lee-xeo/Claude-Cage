@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRoot } from "react-dom/client";
 import { Archive, ArrowLeft, ArrowUp, LoaderCircle, Monitor, RefreshCw, Settings, Square, Terminal, X } from "lucide-react";
 import { RemoteDisplay } from "./remote-browser";
-import { CodeNavigation, ProjectTree, WorkspaceDrawer, workspaceTools } from "./workspace-drawer";
+import { CodeNavigation, ProjectTree, WorkspaceDrawer, WorkspaceSidebar, workspaceTools } from "./workspace-drawer";
 import { deviceCommand } from "./device-navigation.mjs";
 import cageLogo from "../logo.png";
 import { accessDenied, request, sessionPath } from "./transport.mjs";
@@ -22,6 +22,8 @@ const labels = {
 };
 const nativePhone = navigator.userAgent.includes("CageMobile/1");
 const phoneWorkspace = nativePhone || location.pathname === "/";
+const tabletMedia = "(min-width: 768px) and (min-height: 540px)";
+const matchesTabletWorkspace = () => phoneWorkspace && typeof matchMedia === "function" && matchMedia(tabletMedia).matches;
 const dateFormat = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 function displayTime(value) {
   if (!value) return "";
@@ -55,7 +57,9 @@ function Empty({ icon: Icon, title, children }) {
 function App() {
   const [current, setCurrent] = useState(route);
   const [addressSlot, setAddressSlot] = useState(null);
-  const [drawer, setDrawer] = useState(() => phoneWorkspace && !history.state?.cageCLI && route().tool === "code");
+  const [wideWorkspace, setWideWorkspace] = useState(matchesTabletWorkspace);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [drawer, setDrawer] = useState(() => phoneWorkspace && !matchesTabletWorkspace() && !history.state?.cageCLI && route().tool === "code");
   const drafts = useRef(new Map());
   const [expanded, setExpanded] = useState(() => new Map());
   const [catalog, setCatalog] = useState(null);
@@ -101,7 +105,19 @@ function App() {
     setGate(error.message); setCatalog(null); setError("");
   }, []);
   useEffect(() => {
-    const goBack = () => { openBrowserRequest.current = null; pageGeneration.current++; setCurrent(route()); setDrawer(phoneWorkspace && !history.state?.cageCLI); setError(""); };
+    if (!phoneWorkspace || typeof matchMedia !== "function") return;
+    const query = matchMedia(tabletMedia);
+    const update = () => {
+      const next = query.matches;
+      setWideWorkspace(next);
+      if (next) setDrawer(false);
+    };
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    const goBack = () => { openBrowserRequest.current = null; pageGeneration.current++; setCurrent(route()); setDrawer(phoneWorkspace && !matchesTabletWorkspace() && !history.state?.cageCLI); setError(""); };
     const visibility = () => setVisible(!document.hidden);
     const viewport = window.visualViewport;
     const resize = () => {
@@ -119,6 +135,7 @@ function App() {
       viewport?.removeEventListener("resize", resize);
     };
   }, [refreshAll]);
+  const sidebarVisible = wideWorkspace ? sidebarOpen : drawer;
   useEffect(() => {
     if (!visible) return;
     const controller = new AbortController();
@@ -138,11 +155,11 @@ function App() {
         setError(error.message);
         setCatalog(previous => previous && ({...previous, sessions:previous.sessions.map(session => ({...session, active:false}))}));
       }
-      if (!controller.signal.aborted && (drawer || current.tool !== "code" || !current.session)) timer = setTimeout(load, 5000);
+      if (!controller.signal.aborted && (sidebarVisible || current.tool !== "code" || !current.session)) timer = setTimeout(load, 5000);
     };
     void load();
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [refresh, visible, restricted, current.session, current.tool, drawer]);
+  }, [refresh, visible, restricted, current.session, current.tool, sidebarVisible]);
   const open = (project, session = "", push = false) => {
     const next = {tool: "code", displayID: "", project, session};
     pageGeneration.current++;
@@ -166,7 +183,10 @@ function App() {
     const selected = route();
     drafts.current.delete(selected.session);
     const next = {...selected, session:""};
-    saveRoute(next, false); setCurrent(next); setDrawer(phoneWorkspace); refreshAll();
+    saveRoute(next, false); setCurrent(next);
+    if (matchesTabletWorkspace()) setSidebarOpen(true);
+    else setDrawer(phoneWorkspace);
+    refreshAll();
   }, [refreshAll]);
   const mutateSession = async (kind, target, body) => {
     if (mutationBusy.current) return;
@@ -229,7 +249,10 @@ function App() {
   const leaveDisplay = () => {
     browserControls.current?.close();
     open(current.project, session);
-    setDrawer(!openBrowserRequest.current?.url);
+    if (!openBrowserRequest.current?.url) {
+      if (wideWorkspace) setSidebarOpen(true);
+      else setDrawer(true);
+    }
   };
   const exitWorkspace = () => {
     if (current.displayID) leaveDisplay();
@@ -248,51 +271,69 @@ function App() {
   };
   const leaveSettings = () => {
     if (current.tool === "archived") settingsPage("settings");
-    else { open(current.project); setDrawer(true); }
+    else {
+      open(current.project);
+      if (wideWorkspace) setSidebarOpen(true);
+      else setDrawer(true);
+    }
   };
   useEffect(() => {
     const openArchives = () => settingsPage("archived");
     window.addEventListener("cage-open-archives", openArchives);
     return () => window.removeEventListener("cage-open-archives", openArchives);
   }, [current.project]);
-  return <main className={["mobile-app", phoneWorkspace && "phone-workspace", nativePhone && "native-phone"].filter(Boolean).join(" ")}>
+  const sidebarProps = {
+    active: current.tool,
+    name: catalog?.host || devices.devices.find(d => d.id === devices.current)?.name,
+    onTool: selectTool,
+    onSettings: () => settingsPage("settings"),
+    nativePhone,
+    onExit: exitWorkspace,
+  };
+  const sidebarChildren = <>
+    {error && <Notice onRetry={refreshAll}>{error}</Notice>}
+    {gate ? <Notice onRetry={refreshAll}>{gate}</Notice> : <ProjectTree catalog={catalog} projectPath={current.project}
+      sessionID={current.tool === "code" ? session : ""} creating={creating || actionBusy} onNew={start} onAction={chooseSessionAction}
+      onSession={(path,id) => {open(path,id,true); setDrawer(false);}} expanded={expanded}
+      toggle={(path,next) => setExpanded(previous => new Map(previous).set(path,next))} />}
+  </>;
+  return <main className={["mobile-app", phoneWorkspace && "phone-workspace", nativePhone && "native-phone", wideWorkspace && "tablet-workspace"].filter(Boolean).join(" ")}>
     <header className="topbar workspace-topbar">
       {phoneWorkspace
-        ? <button type="button" className="icon-button" aria-haspopup="dialog" aria-expanded={drawer} aria-label="展开侧栏"
-          onClick={() => setDrawer(true)}><img className="brand-mark" src={cageLogo} alt="Cage" /></button>
+        ? <button type="button" className="icon-button" aria-haspopup={wideWorkspace ? undefined : "dialog"} aria-expanded={wideWorkspace ? sidebarOpen : drawer}
+          aria-label={wideWorkspace ? (sidebarOpen ? "收起侧栏" : "展开侧栏") : "展开侧栏"}
+          onClick={() => wideWorkspace ? setSidebarOpen(open => !open) : setDrawer(true)}><img className="brand-mark" src={cageLogo} alt="Cage" /></button>
         : <a className="icon-button" href="/" aria-label="返回工作台"><img className="brand-mark" src={cageLogo} alt="Cage" /></a>}
       {phoneWorkspace && (current.tool === "browser" || current.tool === "claude") && <div className="workspace-address-slot" ref={setAddressSlot} />}
       <div className="top-actions">{phoneWorkspace
         ? <span className="workspace-tool-icon" role="img" aria-label={activeTool?.name || "Claude Code"}><ActiveToolIcon size={19} aria-hidden="true" /></span>
         : <div className="connection-host"><Monitor size={16} /><span>{catalog?.host || "连接电脑"}</span></div>}</div>
     </header>
-    {gate ? <Notice onRetry={refreshAll}>{gate}</Notice> : !catalog
-      ? <section className="page-scroll">{error ? <Notice onRetry={refreshAll}>{error}</Notice> : <Empty icon={LoaderCircle} title="正在读取项目…" />}</section>
-      : current.tool === "settings" || current.tool === "archived"
-        ? <section className="page-scroll mobile-session-settings" aria-label="会话设置">
-          <button className="action" onClick={leaveSettings}><ArrowLeft size={17} />{current.tool === "archived" ? "返回设置" : "返回会话"}</button>
-          {current.tool === "archived" ? <ArchivedSessions request={request} ready={catalog.ready}
-            onRestored={id => {archivedSessions.current.delete(id); refreshAll();}} />
-            : <><h1>设置</h1><button className="action secondary" onClick={() => settingsPage("archived")}><Archive size={18} />已归档会话</button></>}
-        </section>
-      : current.displayID
-        ? <RemoteDisplay controls={browserControls} key={current.displayID} id={current.displayID} tool={current.tool} addressSlot={addressSlot}
-          start={openBrowserRequest.current?.id === current.displayID} initialURL={openBrowserRequest.current?.url || ""} visible={visible}
-          onBack={leaveDisplay} onReopen={() => selectTool(current.tool, false, openBrowserRequest.current?.url)} />
-      : session
-        ? <Chat key={session} id={session} drafts={drafts.current} ready={catalog.ready} visible={visible} refresh={refresh}
-          onOpenWeb={url => selectTool("browser", true, url)} onDenied={restricted} onMissing={missingSession} onSnapshot={updateSession} onBack={phoneWorkspace ? undefined : () => open(current.project)} />
-      : phoneWorkspace
-        ? <div className="workspace-placeholder"><Terminal size={28} /><p>{project ? "在侧栏选择或新建会话" : "请选择远程工具"}</p></div>
-        : <section className="page-scroll">{error && <Notice onRetry={refreshAll}>{error}</Notice>}{codeNavigation}</section>}
-    {phoneWorkspace && <WorkspaceDrawer open={drawer} active={current.tool} name={catalog?.host || devices.devices.find(d => d.id === devices.current)?.name}
-      onClose={() => setDrawer(false)} onTool={selectTool} onSettings={() => settingsPage("settings")} nativePhone={nativePhone} onExit={exitWorkspace}>
-      {error && <Notice onRetry={refreshAll}>{error}</Notice>}
-      {gate ? <Notice onRetry={refreshAll}>{gate}</Notice> : <ProjectTree catalog={catalog} projectPath={current.project}
-        sessionID={current.tool === "code" ? session : ""} creating={creating || actionBusy} onNew={start} onAction={chooseSessionAction}
-        onSession={(path,id) => {open(path,id,true); setDrawer(false);}} expanded={expanded}
-        toggle={(path,next) => setExpanded(previous => new Map(previous).set(path,next))} />}
-    </WorkspaceDrawer>}
+    <div className="workspace-body">
+      {wideWorkspace && sidebarOpen && <WorkspaceSidebar {...sidebarProps}>{sidebarChildren}</WorkspaceSidebar>}
+      <div className="workspace-pane">
+        {gate ? <Notice onRetry={refreshAll}>{gate}</Notice> : !catalog
+          ? <section className="page-scroll">{error ? <Notice onRetry={refreshAll}>{error}</Notice> : <Empty icon={LoaderCircle} title="正在读取项目…" />}</section>
+          : current.tool === "settings" || current.tool === "archived"
+            ? <section className="page-scroll mobile-session-settings" aria-label="会话设置">
+              <button className="action" onClick={leaveSettings}><ArrowLeft size={17} />{current.tool === "archived" ? "返回设置" : "返回会话"}</button>
+              {current.tool === "archived" ? <ArchivedSessions request={request} ready={catalog.ready}
+                onRestored={id => {archivedSessions.current.delete(id); refreshAll();}} />
+                : <><h1>设置</h1><button className="action secondary" onClick={() => settingsPage("archived")}><Archive size={18} />已归档会话</button></>}
+            </section>
+          : current.displayID
+            ? <RemoteDisplay controls={browserControls} key={current.displayID} id={current.displayID} tool={current.tool} addressSlot={addressSlot}
+              start={openBrowserRequest.current?.id === current.displayID} initialURL={openBrowserRequest.current?.url || ""} visible={visible}
+              onBack={leaveDisplay} onReopen={() => selectTool(current.tool, false, openBrowserRequest.current?.url)} />
+          : session
+            ? <Chat key={session} id={session} drafts={drafts.current} ready={catalog.ready} visible={visible} refresh={refresh}
+              onOpenWeb={url => selectTool("browser", true, url)} onDenied={restricted} onMissing={missingSession} onSnapshot={updateSession} onBack={phoneWorkspace ? undefined : () => open(current.project)} />
+          : phoneWorkspace
+            ? <div className="workspace-placeholder"><Terminal size={28} /><p>{project ? "在侧栏选择或新建会话" : "请选择远程工具"}</p></div>
+            : <section className="page-scroll">{error && <Notice onRetry={refreshAll}>{error}</Notice>}{codeNavigation}</section>}
+      </div>
+    </div>
+    {phoneWorkspace && !wideWorkspace && <WorkspaceDrawer open={drawer} onClose={() => setDrawer(false)} {...sidebarProps}>{sidebarChildren}</WorkspaceDrawer>}
     {sessionAction && <SessionActionDialog key={sessionAction.kind + sessionAction.session.id} action={sessionAction} busy={actionBusy}
       error={sessionActionError} onCancel={() => setSessionAction(null)} onSubmit={body => mutateSession(sessionAction.kind, sessionAction.session, body)}/>}
   </main>;
