@@ -96,7 +96,7 @@ $env:CAGE_MSYS2_ROOT = 'C:\msys64'
 .\scripts\build-windows.ps1
 ```
 
-首次构建会下载并校验 QEMU 源码，再编译 `qemu-system-x86_64.exe` 和 `qemu-img.exe`。QEMU 配置阶段所需的 pip、setuptools 和 wheel 由 [dependencies.json](../packaging/windows/dependencies.json) 固定版本与 SHA-256，下载校验后放在依赖缓存的 `qemu-python-wheels` 目录，配置时不访问 PyPI。这三个包只用于构建，不随安装包分发。源码优先使用项目发行页上的归档，下载失败时回退到 Git。两种方式都校验源码 tar 文件的 SHA-256。MSYS2 的 tar 会将归档里的相对链接展开为普通文件或目录，普通账户即可解包。QEMU 在独立的短路径目录下编译，默认尝试 MSYS2 的 `tmp`，Cage 仓库路径可以有空格和中文。如果该目录不可写，可设置 `$env:CAGE_QEMU_BUILD_ROOT = 'D:\CageBuildTemp'`，使用普通用户可写、无空格且仅含 ASCII 字符的路径。这个目录还要足够短：QEMU 配置阶段由 pip 在其下创建很深的临时路径，目录过长时会报 `The filename or extension is too long`，脚本会提前给出警告。用 `SUBST` 映射的短盘符无效，Python 会展开为原来的物理路径，须直接使用短的物理目录。
+首次构建会下载并校验 QEMU 源码，再编译 `qemu-system-x86_64.exe` 和 `qemu-img.exe`。QEMU 配置阶段所需的 pip、setuptools、wheel 与 packaging 由 [dependencies.json](../packaging/windows/dependencies.json) 固定版本与 SHA-256，下载校验后放在依赖缓存的 `qemu-python-wheels` 目录，配置时不访问 PyPI。这些包只用于构建，不随安装包分发。源码优先使用项目发行页上的归档，下载失败时回退到 Git。两种方式都校验源码 tar 文件的 SHA-256。MSYS2 的 tar 会将归档里的相对链接展开为普通文件或目录，普通账户即可解包。QEMU 在独立的短路径目录下编译，默认尝试 MSYS2 的 `tmp`，Cage 仓库路径可以有空格和中文。如果该目录不可写，可设置 `$env:CAGE_QEMU_BUILD_ROOT = 'D:\CageBuildTemp'`，使用普通用户可写、无空格且仅含 ASCII 字符的路径。这个目录还要足够短：QEMU 配置阶段由 pip 在其下创建很深的临时路径，目录过长时会报 `The filename or extension is too long`，脚本会提前给出警告。用 `SUBST` 映射的短盘符无效，Python 会展开为原来的物理路径，须直接使用短的物理目录。
 
 QEMU 下载前会分别编译、链接并运行最小 C 和 C++ 程序。默认 GCC 和 G++ 的 `-B` 指向 MSYS2 的 `ucrt64/bin`，使汇编器和链接器从同一目录加载工具链 DLL。这能避开 `System32` 内旧版 `zlib1.dll` 与 GCC 默认子工具的冲突。如果设置了 `CC` 或 `CXX`，构建沿用对应的显式配置。预检失败时查看编译器输出。配置失败时，脚本会显示 `config.log` 和 `meson-logs/meson-log.txt` 所在目录。
 

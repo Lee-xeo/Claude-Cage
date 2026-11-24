@@ -2,12 +2,14 @@
 # Build the Intel Mac runtime from public source. No guest disk is an input.
 set -euo pipefail
 
-# Pinned pure-Python wheels used only by QEMU's mkvenv bootstrap (MIT licensed,
-# never bundled into Cage.app). Kept in sync with packaging/windows/dependencies.json.
+# Pinned pure-Python wheels used only by QEMU's mkvenv bootstrap (MIT /
+# Apache-2.0 OR BSD-2-Clause licensed, never bundled into Cage.app). Kept in
+# sync with packaging/windows/dependencies.json.
 QEMU_PYTHON_WHEELS=(
     "pip-26.3-py3-none-any.whl|https://files.pythonhosted.org/packages/07/25/ee8c38ae72d66b844ce8eb9711ba905dba21ca1a8a0c960057c41cd23337/pip-26.3-py3-none-any.whl|f3b60b20ffaadd4415ed7957212a38ac63fa4c5fa375bd0f4a797777940fad13"
     "setuptools-84.2.1-py3-none-any.whl|https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl|ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2"
     "wheel-0.48.0-py3-none-any.whl|https://files.pythonhosted.org/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl|3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab"
+    "packaging-26.4-py3-none-any.whl|https://files.pythonhosted.org/packages/ba/7b/5504f91c9c2733f693d7759e50ede5d27119d4da7e5836c46d3b5ff81d56/packaging-26.4-py3-none-any.whl|81383611a09c1bc0b08b76e0fd5829d7c6824c65b27a6aee339da133f4233ea2"
 )
 
 download_to() {
