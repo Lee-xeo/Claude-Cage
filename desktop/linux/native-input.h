@@ -95,6 +95,10 @@ static gboolean input_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointe
 }
 
 static void input_initialize(WebKitWebView *web) {
+    if (native_input.end_idle) { g_source_remove(native_input.end_idle); native_input.end_idle = 0; }
+    native_input.composing = FALSE;
+    g_clear_pointer(&native_input.owner, g_free);
+    g_clear_object(&native_input.context);
     native_input.web = web;
     native_input.context = gtk_im_multicontext_new();
     gtk_im_context_set_use_preedit(native_input.context, TRUE);

@@ -30,6 +30,8 @@ func TestRedactProxyAddresses(t *testing.T) {
 		{"Could not connect to 10.0.2.2:7890 (10.0.2.2). - connect (110: Connection timed out)", "Could not connect to [ip] ([ip]). - connect (110: Connection timed out)"},
 		{"Err:1 https://deb.debian.org/debian trixie InRelease", "Err:1 [url] trixie InRelease"},
 		{"E: Unable to locate package ripgrep", "E: Unable to locate package ripgrep"},
+		{"Login browser open failed (stage=create-target): Browser command timed out: Target/createTarget", "Login browser open failed (stage=create-target): Browser command timed out: Target/createTarget"},
+		{"Login browser open failed (stage=navigate): Browser command timed out: Page/navigate at api.example.com", "Login browser open failed (stage=navigate): Browser command timed out: Page/navigate at [host]"},
 		{"2026-11-14T10:20:30+08:00 v0.1.7 HTTP 502 dns resolve failed: context deadline exceeded", "2026-11-14T10:20:30+08:00 v0.1.7 HTTP 502 dns resolve failed: context deadline exceeded"},
 	} {
 		t.Run(tc.input, func(t *testing.T) {

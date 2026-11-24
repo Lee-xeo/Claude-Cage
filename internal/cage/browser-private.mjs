@@ -14,17 +14,17 @@ export class PrivateBrowser {
   async open(url, activate) {
     await this.prune();
     if (!this.context) {
-      const { browserContextId } = await this.cdp("Target.createBrowserContext", { disposeOnDetach: true });
+      const { browserContextId } = await this.cdp("Target.createBrowserContext", { disposeOnDetach: true }, undefined, 12000);
       this.context = browserContextId;
     }
     try {
       await this.cdp("Browser.setDownloadBehavior", {
         browserContextId: this.context, behavior: "allowAndName",
         downloadPath: this.downloadPath, eventsEnabled: true,
-      });
+      }, undefined, 12000);
       const { targetId } = await this.cdp("Target.createTarget", {
         browserContextId: this.context, url, newWindow: true,
-      });
+      }, undefined, 12000);
       await activate(this.tab({ targetId, browserContextId: this.context, type: "page", url }));
       return { id: targetId, incognito: true };
     } catch (error) {

@@ -24,6 +24,10 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     private var accountDeviceBusy = false
     private var expectedPort = 0
     private var allowQuit = false
+    private var bootstrapGeneration = 0
+    private var lastWebProcessTermination: Date?
+    private var webViewReloadNeeded = false
+    private var pendingQuitCompletion: ((Bool) -> Void)?
     private var nativeFilePanelOpen = false
     private var fileSelections: [String: (paths: [String], expires: Date)] = [:]
     private var clipboardGeneration = 0
@@ -119,17 +123,6 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         window.delegate = self
         window.setFrameAutosaveName("CageMainWindow")
         window.center()
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
-        config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "cage")
-        config.userContentController.addUserScript(WKUserScript(source: "window.cageNativeIMEAvailable = true;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        webView = WKWebView(frame: .zero, configuration: config)
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
-        webView.translatesAutoresizingMaskIntoConstraints = false
-        webView.allowsBackForwardNavigationGestures = false
-        webView.setValue(false, forKey: "drawsBackground")
-        webView.underPageBackgroundColor = .clear
         let content = window.contentView!
         backdrop = NSVisualEffectView(frame: content.bounds)
         backdrop.autoresizingMask = [.width, .height]
@@ -137,11 +130,10 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         backdrop.blendingMode = .behindWindow
         backdrop.state = .followsWindowActiveState
         content.addSubview(backdrop)
-        content.addSubview(webView)
+        installWebView()
         nativeInput = CageNativeInput(frame: .zero)
         nativeInput.configure(web: webView)
         content.addSubview(nativeInput)
-        NSLayoutConstraint.activate([webView.leadingAnchor.constraint(equalTo: content.leadingAnchor), webView.trailingAnchor.constraint(equalTo: content.trailingAnchor), webView.topAnchor.constraint(equalTo: content.topAnchor), webView.bottomAnchor.constraint(equalTo: content.bottomAnchor)])
         loading = NSTextField(labelWithString: CageLanguage.text("正在启动 Cage 工作台…"))
         loading.font = NSFont.systemFont(ofSize: 16, weight: .medium)
         loading.textColor = NSColor(srgbRed: 54.0/255, green: 54.0/255, blue: 54.0/255, alpha: 1)
@@ -204,6 +196,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         terminal.keyEquivalentModifierMask = [.command, .shift]
         file.addItem(withTitle: CageLanguage.text("关闭当前标签"), action: #selector(closeTab), keyEquivalent: "w")
         file.addItem(.separator())
+        file.addItem(withTitle: CageLanguage.text("重新加载界面"), action: #selector(reloadWorkbench), keyEquivalent: "")
         file.addItem(withTitle: CageLanguage.text("关闭窗口（保留环境）"), action: #selector(closeWindow), keyEquivalent: "")
         let fileItem = NSMenuItem(title: CageLanguage.text("文件"), action: nil, keyEquivalent: "")
         fileItem.submenu = file; main.addItem(fileItem)
@@ -251,8 +244,50 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     @objc private func closeWindow() { window.close() }
     @objc private func requestQuit() { NSApp.terminate(nil) }
     @objc private func checkApplicationUpdate() { _ = appUpdater?.handle("check") }
-    @objc private func retryConnection() { bootstrap() }
+    @objc private func retryConnection() {
+        if webViewReloadNeeded { installWebView() }
+        bootstrap()
+    }
+    @objc private func reloadWorkbench() {
+        pendingQuitCompletion?(false)
+        window.makeKeyAndOrderFront(nil)
+        CageDiagnostics.record("Reloading workbench WebView")
+        installWebView()
+        bootstrap(options: controllerNeedsUpdate ? ["--existing"] : [])
+    }
     @objc private func openExistingEnvironment() { bootstrap(options: ["--existing"]) }
+    private func installWebView() {
+        let content = window.contentView!
+        if let previous = webView {
+            previous.stopLoading()
+            previous.navigationDelegate = nil
+            previous.uiDelegate = nil
+            previous.configuration.userContentController.removeAllScriptMessageHandlers()
+            previous.removeFromSuperview()
+        }
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "cage")
+        config.userContentController.addUserScript(WKUserScript(source: "window.cageNativeIMEAvailable = true;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        let fresh = WKWebView(frame: .zero, configuration: config)
+        fresh.navigationDelegate = self
+        fresh.uiDelegate = self
+        fresh.translatesAutoresizingMaskIntoConstraints = false
+        fresh.allowsBackForwardNavigationGestures = false
+        fresh.setValue(false, forKey: "drawsBackground")
+        fresh.underPageBackgroundColor = .clear
+        fresh.isHidden = true
+        content.addSubview(fresh, positioned: .above, relativeTo: backdrop)
+        NSLayoutConstraint.activate([
+            fresh.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            fresh.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            fresh.topAnchor.constraint(equalTo: content.topAnchor),
+            fresh.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+        webView = fresh
+        webViewReloadNeeded = false
+        nativeInput?.configure(web: fresh)
+    }
     @objc private func completePendingUpdate() {
         let alert = NSAlert()
         alert.messageText = CageLanguage.text("保存文件后完成更新")
@@ -291,10 +326,13 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         }
     }
     private func bootstrap(options: [String] = []) {
+        bootstrapGeneration += 1
+        let generation = bootstrapGeneration
         loading.stringValue = options.contains("--complete-update") ? CageLanguage.text("正在停止环境并切换到新版后台…") : CageLanguage.text("正在启动 Cage 工作台…")
         loading.isHidden = false; retry.isHidden = true; webView.isHidden = true
         completeUpdateButton.isHidden = true; existingEnvironmentButton.isHidden = true
         requestEntry(options: options) { result in
+            guard generation == self.bootstrapGeneration else { return }
             switch result {
             case .success(let entry):
                 self.controllerNeedsUpdate = entry.status != "ready"
@@ -427,8 +465,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         window.backgroundColor = NSColor(srgbRed: Double((hex >> 16) & 255)/255, green: Double((hex >> 8) & 255)/255, blue: Double(hex & 255)/255, alpha: 1)
         loading.textColor = .labelColor
     }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loading.isHidden = true; retry.isHidden = true; completeUpdateButton.isHidden = true; existingEnvironmentButton.isHidden = true; webView.isHidden = false; window.makeFirstResponder(webView); publishWindowVisibility() }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    private func presentNavigationError(_ error: Error) {
         CageDiagnostics.record("Workbench navigation failed: \(error)")
         let failure = error as NSError
         switch failure.code {
@@ -438,16 +475,43 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         default: showError(CageLanguage.format("打开工作台失败：内置网页组件未能加载本机工作台（错误代码 {0}）。请点击“重试连接”；仍失败时请保留此错误提示并反馈给维护者。后台任务不会因此自动结束。", String(failure.code)))
         }
     }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
+        loading.isHidden = true; retry.isHidden = true; completeUpdateButton.isHidden = true; existingEnvironmentButton.isHidden = true; webView.isHidden = false; window.makeFirstResponder(webView); publishWindowVisibility()
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView else { return }
+        let failure = error as NSError
+        if failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled { return }
+        presentNavigationError(error)
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView else { return }
+        let failure = error as NSError
+        if failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled { return }
+        presentNavigationError(error)
+    }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        CageDiagnostics.record("WebKit content process terminated"); bootstrap()
+        guard webView === self.webView else { return }
+        CageDiagnostics.record("WebKit content process terminated")
+        let now = Date()
+        let rapidCrash = lastWebProcessTermination.map { now.timeIntervalSince($0) < 15 } ?? false
+        lastWebProcessTermination = now
+        if rapidCrash {
+            webViewReloadNeeded = true
+            showError(CageLanguage.text("工作台显示进程已退出。后台任务保留，可重试连接。"))
+            return
+        }
+        installWebView()
+        bootstrap(options: controllerNeedsUpdate ? ["--existing"] : [])
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = navigationAction.request.url, url.scheme == "http", url.host == "localhost", url.port == expectedPort else { decisionHandler(.cancel); return }
+        guard webView === self.webView, let url = navigationAction.request.url, url.scheme == "http", url.host == "localhost", url.port == expectedPort else { decisionHandler(.cancel); return }
         decisionHandler(.allow)
     }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
         let origin = message.frameInfo.securityOrigin
-        guard message.frameInfo.isMainFrame, origin.protocol == "http", origin.host == "localhost", origin.port == expectedPort, let body = message.body as? [String:Any], let action = body["action"] as? String else { replyHandler(nil,"请求来源无效"); return }
+        guard message.webView === self.webView, message.frameInfo.isMainFrame, origin.protocol == "http", origin.host == "localhost", origin.port == expectedPort, let body = message.body as? [String:Any], let action = body["action"] as? String else { replyHandler(nil,"请求来源无效"); return }
         switch action {
         case "remoteInput":
             replyHandler(nativeInput.handle(body), nil)
@@ -734,7 +798,14 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                 }
             }
         case "reconnect": replyHandler(true,nil); bootstrap()
-        case "quitNow": replyHandler(true,nil); allowQuit = true; NSApp.terminate(nil)
+        case "quitNow":
+            replyHandler(true, nil)
+            allowQuit = true
+            if let completePendingQuit = pendingQuitCompletion {
+                completePendingQuit(true)
+            } else {
+                NSApp.terminate(nil)
+            }
         default: replyHandler(nil,"未知操作")
         }
     }
@@ -890,10 +961,45 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) { appUpdater?.cancelForTermination() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if allowQuit || webView.isHidden || appUpdater?.awaitingInitialWorkbench == true {
+        if allowQuit || webView == nil || webView.isHidden || appUpdater?.awaitingInitialWorkbench == true {
             if appUpdater?.prepareForTermination({ NSApp.reply(toApplicationShouldTerminate: true) }) == true { return .terminateLater }
             return .terminateNow
         }
-        window.makeKeyAndOrderFront(nil); action("quit"); return .terminateCancel
+        if pendingQuitCompletion != nil { return .terminateCancel }
+        window.makeKeyAndOrderFront(nil)
+        var settled = false
+        var deadline: DispatchWorkItem?
+        let finish: (Bool) -> Void = { shouldTerminate in
+            guard !settled else { return }
+            settled = true
+            deadline?.cancel()
+            deadline = nil
+            self.pendingQuitCompletion = nil
+            if shouldTerminate {
+                if self.appUpdater?.prepareForTermination({ NSApp.reply(toApplicationShouldTerminate: true) }) == true { return }
+                NSApp.reply(toApplicationShouldTerminate: true)
+            } else {
+                NSApp.reply(toApplicationShouldTerminate: false)
+            }
+        }
+        pendingQuitCompletion = finish
+        let timer = DispatchWorkItem {
+            guard !settled else { return }
+            CageDiagnostics.record("Workbench did not respond to quit request within 1.5s; terminating desktop window")
+            finish(true)
+        }
+        deadline = timer
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: timer)
+        webView.evaluateJavaScript("typeof window.cageNativeAction === 'function' ? (window.cageNativeAction('quit'), true) : false") { result, error in
+            if self.allowQuit {
+                finish(true)
+            } else if error == nil, (result as? Bool) == true {
+                finish(false)
+            } else {
+                CageDiagnostics.record("Workbench quit handoff failed (\(error?.localizedDescription ?? "handler unavailable")); terminating desktop window")
+                finish(true)
+            }
+        }
+        return .terminateLater
     }
 }

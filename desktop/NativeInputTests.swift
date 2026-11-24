@@ -79,6 +79,20 @@ enum NativeInputTests {
         }
         precondition(!input.handle(["operation":"deactivate", "owner":UUID().uuidString]))
         precondition(input.handle(["operation":"deactivate", "owner":owner]))
-        print("Native input F1-F20 down/up, coordinates, window movement, resize, and stale owner checks passed")
+        // Replacing the WebView must reset active IME state so stale owner or
+        // marked-text events never leak into the replacement WebView.
+        let activeOwner = UUID().uuidString
+        precondition(input.handle(["operation":"activate", "owner":activeOwner, "x":40.0, "y":60.0, "height":20.0]))
+        input.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        precondition(input.hasMarkedText() && input.owner == activeOwner && window.firstResponder === input)
+        let replacement = RecordingWebView(frame: window.contentView!.bounds)
+        window.contentView!.addSubview(replacement)
+        input.configure(web: replacement)
+        precondition(input.owner.isEmpty, "stale IME owner survived WebView replacement")
+        precondition(!input.hasMarkedText(), "stale marked text survived WebView replacement")
+        precondition(window.firstResponder !== input, "native input remained firstResponder after WebView replacement")
+        precondition(replacement.scripts.isEmpty, "stale IME events leaked into the replacement WebView")
+        precondition(!input.handle(["operation":"deactivate", "owner":activeOwner]))
+        print("Native input F1-F20 down/up, coordinates, window movement, resize, stale owner, and WebView reload checks passed")
     }
 }

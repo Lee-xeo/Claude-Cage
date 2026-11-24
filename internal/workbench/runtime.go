@@ -556,6 +556,43 @@ func proxyDNSOutdated(p managedproxy.Store, cfg cage.Config) bool {
 	return !slices.Equal(p.CoreDNS(), cfg.DNSEndpoints()) || !slices.Equal(p.NodeResolvers(), cfg.BootstrapEndpoints())
 }
 
+var (
+	startPreflightProxy = managedproxy.StartPreflight
+	proxyCoreRunning    = managedproxy.Running
+)
+
+func needsBootstrapPreflight(old, candidate cage.Config, p managedproxy.Store) bool {
+	return !slices.Equal(old.BootstrapEndpoints(), candidate.BootstrapEndpoints()) ||
+		(p.Selected != "" && !slices.Equal(p.NodeResolvers(), candidate.BootstrapEndpoints()))
+}
+
+// probeCandidateLocation probes exit IP and location for candidate settings.
+// When the effective node bootstrap DNS differs from the saved config or the
+// active core's resolvers, it validates through an isolated temporary core so
+// replacing a failing bootstrap resolver can recover without touching the
+// active proxy or guest gate (#748).
+func (s *Server) probeCandidateLocation(ctx context.Context, old, candidate cage.Config, prefs Preferences) (Location, bool, error) {
+	p, err := managedproxy.Load(s.profile)
+	if err != nil {
+		return Location{}, false, err
+	}
+	probeCfg := candidate
+	usedPreflight := false
+	if needsBootstrapPreflight(old, candidate, p) {
+		p.GuestDNS = candidate.DNSEndpoints()
+		p.BootstrapDNS = candidate.BootstrapEndpoints()
+		preflight, err := startPreflightProxy(ctx, s.profile, p)
+		if err != nil {
+			return Location{}, true, err
+		}
+		defer preflight.Close()
+		probeCfg.ProxyURL = preflight.Endpoint
+		usedPreflight = true
+	}
+	loc, err := probeEnvironmentLocation(ctx, probeCfg, prefs)
+	return loc, usedPreflight, err
+}
+
 type jobRecoveryError struct {
 	Recovery string
 	Err      error
@@ -587,9 +624,11 @@ func (s *Server) applyWithOptions(v savedProfile, validate, saveStaticDraft bool
 	var pendingStaticDraftErr error
 	if changed && validate && old.RequireManagedProxy(s.profile) == nil {
 		s.setMessage("正在验证新出口，现有环境保持运行…")
-		loc, e := probeEnvironmentLocation(s.operationContext(), v.Config, v.Preferences)
-		if err := s.finishLocationProbe(v.Config, loc, e); err != nil {
-			return err
+		loc, usedPreflight, e := s.probeCandidateLocation(s.operationContext(), old, v.Config, v.Preferences)
+		if !usedPreflight {
+			if err := s.finishLocationProbe(v.Config, loc, e); err != nil {
+				return err
+			}
 		}
 		if e != nil {
 			if loc.IP == "" {
@@ -714,6 +753,13 @@ func (s *Server) applyWithOptions(v savedProfile, validate, saveStaticDraft bool
 				return fmt.Errorf("设置已保存，环境已启动。外网仍关闭，修复以下问题后可重新检测：%w", err)
 			}
 			return fmt.Errorf("设置已保存，环境尚未恢复就绪。请核对客机状态后重试启动：%w", err)
+		}
+	} else if changed && pendingStaticDraftErr == nil && v.Config.RequireManagedProxy(s.profile) == nil {
+		if p, loadErr := managedproxy.Load(s.profile); loadErr == nil && p.Selected != "" && p.Endpoint() == v.Config.ProxyURL && p.Revision == v.Config.ProxyRevision && proxyDNSOutdated(p, v.Config) && proxyCoreRunning(s.operationContext(), s.profile, p) {
+			s.setMessage("正在应用内置代理节点…")
+			if err = s.activateProxy(p, v.Config); err != nil {
+				return fmt.Errorf("设置已保存，但重启内置代理核心失败：%w", err)
+			}
 		}
 	}
 	if pendingStaticDraftErr != nil {
