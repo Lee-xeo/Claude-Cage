@@ -123,8 +123,12 @@ func Validate(ctx context.Context, profile string, s Store) error {
 	return nil
 }
 func API(ctx context.Context, profile, method, path string, body any, reply any) error {
+	return apiOnSocket(ctx, Socket(profile), method, path, body, reply)
+}
+
+func apiOnSocket(ctx context.Context, socketPath, method, path string, body any, reply any) error {
 	tr := &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "unix", Socket(profile))
+		return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "unix", socketPath)
 	}}
 	defer tr.CloseIdleConnections()
 	client := &http.Client{Transport: tr, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}
@@ -219,6 +223,14 @@ func checkRunning(ctx context.Context, profile string, s Store) error {
 	if _, err := s.Route(); err != nil {
 		return err
 	}
+	bound, err := BoundInterface(filepath.Join(Dir(profile), "config.yaml"))
+	if err != nil || bound == "" {
+		return &coreError{stage: "readiness.bound-interface", err: err}
+	}
+	return checkRunningSocket(ctx, Socket(profile), bound, s)
+}
+
+func checkRunningSocket(ctx context.Context, socketPath, bound string, s Store) error {
 	var cfg struct {
 		Port         int    `json:"mixed-port"`
 		Interface    string `json:"interface-name"`
@@ -227,11 +239,7 @@ func checkRunning(ctx context.Context, profile string, s Store) error {
 	var group struct {
 		Now string `json:"now"`
 	}
-	bound, err := BoundInterface(filepath.Join(Dir(profile), "config.yaml"))
-	if err != nil || bound == "" {
-		return &coreError{stage: "readiness.bound-interface", err: err}
-	}
-	if err := API(ctx, profile, "GET", "/configs", nil, &cfg); err != nil {
+	if err := apiOnSocket(ctx, socketPath, "GET", "/configs", nil, &cfg); err != nil {
 		return &coreError{stage: "readiness.configs", err: err}
 	}
 	if cfg.Port != s.Port {
@@ -243,7 +251,7 @@ func checkRunning(ctx context.Context, profile string, s Store) error {
 	if !cfg.UnifiedDelay {
 		return &coreError{stage: "readiness.unified-delay"}
 	}
-	if err := API(ctx, profile, "GET", "/proxies/"+Group, nil, &group); err != nil {
+	if err := apiOnSocket(ctx, socketPath, "GET", "/proxies/"+Group, nil, &group); err != nil {
 		return &coreError{stage: "readiness.group", err: err}
 	}
 	if group.Now != s.Selected {
