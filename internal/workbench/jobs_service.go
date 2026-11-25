@@ -44,7 +44,7 @@ func (s *Server) submitJobWithInitiator(initiator, kind string, run func() error
 		s.mu.Unlock()
 		return Job{}, errJobsClosed
 	}
-	if s.storageRecoveryError != "" && kind != "storage-recovery" {
+	if s.storageRecoveryError != "" && kind != "storage-recovery" && kind != "device-reset" {
 		err := fmt.Errorf("环境存储待恢复，请在设置中恢复后继续。%s", s.storageRecoveryError)
 		s.mu.Unlock()
 		return Job{}, err

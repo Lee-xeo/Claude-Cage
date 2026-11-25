@@ -92,7 +92,13 @@ func TestInitializationPersistsBeforeDiskCreationAndDoesNotResetExisting(t *test
 			t.Fatal(w.Code, w.Body.String())
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(s.profile, "state"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(s.profile, "state", "lima", "base"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.profile, "state", "lima", "base", "lima.yaml"), []byte("vmType: qemu\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.profile, "state", "lima", "base", "diffdisk"), []byte("disk"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(s.profile, "state", ".agent-vm-base-version"), []byte("fixture"), 0600); err != nil {
@@ -167,5 +173,67 @@ func TestInitializationCompletionRequiresReadyGuestAndCurrentNetworkEvidence(t *
 	}
 	if view, err := s.initializationState(); err != nil || view.Required {
 		t.Fatalf("completed stopped environment lost initialization: %+v %v", view, err)
+	}
+}
+
+func TestEnvironmentPreparedRejectsStaleBaseMarkerWithoutVMFiles(t *testing.T) {
+	s := testServer(t)
+	stateDir := filepath.Join(s.profile, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Stale marker without base or instance VM files must not report prepared.
+	if err := os.WriteFile(filepath.Join(stateDir, ".agent-vm-base-version"), []byte("100\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s.environmentPrepared() {
+		t.Fatal("stale .agent-vm-base-version alone reported environmentPrepared=true")
+	}
+	if view, err := s.initializationState(); err != nil || !view.Required {
+		t.Fatalf("stale marker without VM files skipped required setup: %+v %v", view, err)
+	}
+
+	// Base lima.yaml without a disk is still incomplete.
+	baseDir := filepath.Join(stateDir, "lima", "base")
+	if err := os.MkdirAll(baseDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "lima.yaml"), []byte("vmType: qemu\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s.environmentPrepared() {
+		t.Fatal("base lima.yaml without disk reported environmentPrepared=true")
+	}
+
+	// Adding base diffdisk makes the base template prepared.
+	if err := os.WriteFile(filepath.Join(baseDir, "diffdisk"), []byte("qcow2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !s.environmentPrepared() {
+		t.Fatal("intact base template reported environmentPrepared=false")
+	}
+
+	// An intact active instance remains prepared even if base + marker are absent.
+	if err := os.RemoveAll(baseDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(stateDir, ".agent-vm-base-version")); err != nil {
+		t.Fatal(err)
+	}
+	if s.environmentPrepared() {
+		t.Fatal("removed base without instance reported environmentPrepared=true")
+	}
+	instDir := s.instanceDir()
+	if err := os.MkdirAll(instDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(instDir, "lima.yaml"), []byte("vmType: qemu\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(instDir, "basedisk"), []byte("raw"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !s.environmentPrepared() {
+		t.Fatal("intact active instance reported environmentPrepared=false")
 	}
 }

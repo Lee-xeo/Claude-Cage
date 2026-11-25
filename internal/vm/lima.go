@@ -42,6 +42,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/vmname"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/paths"
 )
@@ -406,6 +407,15 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 			return err
 		}
 		_, err = instance.Create(ctx, name, tmpl.Bytes, false)
+		if err != nil {
+			// Lima's failed Create cleanup calls os.RemoveAll, which on Windows
+			// leaves behind 0o444 cloud-config.yaml/lima-version without lima.yaml.
+			if dir, dirErr := dirnames.InstanceDir(name); dirErr == nil {
+				if _, yamlErr := os.Lstat(filepath.Join(dir, filenames.LimaYAML)); errors.Is(yamlErr, os.ErrNotExist) {
+					_ = host.RemoveAllWritable(dir)
+				}
+			}
+		}
 		return err
 	})
 }
@@ -768,6 +778,9 @@ func (l *Lima) Start(ctx context.Context, name string, log io.Writer) error {
 		if err := reconcile.Reconcile(ctx, name); err != nil {
 			return err
 		}
+		// Lima writes cloud-config.yaml with 0o444 (Windows DOS ReadOnly); make it
+		// writable before hostagent regenerates it on restart.
+		_ = host.MakeTreeWritable(filepath.Join(inst.Dir, filenames.CloudConfig))
 		started := time.Now()
 		progress := firstBoot(ctx)
 		if progress {
@@ -817,6 +830,9 @@ func (l *Lima) Delete(ctx context.Context, name string) error {
 				return err
 			}
 		}
+		// Clear read-only attributes (e.g. Windows 0o444 cloud-config.yaml/lima-version)
+		// before Lima's instance.Delete calls os.RemoveAll.
+		_ = host.MakeTreeWritable(inst.Dir)
 		return errors.Join(instance.Delete(ctx, inst, true), reconcile.Reconcile(ctx, ""))
 	})
 }

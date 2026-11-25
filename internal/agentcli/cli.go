@@ -1,6 +1,7 @@
 package agentcli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -267,10 +268,12 @@ func runAgent(args []string, stdin io.Reader, stdout io.Writer, clientOnly bool)
 					defer f.Close()
 					reader = f
 				}
-				body, err = io.ReadAll(io.LimitReader(reader, (12<<20)+1))
+				body, err = io.ReadAll(io.LimitReader(reader, (12<<20)+4))
 				if err != nil {
 					return finish(nil, err)
 				}
+				// Windows PowerShell 5.1 writes a UTF-8 BOM by default (Set-Content -Encoding UTF8).
+				body = bytes.TrimPrefix(body, []byte{0xEF, 0xBB, 0xBF})
 			}
 			var object map[string]json.RawMessage
 			if len(body) > 12<<20 || json.Unmarshal(body, &object) != nil || object == nil {

@@ -17,7 +17,15 @@ final class CageNativeInput: NSView, NSTextInputClient {
     override var inputContext: NSTextInputContext? { nativeContext }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    func configure(web: WKWebView) { self.web = web }
+    func configure(web: WKWebView) {
+        if self.web !== web {
+            self.web = nil
+            owner = ""
+            cancel()
+            if window?.firstResponder === self { window?.makeFirstResponder(nil) }
+        }
+        self.web = web
+    }
 
     func handle(_ body: [String: Any]) -> Bool {
         guard let operation = body["operation"] as? String,

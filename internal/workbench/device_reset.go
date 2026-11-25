@@ -554,6 +554,16 @@ func (s *Server) deviceResetExecuteHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "换机模式无效，请选择快速换机或彻底换新机", http.StatusBadRequest)
 		return
 	}
+	if s.storageRecoveryStatus().Required {
+		if !s.localVMStorage() {
+			http.Error(w, "请在虚拟机所在电脑上恢复或重建环境", http.StatusConflict)
+			return
+		}
+		if input.Mode != "rebuild" {
+			http.Error(w, "环境存储待恢复，原地快速换机不可用；请先恢复原存储，或改用「彻底换新机」", http.StatusConflict)
+			return
+		}
+	}
 	if input.Irreversible && !input.ConfirmIrreversible {
 		http.Error(w, "勾选彻底清理（不可恢复）后必须明确二次确认", http.StatusBadRequest)
 		return
@@ -761,9 +771,25 @@ func (s *Server) executeRebuildDeviceReset(customOpts guestprofile.Options, irre
 		return err
 	}
 
-	s.setMessage("正在停止当前环境…")
-	if err := s.hookStopEnv(); err != nil {
-		return fmt.Errorf("停止当前环境失败，原环境未改动：%w", err)
+	inRecovery := s.storageRecoveryStatus().Required
+	if !inRecovery || s.vmRunning() {
+		s.setMessage("正在停止当前环境…")
+		if err := s.hookStopEnv(); err != nil {
+			return fmt.Errorf("停止当前环境失败，原环境未改动：%w", err)
+		}
+	}
+	if inRecovery {
+		s.setMessage("正在脱离失效的环境存储并准备重建…")
+		if err := cage.ResetBrokenStorageForRebuild(s.profile); err != nil {
+			return fmt.Errorf("重置失效存储配置失败：%w", err)
+		}
+		if err := s.prepareEnvironment(); err != nil {
+			return fmt.Errorf("准备新环境存储失败：%w", err)
+		}
+		s.mu.Lock()
+		s.storageRecoveryError = ""
+		s.mu.Unlock()
+		diagnostics.Log("info", "storage", "detached broken storage configuration for explicit rebuild")
 	}
 
 	archivesRoot := s.deviceResetArchivesRoot()
@@ -831,9 +857,9 @@ func (s *Server) executeLimaRebuild(ctx context.Context, nextProfile *guestprofi
 				_ = remove(path)
 			}
 		}
-		removeNew(hadInst, manifest.HasInstance, instSrc, os.RemoveAll)
-		removeNew(hadBase, manifest.HasBaseTemplate, baseSrc, os.RemoveAll)
-		_ = os.RemoveAll(filepath.Join(limaHome, "base-building"))
+		removeNew(hadInst, manifest.HasInstance, instSrc, host.RemoveAllWritable)
+		removeNew(hadBase, manifest.HasBaseTemplate, baseSrc, host.RemoveAllWritable)
+		_ = host.RemoveAllWritable(filepath.Join(limaHome, "base-building"))
 		removeNew(hadVer, manifest.HasBaseVersion, baseVerSrc, os.Remove)
 		removeNew(hadBuilt, manifest.HasBaseBuiltBy, baseBuiltSrc, os.Remove)
 		removeNew(hadProf, manifest.HasGuestProfile, profileSrc, os.Remove)
@@ -843,7 +869,7 @@ func (s *Server) executeLimaRebuild(ctx context.Context, nextProfile *guestprofi
 		ok = restoreOne(manifest.HasBaseBuiltBy, baseBuiltDst, baseBuiltSrc) && ok
 		ok = restoreOne(manifest.HasGuestProfile, profileDst, profileSrc) && ok
 		if ok {
-			_ = os.RemoveAll(archiveDir)
+			_ = host.RemoveAllWritable(archiveDir)
 		} else {
 			// Never delete the archive when any piece could not be put back.
 			diagnostics.Log("error", "device-reset", "rollback incomplete; archive kept for manual recovery")
@@ -893,7 +919,7 @@ func (s *Server) executeLimaRebuild(ctx context.Context, nextProfile *guestprofi
 	finalArchiveID := manifest.ID
 	if irreversible {
 		s.setMessage("新机已验证就绪，正在彻底清理旧环境归档…")
-		if rmErr := os.RemoveAll(archiveDir); rmErr != nil {
+		if rmErr := host.RemoveAllWritable(archiveDir); rmErr != nil {
 			diagnostics.Log("warn", "device-reset", "failed to remove archive after irreversible rebuild: "+rmErr.Error())
 		}
 		finalArchiveID = ""
@@ -1252,7 +1278,7 @@ func (s *Server) restoreDeviceArchive(archiveID string) error {
 		_ = os.Remove(filepath.Join(swapDir, "manifest.json"))
 		_ = os.Remove(swapDir)
 	}
-	_ = os.RemoveAll(archiveDir)
+	_ = host.RemoveAllWritable(archiveDir)
 	s.setMessage("正在启动恢复后的旧环境…")
 	return s.hookStartEnv(false)
 }
@@ -1322,7 +1348,7 @@ func (s *Server) deviceResetDeleteArchiveHandler(w http.ResponseWriter, r *http.
 			}
 		}
 	}
-	if err := os.RemoveAll(archiveDir); err != nil {
+	if err := host.RemoveAllWritable(archiveDir); err != nil {
 		requestError(w, fmt.Errorf("删除归档目录失败：%w", err))
 		return
 	}

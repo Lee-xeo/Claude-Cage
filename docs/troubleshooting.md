@@ -131,6 +131,7 @@ Cage 在配置目录旁建立内部传输目录（默认为 `%USERPROFILE%\.clau
 | 出口 IP 或地区不符合规则 | 切换最终出口会自动使用该节点的绑定，首次使用时检测并绑定。同一节点的 IP 发生变化时，确认后在“IP 变化规则”中修改；重检保留原绑定。 |
 | 命中大陆网段或定位为中国大陆 | 切换到非大陆出口；静态 IP 和不限地区均不能绕过。若怀疑归属错误，保留检查报告及出口信息供核查。 |
 | 代理不可用、核心未就绪 | 在代理页重新应用节点，或到“诊断”查看核心状态并重启 Cage 核心。 |
+| TLS / gRPC 节点持续握手超时（核心日志报 `connect error: context deadline exceeded`） | Go 1.26 构建的内置核心默认发送较大的后量子 TLS ClientHello；未设置 `client-fingerprint` 的 VMess/VLESS/Trojan 等节点可尝试在节点 YAML 中添加 `client-fingerprint: safari` 或 `firefox` 后重新导入并应用，详见[TLS 节点无 client-fingerprint 时握手超时](guide/network.md#tls-节点无-client-fingerprint-时握手超时)。 |
 | 端口已占用 | 在代理“诊断”中为 Cage 选择未占用的独立端口。无需终止本机其他代理。修改端口需要重启环境。 |
 | 已测得出口 IP，但位置查询失败 | Cage 会在某家定位服务失败时尝试下一家；请重试或更换节点。所有模式都须确认非大陆出口；手动时区、语言、静态 IP 和不限地区均不能跳过国家或地区检查。 |
 | 代理基础设施 DNS 不可用 | 确认主机能访问 Cloudflare 或阿里 DoH；Cage 会并行尝试二者。业务 DNS 设置不改变节点域名的启动解析。 |

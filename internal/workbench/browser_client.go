@@ -86,7 +86,7 @@ func (c *browserClient) request(ctx context.Context, token, method, path string,
 	timeout := 5 * time.Second
 	switch path {
 	case "/new", "/login-open":
-		timeout = 15 * time.Second
+		timeout = 25 * time.Second
 	case "/audit", "/paste-image", "/tailnet":
 		timeout = 20 * time.Second
 	case "/editor-restart":

@@ -62,10 +62,6 @@ export function EnvironmentDeviceReset({ status, onConfirm, onOpenProxy }) {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
     const running = Boolean(status.job?.running);
     if (wasJobRunning.current && !running) {
       load();
@@ -73,10 +69,21 @@ export function EnvironmentDeviceReset({ status, onConfirm, onOpenProxy }) {
     wasJobRunning.current = running;
   }, [status.job?.running, load]);
 
+  const storageRecovery = Boolean(status.storage_recovery?.required);
   const busy = loading || working || generating || Boolean(status.job?.running);
-  const quickDisabled = busy || !info?.ready;
+  const quickDisabled = busy || storageRecovery || !info?.ready;
   const targets = info?.targets || [];
   const uncheckedIdentity = mode === "quick" && targets.some((t) => t.affects_identity && !selectedItems.includes(t.id));
+
+  useEffect(() => {
+    if (storageRecovery && mode !== "rebuild") {
+      setMode("rebuild");
+    }
+  }, [storageRecovery, mode]);
+
+  useEffect(() => {
+    load();
+  }, [storageRecovery, load]);
 
   function updateCustomField(key, next) {
     setCustomProfile((prev) => {
@@ -260,7 +267,7 @@ export function EnvironmentDeviceReset({ status, onConfirm, onOpenProxy }) {
                   name="device-reset-mode"
                   value="quick"
                   checked={mode === "quick"}
-                  disabled={busy}
+                  disabled={busy || storageRecovery}
                   onChange={() => setMode("quick")}
                 />
                 <strong>{tr("快速换机（原地重置）")}</strong>
@@ -546,12 +553,12 @@ export function EnvironmentDeviceReset({ status, onConfirm, onOpenProxy }) {
                   </span>
                   <span className="device-reset-archive-actions">
                     <button
-                      disabled={busy}
+                      disabled={busy || storageRecovery}
                       onClick={() => restoreRecord("archive", archive.id, archive.previous_hostname || archive.id)}
                     >
                       {tr("回滚到此旧机")}
                     </button>
-                    <button disabled={busy} onClick={() => deleteRecord("archive", archive.id)}>
+                    <button disabled={busy || storageRecovery} onClick={() => deleteRecord("archive", archive.id)}>
                       {tr("删除归档")}
                     </button>
                   </span>

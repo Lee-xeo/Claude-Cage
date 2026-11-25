@@ -1,0 +1,711 @@
+Verify cloud-init completion via guest status after boot scripts finish.
+
+First-boot progress monitoring can stall after boot.sh logs
+"Exiting with code 0" and writes /run/lima-boot-done (#782):
+- cloud-init-main.service units using Type=oneshot + RemainAfterExit=yes
+  emit "Finished cloud-init-main.service" without deactivating or logging
+  a "Consumed ... CPU time" line, and units without CPU accounting may
+  deactivate without a Consumed line.
+- The /var/log/cloud-init-output.log awk fallback advanced the start line
+  on any line after "Cloud-init ... finished", causing trailing lines to
+  skip the current boot's completion line.
+- Emitting the Running status event overwrote currentStatus instead of
+  atomically preserving CloudInitProgress.
+
+This patch recognizes "Finished cloud-init-main.service", fixes the awk
+start-line filter to advance only on a new "Cloud-init ... running" line
+after an earlier completion, serializes status updates under eventEncMu,
+and adds an authoritative post-boot guest status probe that triggers only
+after finalRequirements confirms /run/lima-boot-done matches the current
+boot (preserving #828's safeguard against premature completion).
+
+diff --git a/pkg/hostagent/cloudinit_test.go b/pkg/hostagent/cloudinit_test.go
+index 6330b825..5341c100 100644
+--- a/pkg/hostagent/cloudinit_test.go
++++ b/pkg/hostagent/cloudinit_test.go
+@@ -8,7 +8,13 @@ import (
+ 	"context"
+ 	"encoding/json"
+ 	"io"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"runtime"
+ 	"strings"
++	"sync"
++	"sync/atomic"
+ 	"testing"
+ 	"time"
+ 	"unicode"
+@@ -66,6 +72,10 @@ func TestFollowCloudInitLogStopsAtMarker(t *testing.T) {
+ 			"Cloud-init v. 24.1 finished at Mon\n" +
+ 			"cloud-init-main.service: Deactivated successfully.\n" +
+ 			"cloud-init-main.service: Consumed 3.2s CPU time.\nnot read\n",
++		"journal-oneshot": "Started cloud-init-main.service - Cloud-init: Single Process.\n" +
++			"LIMA 2026-11-24T00:00:00Z Exiting with code 0\n" +
++			"Cloud-init v. 25.1 finished at Tue\n" +
++			"Finished cloud-init-main.service - Cloud-init: Single Process.\nnot read\n",
+ 	} {
+ 		t.Run(name, func(t *testing.T) {
+ 			var got []emittedLine
+@@ -189,3 +199,311 @@ func TestWatchCloudInitReportsCompletionOnlyWhenSeen(t *testing.T) {
+ 	assert.Assert(t, evs[len(evs)-1].Status.CloudInitProgress.Completed)
+ 	assert.Assert(t, evs[len(evs)-2].Status.CloudInitProgress.Completed)
+ }
++
++// When cloud-init-main.service deactivates without emitting a Consumed line
++// (e.g. CPU accounting disabled), the live journalctl -f stream blocks after
++// "Exiting with code 0". Once bootDone confirms /run/lima-boot-done for this
++// boot and the guest probe confirms cloud-init is done, watchCloudInit must
++// report completion instead of stalling (#782).
++func TestWatchCloudInitPostBootProbeCompletesMissingMarker(t *testing.T) {
++	var buf bytes.Buffer
++	a := &HostAgent{eventEnc: json.NewEncoder(&buf)}
++	stream := func(ctx context.Context, read func(io.Reader)) error {
++		pr, pw := io.Pipe()
++		go func() {
++			defer pw.Close()
++			_, _ = io.WriteString(pw, "Started cloud-init-main.service - Cloud-init: Single Process.\n"+
++				"LIMA Exiting with code 0\n"+
++				"cloud-init-main.service: Deactivated successfully.\n")
++			<-ctx.Done()
++		}()
++		read(pr)
++		return ctx.Err()
++	}
++	bootDone := make(chan struct{})
++	var probes atomic.Int32
++	probe := func(context.Context) bool {
++		return probes.Add(1) >= 2
++	}
++	done := make(chan struct{})
++	go func() {
++		defer close(done)
++		a.watchCloudInitWithProbe(t.Context(), stream, bootDone, probe, 10*time.Millisecond, 10*time.Millisecond)
++	}()
++	time.Sleep(30 * time.Millisecond)
++	assert.Equal(t, probes.Load(), int32(0), "probe ran before bootDone was signaled")
++	close(bootDone)
++	select {
++	case <-done:
++	case <-time.After(2 * time.Second):
++		t.Fatal("watchCloudInitWithProbe stalled after bootDone and probe completion")
++	}
++	evs := decodeEvents(t, &buf)
++	assert.Assert(t, len(evs) >= 2)
++	assert.Assert(t, evs[len(evs)-1].Status.CloudInitProgress.Completed)
++	assert.Assert(t, evs[len(evs)-2].Status.CloudInitProgress.Completed)
++	assert.Assert(t, strings.Contains(evs[len(evs)-2].Status.CloudInitProgress.LogLine, "verified via guest status"))
++}
++
++func TestWatchCloudInitDoesNotProbeWhenLogStreamFinishesNaturally(t *testing.T) {
++	var buf bytes.Buffer
++	a := &HostAgent{eventEnc: json.NewEncoder(&buf)}
++	stream, _ := fakeCloudInitStreams("Setting up git ...\nCloud-init v. 25.1 finished at Tue\n")
++	bootDone := make(chan struct{})
++	close(bootDone)
++	var probes atomic.Int32
++	a.watchCloudInitWithProbe(t.Context(), stream, bootDone, func(context.Context) bool {
++		probes.Add(1)
++		return true
++	}, 200*time.Millisecond, 50*time.Millisecond)
++	assert.Equal(t, probes.Load(), int32(0), "probe should not run when log stream finishes within grace window")
++	evs := decodeEvents(t, &buf)
++	for _, ev := range evs {
++		assert.Assert(t, !strings.Contains(ev.Status.CloudInitProgress.LogLine, "verified via guest status"))
++	}
++	assert.Assert(t, evs[len(evs)-1].Status.CloudInitProgress.Completed)
++}
++
++// The post-boot probe must never bypass #828: if cloud-init is still running or
++// failed (probe returns false) or bootDone never arrives, watchCloudInit must
++// not report Completed.
++func TestWatchCloudInitPostBootProbeDoesNotBypassUnfinishedBoot(t *testing.T) {
++	for _, closeBootDone := range []bool{false, true} {
++		name := "without-boot-done"
++		if closeBootDone {
++			name = "probe-still-running"
++		}
++		t.Run(name, func(t *testing.T) {
++			var buf bytes.Buffer
++			a := &HostAgent{eventEnc: json.NewEncoder(&buf)}
++			stream := func(ctx context.Context, read func(io.Reader)) error {
++				pr, pw := io.Pipe()
++				go func() {
++					defer pw.Close()
++					_, _ = io.WriteString(pw, "Setting up git ...\n")
++					<-ctx.Done()
++				}()
++				read(pr)
++				return ctx.Err()
++			}
++			bootDone := make(chan struct{})
++			if closeBootDone {
++				close(bootDone)
++			}
++			var probes atomic.Int32
++			ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
++			defer cancel()
++			a.watchCloudInitWithProbe(ctx, stream, bootDone, func(context.Context) bool {
++				probes.Add(1)
++				return false
++			}, 10*time.Millisecond, 10*time.Millisecond)
++			if !closeBootDone {
++				assert.Equal(t, probes.Load(), int32(0))
++			} else {
++				assert.Assert(t, probes.Load() >= 1)
++			}
++			evs := decodeEvents(t, &buf)
++			for _, ev := range evs {
++				assert.Assert(t, !ev.Status.CloudInitProgress.Completed, "reported completed: %+v", ev.Status.CloudInitProgress)
++			}
++		})
++	}
++}
++
++func TestCloudInitLogStreamAwkKeepsCurrentBootCompletion(t *testing.T) {
++	if runtime.GOOS == "windows" {
++		t.Skip("cloud-init log stream script runs inside Linux guests")
++	}
++	logFile := filepath.Join(t.TempDir(), "cloud-init-output.log")
++	binDir := t.TempDir()
++	// Fake systemctl reports cloud-init-main.service disabled; fake sudo runs directly;
++	// fake tail prints the selected lines and exits without -f blocking.
++	writeTool := func(name, body string) {
++		t.Helper()
++		assert.NilError(t, os.WriteFile(filepath.Join(binDir, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755))
++	}
++	writeTool("systemctl", "exit 1")
++	writeTool("sudo", `exec "$@"`)
++	writeTool("tail", `
++n=1
++file=""
++while [ $# -gt 0 ]; do
++  case "$1" in
++    -n) n="$2"; shift 2 ;;
++    -f) shift ;;
++    *) file="$1"; shift ;;
++  esac
++done
++exec /usr/bin/tail -n "$n" "$file"`)
++	script := strings.ReplaceAll(cloudInitLogStreamScript, "/var/log/cloud-init-output.log", logFile)
++
++	cases := []struct {
++		name      string
++		content   string
++		wantFirst string
++	}{
++		{
++			name: "single boot with trailing line after finished",
++			content: "Cloud-init v. 25.1 running 'init-local'\n" +
++				"LIMA Exiting with code 0\n" +
++				"Cloud-init v. 25.1 finished at Tue\n" +
++				"trailing output\n",
++			wantFirst: "Cloud-init v. 25.1 running 'init-local'",
++		},
++		{
++			name: "second boot skips previous boot but keeps current finished",
++			content: "Cloud-init v. 25.1 running 'init-local' boot1\n" +
++				"Cloud-init v. 25.1 finished at Mon\n" +
++				"Cloud-init v. 25.1 running 'init-local' boot2\n" +
++				"LIMA Exiting with code 0\n" +
++				"Cloud-init v. 25.1 finished at Tue\n" +
++				"\n",
++			wantFirst: "Cloud-init v. 25.1 running 'init-local' boot2",
++		},
++	}
++
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			assert.NilError(t, os.WriteFile(logFile, []byte(tc.content), 0o600))
++			cmd := exec.Command("/bin/sh", "-s")
++			cmd.Env = []string{"PATH=" + binDir + ":/usr/bin:/bin"}
++			cmd.Stdin = strings.NewReader(script)
++			out, err := cmd.CombinedOutput()
++			assert.NilError(t, err, string(out))
++			var got []emittedLine
++			_, finished := followCloudInitLog(bytes.NewReader(out), 0, collectLines(&got))
++			assert.Assert(t, finished, "output skipped completion marker:\n%s", string(out))
++			assert.Equal(t, got[0].Line, tc.wantFirst)
++		})
++	}
++}
++
++func TestCloudInitCompletedProbeScript(t *testing.T) {
++	if runtime.GOOS == "windows" {
++		t.Skip("cloud-init probe script runs inside Linux guests")
++	}
++	const iid = "iid-test1234"
++	cases := []struct {
++		name      string
++		bootDone  string
++		systemctl string
++		cloudInit string
++		wantOK    bool
++	}{
++		{
++			name:      "missing boot-done fails even when cloud-init says done",
++			bootDone:  "",
++			systemctl: "exit 1",
++			cloudInit: "echo 'status: done'; exit 0",
++			wantOK:    false,
++		},
++		{
++			name:      "stale boot-done fails",
++			bootDone:  "iid-oldboot",
++			systemctl: "exit 1",
++			cloudInit: "echo 'status: done'; exit 0",
++			wantOK:    false,
++		},
++		{
++			name:     "cloud-init-main inactive success passes",
++			bootDone: iid,
++			systemctl: `
++if [ "$1" = "is-enabled" ]; then exit 0; fi
++case "$*" in
++  *ActiveState*) echo inactive ;;
++  *SubState*) echo dead ;;
++  *Result*) echo success ;;
++esac`,
++			cloudInit: "echo 'status: running'; exit 0",
++			wantOK:    true,
++		},
++		{
++			name:     "cloud-init-main oneshot active exited success passes",
++			bootDone: iid,
++			systemctl: `
++if [ "$1" = "is-enabled" ]; then exit 0; fi
++case "$*" in
++  *ActiveState*) echo active ;;
++  *SubState*) echo exited ;;
++  *Result*) echo success ;;
++esac`,
++			cloudInit: "echo 'status: running'; exit 0",
++			wantOK:    true,
++		},
++		{
++			name:     "cloud-init-main failed does not pass",
++			bootDone: iid,
++			systemctl: `
++if [ "$1" = "is-enabled" ]; then exit 0; fi
++case "$*" in
++  *ActiveState*) echo failed ;;
++  *SubState*) echo failed ;;
++  *Result*) echo exit-code ;;
++esac`,
++			cloudInit: "echo 'status: error'; exit 1",
++			wantOK:    false,
++		},
++		{
++			name:      "classic cloud-init degraded done exit 2 passes",
++			bootDone:  iid,
++			systemctl: "exit 1",
++			cloudInit: "echo 'status: degraded done'; exit 2",
++			wantOK:    true,
++		},
++		{
++			name:      "classic cloud-init still running fails",
++			bootDone:  iid,
++			systemctl: "exit 1",
++			cloudInit: "echo 'status: running'; exit 0",
++			wantOK:    false,
++		},
++	}
++
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			dir := t.TempDir()
++			bootFile := filepath.Join(dir, "lima-boot-done")
++			if tc.bootDone != "" {
++				assert.NilError(t, os.WriteFile(bootFile, []byte(tc.bootDone+"\n"), 0o600))
++			}
++			writeTool := func(name, body string) {
++				t.Helper()
++				assert.NilError(t, os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755))
++			}
++			writeTool("systemctl", tc.systemctl)
++			writeTool("cloud-init", tc.cloudInit)
++			writeTool("sudo", `shift; exec "$@"`)
++
++			script := strings.ReplaceAll(cloudInitCompletedProbeScript(iid), "/run/lima-boot-done", bootFile)
++			cmd := exec.Command("/bin/sh", "-s")
++			cmd.Env = []string{"PATH=" + dir + ":/usr/bin:/bin"}
++			cmd.Stdin = strings.NewReader(script)
++			err := cmd.Run()
++			assert.Equal(t, err == nil, tc.wantOK)
++		})
++	}
++}
++
++func TestEmitStatusUpdatePreservesCloudInitProgressAndRunning(t *testing.T) {
++	var buf bytes.Buffer
++	a := &HostAgent{eventEnc: json.NewEncoder(&buf), sshLocalPort: 60022}
++	var wg sync.WaitGroup
++	wg.Add(2)
++	go func() {
++		defer wg.Done()
++		a.emitCloudInitProgressEvent(t.Context(), &events.CloudInitProgress{Completed: true, LogLine: "Cloud-init v. 25.1 finished"})
++	}()
++	go func() {
++		defer wg.Done()
++		a.emitStatusUpdate(t.Context(), func(st *events.Status) {
++			st.SSHLocalPort = a.sshLocalPort
++			st.Running = true
++		})
++	}()
++	wg.Wait()
++	evs := decodeEvents(t, &buf)
++	assert.Equal(t, len(evs), 2)
++	last := evs[len(evs)-1].Status
++	assert.Assert(t, last.Running, "last status lost Running=true: %+v", last)
++	assert.Assert(t, last.CloudInitProgress != nil && last.CloudInitProgress.Completed, "last status lost CloudInitProgress.Completed: %+v", last)
++}
+diff --git a/pkg/hostagent/hostagent.go b/pkg/hostagent/hostagent.go
+index 5c5fe640..b3b72bfe 100644
+--- a/pkg/hostagent/hostagent.go
++++ b/pkg/hostagent/hostagent.go
+@@ -20,6 +20,7 @@ import (
+ 	"strconv"
+ 	"strings"
+ 	"sync"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/lima-vm/sshocker/pkg/ssh"
+@@ -359,6 +360,28 @@ func (a *HostAgent) emitEvent(_ context.Context, ev events.Event) {
+ 	}
+ }
+ 
++// emitStatusUpdate atomically updates currentStatus and encodes the resulting
++// event under eventEncMu so concurrent updates (such as CloudInitProgress and
++// Running) cannot overwrite each other.
++func (a *HostAgent) emitStatusUpdate(_ context.Context, update func(*events.Status)) {
++	a.eventEncMu.Lock()
++	defer a.eventEncMu.Unlock()
++
++	a.statusMu.Lock()
++	status := a.currentStatus
++	update(&status)
++	a.currentStatus = status
++	a.statusMu.Unlock()
++
++	ev := events.Event{
++		Time:   time.Now(),
++		Status: status,
++	}
++	if err := a.eventEnc.Encode(ev); err != nil {
++		logrus.WithField("event", ev).WithError(err).Error("failed to emit an event")
++	}
++}
++
+ func (a *HostAgent) emitCloudInitProgressEvent(ctx context.Context, progress *events.CloudInitProgress) {
+ 	// LogLine is read verbatim from the guest's cloud-init output over SSH, so an
+ 	// untrusted guest controls its bytes. limactl start/watch print it to the
+@@ -366,36 +389,21 @@ func (a *HostAgent) emitCloudInitProgressEvent(ctx context.Context, progress *ev
+ 	// from injecting ANSI/OSC escape sequences.
+ 	progress.LogLine = strutil.RemoveControlChars(progress.LogLine)
+ 
+-	a.statusMu.RLock()
+-	currentStatus := a.currentStatus
+-	a.statusMu.RUnlock()
+-
+-	currentStatus.CloudInitProgress = progress
+-
+-	ev := events.Event{Status: currentStatus}
+-	a.emitEvent(ctx, ev)
++	a.emitStatusUpdate(ctx, func(status *events.Status) {
++		status.CloudInitProgress = progress
++	})
+ }
+ 
+ func (a *HostAgent) emitPortForwardEvent(ctx context.Context, pfEvent *events.PortForwardEvent) {
+-	a.statusMu.RLock()
+-	currentStatus := a.currentStatus
+-	a.statusMu.RUnlock()
+-
+-	currentStatus.PortForward = pfEvent
+-
+-	ev := events.Event{Status: currentStatus}
+-	a.emitEvent(ctx, ev)
++	a.emitStatusUpdate(ctx, func(status *events.Status) {
++		status.PortForward = pfEvent
++	})
+ }
+ 
+ func (a *HostAgent) emitVsockEvent(ctx context.Context, vsockEvent *events.VsockEvent) {
+-	a.statusMu.RLock()
+-	currentStatus := a.currentStatus
+-	a.statusMu.RUnlock()
+-
+-	currentStatus.Vsock = vsockEvent
+-
+-	ev := events.Event{Status: currentStatus}
+-	a.emitEvent(ctx, ev)
++	a.emitStatusUpdate(ctx, func(status *events.Status) {
++		status.Vsock = vsockEvent
++	})
+ }
+ 
+ func generatePassword(length int) (string, error) {
+@@ -527,13 +535,17 @@ func (a *HostAgent) startRoutinesAndWait(ctx context.Context, errCh <-chan error
+ 	a.emitEvent(ctx, events.Event{Status: stBooting})
+ 	ctxHA, cancelHA := context.WithCancel(ctx)
+ 	go func() {
+-		stRunning := stBase
+-		if haErr := a.startHostAgentRoutines(ctxHA); haErr != nil {
+-			stRunning.Degraded = true
+-			stRunning.Errors = append(stRunning.Errors, haErr.Error())
+-		}
+-		stRunning.Running = true
+-		a.emitEvent(ctx, events.Event{Status: stRunning})
++		haErr := a.startHostAgentRoutines(ctxHA)
++		a.emitStatusUpdate(ctx, func(st *events.Status) {
++			st.SSHLocalPort = a.sshLocalPort
++			st.PortForward = nil
++			st.Vsock = nil
++			if haErr != nil {
++				st.Degraded = true
++				st.Errors = append(st.Errors, haErr.Error())
++			}
++			st.Running = true
++		})
+ 	}()
+ 	// wait for either the driver to stop or a signal to shut down
+ 	select {
+@@ -675,10 +687,12 @@ ln -sf "${SSH_AUTH_SOCK}" /run/host-services/ssh-auth.sock`
+ 	a.addStaticPortForwardsFromList(ctx, staticPortForwards)
+ 
+ 	hasGuestAgentDaemon := !*a.instConfig.Plain && *a.instConfig.OS == limatype.LINUX
++	var bootDone chan struct{}
+ 	if hasGuestAgentDaemon {
+ 		go a.watchGuestAgentEvents(ctx)
+ 		go a.startTimeSync(ctx)
+ 		if a.showProgress {
++			bootDone = make(chan struct{})
+ 			cloudInitDone := make(chan struct{})
+ 			go func() {
+ 				// Progress mode follows a first boot that may download packages
+@@ -686,7 +700,7 @@ ln -sf "${SSH_AUTH_SOCK}" /run/host-services/ssh-auth.sock`
+ 				timeoutCtx, cancel := context.WithTimeout(ctx, cloudInitMonitorTimeout)
+ 				defer cancel()
+ 
+-				a.watchCloudInitProgress(timeoutCtx)
++				a.watchCloudInitProgress(timeoutCtx, bootDone)
+ 				close(cloudInitDone)
+ 			}()
+ 
+@@ -722,6 +736,8 @@ ln -sf "${SSH_AUTH_SOCK}" /run/host-services/ssh-auth.sock`
+ 
+ 	if err := a.waitForRequirements("final", finalRequirements); err != nil {
+ 		errs = append(errs, err)
++	} else if bootDone != nil {
++		close(bootDone)
+ 	}
+ 	// Copy all config files _after_ the requirements are done
+ 	for _, rule := range a.instConfig.CopyToHost {
+@@ -1166,18 +1182,31 @@ var forwardSSH = func(ctx context.Context, sshConfig *ssh.SSHConfig, sshAddress
+ 
+ // cloudInitMonitorTimeout bounds how long watchCloudInitProgress follows a
+ // first boot; the caller's idle timeout detects a stall long before that.
+-const cloudInitMonitorTimeout = 2 * time.Hour
++const (
++	cloudInitMonitorTimeout   = 2 * time.Hour
++	cloudInitPostBootGrace    = 3 * time.Second
++	cloudInitPostBootInterval = 3 * time.Second
++)
++
++// cloudInitProbe checks the guest's authoritative cloud-init state once
++// finalRequirements has confirmed /run/lima-boot-done matches this boot.
++type cloudInitProbe func(ctx context.Context) bool
+ 
+ // watchCloudInitProgress follows the guest's cloud-init output and reports it
+ // as CloudInitProgress events. It reports Completed only after it has seen
+-// cloud-init finish: a log stream that ends early (sshd restarting during
+-// provisioning, a dropped connection) is reopened until cloud-init finishes or
+-// ctx ends.
+-func (a *HostAgent) watchCloudInitProgress(ctx context.Context) {
+-	a.watchCloudInit(ctx, a.streamCloudInitLog)
++// cloud-init finish (either in the log stream or via guest status once
++// bootDone confirms /run/lima-boot-done for this boot): a log stream that ends
++// early (sshd restarting during provisioning, a dropped connection) is reopened
++// until cloud-init finishes or ctx ends.
++func (a *HostAgent) watchCloudInitProgress(ctx context.Context, bootDone <-chan struct{}) {
++	a.watchCloudInitWithProbe(ctx, a.streamCloudInitLog, bootDone, a.probeCloudInitCompleted, cloudInitPostBootGrace, cloudInitPostBootInterval)
+ }
+ 
+ func (a *HostAgent) watchCloudInit(ctx context.Context, stream cloudInitStream) {
++	a.watchCloudInitWithProbe(ctx, stream, nil, nil, 0, 0)
++}
++
++func (a *HostAgent) watchCloudInitWithProbe(ctx context.Context, stream cloudInitStream, bootDone <-chan struct{}, probe cloudInitProbe, probeDelay, probeInterval time.Duration) {
+ 	completed := false
+ 	defer func() {
+ 		progress := &events.CloudInitProgress{Completed: true, LogLine: "Cloud-init monitoring completed successfully"}
+@@ -1202,13 +1231,124 @@ func (a *HostAgent) watchCloudInit(ctx context.Context, stream cloudInitStream)
+ 		Active: true,
+ 	})
+ 
+-	completed = followCloudInit(ctx, stream, func(line string, finished bool) {
++	streamCtx, cancelStream := context.WithCancel(ctx)
++	defer cancelStream()
++
++	var verifiedComplete atomic.Bool
++	probeDone := make(chan struct{})
++	if bootDone != nil && probe != nil {
++		go func() {
++			defer close(probeDone)
++			select {
++			case <-streamCtx.Done():
++				return
++			case <-bootDone:
++			}
++			if probeDelay > 0 {
++				timer := time.NewTimer(probeDelay)
++				select {
++				case <-streamCtx.Done():
++					timer.Stop()
++					return
++				case <-timer.C:
++				}
++			}
++			for {
++				if streamCtx.Err() != nil {
++					return
++				}
++				if probe(streamCtx) {
++					verifiedComplete.Store(true)
++					cancelStream()
++					return
++				}
++				wait := probeInterval
++				if wait <= 0 {
++					wait = time.Second
++				}
++				timer := time.NewTimer(wait)
++				select {
++				case <-streamCtx.Done():
++					timer.Stop()
++					return
++				case <-timer.C:
++				}
++			}
++		}()
++	} else {
++		close(probeDone)
++	}
++
++	completed = followCloudInit(streamCtx, stream, func(line string, finished bool) {
+ 		a.emitCloudInitProgressEvent(ctx, &events.CloudInitProgress{
+ 			Active:    !finished,
+ 			LogLine:   line,
+ 			Completed: finished,
+ 		})
+ 	}, cloudInitRetryDelay)
++	cancelStream()
++	<-probeDone
++	if !completed && verifiedComplete.Load() {
++		completed = true
++		a.emitCloudInitProgressEvent(ctx, &events.CloudInitProgress{
++			Active:    false,
++			LogLine:   "Cloud-init completed (verified via guest status)",
++			Completed: true,
++		})
++	}
++}
++
++// cloudInitLogStreamScript follows cloud-init logs for the current boot.
++// When falling back to /var/log/cloud-init-output.log, it advances past a
++// previous boot only when a new "Cloud-init ... running" line starts after an
++// earlier "Cloud-init ... finished" line, so trailing lines after the current
++// boot's completion never cause tail to skip the completion marker (#782).
++const cloudInitLogStreamScript = `if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled -q cloud-init-main.service; then
++	exec sudo journalctl -u cloud-init-main.service -b -S @0 -o cat -f
++else
++	start_line=$(sudo awk '
++		BEGIN{b=1; e=0}
++		/^Cloud-init.* running/{if(e>0 && b<=e){b=NR}}
++		/^Cloud-init.* finished/{e=NR}
++		END{print b}
++	' /var/log/cloud-init-output.log 2>/dev/null || echo 1)
++	exec sudo tail -n +"${start_line:-1}" -f /var/log/cloud-init-output.log
++fi
++`
++
++func cloudInitCompletedProbeScript(iid string) string {
++	return fmt.Sprintf(`BOOT_DONE=/run/lima-boot-done
++[ "$(cat "$BOOT_DONE" 2>/dev/null)" = "%s" ] || exit 1
++if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled -q cloud-init-main.service 2>/dev/null; then
++	state=$(systemctl show -p ActiveState --value cloud-init-main.service 2>/dev/null)
++	sub=$(systemctl show -p SubState --value cloud-init-main.service 2>/dev/null)
++	result=$(systemctl show -p Result --value cloud-init-main.service 2>/dev/null)
++	case "$state:$sub:$result" in
++		inactive:*:success|active:exited:success) exit 0 ;;
++	esac
++fi
++if command -v cloud-init >/dev/null 2>&1; then
++	status=$(cloud-init status 2>/dev/null || true)
++	if [ -z "$status" ]; then
++		status=$(sudo -n cloud-init status 2>/dev/null || true)
++	fi
++	case "$status" in
++		*"status: done"*|*"status: degraded done"*|*"status: disabled"*) exit 0 ;;
++	esac
++fi
++exit 1
++`, iid)
++}
++
++func (a *HostAgent) probeCloudInitCompleted(ctx context.Context) bool {
++	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
++	defer cancel()
++	sshAddress, sshPort := a.sshAddressPort()
++	args := a.sshConfig.Args()
++	args = append(args, "-T", "-p", strconv.Itoa(sshPort), sshAddress, "sh", "-s")
++	cmd := exec.CommandContext(probeCtx, a.sshConfig.Binary(), args...)
++	cmd.Stdin = strings.NewReader(cloudInitCompletedProbeScript(a.iid))
++	return cmd.Run() == nil
+ }
+ 
+ // cloudInitStream runs one command that follows the guest's cloud-init log
+@@ -1219,25 +1359,12 @@ type cloudInitStream func(ctx context.Context, read func(io.Reader)) error
+ func (a *HostAgent) streamCloudInitLog(ctx context.Context, read func(io.Reader)) error {
+ 	sshAddress, sshPort := a.sshAddressPort()
+ 	args := a.sshConfig.Args()
+-	args = append(args,
+-		"-p", strconv.Itoa(sshPort),
+-		sshAddress,
+-		"sh", "-c",
+-		`"if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled -q cloud-init-main.service; then
+-			sudo journalctl -u cloud-init-main.service -b -S @0 -o cat -f
+-		else
+-			sudo tail -n +$(sudo awk '
+-				BEGIN{b=1; e=1}
+-				/^Cloud-init.* finished/{e=NR}
+-				/.*/{if(NR>e){b=e+1}}
+-				END{print b}
+-			' /var/log/cloud-init-output.log) -f /var/log/cloud-init-output.log
+-		fi"`,
+-	)
++	args = append(args, "-T", "-p", strconv.Itoa(sshPort), sshAddress, "sh", "-s")
+ 
+ 	ctx, cancel := context.WithCancel(ctx)
+ 	defer cancel()
+ 	cmd := exec.CommandContext(ctx, a.sshConfig.Binary(), args...)
++	cmd.Stdin = strings.NewReader(cloudInitLogStreamScript)
+ 	stdout, err := cmd.StdoutPipe()
+ 	if err != nil {
+ 		return fmt.Errorf("failed to create stdout pipe for cloud-init monitoring: %w", err)
+@@ -1377,8 +1504,11 @@ func isStartedCloudInitMainService(line string) bool {
+ 
+ func isDeactivatedCloudInitMainService(line string) bool {
+ 	line = strings.ToLower(strings.TrimSpace(line))
+-	// Deactivated event lines end with a line reporting consumed CPU time, etc.
+-	return strings.HasPrefix(line, "cloud-init-main.service: consumed")
++	// Deactivated event lines normally end with a line reporting consumed CPU
++	// time, while Type=oneshot + RemainAfterExit=yes units finish without
++	// deactivating or emitting a Consumed line (#782).
++	return strings.HasPrefix(line, "cloud-init-main.service: consumed") ||
++		strings.HasPrefix(line, "finished cloud-init-main.service")
+ }
+ 
+ func copyToHost(ctx context.Context, sshConfig *ssh.SSHConfig, sshAddress string, sshPort int, local, remote string, skipIfMissing bool) error {

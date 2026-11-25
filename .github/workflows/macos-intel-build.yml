@@ -98,7 +98,7 @@ jobs:
         run: |
           npm run --prefix ui lint
           npm test --prefix ui
-          node --test internal/cage/clipboard.test.cjs internal/cage/browser-audit.test.mjs internal/cage/browser-downloads.test.mjs internal/cage/browser-uploads.test.mjs internal/cage/browser-login.test.mjs internal/cage/browser-clipboard.test.mjs internal/cage/browser-visibility.test.mjs internal/cage/native-input.test.mjs internal/cage/display-density.test.mjs internal/cage/browser-wheel.test.mjs
+          node --test internal/cage/clipboard.test.cjs internal/cage/browser-audit.test.mjs internal/cage/browser-downloads.test.mjs internal/cage/browser-uploads.test.mjs internal/cage/browser-login.test.mjs internal/cage/browser-clipboard.test.mjs internal/cage/browser-visibility.test.mjs internal/cage/native-input.test.mjs internal/cage/display-density.test.mjs internal/cage/browser-wheel.test.mjs scripts/build-intel-macos-runtime.test.mjs
           uv run internal/cage/claude-account.test.py
           uv run internal/cage/display-governor.test.py
           uv run internal/cage/save-download.test.py

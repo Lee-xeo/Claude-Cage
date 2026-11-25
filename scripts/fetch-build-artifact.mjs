@@ -56,15 +56,36 @@ function curl(url, file, resume) {
   });
 }
 
+// Optional HTTPS mirror prefix for GitHub release downloads (e.g.
+// CAGE_GITHUB_MIRROR=https://mirror.example.com). Downloaded bytes are still
+// verified against the pinned SHA-256 / SHA-512 checksum below.
+export function resolveArtifactURL(rawURL, mirror = process.env.CAGE_GITHUB_MIRROR) {
+  const parsed = new URL(rawURL);
+  if (parsed.protocol !== "https:") {
+    throw new Error("Build downloads require HTTPS and a pinned SHA-256 or SHA-512.");
+  }
+  const prefix = (mirror ?? "").trim();
+  if (!prefix) return rawURL;
+  if (parsed.hostname !== "github.com" && parsed.hostname !== "raw.githubusercontent.com") {
+    return rawURL;
+  }
+  const mirrorURL = new URL(prefix);
+  if (mirrorURL.protocol !== "https:" || mirrorURL.username || mirrorURL.password || mirrorURL.search || mirrorURL.hash) {
+    throw new Error("CAGE_GITHUB_MIRROR must be an HTTPS URL without credentials, query, or fragment.");
+  }
+  return `${prefix.replace(/\/+$/, "")}/${rawURL}`;
+}
+
 // Restarting curl ourselves keeps the partial bytes between attempts.
 // Each caller owns its partial file; no unfinished download is a cache hit.
 // An attempt that added bytes does not use up a retry, so a slow link that
 // keeps progressing converges; four attempts in a row without progress fail.
-export async function fetchBuildArtifact(url, expected, destination, transfer = curl, { maxTransfers = 64 } = {}) {
+export async function fetchBuildArtifact(url, expected, destination, transfer = curl, { maxTransfers = 64, mirror = process.env.CAGE_GITHUB_MIRROR } = {}) {
   const pinned = pinnedDigest(expected);
   if (new URL(url).protocol !== "https:" || !pinned) {
     throw new Error("Build downloads require HTTPS and a pinned SHA-256 or SHA-512.");
   }
+  const downloadURL = resolveArtifactURL(url, mirror);
   const { algorithm, checksum } = pinned;
   const name = basename(destination);
   if (await size(destination) !== null) {
@@ -80,7 +101,7 @@ export async function fetchBuildArtifact(url, expected, destination, transfer = 
     for (let attempt = 1, transfers = 1; attempt <= 4 && transfers <= maxTransfers; attempt++, transfers++) {
       const before = await size(part) ?? 0;
       const resume = before > 0;
-      const { code, http } = await transfer(url, part, resume);
+      const { code, http } = await transfer(downloadURL, part, resume);
       if (permanentHTTPFailure(code, http) && !(resume && http === "416")) {
         // A missing or forbidden object does not appear on retry.
         throw new Error(`Could not download ${name} (curl exit ${code}, HTTP ${http}).`);

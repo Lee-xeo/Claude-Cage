@@ -88,9 +88,15 @@ func (e *app) stopVM(ctx context.Context, name string) bool {
 	if err != nil {
 		return false
 	}
-	_ = b.Stop(ctx, name)
+	stopErr := b.Stop(ctx, name)
 	inst, err := b.Get(ctx, name)
-	return err == nil && inst.Status == vm.Stopped
+	if err == nil && inst.Status == vm.Stopped {
+		return true
+	}
+	if stopErr != nil {
+		fmt.Fprintf(e.io.Stderr, "Error: %v\n", stopErr)
+	}
+	return false
 }
 
 func (e *app) rmCmd(ctx context.Context, args []string) int {

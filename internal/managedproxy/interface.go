@@ -3,6 +3,7 @@ package managedproxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -25,6 +26,9 @@ var (
 		return exec.CommandContext(ctx, "/usr/sbin/scutil", "--nwi").Output()
 	}
 	listNetInterfaces = net.Interfaces
+	netInterfaceAddrs = func(iface net.Interface) ([]net.Addr, error) {
+		return iface.Addrs()
+	}
 )
 
 // PhysicalInterface uses the system's preferred reachable IPv4 hardware port.
@@ -229,4 +233,75 @@ func BindingMatches(path, physical string) bool {
 		}
 	}
 	return true
+}
+
+// InterfaceAvailable reports whether the named host interface currently exists,
+// is up and running (carrier active), is not loopback, and holds at least one
+// routable IPv4 address. It uses in-process OS calls only (no subprocesses).
+func InterfaceAvailable(name string) bool {
+	if name == "" {
+		return false
+	}
+	interfaces, err := listNetInterfaces()
+	if err != nil {
+		return false
+	}
+	for _, iface := range interfaces {
+		if iface.Name != name || iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagRunning == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addresses, err := netInterfaceAddrs(iface)
+		if err != nil {
+			return false
+		}
+		for _, address := range addresses {
+			ip, _, err := net.ParseCIDR(address.String())
+			if err == nil && ip.To4() != nil && !ip.IsLinkLocalUnicast() && !ip.IsLoopback() && !ip.IsUnspecified() {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+// StaleInterfaceError reports that the proxy core's runtime config is bound to
+// an interface or per-node host route that no longer matches the host's current
+// network uplink.
+type StaleInterfaceError struct {
+	Bound   string
+	Current string
+}
+
+func (e *StaleInterfaceError) Error() string {
+	if e.Bound != "" && e.Current != "" && e.Bound != e.Current {
+		return fmt.Sprintf("代理核心当前绑定的出口网卡（%s）已失效或不再是默认物理网卡（当前为 %s）；请重启代理核心以重新绑定", e.Bound, e.Current)
+	}
+	return "代理核心当前绑定的出口网卡或节点路由接口已变化；请重启代理核心以重新绑定"
+}
+
+// CheckInterfaceBinding verifies that the runtime config at configPath still
+// matches the host's current physical uplink and per-node host routes.
+func CheckInterfaceBinding(ctx context.Context, configPath string) error {
+	return checkInterfaceBindingWith(ctx, configPath, PhysicalInterface, BindingMatches)
+}
+
+func checkInterfaceBindingWith(
+	ctx context.Context,
+	configPath string,
+	physical func(context.Context) (string, error),
+	matches func(string, string) bool,
+) error {
+	bound, err := BoundInterface(configPath)
+	if err != nil {
+		return err
+	}
+	current, err := physical(ctx)
+	if err != nil {
+		return err
+	}
+	if !matches(configPath, current) {
+		return &StaleInterfaceError{Bound: bound, Current: current}
+	}
+	return nil
 }

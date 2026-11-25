@@ -39,17 +39,24 @@ func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSiz
 	m.RecursionAvailable = true
 	if h.exchange != nil {
 		answer, err := h.exchange(context.Background(), r)
-		if err != nil {
+		if err != nil || answer == nil {
+			if err != nil {
+				log.WithError(err).Warn("DNS exchange failed")
+			}
 			m.SetRcode(r, dns.RcodeServerFailure)
+			m.RecursionAvailable = true
 		} else {
 			m = answer
 		}
 	} else {
 		h.addAnswers(m)
 	}
-	edns0 := r.IsEdns0()
-	if edns0 != nil {
-		responseMessageSize = int(edns0.UDPSize())
+	// RFC 6891 section 6.2.3: EDNS0 UDP payload sizes below 512 must be treated
+	// as 512, and EDNS0 UDP sizes never shrink TCP's MaxMsgSize budget.
+	if responseMessageSize == dns.MinMsgSize {
+		if edns0 := r.IsEdns0(); edns0 != nil && int(edns0.UDPSize()) > responseMessageSize {
+			responseMessageSize = int(edns0.UDPSize())
+		}
 	}
 	m.Truncate(responseMessageSize)
 	if err := w.WriteMsg(m); err != nil {

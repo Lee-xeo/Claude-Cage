@@ -366,6 +366,7 @@ printf '%s\\n' "$@"
         cases = [
             (helper.SubscriptionStatusTimeout(private), "读取 Claude 订阅状态超时"),
             (helper.SubscriptionStatusError(private), "无法读取 Claude 订阅状态"),
+            (helper.ClaudeCLINotInstalled(private), "未找到官方 Claude Code CLI"),
             (helper._runtime["RuntimePathConflict"](Path(private), Path(private)), "运行路径"),
             (OSError(private), "准备终端"),
         ]

@@ -40,6 +40,7 @@ export function operationName(path = "", method = "GET") {
   if (path === "/proxy/import-local") return "导入本机代理配置";
   if (path.startsWith("/proxy")) return reading ? "读取代理设置" : "应用代理设置";
   if (path.startsWith("/safety")) return "检查联网条件";
+  if (path.startsWith("/settings/dns-check")) return "测试加密 DNS";
   if (path.startsWith("/settings/probe")) return "验证代理出口";
   if (path.startsWith("/settings")) return reading ? "读取设置" : "保存设置";
   if (path.startsWith("/diagnostics/export")) return "导出诊断日志";

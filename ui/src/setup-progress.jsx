@@ -19,7 +19,7 @@ function bytes(value) {
   return `${Number(value.toFixed(unit && value < 100 ? 1 : 0))} ${units[unit]}`;
 }
 
-export function SetupProgress({ job, onDetails, onStop, onRetry, disconnected }) {
+export function SetupProgress({ job, onDetails, onStop, onRetry, onDNS, disconnected }) {
   const tr = useTranslation();
   const { phase, label, received, total, bytes_per_second, operation } = job.setup_progress;
   const native = job.kind === "guest-install";
@@ -57,6 +57,7 @@ export function SetupProgress({ job, onDetails, onStop, onRetry, disconnected })
     </div>
     <div className="setup-transfer-actions">
       <button className="text-button" type="button" onClick={onDetails}>{tr("操作详情")}</button>
+      {failed && onDNS && <button type="button" onClick={onDNS} disabled={disconnected}>{tr("测试或修改加密 DNS")}</button>}
       {failed
         ? <button type="button" className="primary" onClick={onRetry} disabled={disconnected}>{tr("继续安装")}</button>
         : <button type="button" onClick={onStop} disabled={disconnected}>{tr("停止安装")}</button>}

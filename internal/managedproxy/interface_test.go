@@ -3,6 +3,9 @@ package managedproxy
 import (
 	"context"
 	"errors"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -106,5 +109,73 @@ func TestDarwinPhysicalInterfaceReportsScutilFailureInsteadOfNoNIC(t *testing.T)
 	}
 	if _, err := selectPhysicalInterface("interface: en0", "Hardware Port: Wi-Fi\nDevice: en0\n", "No network information\n", map[string]bool{"en0": true}); err == nil || !strings.Contains(err.Error(), "未找到可用的物理 IPv4 网卡") {
 		t.Fatalf("offline nwi: got %v, want no physical IPv4 interface error", err)
+	}
+}
+
+func TestInterfaceAvailableChecksUpAndRoutableIPv4(t *testing.T) {
+	origList, origAddrs := listNetInterfaces, netInterfaceAddrs
+	t.Cleanup(func() {
+		listNetInterfaces, netInterfaceAddrs = origList, origAddrs
+	})
+	listNetInterfaces = func() ([]net.Interface, error) {
+		return []net.Interface{
+			{Name: "wlp4s0", Flags: net.FlagUp | net.FlagRunning | net.FlagBroadcast},
+			{Name: "enxdown", Flags: net.FlagBroadcast},
+			{Name: "enxnocarrier", Flags: net.FlagUp | net.FlagBroadcast},
+			{Name: "enxll", Flags: net.FlagUp | net.FlagRunning | net.FlagBroadcast},
+			{Name: "lo0", Flags: net.FlagUp | net.FlagRunning | net.FlagLoopback},
+		}, nil
+	}
+	netInterfaceAddrs = func(iface net.Interface) ([]net.Addr, error) {
+		switch iface.Name {
+		case "wlp4s0", "enxnocarrier":
+			return []net.Addr{&net.IPNet{IP: net.IPv4(192, 168, 1, 20), Mask: net.CIDRMask(24, 32)}}, nil
+		case "enxll":
+			return []net.Addr{&net.IPNet{IP: net.IPv4(169, 254, 1, 2), Mask: net.CIDRMask(16, 32)}}, nil
+		case "lo0":
+			return []net.Addr{&net.IPNet{IP: net.IPv4(127, 0, 0, 1), Mask: net.CIDRMask(8, 32)}}, nil
+		default:
+			return nil, nil
+		}
+	}
+	if !InterfaceAvailable("wlp4s0") {
+		t.Fatal("active IPv4 interface reported unavailable")
+	}
+	for _, name := range []string{"", "enxmissing", "enxdown", "enxnocarrier", "enxll", "lo0"} {
+		if InterfaceAvailable(name) {
+			t.Fatalf("interface %q unexpectedly reported available", name)
+		}
+	}
+}
+
+func TestCheckInterfaceBindingReportsStaleAndMatches(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("interface-name: enx001122\nproxies:\n  - {name: n1, type: socks5, server: 203.0.113.10, port: 1080}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := checkInterfaceBindingWith(context.Background(), path,
+		func(context.Context) (string, error) { return "wlp4s0", nil },
+		BindingMatches,
+	)
+	var stale *StaleInterfaceError
+	if !errors.As(err, &stale) || stale.Bound != "enx001122" || stale.Current != "wlp4s0" {
+		t.Fatalf("got %v, want StaleInterfaceError{enx001122 -> wlp4s0}", err)
+	}
+	if !strings.Contains(err.Error(), "enx001122") || !strings.Contains(err.Error(), "wlp4s0") {
+		t.Fatalf("error missing interface details: %v", err)
+	}
+	if err := checkInterfaceBindingWith(context.Background(), path,
+		func(context.Context) (string, error) { return "enx001122", nil },
+		BindingMatches,
+	); err != nil {
+		t.Fatalf("matching interface returned error: %v", err)
+	}
+	offlineErr := errors.New("未找到可用的物理 IPv4 网卡")
+	if err := checkInterfaceBindingWith(context.Background(), path,
+		func(context.Context) (string, error) { return "", offlineErr },
+		BindingMatches,
+	); !errors.Is(err, offlineErr) {
+		t.Fatalf("offline error = %v, want %v", err, offlineErr)
 	}
 }

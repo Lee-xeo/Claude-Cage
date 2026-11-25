@@ -390,7 +390,7 @@ func (s *start) ensureRunningLocked() error {
 	// Under the VM's lock: no other run is making it now.
 	if d := filepath.Join(LimaHome(s.state), s.name); isDirNoYAML(d) {
 		s.warnf("Detected partial VM state at %s (no lima.yaml): cleaning up.", d)
-		if err := os.RemoveAll(d); err != nil {
+		if err := host.RemoveAllWritable(d); err != nil {
 			s.warnf("Error: could not remove %s:\n%v", d, err)
 			return errStop
 		}
