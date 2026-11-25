@@ -128,8 +128,9 @@ func (s *Server) initializationState() (initializationView, error) {
 	if err != nil {
 		return initializationView{}, err
 	}
-	required := pending != nil || !s.environmentPrepared()
-	return initializationView{Required: required, Started: pending != nil, DesktopActive: required && s.desktopOnboardingLeaseActive()}, nil
+	prepared := s.environmentPrepared()
+	required := pending != nil || !prepared
+	return initializationView{Required: required, Started: pending != nil, Prepared: prepared, DesktopActive: required && s.desktopOnboardingLeaseActive()}, nil
 }
 
 func (s *Server) finishInitialization(r *http.Request) error {

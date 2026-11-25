@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sylvinus/agent-vm/internal/hostbridge"
+	"github.com/sylvinus/agent-vm/internal/version"
 )
 
 // A plugin's page is served only under its own secret path, only from
@@ -163,12 +164,17 @@ func TestPluginViewCallsAreChecked(t *testing.T) {
 }
 
 func TestFloatingPluginViewMetadataExposed(t *testing.T) {
+	// The view needs the first version that reads presentation, whatever
+	// version this checkout builds.
+	built := version.Version
+	version.Version = "0.2.1"
+	t.Cleanup(func() { version.Version = built })
 	s := &Server{profile: t.TempDir(), token: "test-token-test-token-test-token-0123", origin: "http://localhost:1234"}
 	dir := filepath.Join(s.hostPluginDir(), "hud")
 	if err := os.MkdirAll(filepath.Join(dir, "view"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"name":"hud","version":"0.2.0","description":"Floating HUD.","permissions":[],"engines":{"cage":">=0.2.0"},"kind":"guest",
+	manifest := `{"name":"hud","version":"0.2.0","description":"Floating HUD.","permissions":[],"engines":{"cage":">=0.2.1"},"kind":"guest",
 		"contributes":{"views":[{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating","width":312,"height":264}]}}`
 	if err := os.WriteFile(filepath.Join(dir, hostbridge.ManifestFile), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)

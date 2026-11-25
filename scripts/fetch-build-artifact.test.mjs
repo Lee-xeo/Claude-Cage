@@ -4,7 +4,7 @@ import { appendFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { fetchBuildArtifact } from "./fetch-build-artifact.mjs";
+import { fetchBuildArtifact, resolveArtifactURL } from "./fetch-build-artifact.mjs";
 
 const content = Buffer.from("verified build input");
 const checksum = createHash("sha256").update(content).digest("hex");
@@ -136,5 +136,28 @@ test("rate limits and server errors are retried", async t => {
     await writeFile(part, content);
     return { code: 0, http: "200" };
   });
+  assert.deepEqual(await readFile(destination), content);
+});
+
+test("CAGE_GITHUB_MIRROR prefixes only GitHub HTTPS URLs and keeps checksum verification", async t => {
+  const ghURL = "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo.gz";
+  assert.equal(
+    resolveArtifactURL(ghURL, "https://mirror.example.com/"),
+    "https://mirror.example.com/https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo.gz",
+  );
+  assert.equal(resolveArtifactURL(url, "https://mirror.example.com"), url);
+  assert.throws(() => resolveArtifactURL(ghURL, "http://insecure.example.com"), /HTTPS URL/);
+  assert.throws(() => resolveArtifactURL(ghURL, "https://user:pass@mirror.example.com"), /without credentials/);
+  assert.throws(() => resolveArtifactURL(ghURL, "https://mirror.example.com/?q=1"), /query, or fragment/);
+  assert.throws(() => resolveArtifactURL(ghURL, "https://mirror.example.com/#frag"), /query, or fragment/);
+
+  const { destination } = await fixture(t);
+  let requested = "";
+  await fetchBuildArtifact(ghURL, checksum, destination, async (target, part) => {
+    requested = target;
+    await writeFile(part, content);
+    return { code: 0, http: "200" };
+  }, { mirror: "https://mirror.example.com/" });
+  assert.equal(requested, "https://mirror.example.com/" + ghURL);
   assert.deepEqual(await readFile(destination), content);
 });

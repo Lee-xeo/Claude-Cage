@@ -64,6 +64,17 @@ export function canDrainQueue({
   );
 }
 
+export function shouldRetryOnQueueAction({
+  readError,
+  connectionError,
+  uncertain,
+  confirming,
+  queuePaused = false,
+}) {
+  if (queuePaused || confirming) return false;
+  return Boolean(readError || connectionError || uncertain);
+}
+
 export function enqueueMessage(queue, item) {
   if (!item?.request_id || queue.some((entry) => entry.request_id === item.request_id)) return queue;
   return [...queue, item];

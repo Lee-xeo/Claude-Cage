@@ -146,6 +146,23 @@ def token(*parts):
     return hashlib.sha256(json.dumps(parts, separators=(',', ':')).encode()).hexdigest()
 
 
+def scroll_buttons(dx, dy):
+    if not all(type(n) in (int, float) and math.isfinite(n) and abs(n) <= 3200 for n in (dx, dy)):
+        raise Failure(400)
+    ax, ay = abs(dx), abs(dy)
+    # Ignore minor cross-axis thumb drift during a single-axis swipe so
+    # horizontal wheel events do not latch Electron away from vertical scroll.
+    if ay and ax < 50 and ay >= ax * 2:
+        dx = 0
+    elif ax and ay < 50 and ax >= ay * 2:
+        dy = 0
+    buttons = []
+    for delta, neg, pos in [(dy, 4, 5), (dx, 6, 7)]:
+        if delta:
+            buttons.extend([neg if delta < 0 else pos] * min(20, max(1, round(abs(delta) / 50))))
+    return buttons
+
+
 class View:
     def __init__(self):
         self.conn = display.Display()
@@ -310,7 +327,7 @@ class View:
                 'image': base64.b64encode(encoded).decode(), 'focus': focus, 'password': password,
                 'pixel_width':encoded_size[0], 'pixel_height':encoded_size[1],
                 'pixel_ratio':self.scale, 'requested_pixel_ratio':self.requested_scale,
-                'pixel_ratio_control':self.dynamic_scale,
+                'pixel_ratio_control':self.dynamic_scale, 'action_frame_control': True,
                 'window': role, 'title': 'Claude Desktop', 'shared': True}
 
     def switch(self, role):
@@ -352,54 +369,60 @@ class View:
             if not result.get('available'):
                 raise Failure(409)
             return
-        # Hold the server only for short X11 checks and event dispatch. Do not
-        # invoke subprocesses or IBus while the server is grabbed.
-        self.conn.grab_server()
-        try:
-            if document != self.active()[3]:
-                raise Failure(409)
-            if kind == 'key':
-                names = {'Enter':'Return', 'Tab':'Tab', 'Escape':'Escape', 'Backspace':'BackSpace', 'Delete':'Delete',
-                         'ArrowLeft':'Left', 'ArrowRight':'Right', 'ArrowUp':'Up', 'ArrowDown':'Down'}
-                if key not in names:
-                    raise Failure(400)
+        if kind == 'key':
+            names = {'Enter':'Return', 'Tab':'Tab', 'Escape':'Escape', 'Backspace':'BackSpace', 'Delete':'Delete',
+                     'ArrowLeft':'Left', 'ArrowRight':'Right', 'ArrowUp':'Up', 'ArrowDown':'Down'}
+            if key not in names:
+                raise Failure(400)
+            # Hold the server only for short X11 checks and event dispatch. Do not
+            # invoke subprocesses or IBus while the server is grabbed.
+            self.conn.grab_server()
+            try:
+                if document != self.active()[3]:
+                    raise Failure(409)
                 code = self.conn.keysym_to_keycode(XK.string_to_keysym(names[key]))
                 if not code:
                     raise Failure(400)
                 xtest.fake_input(self.conn, X.KeyPress, code)
                 xtest.fake_input(self.conn, X.KeyRelease, code)
-                return
-            if kind not in ('tap', 'scroll'):
-                raise Failure(400)
-            x, y = req.get('x'), req.get('y')
-            if not all(type(n) in (int, float) and math.isfinite(n) and 0 <= n < bound for n, bound in zip((x,y), self.size)):
-                raise Failure(400)
-            ratio, left, top = fitted_window(self.size, geometry)
-            wx, wy = (x - left) / ratio, (y - top) / ratio
-            if not (0 <= wx < geometry.width and 0 <= wy < geometry.height):
-                raise Failure(409)
-            p = self.root.translate_coords(win, int(wx), int(wy))
-            xtest.fake_input(self.conn, X.MotionNotify, x=p.x, y=p.y)
-            current = self.root
-            while current.id != win.id:
-                current = current.query_pointer().child
-                if not current:
+            finally:
+                self.conn.ungrab_server()
+                self.conn.sync()
+            return
+        if kind not in ('tap', 'scroll'):
+            raise Failure(400)
+        x, y = req.get('x'), req.get('y')
+        if not all(type(n) in (int, float) and math.isfinite(n) and 0 <= n < bound for n, bound in zip((x, y), self.size)):
+            raise Failure(400)
+        ratio, left, top = fitted_window(self.size, geometry)
+        wx, wy = (x - left) / ratio, (y - top) / ratio
+        if not (0 <= wx < geometry.width and 0 <= wy < geometry.height):
+            raise Failure(409)
+        buttons = [1] if kind == 'tap' else scroll_buttons(req.get('dx'), req.get('dy'))
+        if not buttons:
+            return
+        # Dispatch each scroll notch in its own grab/ungrab cycle with a brief
+        # pause outside the server grab so Electron processes MotionNotify and
+        # distinct X11 wheel timestamps without coalescing away a swipe burst.
+        for index, button in enumerate(buttons):
+            if index:
+                time.sleep(0.008)
+            self.conn.grab_server()
+            try:
+                if document != self.active()[3]:
                     raise Failure(409)
-            buttons = [1]
-            if kind == 'scroll':
-                dx, dy = req.get('dx'), req.get('dy')
-                if not all(type(n) in (int, float) and math.isfinite(n) and abs(n) <= 3200 for n in (dx,dy)):
-                    raise Failure(400)
-                buttons = []
-                for delta, neg, pos in [(dx,6,7), (dy,4,5)]:
-                    if delta:
-                        buttons.extend([neg if delta < 0 else pos] * min(20, max(1, round(abs(delta)/50))))
-            for button in buttons:
+                p = self.root.translate_coords(win, int(wx), int(wy))
+                xtest.fake_input(self.conn, X.MotionNotify, x=p.x, y=p.y)
+                current = self.root
+                while current.id != win.id:
+                    current = current.query_pointer().child
+                    if not current:
+                        raise Failure(409)
                 xtest.fake_input(self.conn, X.ButtonPress, button)
                 xtest.fake_input(self.conn, X.ButtonRelease, button)
-        finally:
-            self.conn.ungrab_server()
-            self.conn.sync()
+            finally:
+                self.conn.ungrab_server()
+                self.conn.sync()
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -414,7 +437,15 @@ class Handler(socketserver.StreamRequestHandler):
                 result = view.snapshot()
             elif req.get('op') == 'action':
                 view.action(req)
-                result = {'id': view.id}
+                if req.get('return_frame'):
+                    if req.get('type') == 'scroll':
+                        time.sleep(0.04)
+                    try:
+                        result = view.snapshot()
+                    except Failure:
+                        result = {'id': view.id}
+                else:
+                    result = {'id': view.id}
             else:
                 raise Failure(400)
         except Failure as error:

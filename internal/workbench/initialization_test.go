@@ -84,8 +84,8 @@ func TestInitializationPersistsBeforeDiskCreationAndDoesNotResetExisting(t *test
 		}
 		return view
 	}
-	if !read().Required {
-		t.Fatal("fresh profile bypassed initialization")
+	if fresh := read(); !fresh.Required || fresh.Prepared {
+		t.Fatalf("fresh profile bypassed initialization: %+v", fresh)
 	}
 	for _, action := range []string{"begin", "install"} {
 		if w := initializationRequest(s, action, true); w.Code != 200 {
@@ -117,8 +117,8 @@ func TestInitializationPersistsBeforeDiskCreationAndDoesNotResetExisting(t *test
 	if err := os.Remove(filepath.Join(s.profile, "initialization.json")); err != nil {
 		t.Fatal(err)
 	}
-	if read().Required {
-		t.Fatal("existing Linux installation forced to reinstall")
+	if existing := read(); existing.Required || existing.Tracked || !existing.Prepared {
+		t.Fatalf("existing Linux installation forced to reinstall or reported unprepared: %+v", existing)
 	}
 }
 

@@ -30,6 +30,91 @@ test("a failed Chromium launch reports an unavailable browser and releases the s
   await assert.rejects(phone.run("open", { id, profile: "b".repeat(64), width: 390, height: 640 }), { status: 503 });
 });
 
+test("separate paired device profiles run independent concurrent phone browser sessions", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "cage-phone-multi-"));
+  const launched = [];
+  const profile1 = "1".repeat(64);
+  const profile2 = "2".repeat(64);
+  const phone = new PhoneBrowser({
+    binary: "/fake/chromium",
+    directory,
+    pipeFactory: (_binary, args) => {
+      const userDataArg = args.find(arg => arg.startsWith("--user-data-dir=")) || "";
+      let currentURL = "about:blank";
+      let closedResolve;
+      const closed = new Promise(resolve => { closedResolve = resolve; });
+      const pipe = {
+        userDataArg,
+        closed,
+        async send(method, params = {}) {
+          switch (method) {
+            case "Target.getTargets":
+              return { targetInfos: [{ targetId: "page-1", type: "page", url: "about:blank" }] };
+            case "Target.attachToTarget":
+              return { sessionId: "session-1" };
+            case "Browser.getVersion":
+              return { userAgent: "Mozilla/5.0 Chromium/136 Safari/537.36", product: "Chrome/136.0.0.0" };
+            case "Page.navigate":
+              currentURL = params.url;
+              return {};
+            case "Page.getFrameTree":
+              return { frameTree: { frame: { id: "frame-1", loaderId: "loader-" + currentURL, url: currentURL } } };
+            case "Page.getLayoutMetrics":
+              return { cssVisualViewport: { scale: 1, offsetX: 0, offsetY: 0 } };
+            case "Page.captureScreenshot":
+              return { data: Buffer.from("jpeg:" + currentURL).toString("base64") };
+            case "Target.getTargetInfo":
+              return { targetInfo: { title: "Title " + currentURL } };
+            case "Page.createIsolatedWorld":
+              return { executionContextId: 1 };
+            case "Runtime.evaluate":
+              return { result: { value: { focus: "", password: false } } };
+            default:
+              return {};
+          }
+        },
+        async close() {
+          closedResolve();
+        },
+      };
+      launched.push(pipe);
+      return pipe;
+    },
+  });
+  t.after(async () => {
+    await phone.dispose();
+    // Drain background history writes before removing the temporary profile directory.
+    await Promise.all([
+      phone.history({ profile: profile1, mode: "list" }).catch(() => {}),
+      phone.history({ profile: profile2, mode: "list" }).catch(() => {}),
+    ]);
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const id1 = randomUUID();
+  const id2 = randomUUID();
+
+  assert.deepEqual(await phone.run("open", { id: id1, profile: profile1, url: "https://example.org/one", width: 390, height: 640 }), { id: id1 });
+  assert.deepEqual(await phone.run("open", { id: id2, profile: profile2, url: "https://example.org/two", width: 820, height: 1180 }), { id: id2 });
+  assert.equal(launched.length, 2);
+  assert.notEqual(launched[0].userDataArg, launched[1].userDataArg);
+
+  const [frame1, frame2] = await Promise.all([
+    phone.run("frame", { id: id1 }),
+    phone.run("frame", { id: id2 }),
+  ]);
+  assert.equal(frame1.url, "https://example.org/one");
+  assert.equal(frame1.width, 390);
+  assert.equal(frame2.url, "https://example.org/two");
+  assert.equal(frame2.width, 820);
+
+  // Closing device 1 must leave device 2's browser session active and unaffected.
+  assert.deepEqual(await phone.run("close", { id: id1 }), { id: id1 });
+  await assert.rejects(phone.run("frame", { id: id1 }), { status: 410 });
+  const frame2After = await phone.run("frame", { id: id2 });
+  assert.equal(frame2After.url, "https://example.org/two");
+});
+
 // CAGE_TEST_CHROMIUM points at an installed, sandboxed Chromium. Only the
 // fixture hostname is mapped to loopback; Chromium uses the production SOCKS
 // listener, including its denial of requests for private literal addresses.

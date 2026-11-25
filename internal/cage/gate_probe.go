@@ -69,7 +69,10 @@ const exitProbeReachabilityURL = "https://www.gstatic.com/generate_204"
 
 const (
 	// exitProbeRequestTimeout bounds each individual echo service attempt.
-	exitProbeRequestTimeout = 5 * time.Second
+	// 7s accommodates higher-RTT residential proxy chains while keeping
+	// worst-case all-timeout (5*1s stagger + 7s = 12s) comfortably under
+	// diagnosticProbeTimeout (14s).
+	exitProbeRequestTimeout = 7 * time.Second
 	// A slow service does not hold back the next one. Each service starts when
 	// every earlier one has failed or after this delay, whichever comes first.
 	// Worst-case all-timeout duration across exitProbeServices stays under
@@ -519,10 +522,31 @@ func (g *EgressGate) serveDiagnostic(parent context.Context, conn net.Conn, faul
 	}
 	g.mu.Unlock()
 	if err != nil {
-		writeDiagnostic(conn, 503, map[string]string{"error": "proxy_unavailable"})
+		writeDiagnostic(conn, 503, map[string]string{
+			"error":  "proxy_unavailable",
+			"reason": diagnosticProbeReason(err),
+		})
 		return
 	}
 	writeDiagnostic(conn, 200, map[string]string{"ip": ip})
+}
+
+// diagnosticProbeReason maps an exit-probe error to a fixed, bounded reason
+// token for the internal diagnostic channel. It never includes raw errors, URLs,
+// addresses, or credentials.
+func diagnosticProbeReason(err error) string {
+	switch {
+	case errors.Is(err, ErrTLSHandshakeFailed) && errors.Is(err, ErrExitProbeTimeout):
+		return "tls_timeout"
+	case errors.Is(err, ErrTLSHandshakeFailed):
+		return "tls_handshake"
+	case errors.Is(err, ErrExitProbeTimeout), errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, ErrProxyConnectFailed):
+		return "proxy_connect"
+	default:
+		return "probe_failed"
+	}
 }
 
 func writeDiagnostic(conn net.Conn, status int, value any) {

@@ -7,7 +7,7 @@ import { deviceCommand } from "./device-navigation.mjs";
 import cageLogo from "../logo.png";
 import { accessDenied, request, sessionPath } from "./transport.mjs";
 import { recoverPendingMessage, retryableSessionError, sessionFailureMessage, sessionRetryDelay, sessionRetryLimit } from "./session-recovery.mjs";
-import { activeTurn as active, activeTurnIdForQueue, canDrainQueue, canSendImmediately, dequeueMessage, enqueueMessage, reconcileDispatchError, reconcileQueueWithSnapshot, removeQueuedMessage } from "./message-queue.mjs";
+import { activeTurn as active, activeTurnIdForQueue, canDrainQueue, canSendImmediately, dequeueMessage, enqueueMessage, reconcileDispatchError, reconcileQueueWithSnapshot, removeQueuedMessage, shouldRetryOnQueueAction } from "./message-queue.mjs";
 import { SessionActionDialog, sortSessions } from "./session-row";
 import { ArchivedSessions } from "../cli-sessions";
 import { SessionAccount } from "../session-account";
@@ -465,6 +465,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
   }, [id, accept, onDenied, onMissing]);
   useEffect(() => {
     if (!visible || uncertain) return;
+    readFailures.current = 0;
     const controller = new AbortController();
     let timer, incremental = false;
     const poll = async () => {
@@ -501,7 +502,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
       if (accessDenied(error)) onDenied(error); else if ([404,410].includes(error.status)) onMissing(); else setActionError(sessionFailureMessage(error));
     }).finally(() => { if (!controller.signal.aborted) { setConfirming(false); setSendProgress(""); } });
     return () => { controller.abort(); setConfirming(false); setSendProgress(""); };
-  }, [id, uncertain, visible, ready, accept, onDenied, onMissing, reload]);
+  }, [id, uncertain, visible, ready, accept, onDenied, onMissing, refresh, reload]);
   const needsConnection = ready && visible && session?.terminal_available && session.can_send === false;
   useEffect(() => {
     if (!needsConnection) { setConnectionError(""); setConnectionProgress(""); return; }
@@ -539,7 +540,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
     };
     void connect();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [id, needsConnection, accept, onDenied, reload]);
+  }, [id, needsConnection, accept, onDenied, refresh, reload]);
   useEffect(() => {
     if (follow.current && transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight;
   }, [session?.revision, queue.length, pendingMessage?.request_id]);
@@ -624,6 +625,13 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
     }
     persistDraftState(draftRef.current, submission.current, nextQueue, nextPaused, waitingTurnIdRef.current);
   }, [persistDraftState]);
+  const retry = useCallback((waitForSync = false) => {
+    readFailures.current = 0;
+    setReadError("");
+    setConnectionError("");
+    if (waitForSync) setWaitingSync(true);
+    setReload((n) => n + 1);
+  }, []);
   const resumeQueue = useCallback(() => {
     conflictIdRef.current = null;
     queuePausedRef.current = false;
@@ -632,7 +640,10 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
     setWaitingSync(false);
     setActionError("");
     persistDraftState(draftRef.current, submission.current, queueRef.current, false, waitingTurnIdRef.current);
-  }, [persistDraftState]);
+    if (shouldRetryOnQueueAction({ readError, connectionError, uncertain, confirming })) {
+      retry(!uncertain);
+    }
+  }, [persistDraftState, readError, connectionError, uncertain, confirming, retry]);
   useEffect(() => {
     if (!canDrainQueue({
       visible,
@@ -685,6 +696,15 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
       waitingTurnIdRef.current = activeTurnIdForQueue(latest.current, submission.current);
     }
     persistDraftState("", submission.current, nextQueue, queuePausedRef.current, waitingTurnIdRef.current);
+    if (shouldRetryOnQueueAction({
+      readError,
+      connectionError,
+      uncertain,
+      confirming,
+      queuePaused: queuePausedRef.current,
+    })) {
+      retry(!uncertain);
+    }
   };
   const stop = async () => {
     if (actionBusy.current || last?.status !== "running") return;
@@ -703,7 +723,6 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
       else { setActionError(error.message); setReload((n) => n + 1); }
     } finally { actionBusy.current = false; if (live.current) setBusy(false); }
   };
-  const retry = () => { readFailures.current = 0; setReadError(""); setConnectionError(""); setReload((n) => n + 1); };
   const decide = async (turnId, approvalId, allow) => {
     const turn = latest.current?.turns?.at(-1);
     if (actionBusy.current || checkApproval.current?.id === approvalId || turn?.id !== turnId || turn?.status !== "running" || turn.approval?.id !== approvalId) return;
@@ -737,7 +756,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
       <div className="title-line">{onBack && <button type="button" className="icon-button" aria-label="返回会话列表" onClick={onBack}><ArrowLeft size={18} /></button>}<h1>{session?.title || "Claude Code 会话"}</h1>{session && <Status value={last?.status} awaitingApproval={last?.status === "running" && last.approval} />}</div>
       {session && <p className="note">{session.workspace}</p>}
     </section>
-    {!uncertain && (readError || connectionError) && <Notice onRetry={retry} label="再次连接">{readError || connectionError}</Notice>}
+    {!uncertain && (readError || connectionError) && <Notice onRetry={() => retry(true)} label="再次连接">{readError || connectionError}</Notice>}
     {session && <SessionAccount id={id} request={request} onChanged={()=>setReload(n=>n+1)} compact />}
     {(sendProgress || connectionProgress || readProgress) && <p className="note" role="status">{sendProgress || connectionProgress || readProgress}</p>}
     {session?.connection_notice && <Notice>{session.connection_notice}</Notice>}
@@ -780,7 +799,7 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
       </article>)}</TranscriptContext.Provider>
     </section>
     <form className="compose" onSubmit={send}>
-      {actionError && <Notice onRetry={uncertain ? retry : undefined} label="再次连接">{actionError}</Notice>}
+      {actionError && <Notice onRetry={uncertain ? () => retry(false) : undefined} label="再次连接">{actionError}</Notice>}
       {session?.single_turn && <p className="note">当前凭据或路由只能验证本轮。请返回会话列表，新建会话后继续。</p>}
       {!ready && <p className="note">请在电脑上启动 Cage 环境。</p>}
       <div className="composer-field">

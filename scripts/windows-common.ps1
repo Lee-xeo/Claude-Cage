@@ -50,6 +50,45 @@ function Assert-WindowsWorkbenchTestBase {
     }
 }
 
+function Test-WindowsLowIntegrityText {
+    param([string[]]$Lines)
+    if (-not $Lines) { return $false }
+    foreach ($line in $Lines) {
+        if (-not $line) { continue }
+        if ($line -match '(?i)(?:Mandatory Label\\(?:Low Mandatory Level|低强制级别|低強制層級)|S-1-16-4096|\(ML;[^)]*;LW\))') {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Assert-WindowsBuildDirectoryIntegrity {
+    param([Parameter(Mandatory)][string]$Directory)
+    if (-not $IsWindows) { return }
+    $icacls = Get-BuildCommand @('icacls.exe', 'icacls') -Optional
+    if ($icacls -and (Test-Path -LiteralPath $Directory)) {
+        $savedNative = $PSNativeCommandUseErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $false
+        try {
+            $lines = @(& $icacls $Directory 2>$null)
+            if ($LASTEXITCODE -eq 0 -and (Test-WindowsLowIntegrityText $lines)) {
+                throw "Build directory '$Directory' carries Windows Low Mandatory Level (Low IL). Executables built here inherit Low IL and cannot write to %TEMP% (causing 'cage.exe verify-vm-assets' to fail with Access is denied). Copy the repository to a normal local directory without a Low Mandatory Level label (for example C:\src\Claude-Cage) and rebuild. See docs/windows.md#windows-源码构建."
+            }
+        } finally { $PSNativeCommandUseErrorActionPreference = $savedNative }
+    }
+    $whoami = Get-BuildCommand @('whoami.exe', 'whoami') -Optional
+    if ($whoami) {
+        $savedNative = $PSNativeCommandUseErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $false
+        try {
+            $groups = @(& $whoami '/groups' 2>$null)
+            if ($LASTEXITCODE -eq 0 -and (Test-WindowsLowIntegrityText $groups)) {
+                throw 'The current build shell runs at Windows Low Mandatory Level (Low IL), which prevents built executables from writing to %TEMP%. Run the build from a normal Medium-integrity shell in a standard local directory (for example C:\src\Claude-Cage). See docs/windows.md#windows-源码构建.'
+            }
+        } finally { $PSNativeCommandUseErrorActionPreference = $savedNative }
+    }
+}
+
 function Invoke-InIsolatedTestTemp {
     param([Parameter(Mandatory)][scriptblock]$Checks)
     # Windows' default temp is inside AppData, which must remain protected
