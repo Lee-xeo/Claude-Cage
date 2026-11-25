@@ -26,7 +26,6 @@ import (
 	"github.com/sylvinus/agent-vm/internal/hostproxy"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
-	"github.com/sylvinus/agent-vm/internal/paths"
 	"github.com/sylvinus/agent-vm/internal/uilocale"
 	"github.com/sylvinus/agent-vm/internal/workbench"
 	"io"
@@ -152,12 +151,10 @@ func run() int {
 		if len(args) != 1 {
 			return 2
 		}
-		dir, err := os.MkdirTemp("", "cage-vm-assets-")
-		if err != nil {
-			return fail(err)
-		}
-		defer os.RemoveAll(dir)
-		if _, err := limaembed.WriteShare(dir); err != nil {
+		if err := verifyVMAssets(os.MkdirTemp, func(dir string) error {
+			_, err := limaembed.WriteShare(dir)
+			return err
+		}); err != nil {
 			return fail(err)
 		}
 		return 0
@@ -515,6 +512,7 @@ func run() int {
 	os.Setenv(cage.ConfigEnv, path)
 	profile := filepath.Dir(path)
 	state := filepath.Join(profile, "state")
+	limaHome := filepath.Join(state, "lima")
 	os.Unsetenv("CAGE_LIMA_CACHE_DIR")
 	os.Unsetenv("CAGE_LOGICAL_LIMA_HOME")
 	if !containerenv.Configured(profile) {
@@ -529,19 +527,17 @@ func run() int {
 		// Keep image caches on the same volume the initialization page shows,
 		// including the default location. The saved path survives app updates.
 		os.Setenv("CAGE_LIMA_CACHE_DIR", filepath.Join(location.Directory, "cache", "lima"))
+		limaHome, err = cage.ProfileLimaHome(profile, location.Custom)
+		if err != nil {
+			return fail(err)
+		}
 		if location.Custom {
-			// Resolve the profile prefix once, as Lima did before migration.
-			// Keep state itself logical so its original disk and socket paths survive.
-			realProfile, err := paths.Resolve(profile)
-			if err != nil {
-				return fail(err)
-			}
-			state = filepath.Join(realProfile, "state")
-			os.Setenv("CAGE_LOGICAL_LIMA_HOME", filepath.Join(state, "lima"))
+			state = filepath.Dir(limaHome)
+			os.Setenv("CAGE_LOGICAL_LIMA_HOME", limaHome)
 		}
 	}
 	os.Setenv("AGENT_VM_STATE_DIR", state)
-	os.Setenv("AGENT_VM_LIMA_HOME", filepath.Join(state, "lima"))
+	os.Setenv("AGENT_VM_LIMA_HOME", limaHome)
 	// Do not inherit host proxy settings or credentials into VM operations.
 	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "ftp_proxy", "no_proxy", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"} {
 		os.Unsetenv(name)
@@ -602,7 +598,7 @@ func run() int {
 		// Use the same fixed exit services as the network check, so one
 		// blocked endpoint does not fail this check on its own.
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-		_, err := cage.ProbeExitIP(ctx, cfg)
+		err := checkProxyTransport(ctx, filepath.Dir(path), cfg)
 		cancel()
 		if err != nil {
 			return fail(fmt.Errorf("proxy transport check failed (no direct fallback): %w", err))
@@ -879,4 +875,16 @@ func expectedRelayStop(err error, forwarded os.Signal) bool {
 	}
 	status, ok := exit.Sys().(syscall.WaitStatus)
 	return ok && status.Signaled() && status.Signal() == signal || exit.ExitCode() == 128+int(signal)
+}
+
+func verifyVMAssets(mktemp func(string, string) (string, error), writeShare func(string) error) error {
+	dir, err := mktemp("", "cage-vm-assets-")
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return fmt.Errorf("%w (ensure TEMP/TMP points to a writable directory; on Windows, executables built in a Low Mandatory Level / sandboxed checkout directory cannot write to %%TEMP%% — move the repository to a normal local directory such as C:\\src\\Claude-Cage)", err)
+		}
+		return err
+	}
+	defer os.RemoveAll(dir)
+	return writeShare(dir)
 }

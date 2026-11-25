@@ -11,6 +11,7 @@ import {
   removeQueuedMessage,
   requeueAtFront,
   shouldPauseQueueAfterTurn,
+  shouldRetryOnQueueAction,
 } from "./mobile-cli/message-queue.mjs";
 
 const idleState = () => ({
@@ -48,6 +49,68 @@ test("canDrainQueue drains FIFO only when visible, ready, idle, and unpaused", (
   assert.equal(canDrainQueue({ ...readyToDrain, waitingSync: true }), false);
   assert.equal(canDrainQueue({ ...readyToDrain, session: { can_send: false } }), false);
   assert.equal(canDrainQueue({ ...readyToDrain, session: { single_turn: true } }), false);
+});
+
+test("shouldRetryOnQueueAction triggers reconnect only when polling or recovery has stopped and queue is not paused", () => {
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "",
+    connectionError: "",
+    uncertain: false,
+    confirming: false,
+  }), false);
+
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "已自动重连5次，仍未恢复。",
+    connectionError: "",
+    uncertain: false,
+    confirming: false,
+  }), true);
+
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "",
+    connectionError: "会话连接暂未就绪，请重试。",
+    uncertain: false,
+    confirming: false,
+  }), true);
+
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "",
+    connectionError: "",
+    uncertain: true,
+    confirming: false,
+  }), true);
+
+  // Do not abort an already-running pending-message recovery attempt, even if
+  // /open or read errors are also present.
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "",
+    connectionError: "",
+    uncertain: true,
+    confirming: true,
+  }), false);
+
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "",
+    connectionError: "会话连接暂未就绪，请重试。",
+    uncertain: true,
+    confirming: true,
+  }), false);
+
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "已自动重连5次，仍未恢复。",
+    connectionError: "",
+    uncertain: true,
+    confirming: true,
+  }), false);
+
+  // Respect paused queue when queueing another message; resumeQueue passes queuePaused: false.
+  assert.equal(shouldRetryOnQueueAction({
+    readError: "已自动重连5次，仍未恢复。",
+    connectionError: "",
+    uncertain: false,
+    confirming: false,
+    queuePaused: true,
+  }), false);
 });
 
 test("queue operations preserve FIFO ordering and avoid duplicate request IDs", () => {

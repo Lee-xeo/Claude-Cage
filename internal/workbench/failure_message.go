@@ -4,22 +4,32 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/usererror"
 )
 
 const failureHelp = "在设置中导出诊断包，并附上出错时正在执行的操作。"
 
+var limaNameTooLong = regexp.MustCompile("\\binstance name [`'\"]?[a-z0-9_.-]+[`'\"]? too long\\b")
+
 // Only recognize known diagnostics. Unrecognized process output stays in the
 // existing operation log and never becomes an arbitrary user-facing message.
 func executionFailure(action string, err error, output string) error {
+	lower := strings.ToLower(output)
+	if strings.Contains(lower, "unix_path_max") ||
+		strings.Contains(lower, "vm name too long") ||
+		strings.Contains(output, cage.LimaSocketPathReason) ||
+		limaNameTooLong.MatchString(lower) {
+		return usererror.New(action, cage.LimaSocketPathReason, cage.LimaSocketPathHelp, err)
+	}
 	if reason, next, ok := imageDownloadFailure(output); ok {
 		return usererror.New(action, reason, next, err)
 	}
-	lower := strings.ToLower(output)
 	for _, rule := range []struct {
 		patterns     []string
 		reason, next string

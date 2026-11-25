@@ -7,12 +7,7 @@ for component in mihomo mihomoSource; do
   metadata=$(node -e 'const d=JSON.parse(require("fs").readFileSync("packaging/linux/dependencies.json"))[process.argv[1]]; console.log([d.file,d.url,d.sha256].join("\t"))' "$component")
   IFS=$'\t' read -r file url checksum <<< "$metadata"
   archive="$directory/$file"
-  if [[ ! -f "$archive" ]]; then
-    curl --fail --location --retry 2 --connect-timeout 15 --max-time 300 "$url" -o "$archive.part"
-    mv "$archive.part" "$archive"
-  fi
-  actual=$(shasum -a 256 "$archive" | cut -d ' ' -f 1)
-  [[ "$actual" == "$checksum" ]] || { echo "Checksum mismatch: $file" >&2; exit 1; }
+  node scripts/fetch-build-artifact.mjs "$url" "$checksum" "$archive"
 done
 gzip -dc "$directory/mihomo-linux-amd64-compatible-v1.19.33.gz" > "$directory/mihomo.part"
 chmod 755 "$directory/mihomo.part"

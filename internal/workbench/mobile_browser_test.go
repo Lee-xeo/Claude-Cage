@@ -119,10 +119,14 @@ func testPairedBrowser(t *testing.T, ctx context.Context, s *Server, phone *mobi
 			}
 			body = fmt.Sprintf(`{"id":%q,"document":"test","window":"desktop","image":"ZGVza3RvcA==","width":390,"height":640}`, id)
 			if desktopDensity.Load() {
-				body = strings.TrimSuffix(body, "}") + `,"pixel_ratio_control":true,"pixel_ratio":3.5,"requested_pixel_ratio":3.5}`
+				body = strings.TrimSuffix(body, "}") + `,"pixel_ratio_control":true,"action_frame_control":true,"pixel_ratio":3.5,"requested_pixel_ratio":3.5}`
 			}
 		case "/phone-desktop/action":
 			if input.Type == "resize" && input.PixelRatio == 3.5 && input.Width == 390 && input.Height == 640 {
+				break
+			}
+			if input.Type == "scroll" && input.Document == "test" && input.ReturnFrame && input.DY != nil && *input.DY == 150 {
+				body = fmt.Sprintf(`{"id":%q,"document":"test","window":"desktop","image":"c2Nyb2xsZWQ=","width":390,"height":640,"action_frame_control":true}`, id)
 				break
 			}
 			if input.Type != "login" || input.Document != "test" {
@@ -190,8 +194,15 @@ func testPairedBrowser(t *testing.T, ctx context.Context, s *Server, phone *mobi
 	screen("POST", id+"/action", `{"type":"navigate","url":"https://example.test"}`, 400)
 	screen("POST", id+"/action", `{"type":"login","document":"test"}`, 200)
 	desktopDensity.Store(true)
-	if !strings.Contains(screen("GET", id+"/frame", "", 200), `"pixel_ratio_supported":true`) {
+	desktopFrame := screen("GET", id+"/frame", "", 200)
+	if !strings.Contains(desktopFrame, `"pixel_ratio_supported":true`) {
 		t.Fatal("host did not negotiate pixel density with a capable guest")
+	}
+	if !strings.Contains(desktopFrame, `"action_frame":true`) {
+		t.Fatal("host did not negotiate action frames for capable desktop guest")
+	}
+	if out := screen("POST", id+"/action", `{"type":"scroll","x":120,"y":300,"dx":0,"dy":150,"document":"test","return_frame":true}`, 200); !strings.Contains(out, `"image":"c2Nyb2xsZWQ="`) || !strings.Contains(out, `"action_frame":true`) {
+		t.Fatalf("desktop scroll action frame was not returned: %s", out)
 	}
 	screen("POST", id+"/action", `{"type":"resize","width":390,"height":640,"pixel_ratio":3.5}`, 200)
 	screen("POST", id+"/action", `{"type":"resize","width":390,"height":640,"pixel_ratio":-1}`, 400)

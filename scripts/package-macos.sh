@@ -10,6 +10,15 @@ case "$(uname -s)-$(uname -m)" in
   *) echo 'The supported release targets are Apple Silicon and Intel macOS 14+.' >&2; exit 1 ;;
 esac
 case "${1:-}" in ''|--from-notarized-app) ;; *) echo 'Usage: scripts/package-macos.sh [--from-notarized-app]' >&2; exit 2 ;; esac
+# A notarized App may have been built on another Mac and signed here by
+# scripts/resign-macos-app.sh; the package is named after the App itself.
+if [[ "${1:-}" == --from-notarized-app ]]; then
+  case "$(lipo -archs _output/Cage.app/Contents/MacOS/Cage)" in
+    arm64) arch=arm64; chip='Apple Silicon' ;;
+    x86_64) arch=amd64; chip='an Intel Mac with VT-x' ;;
+    *) echo 'The notarized App must be built for one supported architecture.' >&2; exit 1 ;;
+  esac
+fi
 : "${CAGE_SIGNING_IDENTITY:?Set CAGE_SIGNING_IDENTITY to your Developer ID Application identity.}"
 : "${CAGE_NOTARY_PROFILE:?Set CAGE_NOTARY_PROFILE to a notarytool keychain profile.}"
 notary_credentials=(--keychain-profile "$CAGE_NOTARY_PROFILE")

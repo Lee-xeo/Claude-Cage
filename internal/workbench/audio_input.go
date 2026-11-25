@@ -47,27 +47,32 @@ func (s *Server) audioInput(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "请先启动并更新 Cage 环境", http.StatusConflict)
 		return
 	}
-	if !websocket.IsWebSocketUpgrade(r) {
-		jsonReply(w, audioInputFormat)
+	// The plain request answers whether a connection would be accepted, so a
+	// window that cannot have the microphone learns it without opening one.
+	command, renderErr := s.linuxTemplate(audioInputBridgeCommand)
+	if renderErr != nil {
+		http.Error(w, "音频创建配置无效", http.StatusConflict)
 		return
 	}
+	upgrade := websocket.IsWebSocketUpgrade(r)
 	s.mu.Lock()
 	if s.audioInputClients >= 1 {
 		s.mu.Unlock()
 		http.Error(w, "麦克风连接已由其他工作台窗口占用", http.StatusConflict)
 		return
 	}
-	s.audioInputClients++
+	if upgrade {
+		s.audioInputClients++
+	}
 	s.mu.Unlock()
+	if !upgrade {
+		jsonReply(w, audioInputFormat)
+		return
+	}
 	defer func() { s.mu.Lock(); s.audioInputClients--; s.mu.Unlock() }()
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	command, renderErr := s.linuxTemplate(audioInputBridgeCommand)
-	if renderErr != nil {
-		http.Error(w, "音频创建配置无效", http.StatusConflict)
-		return
-	}
 	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", command)
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {

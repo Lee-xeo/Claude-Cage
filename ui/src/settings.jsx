@@ -728,7 +728,7 @@ export function SettingsPanel({
                 {status.local_vm_storage && !isRemoteClient() && <EnvironmentStorage status={status} onConfirm={onConfirm} />}
                 {!status.storage_recovery?.required && <EnvironmentVersions status={status} onConfirm={onConfirm} />}
                 {!status.storage_recovery?.required && <EnvironmentCache status={status} onConfirm={onConfirm} />}
-                {!status.storage_recovery?.required && (
+                {(!status.storage_recovery?.required || (status.local_vm_storage && !isRemoteClient())) && (
                   <EnvironmentDeviceReset
                     status={status}
                     onConfirm={onConfirm}

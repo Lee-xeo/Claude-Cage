@@ -1,4 +1,10 @@
 const maxSocketBackpressure = 32768;
+const reconnectDelayMs = 2500;
+const occupiedDelayMs = 10000;
+const maxReconnectDelayMs = 60000;
+// A connection that lasted this long was working; one that ends sooner was
+// refused or its guest feeder could not start.
+const stableConnectionMs = 10000;
 
 export function classifyMicrophoneError(error) {
   const name = error?.name || "";
@@ -32,6 +38,9 @@ export class AudioInput {
       AudioContext: deps.AudioContext ?? globalThis.AudioContext,
       AudioWorkletNode: deps.AudioWorkletNode ?? globalThis.AudioWorkletNode,
       getMediaDevices: deps.getMediaDevices ?? (() => globalThis.navigator?.mediaDevices),
+      now: deps.now ?? (() => Date.now()),
+      setTimeout: deps.setTimeout ?? ((callback, delay) => setTimeout(callback, delay)),
+      clearTimeout: deps.clearTimeout ?? (timer => clearTimeout(timer)),
     };
     this.active = false;
     this.disposed = false;
@@ -42,6 +51,7 @@ export class AudioInput {
     this.opening = false;
     this.socket = null;
     this.retryTimer = null;
+    this.failures = 0;
     this.stream = null;
     this.context = null;
     this.source = null;
@@ -64,8 +74,9 @@ export class AudioInput {
 
   disconnect() {
     this.connectionGen++;
-    clearTimeout(this.retryTimer);
+    this.deps.clearTimeout(this.retryTimer);
     this.retryTimer = null;
+    this.failures = 0;
     this.opening = false;
     const socket = this.socket;
     this.socket = null;
@@ -82,20 +93,29 @@ export class AudioInput {
 
   async connect() {
     if (!this.active || this.disposed || this.socket || this.opening) return;
-    clearTimeout(this.retryTimer);
+    this.deps.clearTimeout(this.retryTimer);
     this.retryTimer = null;
     this.opening = true;
     const generation = this.connectionGen;
     const live = () => this.active && !this.disposed && generation === this.connectionGen;
 
-    const scheduleReconnect = (delayMs = 2500) => {
+    // Each attempt that does not reach a working connection doubles the wait,
+    // so a window that cannot have the microphone settles at one quiet request
+    // a minute instead of asking the environment every few seconds.
+    const scheduleReconnect = (delayMs = reconnectDelayMs, failed = true) => {
       if (!live()) return;
       this.opening = false;
       this.socket = null;
       this.demand = false;
       this.stopCapture();
       this._publish("idle", "");
-      this.retryTimer = setTimeout(() => this.connect(), delayMs);
+      if (failed) {
+        delayMs = Math.min(delayMs * 2 ** Math.min(this.failures, 5), maxReconnectDelayMs);
+        this.failures++;
+      } else {
+        this.failures = 0;
+      }
+      this.retryTimer = this.deps.setTimeout(() => this.connect(), delayMs);
     };
 
     try {
@@ -109,6 +129,7 @@ export class AudioInput {
       socket.binaryType = "arraybuffer";
       this.socket = socket;
       let confirmed = false;
+      const opened = this.deps.now();
 
       socket.onmessage = ({ data }) => {
         if (!live() || typeof data !== "string") return;
@@ -133,7 +154,7 @@ export class AudioInput {
         }
       };
 
-      socket.onclose = () => scheduleReconnect(2500);
+      socket.onclose = () => scheduleReconnect(reconnectDelayMs, !confirmed || this.deps.now() - opened < stableConnectionMs);
       socket.onerror = () => socket.close();
       this.opening = false;
     } catch (error) {
@@ -143,7 +164,7 @@ export class AudioInput {
         this.opening = false;
         return;
       }
-      scheduleReconnect(error?.status === 409 ? 10000 : 2500);
+      scheduleReconnect(error?.status === 409 ? occupiedDelayMs : reconnectDelayMs);
     }
   }
 

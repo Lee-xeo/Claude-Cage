@@ -1,12 +1,16 @@
 package workbench
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,28 +27,161 @@ import (
 	"github.com/sylvinus/agent-vm/internal/remotelink"
 )
 
-// One UI-managed phone per host. CLI-managed devices keep their separate identities.
+const maxPairedPhones = 8
+
+// UI-managed mobile enrollments on this host. CLI-managed devices keep their separate identities.
 type phoneRecord struct {
-	Seed                      []byte
-	Pin, Relay, Lookup, Admin string
-	Device                    *mobilelink.DeviceInfo `json:"device,omitempty"`
+	ID       string                 `json:"id,omitempty"`
+	Seed     []byte                 `json:"Seed"`
+	Pin      string                 `json:"Pin"`
+	Relay    string                 `json:"Relay"`
+	Lookup   string                 `json:"Lookup"`
+	Admin    string                 `json:"Admin"`
+	Device   *mobilelink.DeviceInfo `json:"device,omitempty"`
+	PairedAt time.Time              `json:"paired_at,omitempty"`
 }
+
+type phoneStore struct {
+	Version int           `json:"version"`
+	Devices []phoneRecord `json:"devices"`
+}
+
+type pairedPhoneView struct {
+	ID       string                 `json:"id"`
+	Device   *mobilelink.DeviceInfo `json:"device"`
+	Relay    string                 `json:"relay,omitempty"`
+	PairedAt time.Time              `json:"paired_at,omitempty"`
+}
+
+type phoneSlot struct {
+	record    phoneRecord
+	serving   context.CancelFunc
+	roomProof string
+	roomCtx   context.Context
+	browser   phoneSurfaceState
+}
+
+func (slot *phoneSlot) peer() string {
+	if slot == nil || len(slot.record.Seed) == 0 {
+		return ""
+	}
+	digest := sha256.Sum256(slot.record.Seed)
+	return hex.EncodeToString(digest[:])
+}
+
 type mobilePairing struct {
-	mu               sync.Mutex
-	browser, desktop phoneSurfaceState
-	roomProof        string
-	roomCtx          context.Context
-	pending          context.CancelFunc
-	serving          context.CancelFunc
-	record           *phoneRecord
-	status           string
-	closed           bool
-	powerCtx         context.Context
-	powerDone        <-chan struct{}
-	power            keepawake.State
+	mu          sync.Mutex
+	desktop     phoneSurfaceState
+	pending     context.CancelFunc
+	slots       []*phoneSlot
+	status      string
+	closed      bool
+	powerCtx    context.Context
+	powerCancel context.CancelFunc
+	powerDone   <-chan struct{}
+	power       keepawake.State
+}
+
+func newPhoneID() string {
+	var b [12]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+func legacyPhoneID(seed []byte) string {
+	h := sha256.New()
+	h.Write([]byte("cage-phone-id:"))
+	h.Write(seed)
+	return hex.EncodeToString(h.Sum(nil)[:12])
 }
 
 func (s *Server) phoneFile() string { return filepath.Join(s.profile, "mobile-paired-device.json") }
+
+func (p *mobilePairing) matchPhoneLocked(r *http.Request) *phoneSlot {
+	if p.closed {
+		return nil
+	}
+	proof := r.Header.Get(mobilelink.PhoneRoomHeader)
+	if proof == "" {
+		return nil
+	}
+	for _, slot := range p.slots {
+		if slot.roomCtx != nil && slot.roomCtx.Err() == nil && slot.roomProof != "" && equalSecret(slot.roomProof, proof) {
+			return slot
+		}
+	}
+	return nil
+}
+
+func (p *mobilePairing) hasSlotLocked(target *phoneSlot) bool {
+	for _, slot := range p.slots {
+		if slot == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *mobilePairing) recordsLocked() []phoneRecord {
+	records := make([]phoneRecord, 0, len(p.slots))
+	for _, slot := range p.slots {
+		records = append(records, slot.record)
+	}
+	return records
+}
+
+func (s *Server) savePhones(records []phoneRecord) error {
+	if len(records) == 0 {
+		if err := os.Remove(s.phoneFile()); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return writePrivate(s.phoneFile(), phoneStore{Version: 2, Devices: records})
+}
+
+func parsePhoneRecords(b []byte) ([]phoneRecord, error) {
+	var envelope struct {
+		Devices json.RawMessage `json:"devices"`
+	}
+	var records []phoneRecord
+	if json.Unmarshal(b, &envelope) == nil && len(envelope.Devices) > 0 {
+		var store phoneStore
+		if err := json.Unmarshal(b, &store); err != nil {
+			return nil, errors.New("无法读取手机配对记录")
+		}
+		records = store.Devices
+	} else {
+		var single phoneRecord
+		if err := json.Unmarshal(b, &single); err != nil {
+			return nil, errors.New("无法读取手机配对记录")
+		}
+		records = []phoneRecord{single}
+	}
+	if len(records) > maxPairedPhones {
+		return nil, errors.New("无法读取手机配对记录")
+	}
+	seenIDs := make(map[string]struct{}, len(records))
+	seenLookups := make(map[string]struct{}, len(records))
+	for i := range records {
+		r := &records[i]
+		if len(r.Seed) != ed25519.SeedSize || !mobilelink.ValidRelayOrigin(r.Relay) || r.Lookup == "" {
+			return nil, errors.New("无法读取手机配对记录")
+		}
+		if r.ID == "" {
+			r.ID = legacyPhoneID(r.Seed)
+		}
+		if _, dup := seenIDs[r.ID]; dup {
+			return nil, errors.New("无法读取手机配对记录")
+		}
+		if _, dup := seenLookups[r.Lookup]; dup {
+			return nil, errors.New("无法读取手机配对记录")
+		}
+		seenIDs[r.ID] = struct{}{}
+		seenLookups[r.Lookup] = struct{}{}
+	}
+	return records, nil
+}
 
 // The transport proof grants only phone operations and is revoked with the
 // active room. It never grants native desktop administration to a session cookie.
@@ -54,10 +191,11 @@ func (s *Server) pairedPhoneRoom(r *http.Request) context.Context {
 	}
 	s.phones.mu.Lock()
 	defer s.phones.mu.Unlock()
-	if s.phones.closed || s.phones.record == nil || !s.phones.pairedRequestLocked(r) {
+	slot := s.phones.matchPhoneLocked(r)
+	if slot == nil {
 		return nil
 	}
-	return s.phones.roomCtx
+	return slot.roomCtx
 }
 
 func (s *Server) restorePhone() error {
@@ -68,40 +206,68 @@ func (s *Server) restorePhone() error {
 	if err != nil {
 		return err
 	}
-	var r phoneRecord
-	if json.Unmarshal(b, &r) != nil || len(r.Seed) != ed25519.SeedSize || !mobilelink.ValidRelayOrigin(r.Relay) {
-		return errors.New("无法读取手机配对记录")
+	records, err := parsePhoneRecords(b)
+	if err != nil {
+		return err
 	}
 	s.phones.mu.Lock()
 	defer s.phones.mu.Unlock()
-	s.attachPhone(r)
+	if s.phones.closed {
+		return nil
+	}
+	for _, r := range records {
+		s.attachPhoneLocked(r)
+	}
 	return nil
 }
-func (s *Server) attachPhone(r phoneRecord) {
+
+func (s *Server) ensurePowerLocked() {
+	p := &s.phones
+	if p.closed || p.powerCtx != nil || len(p.slots) == 0 {
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.phones.serving = cancel
-	s.phones.record = &r
-	s.phones.powerCtx = ctx
 	done := make(chan struct{})
-	s.phones.powerDone = done
+	p.powerCtx = ctx
+	p.powerCancel = cancel
+	p.powerDone = done
 	go func() {
 		defer close(done)
 		keepawake.Run(ctx, func(state keepawake.State) {
-			s.phones.mu.Lock()
-			if s.phones.powerCtx == ctx {
-				s.phones.power = state
+			p.mu.Lock()
+			if p.powerCtx == ctx {
+				p.power = state
 			}
-			s.phones.mu.Unlock()
+			p.mu.Unlock()
 			if state.Error != "" {
 				diagnostics.Log("warn", "mobile-remote", "keep-awake request failed: "+state.Error)
 			}
 		})
 	}()
+}
+
+func (s *Server) stopPowerLocked() <-chan struct{} {
+	p := &s.phones
+	if p.powerCancel != nil {
+		p.powerCancel()
+		p.powerCancel = nil
+	}
+	done := p.powerDone
+	p.powerCtx = nil
+	p.power = keepawake.State{}
+	return done
+}
+
+func (s *Server) attachPhoneLocked(r phoneRecord) *phoneSlot {
+	ctx, cancel := context.WithCancel(context.Background())
+	slot := &phoneSlot{record: r, serving: cancel}
+	s.phones.slots = append(s.phones.slots, slot)
+	s.ensurePowerLocked()
 	go func() {
 		delay := time.Second
 		for ctx.Err() == nil {
 			start := time.Now()
-			err := s.phoneRoom(ctx, r)
+			err := s.phoneRoom(ctx, slot)
 			if ctx.Err() != nil {
 				return
 			}
@@ -117,9 +283,20 @@ func (s *Server) attachPhone(r phoneRecord) {
 			}
 		}
 	}()
+	return slot
 }
-func (s *Server) phoneRoom(ctx context.Context, r phoneRecord) error {
-	id, err := remotelink.IdentityFromKey(ed25519.NewKeyFromSeed(r.Seed))
+
+func (s *Server) phoneRoom(ctx context.Context, slot *phoneSlot) error {
+	p := &s.phones
+	p.mu.Lock()
+	if ctx.Err() != nil || p.closed || !p.hasSlotLocked(slot) {
+		p.mu.Unlock()
+		return context.Canceled
+	}
+	seed := append([]byte(nil), slot.record.Seed...)
+	relayOrigin, admin, lookup, pin := slot.record.Relay, slot.record.Admin, slot.record.Lookup, slot.record.Pin
+	p.mu.Unlock()
+	id, err := remotelink.IdentityFromKey(ed25519.NewKeyFromSeed(seed))
 	if err != nil {
 		return err
 	}
@@ -128,63 +305,92 @@ func (s *Server) phoneRoom(ctx context.Context, r phoneRecord) error {
 		return err
 	}
 	defer b.Close()
-	room, err := mobilelink.CreateDiscoverableRoom(ctx, r.Relay, r.Admin, r.Lookup)
+	room, err := mobilelink.CreateDiscoverableRoom(ctx, relayOrigin, admin, lookup)
 	if err != nil {
 		return err
 	}
 	proof := randomToken()
-	p := &s.phones
 	p.mu.Lock()
-	if ctx.Err() != nil || p.closed || p.record == nil || p.record.Lookup != r.Lookup {
+	if ctx.Err() != nil || p.closed || !p.hasSlotLocked(slot) {
 		p.mu.Unlock()
 		return context.Canceled
 	}
 	roomCtx, cancelRoom := context.WithCancel(ctx)
-	p.roomProof = proof
-	p.roomCtx = roomCtx
+	slot.roomProof = proof
+	slot.roomCtx = roomCtx
 	p.mu.Unlock()
 	defer func() {
 		cancelRoom()
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if p.roomProof == proof {
-			p.roomProof = ""
-			p.roomCtx = nil
+		if slot.roomProof == proof {
+			slot.roomProof = ""
+			slot.roomCtx = nil
 		}
 	}()
 	b.SetPhoneRoom(proof)
-	return mobilelink.ServeHost(ctx, r.Relay, room.ID, room.HostToken, id, r.Pin, b)
+	return mobilelink.ServeHost(ctx, relayOrigin, room.ID, room.HostToken, id, pin, b)
 }
+
 func (s *Server) stopPhone() {
 	p := &s.phones
 	p.mu.Lock()
 	p.closed = true
-	p.roomCtx = nil
-	p.roomProof = ""
 	if p.pending != nil {
 		p.pending()
+		p.pending = nil
 	}
-	if p.serving != nil {
-		p.serving()
+	for _, slot := range p.slots {
+		slot.roomCtx = nil
+		slot.roomProof = ""
+		if slot.serving != nil {
+			slot.serving()
+			slot.serving = nil
+		}
 	}
-	done := p.powerDone
-	p.powerCtx = nil
-	p.power = keepawake.State{}
+	done := s.stopPowerLocked()
 	p.mu.Unlock()
 	if done != nil {
 		<-done
 	}
 }
+
+func (p *mobilePairing) viewsLocked() []pairedPhoneView {
+	devices := make([]pairedPhoneView, 0, len(p.slots))
+	for _, slot := range p.slots {
+		var info *mobilelink.DeviceInfo
+		if slot.record.Device != nil {
+			copyInfo := *slot.record.Device
+			info = &copyInfo
+		}
+		devices = append(devices, pairedPhoneView{
+			ID:       slot.record.ID,
+			Device:   info,
+			Relay:    slot.record.Relay,
+			PairedAt: slot.record.PairedAt,
+		})
+	}
+	return devices
+}
+
 func (s *Server) phoneStatus(w http.ResponseWriter, r *http.Request) {
 	p := &s.phones
 	p.mu.Lock()
-	var device *mobilelink.DeviceInfo
-	if p.record != nil {
-		device = p.record.Device
+	devices := p.viewsLocked()
+	var firstDevice *mobilelink.DeviceInfo
+	if len(devices) > 0 {
+		firstDevice = devices[0].Device
 	}
-	paired, status, power := p.record != nil, p.status, p.power
+	paired, status, power := len(p.slots) > 0, p.status, p.power
 	p.mu.Unlock()
-	reply := map[string]any{"paired": paired, "status": status, "device": device, "keep_awake": power}
+	reply := map[string]any{
+		"paired":      paired,
+		"status":      status,
+		"device":      firstDevice,
+		"devices":     devices,
+		"max_devices": maxPairedPhones,
+		"keep_awake":  power,
+	}
 	if _, access := s.account.accessStateFor(false, true); access == accountAccessDesktopOnly {
 		reply["mobile_access_blocked"] = true
 		reply["mobile_access_reason"] = s.account.desktopOnlyMobileMessage()
@@ -192,7 +398,7 @@ func (s *Server) phoneStatus(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, reply)
 }
 
-// Only the active, pinned phone tunnel may describe the enrolled phone.
+// Only an active, pinned phone tunnel may describe its enrolled phone.
 func (s *Server) reportPhoneDevice(w http.ResponseWriter, r *http.Request) {
 	var input mobilelink.DeviceInfo
 	if !readJSON(w, r, &input, 1024) {
@@ -212,45 +418,115 @@ func (s *Server) reportPhoneDevice(w http.ResponseWriter, r *http.Request) {
 	p := &s.phones
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed || p.record == nil || !p.pairedRequestLocked(r) {
+	slot := p.matchPhoneLocked(r)
+	if slot == nil {
 		http.Error(w, "请通过已配对的手机连接", http.StatusForbidden)
 		return
 	}
-	if p.record.Device == nil || *p.record.Device != input {
-		record := *p.record
-		record.Device = &input
-		if err := writePrivate(s.phoneFile(), record); err != nil {
+	if slot.record.Device == nil || *slot.record.Device != input {
+		records := p.recordsLocked()
+		for i := range records {
+			if records[i].ID == slot.record.ID {
+				info := input
+				records[i].Device = &info
+				break
+			}
+		}
+		if err := s.savePhones(records); err != nil {
 			requestError(w, err)
 			return
 		}
-		p.record = &record
+		info := input
+		slot.record.Device = &info
 	}
 	jsonReply(w, map[string]bool{"ok": true})
 }
+
 func (s *Server) removePhone(w http.ResponseWriter, r *http.Request) {
+	targetID := strings.TrimSpace(r.URL.Query().Get("id"))
+	if r.Body != nil {
+		raw, err := io.ReadAll(io.LimitReader(r.Body, 4097))
+		if err != nil || len(raw) > 4096 {
+			http.Error(w, "请求无效", http.StatusBadRequest)
+			return
+		}
+		raw = bytes.TrimSpace(raw)
+		if len(raw) > 0 {
+			var input struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(raw, &input); err != nil {
+				http.Error(w, "请求无效", http.StatusBadRequest)
+				return
+			}
+			if targetID == "" {
+				targetID = strings.TrimSpace(input.ID)
+			}
+		}
+	}
 	p := &s.phones
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.pending != nil {
-		p.pending()
-		p.pending = nil
+	if targetID == "" {
+		if p.pending != nil {
+			p.pending()
+			p.pending = nil
+		}
+		if err := s.savePhones(nil); err != nil {
+			requestError(w, err)
+			return
+		}
+		for _, slot := range p.slots {
+			if slot.serving != nil {
+				slot.serving()
+				slot.serving = nil
+			}
+			slot.roomProof = ""
+			slot.roomCtx = nil
+		}
+		p.slots = nil
+		s.stopPowerLocked()
+		p.status = ""
+		jsonReply(w, map[string]any{"paired": false, "devices": []pairedPhoneView{}})
+		return
 	}
-	if err := os.Remove(s.phoneFile()); err != nil && !os.IsNotExist(err) {
+	idx := -1
+	for i, slot := range p.slots {
+		if slot.record.ID == targetID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		http.Error(w, "未找到已配对的设备", http.StatusNotFound)
+		return
+	}
+	remaining := make([]phoneRecord, 0, len(p.slots)-1)
+	for i, slot := range p.slots {
+		if i != idx {
+			remaining = append(remaining, slot.record)
+		}
+	}
+	if err := s.savePhones(remaining); err != nil {
 		requestError(w, err)
 		return
 	}
-	if p.serving != nil {
-		p.serving()
-		p.serving = nil
+	removed := p.slots[idx]
+	if removed.serving != nil {
+		removed.serving()
+		removed.serving = nil
 	}
-	p.record = nil
-	p.powerCtx = nil
-	p.power = keepawake.State{}
-	p.roomProof = ""
-	p.roomCtx = nil
-	p.status = ""
-	jsonReply(w, map[string]bool{"paired": false})
+	removed.roomProof = ""
+	removed.roomCtx = nil
+	p.slots = append(p.slots[:idx], p.slots[idx+1:]...)
+	if len(p.slots) == 0 {
+		s.stopPowerLocked()
+		p.status = ""
+	}
+	devices := p.viewsLocked()
+	jsonReply(w, map[string]any{"paired": len(p.slots) > 0, "devices": devices})
 }
+
 func (s *Server) pairPhone(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Admin string `json:"admin"`
@@ -276,9 +552,14 @@ func (s *Server) pairPhone(w http.ResponseWriter, r *http.Request) {
 	}
 	p := &s.phones
 	p.mu.Lock()
-	if p.closed || p.record != nil {
+	if p.closed {
 		p.mu.Unlock()
-		http.Error(w, "请先移除已配对的手机", 409)
+		http.Error(w, "服务正在关闭", http.StatusServiceUnavailable)
+		return
+	}
+	if len(p.slots) >= maxPairedPhones {
+		p.mu.Unlock()
+		http.Error(w, "最多可同时配对 8 台设备，请先移除不需要的设备", http.StatusConflict)
 		return
 	}
 	if p.pending != nil {
@@ -287,6 +568,7 @@ func (s *Server) pairPhone(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(epoch, 2*time.Minute)
 	p.pending = cancel
 	p.status = "等待扫码"
+	baselineDevices := p.viewsLocked()
 	p.mu.Unlock()
 	complete := false
 	defer func() {
@@ -330,27 +612,71 @@ func (s *Server) pairPhone(w http.ResponseWriter, r *http.Request) {
 			p.mu.Lock()
 			defer p.mu.Unlock()
 			var result mobilelink.PairedHost
-			if ctx.Err() != nil || p.record != nil || p.closed {
+			if ctx.Err() != nil || p.closed {
 				return result, errors.New("配对已结束")
+			}
+			existingIdx := -1
+			for i, slot := range p.slots {
+				if slot.record.Pin == pin {
+					existingIdx = i
+					break
+				}
+			}
+			if existingIdx < 0 && len(p.slots) >= maxPairedPhones {
+				return result, errors.New("最多可同时配对 8 台设备，请先移除不需要的设备")
 			}
 			var token [32]byte
 			if _, err := rand.Read(token[:]); err != nil {
 				return result, err
 			}
-			record := phoneRecord{Seed: key.Seed(), Relay: origin, Pin: pin, Admin: input.Admin, Lookup: base64.RawURLEncoding.EncodeToString(token[:])}
-			if err := writePrivate(s.phoneFile(), record); err != nil {
+			record := phoneRecord{
+				ID:       newPhoneID(),
+				Seed:     key.Seed(),
+				Relay:    origin,
+				Pin:      pin,
+				Admin:    input.Admin,
+				Lookup:   base64.RawURLEncoding.EncodeToString(token[:]),
+				PairedAt: time.Now().UTC(),
+			}
+			if existingIdx >= 0 && p.slots[existingIdx].record.Device != nil {
+				copyInfo := *p.slots[existingIdx].record.Device
+				record.Device = &copyInfo
+			}
+			nextRecords := make([]phoneRecord, 0, len(p.slots)+1)
+			for i, slot := range p.slots {
+				if i != existingIdx {
+					nextRecords = append(nextRecords, slot.record)
+				}
+			}
+			nextRecords = append(nextRecords, record)
+			if err := s.savePhones(nextRecords); err != nil {
 				return result, err
 			}
-			s.attachPhone(record)
+			if existingIdx >= 0 {
+				old := p.slots[existingIdx]
+				if old.serving != nil {
+					old.serving()
+					old.serving = nil
+				}
+				old.roomProof = ""
+				old.roomCtx = nil
+				p.slots = append(p.slots[:existingIdx], p.slots[existingIdx+1:]...)
+			}
+			s.attachPhoneLocked(record)
 			p.status = "手机已配对"
 			return mobilelink.PairedHost{Version: 1, Relay: origin, HostPin: host.Pin, Lookup: record.Lookup}, nil
 		})
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if err != nil && ctx.Err() == nil && p.record == nil {
+		if err != nil && ctx.Err() == nil && p.status == "等待扫码" {
 			p.status = "配对未完成，请重新生成二维码"
 		}
 	}()
 	w.Header().Set("Cache-Control", "no-store")
-	jsonReply(w, map[string]any{"image": "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), "expires": room.ExpiresAt, "manual": mobilelink.ManualPairCodePrefix + base64.RawURLEncoding.EncodeToString([]byte(raw))})
+	jsonReply(w, map[string]any{
+		"image":   "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
+		"expires": room.ExpiresAt,
+		"manual":  mobilelink.ManualPairCodePrefix + base64.RawURLEncoding.EncodeToString([]byte(raw)),
+		"devices": baselineDevices,
+	})
 }

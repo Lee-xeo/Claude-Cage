@@ -1,6 +1,58 @@
 import { browserRequest, desktopRequest } from "./transport.mjs";
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+export const DESKTOP_SCROLL_STEP = 50;
+
+function desktopAxisTarget(gesture, totalX, totalY) {
+  if (!gesture.axis) {
+    const ax = Math.abs(totalX), ay = Math.abs(totalY);
+    if (ay >= ax * 1.5) gesture.axis = "y";
+    else if (ax >= ay * 1.5) gesture.axis = "x";
+    else gesture.axis = "xy";
+  }
+  return {
+    targetX: gesture.axis === "y" ? 0 : totalX,
+    targetY: gesture.axis === "x" ? 0 : totalY,
+  };
+}
+
+// Quantize live touch drags on remote Desktop into wheel-step multiples so
+// each incremental move maps cleanly to X11 scroll notches without cross-axis
+// thumb jitter.
+export function desktopDragDelta(gesture, dx, dy, scale) {
+  const totalX = Math.round(dx / scale);
+  const totalY = Math.round(dy / scale);
+  const { targetX, targetY } = desktopAxisTarget(gesture, totalX, totalY);
+  const remX = targetX - gesture.lastX;
+  const remY = targetY - gesture.lastY;
+  const stepX = Math.abs(remX) >= DESKTOP_SCROLL_STEP
+    ? Math.trunc(remX / DESKTOP_SCROLL_STEP) * DESKTOP_SCROLL_STEP : 0;
+  const stepY = Math.abs(remY) >= DESKTOP_SCROLL_STEP
+    ? Math.trunc(remY / DESKTOP_SCROLL_STEP) * DESKTOP_SCROLL_STEP : 0;
+  if (!stepX && !stepY) return null;
+  gesture.lastX += stepX;
+  gesture.lastY += stepY;
+  gesture.scrolled = true;
+  return { dx: clamp(stepX, -3200, 3200), dy: clamp(stepY, -3200, 3200) };
+}
+
+export function desktopReleaseDelta(gesture, dx, dy, scale) {
+  const totalX = Math.round(dx / scale);
+  const totalY = Math.round(dy / scale);
+  const { targetX, targetY } = desktopAxisTarget(gesture, totalX, totalY);
+  const remX = targetX - gesture.lastX;
+  const remY = targetY - gesture.lastY;
+  if (!remX && !remY) return null;
+  const halfStep = DESKTOP_SCROLL_STEP / 2;
+  const flushX = !gesture.scrolled || Math.abs(remX) >= halfStep ? remX : 0;
+  const flushY = !gesture.scrolled || Math.abs(remY) >= halfStep ? remY : 0;
+  if (!flushX && !flushY) return null;
+  gesture.lastX += flushX;
+  gesture.lastY += flushY;
+  gesture.scrolled = true;
+  return { dx: clamp(flushX, -3200, 3200), dy: clamp(flushY, -3200, 3200) };
+}
+
 export function viewportSize(element) {
   return {
     width: clamp(Math.round(element.clientWidth), 240, 1440),
@@ -108,7 +160,7 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
     }
     if (!valid()) return null;
     if (next.url && next.url !== "about:blank") homeNotice = "";
-    if (!desktop && next.action_frame === true) actionFrame = true;
+    if (next.action_frame === true) actionFrame = true;
     pixelRatioSupported = desktop && next.pixel_ratio_supported === true;
     waitingSince = 0;
     frame = {...next, image:src};
@@ -120,7 +172,7 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
     read = controller;
     const valid = () => read === controller && !controller.signal.aborted && alive && visible && !paused;
     const known = frame;
-    const tag = actionFrame && /^[a-f0-9]{32}$/.test(known?.frame_tag || "") ? known.frame_tag : "";
+    const tag = !desktop && actionFrame && /^[a-f0-9]{32}$/.test(known?.frame_tag || "") ? known.frame_tag : "";
     try {
       const next = await request(base + "/frame" + (tag ? "?after=" + tag : ""), {signal:controller.signal});
       if (!valid()) return;
@@ -198,7 +250,7 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
     void send({type:"scroll", x:next.x, y:next.y, dx, dy}, frame);
   }
   function scroll(expected, {x,y,dx,dy}) {
-    if (desktop || !alive || !visible || paused || !opened || (!dx && !dy) ||
+    if (!alive || !visible || paused || !opened || (!dx && !dy) ||
         (writing && writeType !== "scroll") || (frame && !sameSurface(expected, frame))) return;
     if (!queuedScroll || queuedScroll.x !== x || queuedScroll.y !== y || !sameSurface(queuedScroll.expected, expected)) {
       queuedScroll = {expected, x, y, dx:0, dy:0};
@@ -224,7 +276,7 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
       const result = await request("/open", {body});
       if (result?.id !== id) throw new Error("主机未确认这次画面连接。");
       if (tool === "browser" && typeof result.home_notice === "string") homeNotice = result.home_notice;
-      actionFrame = !desktop && result.action_frame === true;
+      actionFrame = result.action_frame === true;
       opened = true; mayExist = true;
       void readFrame();
     } catch (error) {

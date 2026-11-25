@@ -35,7 +35,6 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/limatype/filenames"
 	"github.com/lima-vm/lima/v2/pkg/limayaml"
 	"github.com/lima-vm/lima/v2/pkg/networks/reconcile"
-	"github.com/lima-vm/lima/v2/pkg/osutil"
 	"github.com/lima-vm/lima/v2/pkg/sshutil"
 	"github.com/lima-vm/lima/v2/pkg/store"
 	"github.com/lima-vm/lima/v2/pkg/yqutil"
@@ -339,7 +338,33 @@ func exprs(s Settings) ([]string, error) {
 	return e, nil
 }
 
+// ValidateName reports whether Lima can create an instance with this name.
+func (l *Lima) ValidateName(name string) error {
+	if err := dirnames.ValidateInstName(name); err != nil {
+		if strings.Contains(err.Error(), "greater than maximum length") {
+			return fmt.Errorf("%w: %v", ErrNameTooLong, err)
+		}
+		return err
+	}
+	home, err := dirnames.LimaDir()
+	if err != nil {
+		return err
+	}
+	if stable := os.Getenv("CAGE_LOGICAL_LIMA_HOME"); stable == "" || filepath.Clean(home) != filepath.Clean(stable) {
+		if physical, physErr := cage.StoragePhysicalPath(home); physErr == nil {
+			home = physical
+		}
+	}
+	if err := cage.ValidateLimaSocketPath(filepath.Join(home, name)); err != nil {
+		return fmt.Errorf("%w: %w", ErrNameTooLong, err)
+	}
+	return nil
+}
+
 func (l *Lima) Create(ctx context.Context, name, template string, s Settings, log io.Writer) error {
+	if err := l.ValidateName(name); err != nil {
+		return err
+	}
 	if _, err := l.prepare(); err != nil {
 		return err
 	}
@@ -447,15 +472,8 @@ func (l *Lima) Clone(ctx context.Context, from, to string) error {
 	if err != nil {
 		return err
 	}
-	dir, err := dirnames.InstanceDir(to)
-	switch {
-	case err != nil && strings.Contains(err.Error(), "maximum length"):
-		return fmt.Errorf("%w: %v", ErrNameTooLong, err)
-	case err != nil:
+	if err := l.ValidateName(to); err != nil {
 		return err
-	}
-	if sock := filepath.Join(dir, filenames.LongestSock); len(sock) >= osutil.UnixPathMax {
-		return fmt.Errorf("%w: its sockets in %s would need %d characters, at most %d", ErrNameTooLong, filepath.Dir(dir), len(sock), osutil.UnixPathMax-1)
 	}
 	identity, err := guestidentity.New()
 	if err != nil {
