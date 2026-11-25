@@ -1117,6 +1117,7 @@
   "暂无读数": "Aucun relevé pour l'instant",
   "暂无额度信息": "Aucune information sur les quotas pour l'instant",
   "暂时无法安装": "Installation impossible pour le moment",
+  "暂时无法更新": "Mise à jour impossible pour le moment",
   "暂时无法查询额度": "Impossible de consulter le quota pour le moment",
   "暂时无法检查系统钥匙串，授权记录已保留。请稍后重新检查。": "Impossible de vérifier le trousseau système pour le moment ; les autorisations enregistrées sont conservées. Réessayez plus tard.",
   "暂时无法检查系统钥匙串，请先用密码解锁。快捷登录授权记录已保留。": "Impossible de vérifier le trousseau système pour le moment ; déverrouillez d'abord avec votre mot de passe. Les autorisations de connexion rapide enregistrées sont conservées.",

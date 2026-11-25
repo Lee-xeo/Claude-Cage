@@ -195,7 +195,7 @@ func (e MarketEntry) Supported() bool {
 
 // EngineSatisfied reports whether the application at version can run it.
 func (e MarketEntry) EngineSatisfied(version string) bool {
-	return Manifest{Engines: e.Engines}.EngineSatisfied(version)
+	return Manifest{Engines: e.Engines, Contributes: e.Contributes}.EngineSatisfied(version)
 }
 
 var (

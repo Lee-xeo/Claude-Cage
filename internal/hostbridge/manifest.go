@@ -373,14 +373,46 @@ func (m *Manifest) check() error {
 	return nil
 }
 
+// requiredEngineFloor is the lowest application version that supports every
+// contributed feature declared by the manifest, or zero when none impose one.
+func (m Manifest) requiredEngineFloor() [3]int {
+	var need [3]int
+	bump := func(floor [3]int) {
+		if slices.Compare(floor[:], need[:]) > 0 {
+			need = floor
+		}
+	}
+	if m.Contributes != nil {
+		if len(m.Contributes.Settings) > 0 {
+			bump(settingsSince)
+		}
+		for _, view := range m.Contributes.Views {
+			if view.Presentation != "" || view.Width != 0 || view.Height != 0 {
+				bump(floatingViewsSince)
+				break
+			}
+		}
+		if len(m.Contributes.DesktopApps) > 0 {
+			bump(desktopAppsSince)
+		}
+	}
+	return need
+}
+
 // EngineSatisfied reports whether the application at version meets the
-// plugin's engines range. A manifest without one, and a build without a
-// version, always do.
+// plugin's engines range and any minimum version required by its declared
+// features. A build without a version always does.
 func (m Manifest) EngineSatisfied(version string) bool {
-	if m.Engines == nil || version == "" {
+	if version == "" {
 		return true
 	}
-	return engineSatisfied(m.Engines.Cage, version)
+	if m.Engines != nil && !engineSatisfied(m.Engines.Cage, version) {
+		return false
+	}
+	if need := m.requiredEngineFloor(); need != ([3]int{}) {
+		return engineSatisfied(fmt.Sprintf(">=%d.%d.%d", need[0], need[1], need[2]), version)
+	}
+	return true
 }
 
 // engineFloor is the lowest version an engines range accepts.
