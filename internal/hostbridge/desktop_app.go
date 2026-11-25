@@ -67,7 +67,7 @@ type AppSource struct {
 
 // desktopAppsSince is the first application version that runs desktop
 // applications. Older versions reject the field as unknown.
-var desktopAppsSince = [3]int{0, 3, 2}
+var desktopAppsSince = [3]int{0, 2, 1}
 
 var (
 	debianPackage = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]{1,62}$`)

@@ -9,7 +9,7 @@ const desktopAppsManifest = `{
   "name": "workshop",
   "version": "1.0.0",
   "description": "Runs two vendor applications.",
-  "engines": { "cage": ">=0.3.2" },
+  "engines": { "cage": ">=0.2.1" },
   "kind": "guest",
   "permissions": [],
   "contributes": {
@@ -42,7 +42,7 @@ func TestManifestDesktopApps(t *testing.T) {
 	}
 	broken := map[string][2]string{
 		"host plugin":            {`"kind": "guest"`, `"kind": "host"`},
-		"older engine":           {`>=0.3.2`, `>=0.3.1`},
+		"older engine":           {`>=0.2.1`, `>=0.2.0`},
 		"unknown field":          {`"title": "Tar App",`, `"title": "Tar App", "version": "1.2",`},
 		"source type":            {`"type": "archive"`, `"type": "snap"`},
 		"repository plain http":  {`https://downloads.example.com/apt`, `http://downloads.example.com/apt`},

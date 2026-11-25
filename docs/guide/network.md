@@ -14,11 +14,11 @@ keywords: Clash Mihomo YAML VLESS REALITY ML-KEM SOCKS5 SSH 私钥 住宅 IP DNS
 
 首次安装的代理页，以及本机“设置 → 网络与代理”，会自动查找当前用户配置目录里的 Clash Verge Rev、Clash Neo、Clash Party（原 Mihomo Party）、Clash Nyanpasu、Clash Verge、Clash/ClashX、Mihomo、FlClash、SS/SSR 配置，以及 macOS 上的 ClashX Meta（`~/.config/clash.meta`）与 Surge 配置。找到后会显示软件名称、配置名称和可导入节点数。点击“导入此配置”，再在下方选出口、点击“应用代理”。无需启动原软件，也无需填写它的本地端口。
 
-Cage 会复制节点及认证参数，由内置核心独立连接；原软件的配置、分组、分流规则、系统代理和监听端口保持原样。Clash Verge 的订阅记录如果带有 HTTPS 链接，也会保留，可在 Cage 的“订阅”页手动更新；导入本身读取本地副本，不下载订阅。当前生效配置会包含已缓存的 provider 节点；未缓存或不兼容的节点会提示，Cage 不执行原软件的配置脚本。
+Cage 会复制节点及认证参数，由内置核心独立连接；原软件的配置、分组、分流规则、系统代理和监听端口保持原样。Clash Verge 的订阅记录如果带有 HTTPS 链接，也会保留，可在 Cage 的“订阅”页手动更新；导入本身读取本地副本，不下载订阅。当前生效配置会包含已缓存的 provider 节点；未缓存或不兼容的节点会提示，Cage 不执行原软件的配置脚本。Clash Neo 的 `nexo` 和 Clash Verge Ninja 的 `ninja` 是这些客户端专用核心的私有协议，随附的标准 Mihomo 核心无法解析，这类节点会在预览和导入结果中列为跳过并说明原因；请向服务商获取同一出口的标准 Mihomo 兼容节点后再导入。
 
 Surge 配置读取 `[Proxy]` 和 `[Proxy Group]` 中的节点，跟随同目录下的本地 `#!include`，`underlying-proxy` 会转成代理链。远程 `#!include` 不会下载，相关节点需在 Surge 中导出完整配置后再导入；WireGuard、Snell v4 及以上、使用钥匙串私钥的 SSH、非 Shadowsocks 的 ShadowTLS，以及链到多成员分组的节点，会在预览中列为未导入。
 
-自动查找限于软件常用的数据目录。如果检测到 `FlClash for oixCloud` 等使用 `age` 加密保存的配置文件，Cage 不会解密私有配置，会在列表中标出客户端名称及不可直接导入的原因；请先从原软件或服务商导出含节点的明文 Clash/Mihomo 配置，再通过“添加来源”导入或手动添加节点。便携版、自定义目录或其他格式同样可通过“添加来源”导入。远程连接不读取服务器上的代理软件配置；请手动上传要使用的配置。
+自动查找限于软件常用的数据目录。如果检测到 `FlClash for oixCloud` 等使用 `age` 加密保存的配置文件，Cage 不会解密私有配置，会在列表中标出客户端名称及不可直接导入的原因；请先从原软件或服务商导出含节点的明文 Clash/Mihomo 配置，再通过“添加来源”导入或手动添加节点。Windows 上的 SakuraCat（`%APPDATA%\SakuraCat\SakuraCat`）以私有格式保存配置，Cage 只会在列表中标出它并说明迁移方法：通过 SakuraCat 支持的导出入口或服务商用户中心取得个人 Clash/Mihomo 订阅、YAML 或节点分享链接，再通过“添加来源”导入；它的本机代理端口不能直接作为节点。便携版、自定义目录或其他格式同样可通过“添加来源”导入。远程连接不读取服务器上的代理软件配置；请手动上传要使用的配置。
 
 ## 导入自己的代理
 
@@ -122,7 +122,7 @@ proxies:
 
 macOS 主机只从 `networksetup` 报告的硬件端口中选择具有可用 IPv4 地址的物理出口；`utun`、`bridge`、`vmen`、`vmenet`、`vmnet`、`tap`、`lima`、`awdl`、`llw`、`p2p`、`gif`、`stf`、`anpi`、`ap` 等隧道、桥接和虚拟机接口即使带有地址或默认路由，也不会被绑定为代理出口。
 
-Windows 主机只选择带可用 IPv4 和默认路由的硬件网卡；VPN、TUN、虚拟机 NAT 等虚拟网卡不会被选中。物理网卡桥接到 Hyper-V 外部虚拟交换机时，物理网卡本身没有 IPv4，Cage 改用与它 MAC 地址相同、带 IPv4 默认路由的管理用 `vEthernet` 网卡。
+Windows 主机只选择带可用 IPv4 和默认路由的硬件网卡；VPN、TUN、虚拟机 NAT 等虚拟网卡不会被选中。物理网卡桥接到 Hyper-V 外部虚拟交换机时，物理网卡本身没有 IPv4，Cage 改用与它 MAC 地址相同、带 IPv4 默认路由的管理用 `vEthernet` 网卡。若主机没有可用的硬件 IPv4 网卡或同 MAC 孪生网卡（例如物理口直通或独享给 Hyper-V 软路由虚拟机），Cage 会回退接受带有效单播 MAC、首选 IPv4 与默认路由的宿主 Hyper-V 虚拟以太网适配器（`Hyper-V Virtual Ethernet Adapter`）；未配置默认路由的 `Default Switch` 以及 TUN、VPN、TAP 等其他虚拟网卡仍会被排除。
 
 如果直连节点使用 Tailscale 私网地址（`100.64.0.0/10`、`fd7a:115c:a1e0::/48`）或主机另一张网卡直连私网网段中的地址，Cage 会仅将该节点绑定到主机路由所指向的对应网卡（例如 Windows 的 `Tailscale`、macOS 的 `utun*`、Linux 的 `tailscale0`），同时保持 DNS 和公网代理节点继续绑定在物理网卡上。通过 `dialer-proxy` 中转的后跳节点不会改绑本机网卡。
 
@@ -214,6 +214,20 @@ reality-opts:
 ```
 
 这是节点内的配置片段，需放回完整的 Clash/Mihomo YAML 后重新导入、应用。保留原配置，每次只调整这一项，再重复相同的 HTTPS 与出口检查。部分节点在启用此项后可以恢复连接；请按原节点与服务端要求使用，不要对所有 REALITY 节点无条件添加或重写参数。若仍失败，保留日志继续排查，不能仅凭该错误判断服务端版本或设置，也不要通过关闭证书校验、放宽出口规则或启用直连回退处理。
+
+### TLS 节点无 client-fingerprint 时握手超时
+
+部分 VMess、VLESS、Trojan 等开启 `tls: true`（常见于 `network: grpc` 等 TCP 类传输）且**未设置 `client-fingerprint`** 的节点，在较旧版本 Mihomo（如 Go 1.22 构建的 v1.18.x）上可正常连通，但在 Cage 内置的 Go 1.26 构建的 Mihomo（v1.19.33 及以上）上会出现核心日志持续报 `connect error: context deadline exceeded`、出口探测全部超时且外网保持关闭的情况。
+
+这是因为 Go 1.26 默认在 TLS 握手中携带后量子密钥交换（X25519MLKEM768），导致 ClientHello 报文体积更大，部分节点服务端或中间链路会将其丢弃。设置中的「TLS ClientHello 分段传输兼容模式」作用于代理隧道内的目标网站 HTTPS 握手，不会改写内置核心连接外层代理节点时的 TLS 指纹。
+
+遇到该现象时，可在导入的 Clash/Mihomo YAML 中仅对受影响节点显式补充：
+
+```yaml
+client-fingerprint: safari
+```
+
+若 `safari` 仍不适用，可改试 `firefox`（部分链路下 `chrome` 与 `random` 仍可能触发相同的大 ClientHello 丢包问题）。保存修改后在代理页刷新或重新导入该来源并重新应用节点，再重新运行出口探测与完整网络检查，确认出口 IP 与全部关键检查均通过。请仅按需为受影响节点添加，不要批量改写所有节点，也不要通过关闭证书校验、放宽出口规则或启用直连回退绕过。
 
 ## 通过 Tailscale 私网使用 SSH
 

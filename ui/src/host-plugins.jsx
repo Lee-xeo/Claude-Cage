@@ -62,8 +62,19 @@ function contributions(item) {
   }
   for (const view of contributes.views || []) {
     const hosts = [...new Set((view.open_urls || []).map(urlHost))];
-    list.push({ key: `view:${view.id}`, icon: PanelLeft, title: translate("页面「{0}」", view.title || view.id),
-      text: hosts.length ? translate("在侧栏添加一个页面。页面在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。", hosts.join(", ")) : translate("在侧栏添加一个页面。页面在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。") });
+    const floating = view.presentation === "floating";
+    list.push({
+      key: `view:${view.id}`,
+      icon: PanelLeft,
+      title: floating ? translate("浮窗「{0}」", view.title || view.id) : translate("页面「{0}」", view.title || view.id),
+      text: floating
+        ? (hosts.length
+          ? translate("在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。", hosts.join(", "))
+          : translate("在工作台上打开一个可拖动的半透明浮窗。浮窗在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。"))
+        : (hosts.length
+          ? translate("在侧栏添加一个页面。页面在隔离的框架中运行，只能使用这个插件自己的工具。它可以在内置浏览器中打开：{0}。", hosts.join(", "))
+          : translate("在侧栏添加一个页面。页面在隔离的框架中运行，只能使用这个插件自己的工具。它不能打开网页。")),
+    });
   }
   return list;
 }
@@ -340,8 +351,17 @@ export function pluginPages(model) {
     if (plugin.enabled === false || !plugin.supported || plugin.problem || plugin.needs_settings) continue;
     for (const view of plugin.contributes?.views || []) {
       if (!view.url) continue;
-      pages.push({ key: `${plugin.name}/${view.id}`, plugin: plugin.name, view, title: view.title || pluginTitle(plugin),
-        icon: plugin.icon ? runtimeURL(`/host-tools/icon?name=${encodeURIComponent(plugin.name)}`) : "" });
+      const title = !view.title || (plugin.display_name && view.title === plugin.display_name)
+        ? pluginTitle(plugin)
+        : view.title;
+      pages.push({
+        key: `${plugin.name}/${view.id}`,
+        plugin: plugin.name,
+        view,
+        title,
+        floating: view.presentation === "floating",
+        icon: plugin.icon ? runtimeURL(`/host-tools/icon?name=${encodeURIComponent(plugin.name)}`) : "",
+      });
     }
     // A desktop application opens in the workspace like a page, under its own key.
     for (const app of plugin.contributes?.desktop_apps || []) {
@@ -358,14 +378,22 @@ function PluginPageIcon({ src }) {
   return <img className="plugin-page-icon" src={src} alt="" draggable="false" onError={() => setFailed(true)} />;
 }
 
-export function PluginPagesNav({ pages, selected, onOpen }) {
+export function PluginPagesNav({ pages, selected, floatingOpen = [], onOpen }) {
   const tr = useTranslation();
-  return pages.map(page => (
-    <button key={page.key} className={`sidebar-link ${selected === page.key ? "selected" : ""}`}
-      aria-current={selected === page.key ? "page" : undefined} onClick={() => onOpen(page)} aria-label={tr("打开 {0}", (page.title))}>
-      <PluginPageIcon key={page.icon} src={page.icon} />{page.title}
-    </button>
-  ));
+  return pages.map(page => {
+    const isSelected = !page.floating && selected === page.key;
+    const isFloatingOpen = page.floating && floatingOpen.includes(page.key);
+    return (
+      <button key={page.key} className={`sidebar-link ${isSelected ? "selected" : ""}`}
+        aria-current={isSelected ? "page" : undefined}
+        aria-pressed={page.floating ? isFloatingOpen : undefined}
+        onClick={() => onOpen(page)} aria-label={tr("打开 {0}", (page.title))}>
+        <PluginPageIcon key={page.icon} src={page.icon} />
+        {page.title}
+        {isFloatingOpen && <span className="plugin-floating-dot" aria-hidden="true" />}
+      </button>
+    );
+  });
 }
 
 export function HostPluginsNav({ open, onOpen }) {

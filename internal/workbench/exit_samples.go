@@ -28,7 +28,11 @@ func incompleteExitSamples(hostIP string, hostErr error, terminal networkObserva
 		case sample.observation.Status == 0:
 			reason = "没有收到检测通道的响应"
 		case sample.observation.Status != 200:
-			reason = fmt.Sprintf("检测通道返回 HTTP %d，未取得出口地址", sample.observation.Status)
+			if detail := diagnosticFailureDetail(sample.observation); detail != "" {
+				reason = fmt.Sprintf("检测通道返回 HTTP %d（%s），未取得出口地址", sample.observation.Status, detail)
+			} else {
+				reason = fmt.Sprintf("检测通道返回 HTTP %d，未取得出口地址", sample.observation.Status)
+			}
 		case sample.observation.IP == "":
 			reason = "检测通道没有返回出口地址"
 		}
@@ -40,4 +44,27 @@ func incompleteExitSamples(hostIP string, hostErr error, terminal networkObserva
 		return ""
 	}
 	return "出口采样不完整，无法确认配置范围（" + strings.Join(missing, "；") + "）"
+}
+
+// diagnosticFailureDetail maps fixed reason tokens emitted by the internal
+// diagnostic endpoint to concise labels so users can distinguish internal gate
+// 503 responses from an upstream HTTP 503. Arbitrary strings are ignored.
+func diagnosticFailureDetail(obs networkObservation) string {
+	switch obs.Reason {
+	case "timeout":
+		return "内部检测超时"
+	case "tls_timeout":
+		return "内部检测 TLS 握手超时"
+	case "tls_handshake":
+		return "内部检测 TLS 握手失败"
+	case "proxy_connect":
+		return "内部检测代理连接失败"
+	case "probe_failed":
+		return "内部检测未能经代理取得出口"
+	default:
+		if obs.Status == 503 && obs.Error == "proxy_unavailable" {
+			return "内部检测未能经代理取得出口"
+		}
+		return ""
+	}
 }

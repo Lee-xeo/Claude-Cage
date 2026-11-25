@@ -19,6 +19,16 @@ func stopInstance(ctx context.Context, inst *limatype.Instance) error {
 		return err
 	}
 	if !requested {
+		// The hostagent may have exited right before RequestInstanceStop opened
+		// its stop event, leaving the VM already stopped or QEMU orphaned.
+		if current, inspectErr := store.Inspect(ctx, inst.Name); inspectErr == nil {
+			switch evaluateWindowsStopPoll(current.Status, current.HostAgentPID, current.DriverPID, fromLima(current).Orphaned) {
+			case stopPollStopped:
+				return nil
+			case stopPollStopOrphan:
+				return stopOrphanedInstance(ctx, current)
+			}
+		}
 		return fmt.Errorf("Cage 环境的停止通知不可用；保留环境，请查看 hostagent 日志")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute+10*time.Second)
@@ -34,14 +44,19 @@ func stopInstance(ctx context.Context, inst *limatype.Instance) error {
 			if err != nil {
 				return err
 			}
-			if current.Status == limatype.StatusStopped {
+			switch evaluateWindowsStopPoll(current.Status, current.HostAgentPID, current.DriverPID, fromLima(current).Orphaned) {
+			case stopPollStopped:
 				return nil
+			case stopPollStopOrphan:
+				return stopOrphanedInstance(ctx, current)
+			case stopPollBrokenFail:
+				return fmt.Errorf("Cage 宿主代理已退出但环境处于异常状态（%s），无法确认安全停止；请查看 hostagent 日志", current.Status)
 			}
 		}
 	}
 }
 
-func stopOrphanedInstance(_ context.Context, inst *limatype.Instance) error {
+func stopOrphanedInstance(ctx context.Context, inst *limatype.Instance) error {
 	if inst.VMType != limatype.QEMU || inst.DriverPID <= 0 {
 		return fmt.Errorf("unsupported orphaned VM driver")
 	}
@@ -53,6 +68,7 @@ func stopOrphanedInstance(_ context.Context, inst *limatype.Instance) error {
 	// An exited QEMU kept open by another handle no longer reports its image
 	// name; it has already stopped.
 	if state, err := windows.WaitForSingleObject(handle, 0); err == nil && state == windows.WAIT_OBJECT_0 {
+		cleanupInstanceTmpFiles(inst.Dir)
 		return nil
 	}
 	image := make([]uint16, 32768)
@@ -63,15 +79,35 @@ func stopOrphanedInstance(_ context.Context, inst *limatype.Instance) error {
 	if !strings.EqualFold(filepath.Base(windows.UTF16ToString(image[:size])), "qemu-system-x86_64.exe") || !isQEMU(inst.DriverPID, inst.Dir, inst.Name) {
 		return fmt.Errorf("orphaned VM process identity changed; no process was stopped")
 	}
-	if err := windows.TerminateProcess(handle, 1); err != nil {
-		return err
+	waitExit := func(d time.Duration) (bool, error) {
+		ms := uint32(0)
+		if d > 0 {
+			ms = uint32(d.Milliseconds())
+			if ms == 0 {
+				ms = 1
+			}
+		}
+		state, err := windows.WaitForSingleObject(handle, ms)
+		if err != nil {
+			return false, err
+		}
+		return state == windows.WAIT_OBJECT_0, nil
 	}
-	state, err := windows.WaitForSingleObject(handle, 5000)
-	if err != nil {
-		return err
+	forceStop := func() error {
+		if err := windows.TerminateProcess(handle, 1); err != nil {
+			if exited, waitErr := waitExit(0); waitErr == nil && exited {
+				return nil
+			}
+			return err
+		}
+		state, err := windows.WaitForSingleObject(handle, 5000)
+		if err != nil {
+			return err
+		}
+		if state != windows.WAIT_OBJECT_0 {
+			return fmt.Errorf("orphaned QEMU did not stop")
+		}
+		return nil
 	}
-	if state != windows.WAIT_OBJECT_0 {
-		return fmt.Errorf("orphaned QEMU did not stop")
-	}
-	return nil
+	return stopOrphanedWithHooks(ctx, inst.Dir, qmpSocketCandidatesWindows(inst.Dir), waitExit, forceStop)
 }

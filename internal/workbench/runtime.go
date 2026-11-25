@@ -24,6 +24,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/hostimage"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/vm"
+	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 var loadConfig = cage.Load
@@ -67,8 +68,32 @@ func (s *Server) environmentPrepared() bool {
 		state, err := environment.State(ctx)
 		return err == nil && state.Exists
 	}
-	_, err := os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version"))
-	return err == nil
+	return s.limaEnvironmentPrepared()
+}
+
+func (s *Server) limaEnvironmentPrepared() bool {
+	// An intact existing VM instance carries its own config and disk and can
+	// start even if the base template or version marker is missing.
+	if dir := s.instanceDir(); dir != "" && limaInstanceReady(dir) {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version")); err != nil {
+		return false
+	}
+	return limaInstanceReady(filepath.Join(s.profile, "state", "lima", vmname.Template))
+}
+
+func limaInstanceReady(dir string) bool {
+	yamlInfo, err := os.Stat(filepath.Join(dir, "lima.yaml"))
+	if err != nil || !yamlInfo.Mode().IsRegular() {
+		return false
+	}
+	for _, disk := range []string{"diffdisk", "basedisk"} {
+		if info, err := os.Stat(filepath.Join(dir, disk)); err == nil && info.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
 }
 func (s *Server) sshCommand(ctx context.Context, args ...string) *exec.Cmd {
 	return s.sshCommandOptions(ctx, false, args...)
@@ -97,36 +122,47 @@ func (s *Server) guest(ctx context.Context, script string) ([]byte, error) {
 }
 
 func (s *Server) guestControl(ctx context.Context, script, diagnosticSource string) ([]byte, error) {
+	data, _, err := s.guestControlOutput(ctx, script, diagnosticSource, diagnosticSource != "")
+	return data, err
+}
+
+func (s *Server) guestControlWithStderr(ctx context.Context, script string) ([]byte, string, error) {
+	return s.guestControlOutput(ctx, script, "", true)
+}
+
+func (s *Server) guestControlOutput(ctx context.Context, script, diagnosticSource string, captureStderr bool) ([]byte, string, error) {
 	// SSH enters the user's default shell. Run control scripts in Bash so
 	// zsh initialization cannot change their redirection or error behavior.
 	command := "exec /bin/bash --noprofile --norc -c " + shellescape.Quote(script)
 	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", command)
 	var stderr fileControlStderr
-	if diagnosticSource != "" {
+	if captureStderr {
 		cmd.Stderr = &stderr
-		defer func() {
-			if len(stderr.data) > 0 {
-				_ = diagnostics.New(s.profile).Record("warn", diagnosticSource, "guest control stderr: "+string(stderr.data))
-			}
-		}()
+		if diagnosticSource != "" {
+			defer func() {
+				if len(stderr.data) > 0 {
+					_ = diagnostics.New(s.profile).Record("warn", diagnosticSource, "guest control stderr: "+string(stderr.data))
+				}
+			}()
+		}
 	}
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if err = cmd.Start(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	data, readErr := io.ReadAll(io.LimitReader(pipe, (64<<10)+1))
 	if readErr != nil || len(data) > 64<<10 {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return nil, errors.New("guest control response exceeded its limit")
+		return nil, string(stderr.data), errors.New("guest control response exceeded its limit")
 	}
 	if err = cmd.Wait(); err != nil {
-		return nil, err
+		return nil, string(stderr.data), err
 	}
-	return data, nil
+	return data, string(stderr.data), nil
 }
 func (s *Server) attach() error {
 	if err := s.requireStorageReady(); err != nil {
@@ -374,9 +410,14 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 			_ = s.closeProxyGate(failure.Message)
 			return failure
 		}
-	} else if err := mountableEnvironmentDir(s.environmentDir()); err != nil {
+	} else {
 		// A container's share is sshfs over a quoted path, a VM's is Lima's.
-		return err
+		if err := mountableEnvironmentDir(s.environmentDir()); err != nil {
+			return err
+		}
+		if err := cage.ValidateProfileLimaSocketPaths(s.profile); err != nil {
+			return err
+		}
 	}
 	cfg, err := loadConfig(s.configPath)
 	if err != nil {
@@ -481,7 +522,7 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 	} else if probeErr != nil {
 		s.setMessage("代理出口无法通过检查，正在启动离线环境…")
 	}
-	if _, err = os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version")); !containerenv.Configured(s.profile) && os.IsNotExist(err) {
+	if !containerenv.Configured(s.profile) && !s.limaEnvironmentPrepared() {
 		s.setMessage("首次准备 Linux 环境与开发工具，可能需要数分钟…")
 		job := s.jobs.execution()
 		job.setSetupProgress(&SetupProgress{Phase: "image", System: linuxSystem, Label: "正在准备 " + guestProgressName(linuxSystem) + " 镜像"})
@@ -556,6 +597,43 @@ func proxyDNSOutdated(p managedproxy.Store, cfg cage.Config) bool {
 	return !slices.Equal(p.CoreDNS(), cfg.DNSEndpoints()) || !slices.Equal(p.NodeResolvers(), cfg.BootstrapEndpoints())
 }
 
+var (
+	startPreflightProxy = managedproxy.StartPreflight
+	proxyCoreRunning    = managedproxy.Running
+)
+
+func needsBootstrapPreflight(old, candidate cage.Config, p managedproxy.Store) bool {
+	return !slices.Equal(old.BootstrapEndpoints(), candidate.BootstrapEndpoints()) ||
+		(p.Selected != "" && !slices.Equal(p.NodeResolvers(), candidate.BootstrapEndpoints()))
+}
+
+// probeCandidateLocation probes exit IP and location for candidate settings.
+// When the effective node bootstrap DNS differs from the saved config or the
+// active core's resolvers, it validates through an isolated temporary core so
+// replacing a failing bootstrap resolver can recover without touching the
+// active proxy or guest gate (#748).
+func (s *Server) probeCandidateLocation(ctx context.Context, old, candidate cage.Config, prefs Preferences) (Location, bool, error) {
+	p, err := managedproxy.Load(s.profile)
+	if err != nil {
+		return Location{}, false, err
+	}
+	probeCfg := candidate
+	usedPreflight := false
+	if needsBootstrapPreflight(old, candidate, p) {
+		p.GuestDNS = candidate.DNSEndpoints()
+		p.BootstrapDNS = candidate.BootstrapEndpoints()
+		preflight, err := startPreflightProxy(ctx, s.profile, p)
+		if err != nil {
+			return Location{}, true, err
+		}
+		defer preflight.Close()
+		probeCfg.ProxyURL = preflight.Endpoint
+		usedPreflight = true
+	}
+	loc, err := probeEnvironmentLocation(ctx, probeCfg, prefs)
+	return loc, usedPreflight, err
+}
+
 type jobRecoveryError struct {
 	Recovery string
 	Err      error
@@ -587,9 +665,11 @@ func (s *Server) applyWithOptions(v savedProfile, validate, saveStaticDraft bool
 	var pendingStaticDraftErr error
 	if changed && validate && old.RequireManagedProxy(s.profile) == nil {
 		s.setMessage("正在验证新出口，现有环境保持运行…")
-		loc, e := probeEnvironmentLocation(s.operationContext(), v.Config, v.Preferences)
-		if err := s.finishLocationProbe(v.Config, loc, e); err != nil {
-			return err
+		loc, usedPreflight, e := s.probeCandidateLocation(s.operationContext(), old, v.Config, v.Preferences)
+		if !usedPreflight {
+			if err := s.finishLocationProbe(v.Config, loc, e); err != nil {
+				return err
+			}
 		}
 		if e != nil {
 			if loc.IP == "" {
@@ -714,6 +794,13 @@ func (s *Server) applyWithOptions(v savedProfile, validate, saveStaticDraft bool
 				return fmt.Errorf("设置已保存，环境已启动。外网仍关闭，修复以下问题后可重新检测：%w", err)
 			}
 			return fmt.Errorf("设置已保存，环境尚未恢复就绪。请核对客机状态后重试启动：%w", err)
+		}
+	} else if changed && pendingStaticDraftErr == nil && v.Config.RequireManagedProxy(s.profile) == nil {
+		if p, loadErr := managedproxy.Load(s.profile); loadErr == nil && p.Selected != "" && p.Endpoint() == v.Config.ProxyURL && p.Revision == v.Config.ProxyRevision && proxyDNSOutdated(p, v.Config) && proxyCoreRunning(s.operationContext(), s.profile, p) {
+			s.setMessage("正在应用内置代理节点…")
+			if err = s.activateProxy(p, v.Config); err != nil {
+				return fmt.Errorf("设置已保存，但重启内置代理核心失败：%w", err)
+			}
 		}
 	}
 	if pendingStaticDraftErr != nil {

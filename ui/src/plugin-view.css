@@ -1,7 +1,191 @@
 .plugin-view-frame { display: block; width: 100%; height: 100%; min-height: 0; border: 0; background: var(--paper); }
+.plugin-view-frame-floating { background: transparent; color-scheme: normal; }
 .management-content:has(> .plugin-view-frame) { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 .management-content > .plugin-view-frame { flex: 1; }
 .plugin-view-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; min-height: 240px; padding: 24px; color: var(--muted); text-align: center; }
 .plugin-view-empty strong { color: var(--strong); }
 .plugin-view-empty p { margin: 0; font-size: 0.9286rem; line-height: 1.6; }
 .sidebar-link .plugin-page-icon { width: 17px; height: 17px; flex: none; border-radius: 4px; object-fit: contain; }
+.sidebar-link .plugin-floating-dot {
+  margin-inline-start: auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 20%, transparent);
+  flex: none;
+}
+
+.plugin-floating-window {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--paper) 74%, transparent);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--strong) 11%, transparent);
+  box-shadow:
+    0 20px 52px rgb(0 0 0 / 0.14),
+    0 4px 14px rgb(0 0 0 / 0.06),
+    inset 0 1px 0 rgb(255 255 255 / 0.65);
+  transition: width var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+  animation: plugin-floating-in 180ms var(--ease-out);
+  will-change: transform;
+}
+:root[data-theme="dark"] .plugin-floating-window {
+  background: color-mix(in srgb, var(--paper) 68%, transparent);
+  border-color: rgb(255 255 255 / 0.11);
+  box-shadow:
+    0 24px 60px rgb(0 0 0 / 0.54),
+    0 6px 18px rgb(0 0 0 / 0.34),
+    inset 0 1px 0 rgb(255 255 255 / 0.09);
+}
+.plugin-floating-window:hover {
+  border-color: color-mix(in srgb, var(--strong) 17%, transparent);
+}
+:root[data-theme="dark"] .plugin-floating-window:hover {
+  border-color: rgb(255 255 255 / 0.17);
+}
+.plugin-floating-window[data-dragging="true"] {
+  transition: none;
+  box-shadow:
+    0 28px 68px rgb(0 0 0 / 0.2),
+    0 8px 22px rgb(0 0 0 / 0.1),
+    inset 0 1px 0 rgb(255 255 255 / 0.72);
+}
+:root[data-theme="dark"] .plugin-floating-window[data-dragging="true"] {
+  box-shadow:
+    0 32px 76px rgb(0 0 0 / 0.64),
+    0 10px 26px rgb(0 0 0 / 0.4),
+    inset 0 1px 0 rgb(255 255 255 / 0.12);
+}
+.plugin-floating-window[data-dragging="true"] .plugin-view-frame {
+  pointer-events: none;
+}
+.plugin-floating-window.collapsed {
+  border-radius: 999px;
+}
+
+.plugin-floating-head {
+  height: 36px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 7px 0 12px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--strong) 7%, transparent);
+  background: color-mix(in srgb, var(--chrome) 42%, transparent);
+}
+:root[data-theme="dark"] .plugin-floating-head {
+  border-bottom-color: rgb(255 255 255 / 0.07);
+  background: rgb(255 255 255 / 0.03);
+}
+.plugin-floating-window.collapsed .plugin-floating-head {
+  border-bottom-color: transparent;
+}
+.plugin-floating-window[data-dragging="true"] .plugin-floating-head {
+  cursor: grabbing;
+}
+.plugin-floating-head:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.plugin-floating-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 4px;
+  object-fit: contain;
+}
+.plugin-floating-icon-fallback {
+  flex: none;
+  color: var(--muted);
+}
+.plugin-floating-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plugin-floating-grip {
+  margin-inline-start: auto;
+  color: var(--muted);
+  opacity: 0.35;
+  flex: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.plugin-floating-head:hover .plugin-floating-grip,
+.plugin-floating-window[data-dragging="true"] .plugin-floating-grip {
+  opacity: 0.78;
+}
+.plugin-floating-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.plugin-floating-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.plugin-floating-window.collapsed .plugin-floating-btn {
+  border-radius: 999px;
+}
+.plugin-floating-btn:hover {
+  background: color-mix(in srgb, var(--strong) 8%, transparent);
+  color: var(--strong);
+}
+:root[data-theme="dark"] .plugin-floating-btn:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+.plugin-floating-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.plugin-floating-body {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  transition: height var(--duration-fast) var(--ease-out);
+}
+.plugin-floating-window[data-dragging="true"] .plugin-floating-body {
+  transition: none;
+}
+
+@keyframes plugin-floating-in {
+  from { opacity: 0; filter: blur(4px); }
+  to { opacity: 1; filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plugin-floating-window,
+  .plugin-floating-body,
+  .plugin-floating-grip,
+  .plugin-floating-btn {
+    animation: none;
+    transition: none;
+  }
+}

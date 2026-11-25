@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	gvDNS "github.com/containers/gvisor-tap-vsock/pkg/services/dns"
 	"github.com/miekg/dns"
 )
 
@@ -194,4 +196,230 @@ func TestDNSRetriesPrimaryAfterInterval(t *testing.T) {
 	retryDue()
 	query(3, 4) // primary back: it answers and is preferred again
 	query(4, 4)
+}
+
+func TestDNSFailsOverOnHTTP4xxAndDNSResolverErrorsAndNormalizesWireID(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		httpStatus int
+		dnsRcode   int
+	}{
+		{"http 403", http.StatusForbidden, 0},
+		{"http 404", http.StatusNotFound, 0},
+		{"dns SERVFAIL", http.StatusOK, dns.RcodeServerFailure},
+		{"dns REFUSED", http.StatusOK, dns.RcodeRefused},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var primaryHits, backupHits atomic.Int32
+			var sawWireIDZero atomic.Bool
+			primary := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				primaryHits.Add(1)
+				if tc.httpStatus != http.StatusOK {
+					w.WriteHeader(tc.httpStatus)
+					return
+				}
+				body, _ := io.ReadAll(r.Body)
+				q := new(dns.Msg)
+				if err := q.Unpack(body); err != nil {
+					t.Error(err)
+					return
+				}
+				reply := new(dns.Msg)
+				reply.SetRcode(q, tc.dnsRcode)
+				wire, _ := reply.Pack()
+				w.Header().Set("Content-Type", "application/dns-message")
+				_, _ = w.Write(wire)
+			}))
+			t.Cleanup(primary.Close)
+
+			backup := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				backupHits.Add(1)
+				body, _ := io.ReadAll(r.Body)
+				q := new(dns.Msg)
+				if err := q.Unpack(body); err != nil {
+					t.Error(err)
+					return
+				}
+				if q.Id == 0 {
+					sawWireIDZero.Store(true)
+				}
+				reply := new(dns.Msg)
+				reply.SetReply(q)
+				reply.RecursionAvailable = true
+				reply.Answer = []dns.RR{&dns.A{
+					Hdr: dns.RR_Header{Name: q.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+					A:   net.ParseIP("151.101.2.132").To4(),
+				}}
+				wire, _ := reply.Pack()
+				w.Header().Set("Content-Type", "application/dns-message")
+				_, _ = w.Write(wire)
+			}))
+			t.Cleanup(backup.Close)
+
+			p, connects := testProxy(t)
+			c := DefaultConfig()
+			c.ProxyURL, c.DNSURL = p.URL, primary.URL
+			c.DNS = NewDNSOptions([]string{backup.URL}, nil, false)
+			e, err := NewEgress(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer e.client.CloseIdleConnections()
+			pool := primary.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs.Clone()
+			pool.AddCert(backup.Certificate())
+			e.client.Transport.(*http.Transport).TLSClientConfig = &tls.Config{RootCAs: pool}
+
+			q := new(dns.Msg).SetQuestion("deb.debian.org.", dns.TypeA)
+			q.Id = 0x4242
+			reply, err := e.ExchangeDNS(t.Context(), q)
+			if err != nil {
+				t.Fatalf("failover failed: %v", err)
+			}
+			if q.Id != 0x4242 || reply.Id != 0x4242 {
+				t.Fatalf("query ID mismatch: orig=%#x reply=%#x", q.Id, reply.Id)
+			}
+			if !sawWireIDZero.Load() {
+				t.Fatal("DoH wire query did not normalize ID to 0 per RFC 8484")
+			}
+			if reply.Rcode != dns.RcodeSuccess || len(reply.Answer) != 1 {
+				t.Fatalf("unexpected reply: %+v", reply)
+			}
+			if primaryHits.Load() != 1 || backupHits.Load() != 1 || connects.Load() == 0 {
+				t.Fatalf("wrong hit counts: primary=%d backup=%d connects=%d", primaryHits.Load(), backupHits.Load(), connects.Load())
+			}
+			// Backup is now preferred on the next query.
+			if _, err := e.ExchangeDNS(t.Context(), q); err != nil {
+				t.Fatal(err)
+			}
+			if primaryHits.Load() != 1 || backupHits.Load() != 2 {
+				t.Fatalf("backup not preferred after failover: primary=%d backup=%d", primaryHits.Load(), backupHits.Load())
+			}
+		})
+	}
+
+	t.Run("all endpoints returning SERVFAIL preserves DNS SERVFAIL reply without preferring failed endpoint", func(t *testing.T) {
+		var hits atomic.Int32
+		servfail := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			body, _ := io.ReadAll(r.Body)
+			q := new(dns.Msg)
+			if err := q.Unpack(body); err != nil {
+				t.Error(err)
+				return
+			}
+			reply := new(dns.Msg)
+			reply.SetRcode(q, dns.RcodeServerFailure)
+			wire, _ := reply.Pack()
+			w.Header().Set("Content-Type", "application/dns-message")
+			_, _ = w.Write(wire)
+		}))
+		t.Cleanup(servfail.Close)
+		p, _ := testProxy(t)
+		c := DefaultConfig()
+		c.ProxyURL, c.DNSURL = p.URL, servfail.URL
+		e, err := NewEgress(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer e.client.CloseIdleConnections()
+		e.client.Transport.(*http.Transport).TLSClientConfig = &tls.Config{RootCAs: servfail.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs}
+		q := new(dns.Msg).SetQuestion("broken.example.", dns.TypeA)
+		q.Id = 0x1357
+		reply, err := e.ExchangeDNS(t.Context(), q)
+		if err != nil || reply == nil || reply.Rcode != dns.RcodeServerFailure || reply.Id != 0x1357 {
+			t.Fatalf("expected SERVFAIL reply with preserved ID, got reply=%+v err=%v", reply, err)
+		}
+		if hits.Load() != 1 {
+			t.Fatalf("single SERVFAIL endpoint queried %d times, want 1", hits.Load())
+		}
+	})
+}
+
+func TestMaintenanceDNSForwarderWithGVisorServerAndEgress(t *testing.T) {
+	doh := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		q := new(dns.Msg)
+		if err := q.Unpack(body); err != nil {
+			t.Error(err)
+			return
+		}
+		reply := new(dns.Msg)
+		reply.SetReply(q)
+		reply.RecursionAvailable = true
+		reply.Answer = []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Name: q.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+			A:   net.ParseIP("151.101.2.132").To4(),
+		}}
+		wire, _ := reply.Pack()
+		w.Header().Set("Content-Type", "application/dns-message")
+		_, _ = w.Write(wire)
+	}))
+	t.Cleanup(doh.Close)
+
+	p, connects := testProxy(t)
+	c := DefaultConfig()
+	c.ProxyURL, c.DNSURL = p.URL, doh.URL
+	egress, err := NewEgress(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer egress.client.CloseIdleConnections()
+	egress.client.Transport.(*http.Transport).TLSClientConfig = &tls.Config{RootCAs: doh.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs}
+
+	udpConn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = udpConn.Close() })
+	tcpLn, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tcpLn.Close() })
+
+	srv, err := gvDNS.New(udpConn, tcpLn, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetExchange(egress.ExchangeDNS)
+	go func() { _ = srv.Serve() }()
+	go func() { _ = srv.ServeTCP() }()
+
+	udpClient := &dns.Client{Net: "udp", Timeout: 3 * time.Second}
+	for _, ednsSize := range []uint16{0, 512, 1232} {
+		q := new(dns.Msg).SetQuestion("deb.debian.org.", dns.TypeA)
+		q.SetEdns0(ednsSize, false)
+		reply, _, err := udpClient.Exchange(q, udpConn.LocalAddr().String())
+		if err != nil {
+			t.Fatalf("UDP query (edns=%d) failed: %v", ednsSize, err)
+		}
+		if reply.Rcode != dns.RcodeSuccess || len(reply.Answer) != 1 || reply.Answer[0].(*dns.A).A.String() != "151.101.2.132" {
+			t.Fatalf("UDP query (edns=%d) wrong answer: %+v", ednsSize, reply)
+		}
+	}
+
+	// Synthetic AAAA returns NOERROR with RA=true and no AAAA records.
+	aaaa := new(dns.Msg).SetQuestion("deb.debian.org.", dns.TypeAAAA)
+	aaaaReply, _, err := udpClient.Exchange(aaaa, udpConn.LocalAddr().String())
+	if err != nil || aaaaReply.Rcode != dns.RcodeSuccess || len(aaaaReply.Answer) != 0 || !aaaaReply.RecursionAvailable {
+		t.Fatalf("AAAA reply unexpected: %+v %v", aaaaReply, err)
+	}
+
+	// TCP query also succeeds through the same maintenance forwarder.
+	tcpClient := &dns.Client{Net: "tcp", Timeout: 3 * time.Second}
+	tcpReply, _, err := tcpClient.Exchange(new(dns.Msg).SetQuestion("deb.debian.org.", dns.TypeA), tcpLn.Addr().String())
+	if err != nil || tcpReply.Rcode != dns.RcodeSuccess || len(tcpReply.Answer) != 1 {
+		t.Fatalf("TCP reply unexpected: %+v %v", tcpReply, err)
+	}
+	if connects.Load() == 0 {
+		t.Fatal("maintenance DNS forwarder bypassed proxy")
+	}
+
+	// When the upstream proxy goes down, the forwarder fails closed with SERVFAIL (RA=true).
+	egress.client.CloseIdleConnections()
+	p.Close()
+	downReply, _, err := udpClient.Exchange(new(dns.Msg).SetQuestion("deb.debian.org.", dns.TypeA), udpConn.LocalAddr().String())
+	if err != nil || downReply.Rcode != dns.RcodeServerFailure || len(downReply.Answer) != 0 || !downReply.RecursionAvailable {
+		t.Fatalf("outage did not fail closed with SERVFAIL: %+v %v", downReply, err)
+	}
 }

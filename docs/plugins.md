@@ -183,6 +183,9 @@ my-plugin/
 | `icon` | 否 | 格式同顶层 `icon`。目前侧栏显示的是插件的顶层图标，这个字段为以后预留 |
 | `server` | 否 | 页面可以调用的 MCP 服务的 `id`。省略表示纯静态页面 |
 | `openUrls` | 否 | 页面可以请求打开的地址模式，见下 |
+| `presentation` | 否 | 展示方式：`page`（默认，作为独立工作区页面打开）或 `floating`（作为可拖动、可收起的半透明毛玻璃浮窗悬浮在工作台上）。需要 `engines.cage` 至少为 `0.2.1` |
+| `width` | 否 | 仅 `presentation: "floating"` 可用：浮窗初始宽度（CSS 像素，范围 `220`–`720`），需要 `engines.cage` 至少为 `0.2.1` |
+| `height` | 否 | 仅 `presentation: "floating"` 可用：浮窗内容区初始高度（CSS 像素，范围 `100`–`720`），需要 `engines.cage` 至少为 `0.2.1` |
 
 清单里的文件路径不超过 200 个字符。
 
@@ -193,7 +196,7 @@ my-plugin/
 - 端口可以写数字或 `*`。不写端口只匹配默认端口，所以 `http://localhost/*` 只匹配 80 端口，本机服务通常要写 `http://localhost:*/*`。
 - 路径只能在结尾用 `*`。匹配时会连同查询串一起比较，所以要放行带查询串的地址，路径要以 `*` 结尾。
 
-`contributes.desktopApps[]`（只用于环境内插件，需要 `engines.cage` 至少为 `0.3.2`，最多 4 个）：
+`contributes.desktopApps[]`（只用于环境内插件，需要 `engines.cage` 至少为 `0.2.1`，最多 4 个）：
 
 插件可以让 Cage 在环境里安装并运行厂商的官方桌面应用，像 Claude Desktop 一样在侧栏打开、显示在自己的画面中。插件只描述**去哪里取最新版本、怎样启动**；下载、验签、安装、更新、卸载这些需要管理员权限的步骤都由 Cage 完成，插件自己的程序不会获得管理员权限。插件不写版本号：安装和“更新应用”总是取厂商当时的最新版本，厂商改变发布方式时升级插件即可。
 
@@ -329,7 +332,7 @@ Cage 界面会按当前软件界面语言自动展示插件的名称与说明（
 
 | 方法 | 参数 | 结果 |
 | --- | --- | --- |
-| `ui/initialize` | `{"protocolVersion":1}` | `{"protocolVersion":1,"plugin","view","theme":{"scheme":"light"或"dark","tokens":{…}},"locale","state"}`。目前 `locale` 固定为 `zh-CN` |
+| `ui/initialize` | `{"protocolVersion":1}` | `{"protocolVersion":1,"plugin","view","presentation":"page"或"floating","theme":{"scheme":"light"或"dark","tokens":{…}},"locale","state"}`。`locale` 为当前工作台界面语言 |
 | `tools/list` | 无 | `{"tools":[{"name","description","inputSchema"}]}` |
 | `tools/call` | `{"name","arguments":{…}}` | MCP 的调用结果：`{"content":[…],"structuredContent"?,"isError"?}`。工具名不超过 200 个字符 |
 | `ui/openUrl` | `{"url"}` | `{}`。地址必须匹配清单的 `openUrls`，不超过 4096 个字符，在应用的内置浏览器里打开 |
@@ -337,6 +340,7 @@ Cage 界面会按当前软件界面语言自动展示插件的名称与说明（
 | `ui/copy` | `{"text"}` | `{}`。不超过 64 KiB |
 | `ui/notify` | `{"message","tone"?:"info"或"error"}` | `{}`。不超过 500 个字符 |
 | `ui/setState` | `{"state":<任意 JSON>}` | `{}`。序列化后不超过 64 KiB，超过时返回 -32002。下次 `ui/initialize` 时在 `state` 里取回。状态保存在当前窗口，不跨设备同步 |
+| `ui/resize` | `{"width"?,"height"?}` | 调整 `floating` 浮窗的宽高（宽度钳位到 `220`–`720`，高度钳位到 `80`–`720`，并返回生效的尺寸）；非浮窗视图仅校验并返回钳位值 |
 
 `theme.tokens` 是工作台当前主题的颜色，名称为 `paper`、`ink`、`strong`、`muted`、`line`、`chrome`、`hover`、`selected`、`accent`、`link`、`focus`、`input`、`button`、`button-ink`、`success`、`danger`。值是 CSS 颜色，主题未定义的名称不会出现。
 

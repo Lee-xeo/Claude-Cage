@@ -7,6 +7,7 @@ export const MESSAGE_LIMIT = 1 << 20;
 export const STATE_LIMIT = 64 << 10;
 export const COPY_LIMIT = 64 << 10;
 export const CONCURRENCY_LIMIT = 8;
+export const FLOATING_BOUNDS = { minWidth: 220, maxWidth: 720, minHeight: 80, maxHeight: 720 };
 
 export const ERRORS = {
   parse: -32700,
@@ -52,15 +53,15 @@ const text = (value, limit = 2000) => typeof value === "string" && value.length 
 // do the work: call reaches the plugin's tools through the app, and the rest
 // use the workbench's own dialogs, browser, clipboard and storage.
 export function createPluginViewHost({
-  plugin, view, openUrls = [], hasServer = true,
-  call, confirm, openUrl, copy, notify, loadState, saveState, theme, locale = "zh-CN",
+  plugin, view, openUrls = [], hasServer = true, presentation = "page",
+  call, confirm, openUrl, copy, notify, loadState, saveState, resize, theme, locale = "zh-CN",
 }) {
   let initialized = false, running = 0;
   const methods = {
     "ui/initialize": params => {
       if (params?.protocolVersion !== PROTOCOL_VERSION) throw new ProtocolError(ERRORS.invalidParams, "unsupported protocolVersion");
       initialized = true;
-      return { protocolVersion: PROTOCOL_VERSION, plugin, view, theme: theme(), locale, state: loadState() ?? null };
+      return { protocolVersion: PROTOCOL_VERSION, plugin, view, presentation, theme: theme(), locale, state: loadState() ?? null };
     },
     "tools/list": async () => {
       if (!hasServer) throw new ProtocolError(ERRORS.unavailable, "this page has no server");
@@ -101,6 +102,19 @@ export function createPluginViewHost({
       if (serialized === undefined || serialized.length > STATE_LIMIT) throw new ProtocolError(ERRORS.notAllowed, "state is over 64 KiB");
       saveState(params.state);
       return {};
+    },
+    "ui/resize": params => {
+      if (!object(params)) throw new ProtocolError(ERRORS.invalidParams, "width or height is expected");
+      const hasW = params.width !== undefined, hasH = params.height !== undefined;
+      if (!hasW && !hasH) throw new ProtocolError(ERRORS.invalidParams, "width or height is expected");
+      const validDim = value => typeof value === "number" && Number.isFinite(value) && value > 0;
+      if (hasW && !validDim(params.width) || hasH && !validDim(params.height))
+        throw new ProtocolError(ERRORS.invalidParams, "width and height must be positive numbers");
+      const next = {};
+      if (hasW) next.width = Math.round(Math.min(FLOATING_BOUNDS.maxWidth, Math.max(FLOATING_BOUNDS.minWidth, params.width)));
+      if (hasH) next.height = Math.round(Math.min(FLOATING_BOUNDS.maxHeight, Math.max(FLOATING_BOUNDS.minHeight, params.height)));
+      if (presentation === "floating" && typeof resize === "function") resize(next);
+      return next;
     },
   };
 

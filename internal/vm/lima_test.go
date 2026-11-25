@@ -28,14 +28,29 @@ import (
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/durable"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/paths"
 )
 
 func newTestLima(t *testing.T) *Lima {
 	t.Helper()
-	home := t.TempDir()
+	// Testing's name-based TempDir can exceed Lima's socket budget.
+	base := ""
+	if runtime.GOOS == "darwin" {
+		base = "/tmp"
+	}
+	home, err := os.MkdirTemp(base, "lima-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := host.RemoveAllWritable(home); err != nil {
+			t.Error(err)
+		}
+	})
 	t.Setenv("LIMA_HOME", home)
+	t.Setenv("CAGE_LOGICAL_LIMA_HOME", "")
 	t.Setenv("LIMA_TEMPLATES_PATH", "")
 	l, err := NewLima(home, t.TempDir())
 	if err != nil {
@@ -47,6 +62,29 @@ func newTestLima(t *testing.T) *Lima {
 		t.Fatal(err)
 	}
 	return l
+}
+
+func TestLimaCreateRejectsSocketPathTooLong(t *testing.T) {
+	home := filepath.Join(t.TempDir(), strings.Repeat("private-path-", 9))
+	t.Setenv("LIMA_HOME", home)
+	t.Setenv("CAGE_LOGICAL_LIMA_HOME", "")
+	lima, err := NewLima(home, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Path validation must run before trying to load this nonexistent template.
+	err = lima.Create(context.Background(), "base-building", "missing.yaml", Settings{}, io.Discard)
+	if !errors.Is(err, ErrNameTooLong) || !errors.Is(err, cage.ErrLimaSocketPathTooLong) ||
+		strings.Contains(err.Error(), home) || !strings.Contains(err.Error(), "最多") {
+		t.Fatalf("Create should return a path-free length error: %v", err)
+	}
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatalf("Create touched Lima home: %v", err)
+	}
+	err = lima.Create(context.Background(), strings.Repeat("x", 77), "missing.yaml", Settings{}, io.Discard)
+	if !errors.Is(err, ErrNameTooLong) || errors.Is(err, cage.ErrLimaSocketPathTooLong) {
+		t.Fatalf("Create should distinguish Lima's instance-name limit: %v", err)
+	}
 }
 
 func TestCageDebianMirrors(t *testing.T) {

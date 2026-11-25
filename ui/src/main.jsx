@@ -34,7 +34,7 @@ import { AppearanceProvider } from "./appearance";
 import { EnvironmentShield } from "./environment-shield";
 import { TailscalePanel } from "./tailscale";
 import { HostPluginsPanel, pluginPages, pluginPageTitle, useHostPlugins } from "./host-plugins";
-import { PluginView } from "./plugin-view";
+import { PluginView, FloatingPluginView } from "./plugin-view";
 import { PluginDesktopApp } from "./plugin-desktop-app";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { useCLISessions, desktopSessionRequest, sessionsChanged } from "./cli-sessions";
@@ -118,6 +118,8 @@ function App() {
   const [pluginSidebar, setPluginSidebar] = useState(false);
   // pluginView is the plugin page open in the workspace: "<plugin>/<view id>".
   const [pluginView, setPluginView] = useState("");
+  // floatingPluginViews holds open floating plugin view keys in z-order (last is topmost).
+  const [floatingPluginViews, setFloatingPluginViews] = useState([]);
   const [tailnetLogin, setTailnetLogin] = useState(null);
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [defaultDesktopRunning, setDefaultDesktopRunning] = useState(false);
@@ -323,9 +325,34 @@ function App() {
   const hostPlugins = useHostPlugins(pluginsAvailable && (pluginSidebar || managementPage === "plugins" ? true : "light"));
   const pages = pluginPages(hostPlugins);
   const openPage = pages.find(page => page.key === pluginView);
+  const floatingPages = floatingPluginViews
+    .map(key => pages.find(page => page.key === key && page.floating))
+    .filter(Boolean);
+  const clientConnectionId = currentClient.connection_id || "local";
+  useEffect(() => {
+    setFloatingPluginViews([]);
+  }, [clientConnectionId]);
   const openPluginView = (page) => {
+    if (page.floating) {
+      setFloatingPluginViews(current =>
+        current.includes(page.key)
+          ? current.filter(key => key !== page.key)
+          : [...current, page.key],
+      );
+      if (window.matchMedia("(max-width: 520px)").matches) setSidebarCollapsed(true);
+      return;
+    }
     setPluginView(page.key); setManagementPage("plugin-view");
     if (window.matchMedia("(max-width: 520px)").matches) setSidebarCollapsed(true);
+  };
+  const focusFloatingPluginView = (key) => {
+    setFloatingPluginViews(current => {
+      if (current.at(-1) === key || !current.includes(key)) return current;
+      return [...current.filter(item => item !== key), key];
+    });
+  };
+  const closeFloatingPluginView = (key) => {
+    setFloatingPluginViews(current => current.filter(item => item !== key));
   };
   // Plugin pages belong to the plugin sidebar: they open from it and close
   // with it. Opening the sidebar alone leaves the workspace as it was.
@@ -1784,7 +1811,8 @@ function App() {
             tailscaleOpen={managementPage === "tailscale"}
             plugins={pluginsAvailable ? { model: hostPlugins, open: pluginSidebar, page: managementPage === "plugins" ? pluginPage : null,
               onConfirm: confirm, onOpen: () => setPluginSidebar(true), onBack: leavePlugins, onPage: openPluginPage,
-              pages, pageOpen: managementPage === "plugin-view" ? pluginView : "", onView: openPluginView } : null}
+              pages, pageOpen: managementPage === "plugin-view" ? pluginView : "",
+              floatingOpen: floatingPages.map(page => page.key), onView: openPluginView } : null}
             updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
             projects={projects}
@@ -2297,6 +2325,19 @@ function App() {
             </button>
           </footer>
         </div>
+        {floatingPages.map((page, index) => (
+          <FloatingPluginView
+            key={`${clientConnectionId}:${page.key}`}
+            page={page}
+            stackIndex={index}
+            zIndex={18}
+            onFocus={() => focusFloatingPluginView(page.key)}
+            onClose={() => closeFloatingPluginView(page.key)}
+            onConfirm={confirm}
+            onNotify={notify}
+            onOpenUrl={async url => Boolean(await openBrowserPage(url, false))}
+          />
+        ))}
       </div>
       <BrowserUploads requests={status.ready ? browser.uploads : []} onStatus={notify} />
       {settingsOpen && (

@@ -359,6 +359,12 @@ func validateStorageTarget(profile, directory, app, platform string) error {
 	if err != nil {
 		return err
 	}
+	if platform == "windows" {
+		excluded := windowsTargetStorageExcludedRoots()
+		if windowsStoragePathExcluded(directory, excluded) || windowsStoragePathExcluded(target, excluded) {
+			return errors.New("Windows 环境存储不能放在 AppData 或系统临时目录中，否则虚拟机会因本机套接字受限而无法启动；请选择 AppData 之外的本地文件夹")
+		}
+	}
 	// Check the actual mount, including junctions and symlinked parents.
 	existing := target
 	for {
@@ -742,4 +748,84 @@ func recoverStorageWithRuntime(ctx context.Context, profile string, runtime Stor
 		return err
 	}
 	return os.Remove(journal)
+}
+
+// ResetBrokenStorageForRebuild detaches a broken custom storage configuration
+// (dangling state link/junction or stuck storage metadata/journal) after
+// explicit user confirmation to rebuild locally. Surviving external directories
+// are never deleted; detached storage metadata is preserved in a private
+// recovery archive inside profile before recreating a clean local state folder.
+func ResetBrokenStorageForRebuild(profile string) error {
+	f, err := os.OpenFile(filepath.Join(profile, "environment-storage.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	ok, err := lockStorageFile(f, true)
+	if err != nil || !ok {
+		if err == nil {
+			err = errors.New("环境正在运行或迁移中，请停止环境并等待当前操作完成")
+		}
+		return err
+	}
+
+	anchor := storageAnchor(profile)
+	anchorInfo, anchorErr := os.Lstat(anchor)
+	if anchorErr != nil && !errors.Is(anchorErr, os.ErrNotExist) {
+		return anchorErr
+	}
+	anchorIsLink := false
+	if anchorErr == nil {
+		if _, linkErr := os.Readlink(anchor); linkErr == nil || anchorInfo.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			anchorIsLink = true
+		} else if anchorInfo.IsDir() {
+			if err := stoppedStorage(anchor); err != nil {
+				return err
+			}
+		}
+	}
+
+	var token [8]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return err
+	}
+	archiveDir := filepath.Join(profile, fmt.Sprintf("storage-recovery-archive-%x", token))
+	archiveCreated := false
+	archiveFile := func(src, name string) error {
+		if _, err := os.Lstat(src); errors.Is(err, os.ErrNotExist) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		if !archiveCreated {
+			if err := host.EnsurePrivateDir(archiveDir); err != nil {
+				return err
+			}
+			archiveCreated = true
+		}
+		return renameStorage(src, filepath.Join(archiveDir, name))
+	}
+
+	if err := archiveFile(filepath.Join(profile, pendingFile), pendingFile); err != nil {
+		return err
+	}
+	if err := archiveFile(filepath.Join(profile, locationFile), locationFile); err != nil {
+		return err
+	}
+	if anchorErr == nil {
+		if anchorIsLink {
+			if err := os.Remove(anchor); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		} else if !anchorInfo.IsDir() {
+			if err := archiveFile(anchor, "state-file"); err != nil {
+				return err
+			}
+		}
+	}
+	if err := host.EnsurePrivateDir(anchor); err != nil {
+		return err
+	}
+	_, err = getStorageLocation(profile)
+	return err
 }

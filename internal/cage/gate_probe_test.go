@@ -553,8 +553,8 @@ func TestExitProbeClassifiesTLSHandshakeEOFAndTimeout(t *testing.T) {
 	}()
 	eofServices := []exitProbeService{{id: "eof", name: "EOF 服务", endpoint: "https://" + eofLn.Addr().String()}}
 	ip, err := probeExitIPServices(context.Background(), &http.Client{Timeout: 2 * time.Second}, eofServices, time.Minute, "")
-	if ip != "" || !errors.Is(err, ErrTLSHandshakeFailed) || errors.Is(err, ErrProxyConnectFailed) || errors.Is(err, ErrExitProbeTimeout) || !strings.Contains(err.Error(), "TLS 握手失败") {
-		t.Fatalf("TLS EOF expected ErrTLSHandshakeFailed, got ip=%q err=%v", ip, err)
+	if ip != "" || !errors.Is(err, ErrTLSHandshakeFailed) || errors.Is(err, ErrProxyConnectFailed) || errors.Is(err, ErrExitProbeTimeout) || !strings.Contains(err.Error(), "TLS 握手失败") || !strings.Contains(err.Error(), "client-fingerprint: safari") {
+		t.Fatalf("TLS EOF expected ErrTLSHandshakeFailed with client-fingerprint hint, got ip=%q err=%v", ip, err)
 	}
 
 	// Server that accepts TCP and stalls during TLS handshake -> TLS handshake timeout.
@@ -579,8 +579,8 @@ func TestExitProbeClassifiesTLSHandshakeEOFAndTimeout(t *testing.T) {
 	}()
 	stallServices := []exitProbeService{{id: "tls-stall", name: "握手超时服务", endpoint: "https://" + stallLn.Addr().String()}}
 	ip, err = probeExitIPServices(context.Background(), &http.Client{Timeout: 120 * time.Millisecond}, stallServices, time.Minute, "")
-	if ip != "" || !errors.Is(err, ErrTLSHandshakeFailed) || !errors.Is(err, ErrExitProbeTimeout) || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "TLS 握手超时") {
-		t.Fatalf("TLS stall expected ErrTLSHandshakeFailed + ErrExitProbeTimeout, got ip=%q err=%v", ip, err)
+	if ip != "" || !errors.Is(err, ErrTLSHandshakeFailed) || !errors.Is(err, ErrExitProbeTimeout) || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "TLS 握手超时") || !strings.Contains(err.Error(), "client-fingerprint: safari") {
+		t.Fatalf("TLS stall expected ErrTLSHandshakeFailed + ErrExitProbeTimeout with client-fingerprint hint, got ip=%q err=%v", ip, err)
 	}
 }
 
@@ -613,8 +613,8 @@ func TestExitProbeTimeoutChecksWhetherTheProxyReachesTheInternet(t *testing.T) {
 		t.Fatalf("reachable proxy must report blocked echo services: checks=%d err=%v", checks.Load(), err)
 	}
 	err = probe(stalled.URL)
-	if errors.Is(err, ErrExitProbeBlocked) || !strings.Contains(err.Error(), "节点可能无法连通") {
-		t.Fatalf("stalled reachability check must point at the node: %v", err)
+	if errors.Is(err, ErrExitProbeBlocked) || !strings.Contains(err.Error(), "节点可能无法连通") || !strings.Contains(err.Error(), "client-fingerprint: safari") {
+		t.Fatalf("stalled reachability check must point at the node and include client-fingerprint hint: %v", err)
 	}
 	for _, reachability := range []string{other.URL, ""} {
 		err = probe(reachability)
@@ -663,5 +663,79 @@ func TestExitProbeServicesInvariants(t *testing.T) {
 	worstCase := time.Duration(len(exitProbeServices)-1)*exitProbeStagger + exitProbeRequestTimeout
 	if worstCase >= diagnosticProbeTimeout {
 		t.Fatalf("worst-case probe duration %v meets or exceeds diagnostic timeout %v", worstCase, diagnosticProbeTimeout)
+	}
+	if exitProbeRequestTimeout < 7*time.Second {
+		t.Fatalf("exit probe per-service timeout %v too tight for high-RTT proxies", exitProbeRequestTimeout)
+	}
+}
+
+func TestDiagnosticProbeReasonAnd503Contract(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"tls timeout", errors.Join(ErrTLSHandshakeFailed, ErrExitProbeTimeout), "tls_timeout"},
+		{"tls handshake", ErrTLSHandshakeFailed, "tls_handshake"},
+		{"timeout", ErrExitProbeTimeout, "timeout"},
+		{"deadline", context.DeadlineExceeded, "timeout"},
+		{"proxy connect", ErrProxyConnectFailed, "proxy_connect"},
+		{"other", errors.New("https://user:pass@private.example/secret"), "probe_failed"},
+	} {
+		if got := diagnosticProbeReason(tc.err); got != tc.want {
+			t.Fatalf("%s: diagnosticProbeReason = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	// Verify /egress on a closed proxy returns 503 with fixed error + classified
+	// reason and zero leaked proxy URLs or credentials.
+	closed, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := closed.Addr().String()
+	_ = closed.Close()
+	cfg := DefaultConfig()
+	cfg.ProxyURL = "http://private-user:private-pass@" + addr
+	gate, err := NewEgressGate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Close("test complete")
+	if err := gate.BeginCheck(); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := gate.DialContext(context.Background(), "tcp", DiagnosticAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.WriteString(conn, "GET /egress HTTP/1.1\r\nHost: 198.18.0.254\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"private-user", "private-pass", addr} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("diagnostic 503 body leaked %q: %s", secret, raw)
+		}
+	}
+	var payload struct {
+		Error  string `json:"error"`
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 503 || payload.Error != "proxy_unavailable" || payload.Reason != "proxy_connect" {
+		t.Fatalf("unexpected 503 payload: status=%d payload=%+v", resp.StatusCode, payload)
 	}
 }

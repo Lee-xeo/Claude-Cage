@@ -79,10 +79,13 @@ type hostAppView struct {
 }
 
 type hostViewView struct {
-	ID       string   `json:"id"`
-	Title    string   `json:"title"`
-	Icon     bool     `json:"icon"`
-	OpenURLs []string `json:"open_urls"`
+	ID           string   `json:"id"`
+	Title        string   `json:"title"`
+	Icon         bool     `json:"icon"`
+	OpenURLs     []string `json:"open_urls"`
+	Presentation string   `json:"presentation,omitempty"`
+	Width        int      `json:"width,omitempty"`
+	Height       int      `json:"height,omitempty"`
 	// URL is where the page is loaded from. Empty when the plugin cannot be
 	// used as it is.
 	URL string `json:"url,omitempty"`
@@ -106,7 +109,15 @@ func hostContributes(c *hostbridge.Contributes) *hostContributesView {
 		if urls == nil {
 			urls = []string{}
 		}
-		view.Views = append(view.Views, hostViewView{ID: page.ID, Title: page.Title, Icon: page.Icon != "", OpenURLs: urls})
+		view.Views = append(view.Views, hostViewView{
+			ID:           page.ID,
+			Title:        page.Title,
+			Icon:         page.Icon != "",
+			OpenURLs:     urls,
+			Presentation: page.Presentation,
+			Width:        page.Width,
+			Height:       page.Height,
+		})
 	}
 	for _, handler := range c.URIHandlers {
 		view.URIHandlers = append(view.URIHandlers, hostSchemeView{Scheme: handler.Scheme})

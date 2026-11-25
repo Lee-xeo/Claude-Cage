@@ -448,6 +448,12 @@ func TestLinuxAccountDesktopScriptWiresPortalAndIsolatedInput(t *testing.T) {
 	if strings.Contains(linuxAccountDesktop, "BindPaths=/tmp/.X11-unix") {
 		t.Fatal("linux-account-desktop.sh must keep /tmp/.X11-unix isolated under PrivateTmp")
 	}
+	// /run is mounted noexec in the guest. An opener there is skipped and the
+	// system xdg-open keeps the quotes around --user-data-dir, so the login
+	// callback starts a Desktop without this instance's data folder.
+	if strings.Contains(linuxAccountDesktop, `"$XDG_RUNTIME_DIR/bin`) || !strings.Contains(linuxAccountDesktop, `opener="$base/bin"`) {
+		t.Fatal("linux-account-desktop.sh must install its xdg-open in the private profile, not under /run")
+	}
 }
 
 func TestAccountRegionOverridesFollowNodeLocationAndPreferences(t *testing.T) {

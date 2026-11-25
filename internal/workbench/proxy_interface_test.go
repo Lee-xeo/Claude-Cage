@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http/httptest"
@@ -298,5 +299,169 @@ func TestNodeRouteInterfaceDriftRevokesGateAndRebinds(t *testing.T) {
 	s.op.Unlock()
 	if !queued || status.Mode != cage.GateClosed || !strings.Contains(status.Reason, "路由接口") {
 		t.Fatalf("queued=%v gate=%+v", queued, status)
+	}
+}
+
+func TestStoppedVMDeadInterfaceAutoRebindsRunningCore(t *testing.T) {
+	s, _ := interfaceMonitorServer(t)
+	if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+		t.Fatal(err)
+	}
+	prevPhysical, prevAvailable, prevRunning, prevValidate, prevStart :=
+		physicalProxyInterface, proxyInterfaceAvailable, proxyInterfaceCoreRunning, validateProxyCore, startProxyCore
+	t.Cleanup(func() {
+		physicalProxyInterface, proxyInterfaceAvailable, proxyInterfaceCoreRunning, validateProxyCore, startProxyCore =
+			prevPhysical, prevAvailable, prevRunning, prevValidate, prevStart
+	})
+	probes := 0
+	physicalProxyInterface = func(context.Context) (string, error) { probes++; return "wlp4s0", nil }
+	proxyInterfaceAvailable = func(name string) bool { return name == "en0" }
+	proxyInterfaceCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+	validateProxyCore = func(context.Context, string, managedproxy.Store) error { return nil }
+	rebound := false
+	startProxyCore = func(_ context.Context, profile string, _ managedproxy.Store) error {
+		rebound = true
+		return os.WriteFile(filepath.Join(profile, "proxy", "config.yaml"), []byte("interface-name: wlp4s0\n"), 0600)
+	}
+
+	// While en0 is still available, idle stopped-VM ticks skip physical probing.
+	if observed := s.observeProxyInterface(context.Background()); probes != 0 || observed.configuration != "" {
+		t.Fatalf("healthy stopped VM probed host route: probes=%d observed=%+v", probes, observed)
+	}
+
+	// Once en0 disappears while the core is running, the monitor detects the
+	// replacement uplink and automatically rebinds the core.
+	proxyInterfaceAvailable = func(string) bool { return false }
+	observed := s.observeProxyInterface(context.Background())
+	if probes != 1 || !observed.stoppedCoreDeadInterface || observed.name != "wlp4s0" {
+		t.Fatalf("dead interface not observed: probes=%d observed=%+v", probes, observed)
+	}
+	s.op.Lock()
+	s.applyProxyInterfaceObservation(observed)
+	s.op.Unlock()
+	job := awaitJobIdle(t, &s.jobs)
+	if job.Error != "" || !rebound {
+		t.Fatalf("stopped-VM dead interface did not rebind: rebound=%v job=%+v", rebound, job)
+	}
+	if bound, err := managedproxy.BoundInterface(filepath.Join(s.profile, "proxy", "config.yaml")); err != nil || bound != "wlp4s0" {
+		t.Fatalf("bound interface after rebind = %q (%v), want wlp4s0", bound, err)
+	}
+}
+
+func TestEnsureProxyInterfaceBeforeUseRebindsStoppedAndReportsRunningVM(t *testing.T) {
+	s, _ := interfaceMonitorServer(t)
+	prevPhysical, prevRunning, prevStart := physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore
+	t.Cleanup(func() {
+		physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore = prevPhysical, prevRunning, prevStart
+	})
+	physicalProxyInterface = func(context.Context) (string, error) { return "wlp4s0", nil }
+	proxyInterfaceCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+	restarts := 0
+	startProxyCore = func(_ context.Context, profile string, _ managedproxy.Store) error {
+		restarts++
+		return os.WriteFile(filepath.Join(profile, "proxy", "config.yaml"), []byte("interface-name: wlp4s0\n"), 0600)
+	}
+
+	// While VM is running, do not restart behind the gate; return StaleInterfaceError.
+	err := s.ensureProxyInterfaceBeforeUse(context.Background())
+	var stale *managedproxy.StaleInterfaceError
+	if !errors.As(err, &stale) || restarts != 0 {
+		t.Fatalf("running VM got err=%v restarts=%d, want StaleInterfaceError and 0 restarts", err, restarts)
+	}
+
+	// /api/proxy/logs surfaces the stale-interface diagnostic clearly.
+	w := request(s, "GET", "/api/proxy/logs", s.origin, "", true)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "en0") || !strings.Contains(w.Body.String(), "wlp4s0") {
+		t.Fatalf("proxy logs missing stale-interface warning: %d %s", w.Code, w.Body.String())
+	}
+
+	// With VM stopped, explicit probe/delay use automatically rebinds the core.
+	if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || restarts != 1 {
+		t.Fatalf("stopped VM rebind failed: err=%v restarts=%d", err, restarts)
+	}
+	// Now bound to wlp4s0, subsequent checks are a fast-path no-op.
+	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || restarts != 1 {
+		t.Fatalf("already-rebound check restarted again: err=%v restarts=%d", err, restarts)
+	}
+}
+
+func TestSettingsProbeRebindsActiveCoreOnlyWithoutBootstrapPreflight(t *testing.T) {
+	s, _ := interfaceMonitorServer(t)
+	if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+		t.Fatal(err)
+	}
+	p, err := managedproxy.Load(s.profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Import("src", "", []byte(`proxies: [{name: node-a, type: socks5, server: node.example.com, port: 1080}]`), "src", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	p.Selected = p.Sources[0].Nodes[0].ID
+	p.Revision = managedproxy.Token()
+	p.BootstrapDNS = []string{"https://1.1.1.1/dns-query"}
+	p.GuestDNS = []string{"https://1.1.1.1/dns-query"}
+	if err := p.Save(s.profile); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(s.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ProxyURL = p.Endpoint()
+	cfg.ProxyRevision = p.Revision
+	cfg.DNS = cage.NewDNSOptions(nil, []string{"https://1.1.1.1/dns-query"}, false)
+	if err := writePrivate(s.configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := cage.SaveDNSOptions(s.configPath, cfg.DNS); err != nil {
+		t.Fatal(err)
+	}
+
+	prevPhysical, prevRunning, prevStart := physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore
+	prevPreflight, prevProbe := startPreflightProxy, probeEnvironmentLocation
+	t.Cleanup(func() {
+		physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore = prevPhysical, prevRunning, prevStart
+		startPreflightProxy, probeEnvironmentLocation = prevPreflight, prevProbe
+	})
+
+	const preflightEndpoint = "socks5://cage:preflight@127.0.0.1:19877"
+	restarts := 0
+	preflights := 0
+	physicalProxyInterface = func(context.Context) (string, error) { return "wlp4s0", nil }
+	proxyInterfaceCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+	startProxyCore = func(_ context.Context, profile string, _ managedproxy.Store) error {
+		restarts++
+		return os.WriteFile(filepath.Join(profile, "proxy", "config.yaml"), []byte("interface-name: wlp4s0\n"), 0600)
+	}
+	startPreflightProxy = func(context.Context, string, managedproxy.Store) (*managedproxy.PreflightProxy, error) {
+		preflights++
+		return &managedproxy.PreflightProxy{Endpoint: preflightEndpoint}, nil
+	}
+	probeEnvironmentLocation = func(_ context.Context, c cage.Config, _ Preferences) (Location, error) {
+		if c.ProxyURL == preflightEndpoint {
+			return Location{IP: "8.8.8.8", CountryCode: "US", CheckedAt: time.Now()}, nil
+		}
+		return Location{IP: "1.1.1.1", CountryCode: "US", CheckedAt: time.Now()}, nil
+	}
+
+	// Candidate bootstrap DNS probe uses isolated preflight core without restarting the active core.
+	candidateView := settingsView(cfg, s.preferences)
+	candidateView.DNSBootstrapURLs = []string{"https://223.6.6.6/dns-query"}
+	body, _ := json.Marshal(candidateView)
+	w := request(s, "POST", "/api/settings/probe", s.origin, string(body), true)
+	if w.Code != 200 || preflights != 1 || restarts != 0 {
+		t.Fatalf("candidate preflight probe got code=%d preflights=%d restarts=%d body=%s", w.Code, preflights, restarts, w.Body.String())
+	}
+
+	// Ordinary probe using the active core auto-rebinds the stale stopped-VM interface first.
+	ordinaryView := settingsView(cfg, s.preferences)
+	body, _ = json.Marshal(ordinaryView)
+	w = request(s, "POST", "/api/settings/probe", s.origin, string(body), true)
+	if w.Code != 200 || preflights != 1 || restarts != 1 {
+		t.Fatalf("ordinary probe got code=%d preflights=%d restarts=%d body=%s", w.Code, preflights, restarts, w.Body.String())
 	}
 }
