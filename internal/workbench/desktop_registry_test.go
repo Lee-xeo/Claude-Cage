@@ -245,3 +245,16 @@ func TestDeleteDefaultAndOnlyBlockLastRemainingDesktop(t *testing.T) {
 		t.Fatalf("merged bindings invalid: %v", err)
 	}
 }
+
+func TestServerHasDefaultDesktopFollowsRemovalAndMerge(t *testing.T) {
+	s := testServer(t)
+	if !s.hasDefaultDesktop() {
+		t.Fatal("a profile without account records has the default Desktop")
+	}
+	if err := s.saveClaudeAccounts(claudeAccountList{Accounts: []claudeAccount{}, DefaultDesktopRemoved: true}); err != nil {
+		t.Fatal(err)
+	}
+	if s.hasDefaultDesktop() {
+		t.Fatal("removed default Desktop reported as available")
+	}
+}

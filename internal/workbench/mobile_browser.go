@@ -390,6 +390,13 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 		return
 	}
 	if surface == phoneDesktop && op == "open" && err == nil && status == http.StatusPreconditionFailed {
+		// The phone view attaches to the default Desktop only. Without one a
+		// start job could never succeed, so say so instead of queueing it.
+		if !s.hasDefaultDesktop() {
+			s.retirePhoneSurfaceState(state, surface, b)
+			http.Error(w, "电脑上的默认 Claude Desktop 已删除或已并入其他实例，手机暂时只能打开默认 Desktop", http.StatusConflict)
+			return
+		}
 		job := s.jobs.snapshot()
 		var err error
 		if !job.Running || job.Kind != "claude-desktop-start" {

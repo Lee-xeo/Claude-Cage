@@ -1157,16 +1157,21 @@ function App() {
       setBrowserError("");
       if (b.desktopFocus === true) {
         const currentDesktops = notificationViewRef.current.accountDesktops;
-        const target = fallbackDesktopInstance(currentDesktops?.catalog);
-        if (target) {
-          setSettingsOpen(false);
-          void currentDesktops.act(target, "start");
-        } else if (!currentDesktops?.catalog?.default_removed) {
-          currentDesktops?.clear();
-          setDesktopOpen(true);
-          setHome(false);
-          setSettingsOpen(false);
-        }
+        void (async () => {
+          // The catalog loads lazily; without it a removed default Desktop
+          // would be opened and fail to start.
+          const catalog = currentDesktops?.catalog || await currentDesktops?.refresh?.(true);
+          const target = fallbackDesktopInstance(catalog);
+          if (target) {
+            setSettingsOpen(false);
+            void currentDesktops.act(target, "start");
+          } else if (!catalog?.default_removed) {
+            currentDesktops?.clear();
+            setDesktopOpen(true);
+            setHome(false);
+            setSettingsOpen(false);
+          }
+        })();
       }
       const previousPair = browserSnapshot.current.split;
       const local = layoutRef.current;
@@ -1875,13 +1880,14 @@ function App() {
             onDefaultDesktopStop={stopDefaultDesktop}
             accountDesktops={status.account_desktops_supported ? accountDesktops : null}
             onDesktopRename={(desktop) => setRename({ id: desktop.id, title: desktop.label || "", desktop: true })}
-            onClaudeDesktop={() => {
-              const target = fallbackDesktopInstance(accountDesktops.catalog);
+            onClaudeDesktop={async () => {
+              const catalog = accountDesktops.catalog || await accountDesktops.refresh(true);
+              const target = fallbackDesktopInstance(catalog);
               if (target) {
                 void accountDesktops.act(target, "start");
                 return;
               }
-              if (accountDesktops.catalog?.default_removed) return;
+              if (catalog?.default_removed) return;
               accountDesktops.clear();
               setManagementPage("");
               setHome(false);

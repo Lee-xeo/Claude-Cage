@@ -63,6 +63,16 @@ func (list *claudeAccountList) hasDefaultDesktop() bool {
 	return !list.DefaultDesktopRemoved && list.DesktopRedirects["default"] == ""
 }
 
+// A record that cannot be read leaves the decision to the start job, which
+// reports the read error itself.
+func (s *Server) hasDefaultDesktop() bool {
+	m := &s.claudeAccounts
+	m.mu.Lock()
+	list, err := s.loadClaudeAccounts()
+	m.mu.Unlock()
+	return err != nil || list.hasDefaultDesktop()
+}
+
 func (list *claudeAccountList) hasDesktop(id string) bool {
 	if id == "default" {
 		return list.hasDefaultDesktop()
