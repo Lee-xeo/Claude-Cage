@@ -132,7 +132,7 @@ function ProjectActionMenu({
   // A hidden menu cannot take focus, so wait until the position is applied.
   useEffect(() => {
     if (position.ready) node.current?.querySelector("button:not(:disabled)")?.focus();
-  }, [position.ready]);
+  }, [position.ready, menu]);
 
   const act = (handler) => {
     onClose();
