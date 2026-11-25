@@ -860,6 +860,7 @@ func (s *Server) retireLocalProxyCore() error {
 	}
 	s.mu.Lock()
 	s.proxyNetworkLost = true
+	s.proxyInterfaceLost, s.proxyInterfaceError = false, ""
 	s.mu.Unlock()
 	return nil
 }

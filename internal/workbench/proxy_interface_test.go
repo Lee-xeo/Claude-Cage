@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -463,5 +464,200 @@ func TestSettingsProbeRebindsActiveCoreOnlyWithoutBootstrapPreflight(t *testing.
 	w = request(s, "POST", "/api/settings/probe", s.origin, string(body), true)
 	if w.Code != 200 || preflights != 1 || restarts != 1 {
 		t.Fatalf("ordinary probe got code=%d preflights=%d restarts=%d body=%s", w.Code, preflights, restarts, w.Body.String())
+	}
+}
+
+// A missing uplink recorded while the VM is stopped is resolved by the same
+// interface returning; errors from other causes are kept.
+func TestStoppedVMClearsMissingUplinkWhenBoundInterfaceReturns(t *testing.T) {
+	prevPhysical, prevAvailable, prevRunning := physicalProxyInterface, proxyInterfaceAvailable, proxyInterfaceCoreRunning
+	t.Cleanup(func() {
+		physicalProxyInterface, proxyInterfaceAvailable, proxyInterfaceCoreRunning = prevPhysical, prevAvailable, prevRunning
+	})
+	proxyInterfaceCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+	const missing = "未找到可用的物理 IPv4 网卡"
+	for _, tc := range []struct {
+		name, other string
+	}{{"own error", ""}, {"other error", "出口检测暂时超时，正在重试；现有联网许可未延长"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := interfaceMonitorServer(t)
+			if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+				t.Fatal(err)
+			}
+			probes := 0
+			physicalProxyInterface = func(context.Context) (string, error) { probes++; return "", errors.New(missing) }
+			proxyInterfaceAvailable = func(string) bool { return false }
+			s.op.Lock()
+			defer s.op.Unlock()
+			s.applyProxyInterfaceObservation(s.observeProxyInterface(context.Background()))
+			if !s.proxyNetworkLost || s.safety.monitorError != missing {
+				t.Fatalf("missing uplink not recorded: lost=%v error=%q", s.proxyNetworkLost, s.safety.monitorError)
+			}
+			if tc.other != "" {
+				s.safety.monitorError = tc.other
+			}
+			proxyInterfaceAvailable = func(name string) bool { return name == "en0" }
+			probes = 0
+			observed := s.observeProxyInterface(context.Background())
+			s.applyProxyInterfaceObservation(observed)
+			want := tc.other
+			if probes != 0 || s.proxyNetworkLost || !s.proxyNetworkRetry.IsZero() || s.safety.monitorError != want || s.jobs.snapshot().ID != "" {
+				t.Fatalf("probes=%d lost=%v error=%q job=%+v; want error %q", probes, s.proxyNetworkLost, s.safety.monitorError, s.jobs.snapshot(), want)
+			}
+		})
+	}
+	t.Run("other cause", func(t *testing.T) {
+		s, _ := interfaceMonitorServer(t)
+		if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+			t.Fatal(err)
+		}
+		proxyInterfaceAvailable = func(string) bool { return true }
+		s.proxyNetworkLost, s.safety.monitorError = true, "旧代理核心尚未停止"
+		observed := s.observeProxyInterface(context.Background())
+		s.op.Lock()
+		s.applyProxyInterfaceObservation(observed)
+		s.op.Unlock()
+		if observed.configuration != "" || !s.proxyNetworkLost || s.safety.monitorError != "旧代理核心尚未停止" {
+			t.Fatalf("cleared an outage owned by another cause: %+v lost=%v", observed, s.proxyNetworkLost)
+		}
+	})
+}
+
+func stubCountedPhysicalInterface(t *testing.T, name string) (*atomic.Int32, chan struct{}) {
+	t.Helper()
+	prevPhysical, prevAvailable, prevRunning := physicalProxyInterface, proxyInterfaceAvailable, proxyInterfaceCoreRunning
+	t.Cleanup(func() {
+		physicalProxyInterface, proxyInterfaceAvailable, proxyInterfaceCoreRunning = prevPhysical, prevAvailable, prevRunning
+	})
+	calls := new(atomic.Int32)
+	release := make(chan struct{})
+	physicalProxyInterface = func(context.Context) (string, error) {
+		calls.Add(1)
+		<-release
+		return name, nil
+	}
+	proxyInterfaceAvailable = func(string) bool { return true }
+	proxyInterfaceCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+	return calls, release
+}
+
+func TestEnsureProxyInterfaceBeforeUseCoalescesConcurrentChecks(t *testing.T) {
+	s, _ := interfaceMonitorServer(t)
+	calls, release := stubCountedPhysicalInterface(t, "en0")
+	const callers = 8
+	errs := make(chan error, callers)
+	for range callers {
+		go func() { errs <- s.ensureProxyInterfaceBeforeUse(context.Background()) }()
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	for range callers {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || calls.Load() != 1 {
+		t.Fatalf("burst ran %d binding checks (err=%v), want 1", calls.Load(), err)
+	}
+
+	// A vanished bound interface, a rewritten core config and an explicit
+	// invalidation each force a fresh check.
+	proxyInterfaceAvailable = func(string) bool { return false }
+	_ = s.ensureProxyInterfaceBeforeUse(context.Background())
+	proxyInterfaceAvailable = func(string) bool { return true }
+	if calls.Load() != 2 {
+		t.Fatalf("vanished interface reused the cached pass: calls=%d", calls.Load())
+	}
+	path := filepath.Join(s.profile, "proxy", "config.yaml")
+	data, _ := os.ReadFile(path)
+	if err := os.WriteFile(path, append(data, "# rebound\n"...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || calls.Load() != 3 {
+		t.Fatalf("rewritten core config reused the cached pass: calls=%d err=%v", calls.Load(), err)
+	}
+	s.invalidateProxyBindingCheck()
+	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || calls.Load() != 4 {
+		t.Fatalf("invalidation reused the cached pass: calls=%d err=%v", calls.Load(), err)
+	}
+}
+
+func TestProxyInterfaceRebindInvalidatesBindingCheck(t *testing.T) {
+	s, _ := interfaceMonitorServer(t)
+	if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+		t.Fatal(err)
+	}
+	calls, release := stubCountedPhysicalInterface(t, "en0")
+	close(release)
+	prevValidate, prevStart := validateProxyCore, startProxyCore
+	t.Cleanup(func() { validateProxyCore, startProxyCore = prevValidate, prevStart })
+	validateProxyCore = func(context.Context, string, managedproxy.Store) error { return nil }
+	// Leave config.yaml untouched so only the rebind itself drops the pass.
+	startProxyCore = func(context.Context, string, managedproxy.Store) error { return nil }
+	for range 2 {
+		if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls=%d before rebind, want 1", calls.Load())
+	}
+	if _, err := s.submitJob("proxy-network", s.rebindProxyInterface); err != nil {
+		t.Fatal(err)
+	}
+	if job := awaitJobIdle(t, &s.jobs); job.Error != "" {
+		t.Fatal(job)
+	}
+	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || calls.Load() != 2 {
+		t.Fatalf("rebind kept the cached pass: calls=%d err=%v", calls.Load(), err)
+	}
+}
+
+// Siblings share the rebind; a cancelled request neither aborts the core
+// restart nor makes the others fail.
+func TestEnsureProxyInterfaceRebindIsSharedAndDetachedFromRequest(t *testing.T) {
+	s, _ := interfaceMonitorServer(t)
+	if err := os.Remove(filepath.Join(s.instanceDir(), "cage-running.json")); err != nil {
+		t.Fatal(err)
+	}
+	prevPhysical, prevRunning, prevStart := physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore
+	t.Cleanup(func() {
+		physicalProxyInterface, proxyInterfaceCoreRunning, startProxyCore = prevPhysical, prevRunning, prevStart
+	})
+	physicalProxyInterface = func(context.Context) (string, error) { return "wlp4s0", nil }
+	proxyInterfaceCoreRunning = func(context.Context, string, managedproxy.Store) bool { return true }
+	var restarts atomic.Int32
+	started, release := make(chan struct{}), make(chan struct{})
+	startErr := make(chan error, 1)
+	startProxyCore = func(ctx context.Context, profile string, _ managedproxy.Store) error {
+		restarts.Add(1)
+		close(started)
+		<-release
+		if ctx.Err() != nil {
+			startErr <- ctx.Err()
+			return ctx.Err()
+		}
+		startErr <- nil
+		return os.WriteFile(filepath.Join(profile, "proxy", "config.yaml"), []byte("interface-name: wlp4s0\n"), 0600)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancelled := make(chan error, 1)
+	go func() { cancelled <- s.ensureProxyInterfaceBeforeUse(ctx) }()
+	<-started
+	sibling := make(chan error, 1)
+	go func() { sibling <- s.ensureProxyInterfaceBeforeUse(context.Background()) }()
+	cancel()
+	if err := <-cancelled; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled request returned %v", err)
+	}
+	close(release)
+	if err := <-startErr; err != nil {
+		t.Fatalf("request cancellation reached the core restart: %v", err)
+	}
+	if err := <-sibling; err != nil || restarts.Load() != 1 {
+		t.Fatalf("sibling err=%v restarts=%d, want shared rebind", err, restarts.Load())
+	}
+	if err := s.ensureProxyInterfaceBeforeUse(context.Background()); err != nil || restarts.Load() != 1 {
+		t.Fatalf("rebound core restarted again: err=%v restarts=%d", err, restarts.Load())
 	}
 }

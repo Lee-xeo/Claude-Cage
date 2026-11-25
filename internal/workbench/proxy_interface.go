@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/containerenv"
@@ -25,6 +27,28 @@ type proxyInterfaceObservation struct {
 	bindingErr                 error
 	err                        error
 	stoppedCoreDeadInterface   bool
+	stoppedBoundAvailable      bool
+}
+
+// A burst of delay tests shares one binding check. A pass is reused only
+// briefly, for the same configuration and core config file, and while the
+// bound interface is still up; any rebind discards it.
+const (
+	proxyBindingCheckTTL     = 3 * time.Second
+	proxyBindingCheckTimeout = 30 * time.Second
+)
+
+type proxyBindingCheck struct {
+	mu         sync.Mutex
+	call       *proxyBindingCall
+	generation uint64
+	key, bound string
+	passed     time.Time
+}
+
+type proxyBindingCall struct {
+	done chan struct{}
+	err  error
 }
 
 // Reading the host route can block inside the operating system and does not
@@ -34,14 +58,16 @@ func (s *Server) observeProxyInterface(ctx context.Context) proxyInterfaceObserv
 	if job.Running {
 		return proxyInterfaceObservation{}
 	}
-	vmRunning := s.vmRunning()
 	// While a local VM is stopped no guest traffic uses the proxy, and the
 	// start path checks and rebinds the interface itself; skip reading the host
 	// route (three processes per tick on macOS) as long as the bound interface
 	// still exists and holds an IPv4 address. Only when the bound interface has
 	// vanished/dropped while the proxy core is running do we probe the new
-	// uplink so the core self-heals instead of staying offline (#781).
-	if !containerenv.Configured(s.profile) && !vmRunning {
+	// uplink so the core self-heals instead of staying offline (#781). A
+	// container's state query would itself run engine commands, so containers
+	// keep observing.
+	container := containerenv.Configured(s.profile)
+	if !container && !s.vmRunning() {
 		cfg, err := loadConfig(s.configPath)
 		if err != nil {
 			return proxyInterfaceObservation{}
@@ -55,7 +81,13 @@ func (s *Server) observeProxyInterface(ctx context.Context) proxyInterfaceObserv
 			return proxyInterfaceObservation{}
 		}
 		if proxyInterfaceAvailable(bound) {
-			return proxyInterfaceObservation{}
+			s.mu.Lock()
+			pending := s.proxyNetworkLost && s.proxyInterfaceLost
+			s.mu.Unlock()
+			if !pending {
+				return proxyInterfaceObservation{}
+			}
+			return proxyInterfaceObservation{configuration: cfg.Fingerprint(), jobID: job.ID, bound: bound, stoppedBoundAvailable: true}
 		}
 		p, err := s.proxyStore.Load(s.profile)
 		if err != nil {
@@ -92,7 +124,7 @@ func (s *Server) observeProxyInterface(ctx context.Context) proxyInterfaceObserv
 	if s.proxyStore.Applied(s.profile, cfg.ProxyURL, cfg.ProxyRevision) != nil {
 		return proxyInterfaceObservation{}
 	}
-	if !vmRunning && observed.bindingErr == nil && observed.bound != "" && !proxyInterfaceAvailable(observed.bound) {
+	if container && observed.bindingErr == nil && observed.bound != "" && !proxyInterfaceAvailable(observed.bound) && !s.vmRunning() {
 		if p, loadErr := s.proxyStore.Load(s.profile); loadErr == nil {
 			checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			running := proxyInterfaceCoreRunning(checkCtx, s.profile, p)
@@ -127,12 +159,31 @@ func (s *Server) applyProxyInterfaceObservation(observed proxyInterfaceObservati
 	if s.proxyStore.Applied(s.profile, cfg.ProxyURL, cfg.ProxyRevision) != nil {
 		return
 	}
+	if observed.stoppedBoundAvailable {
+		if !s.vmRunning() {
+			s.mu.Lock()
+			if s.proxyNetworkLost && s.proxyInterfaceLost {
+				s.proxyNetworkLost = false
+				s.proxyNetworkRetry = time.Time{}
+				if s.proxyInterfaceError != "" && s.safety.monitorError == s.proxyInterfaceError {
+					s.safety.monitorError = ""
+				}
+				s.proxyInterfaceLost, s.proxyInterfaceError = false, ""
+			}
+			s.mu.Unlock()
+		}
+		return
+	}
 	if observed.err != nil {
 		reason := observed.err.Error()
+		s.invalidateProxyBindingCheck()
 		_ = s.closeProxyGate(reason)
 		s.mu.Lock()
 		s.safety.monitorError = reason
 		s.proxyNetworkLost = true
+		// Only this missing-uplink outage is resolved by the bound interface
+		// returning while the VM is stopped.
+		s.proxyInterfaceLost, s.proxyInterfaceError = true, reason
 		s.mu.Unlock()
 		return
 	}
@@ -150,9 +201,11 @@ func (s *Server) applyProxyInterfaceObservation(observed proxyInterfaceObservati
 		if !observed.stoppedCoreDeadInterface {
 			return
 		}
+		s.invalidateProxyBindingCheck()
 		s.mu.Lock()
 		s.proxyNetworkLost = true
 		s.proxyNetworkRetry = time.Now().Add(15 * time.Second)
+		s.proxyInterfaceLost = true
 		s.mu.Unlock()
 		diagnostics.Log("warn", "proxy", "代理核心绑定的出口网卡已失效，正在自动重新绑定")
 		_, _ = s.submitJob("proxy-network", s.rebindProxyInterface)
@@ -163,103 +216,181 @@ func (s *Server) applyProxyInterfaceObservation(observed proxyInterfaceObservati
 	if observed.bound == observed.name && !lost {
 		reason = "代理节点路由接口已变化，正在重新绑定代理并检查出口"
 	}
+	s.invalidateProxyBindingCheck()
 	if err := s.closeProxyGate(reason); err != nil {
 		return
 	}
 	s.mu.Lock()
 	s.proxyNetworkLost = true
 	s.proxyNetworkRetry = time.Now().Add(15 * time.Second)
+	s.proxyInterfaceLost, s.proxyInterfaceError = false, ""
 	s.mu.Unlock()
 	_, _ = s.submitJob("proxy-network", s.rebindProxyInterface)
 }
 
 func (s *Server) checkProxyInterfaceBinding(ctx context.Context) error {
+	_, err := s.checkProxyInterfaceBindingName(ctx)
+	return err
+}
+
+func (s *Server) checkProxyInterfaceBindingName(ctx context.Context) (string, error) {
 	configPath := filepath.Join(managedproxy.Dir(s.profile), "config.yaml")
 	bound, err := managedproxy.BoundInterface(configPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	current, err := physicalProxyInterface(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !proxyBindingMatches(configPath, current) {
-		return &managedproxy.StaleInterfaceError{Bound: bound, Current: current}
+		return "", &managedproxy.StaleInterfaceError{Bound: bound, Current: current}
 	}
-	return nil
+	return bound, nil
+}
+
+func (s *Server) invalidateProxyBindingCheck() {
+	c := &s.proxyBindingCheck
+	c.mu.Lock()
+	c.generation++
+	c.key, c.bound, c.passed = "", "", time.Time{}
+	c.mu.Unlock()
+}
+
+func (s *Server) proxyBindingCheckKey() string {
+	cfg, err := loadConfig(s.configPath)
+	if err != nil {
+		return ""
+	}
+	info, err := os.Stat(filepath.Join(managedproxy.Dir(s.profile), "config.yaml"))
+	if err != nil {
+		return ""
+	}
+	return cfg.Fingerprint() + "|" + strconv.FormatInt(info.ModTime().UnixNano(), 10) + "|" + strconv.FormatInt(info.Size(), 10)
 }
 
 // ensureProxyInterfaceBeforeUse verifies that an active, running proxy core is
 // still bound to the host's current physical uplink before an explicit probe or
-// latency test. When no VM is running and no lifecycle job holds s.op, a stale
-// binding is automatically rebound so the core recovers without manual restart.
+// latency test. Concurrent callers share one check. It runs detached from the
+// request, so a cancelled request cannot abort a rebind that stopped the core.
 func (s *Server) ensureProxyInterfaceBeforeUse(ctx context.Context) error {
-	cfg, err := loadConfig(s.configPath)
-	if err != nil {
+	c := &s.proxyBindingCheck
+	key := s.proxyBindingCheckKey()
+	c.mu.Lock()
+	if key != "" && key == c.key && time.Since(c.passed) < proxyBindingCheckTTL && proxyInterfaceAvailable(c.bound) {
+		c.mu.Unlock()
 		return nil
 	}
+	call := c.call
+	if call == nil {
+		activity, done, err := s.beginActivity(context.Background())
+		if err != nil {
+			c.mu.Unlock()
+			return err
+		}
+		call = &proxyBindingCall{done: make(chan struct{})}
+		c.call = call
+		generation := c.generation
+		go func() {
+			defer done()
+			checkCtx, cancel := context.WithTimeout(activity, proxyBindingCheckTimeout)
+			bound, err := s.verifyProxyInterfaceBeforeUse(checkCtx)
+			cancel()
+			after := s.proxyBindingCheckKey()
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			call.err, c.call = err, nil
+			if err == nil && bound != "" && after == key && generation == c.generation {
+				c.key, c.bound, c.passed = key, bound, time.Now()
+			}
+			close(call.done)
+		}()
+	}
+	c.mu.Unlock()
+	select {
+	case <-call.done:
+		return call.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// verifyProxyInterfaceBeforeUse returns the bound interface only when it
+// confirmed an unchanged binding of a running core. When no VM is running and
+// no lifecycle job holds s.op, a stale binding is automatically rebound so the
+// core recovers without manual restart.
+func (s *Server) verifyProxyInterfaceBeforeUse(ctx context.Context) (string, error) {
+	cfg, err := loadConfig(s.configPath)
+	if err != nil {
+		return "", nil
+	}
 	if s.proxyStore.Applied(s.profile, cfg.ProxyURL, cfg.ProxyRevision) != nil {
-		return nil
+		return "", nil
 	}
 	configPath := filepath.Join(managedproxy.Dir(s.profile), "config.yaml")
 	if _, err := os.Stat(configPath); err != nil {
-		return nil
+		return "", nil
 	}
 	p, err := s.proxyStore.Load(s.profile)
 	if err != nil {
-		return nil
+		return "", nil
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	running := proxyInterfaceCoreRunning(checkCtx, s.profile, p)
 	cancel()
 	if !running {
-		return nil
+		return "", nil
 	}
-	err = s.checkProxyInterfaceBinding(ctx)
+	bound, err := s.checkProxyInterfaceBindingName(ctx)
 	if err == nil {
-		return nil
+		return bound, nil
 	}
 	var stale *managedproxy.StaleInterfaceError
 	if !errors.As(err, &stale) {
-		return err
+		return "", err
 	}
 	if s.vmRunning() || !s.op.TryLock() {
-		return err
+		return "", err
 	}
 	defer s.op.Unlock()
 	if s.vmRunning() {
-		return err
+		return "", err
 	}
-	if recheckErr := s.checkProxyInterfaceBinding(ctx); recheckErr == nil {
-		return nil
+	if _, recheckErr := s.checkProxyInterfaceBindingName(ctx); recheckErr == nil {
+		return "", nil
 	}
 	cfg, cfgErr := loadConfig(s.configPath)
 	if cfgErr != nil {
-		return err
+		return "", err
 	}
 	if s.proxyStore.Applied(s.profile, cfg.ProxyURL, cfg.ProxyRevision) != nil {
-		return err
+		return "", err
 	}
 	p, loadErr := s.proxyStore.Load(s.profile)
 	if loadErr != nil {
-		return err
+		return "", err
 	}
 	diagnostics.Log("warn", "proxy", "检测到代理核心出口网卡已变化，正在自动重新绑定")
+	s.invalidateProxyBindingCheck()
 	if startErr := startProxyCore(ctx, s.profile, p); startErr != nil {
-		return startErr
+		return "", startErr
 	}
 	s.mu.Lock()
 	s.proxyNetworkLost = false
 	s.proxyNetworkRetry = time.Time{}
 	s.safety.monitorError = ""
+	s.proxyInterfaceLost, s.proxyInterfaceError = false, ""
 	s.mu.Unlock()
-	return nil
+	return "", nil
 }
 
 func (s *Server) rebindProxyInterface() (returned error) {
+	s.invalidateProxyBindingCheck()
 	defer func() {
+		s.invalidateProxyBindingCheck()
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		s.proxyInterfaceLost, s.proxyInterfaceError = false, ""
 		if returned == nil {
 			s.proxyNetworkLost = false
 			s.proxyNetworkRetry = time.Time{}

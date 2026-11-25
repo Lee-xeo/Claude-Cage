@@ -148,6 +148,9 @@ type Server struct {
 	networkPaused           bool
 	proxyNetworkLost        bool
 	proxyNetworkRetry       time.Time
+	proxyInterfaceLost      bool
+	proxyInterfaceError     string
+	proxyBindingCheck       proxyBindingCheck
 	checkCancel             context.CancelFunc
 	lifeContext             context.Context
 	lifeCancel              context.CancelFunc
