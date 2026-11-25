@@ -357,6 +357,10 @@ func (s Store) route(blocked map[string]string) ([]string, error) {
 }
 
 func (s Store) Runtime(profile string) ([]byte, error) {
+	return s.runtimeWithSocket(Socket(profile))
+}
+
+func (s Store) runtimeWithSocket(socketPath string) ([]byte, error) {
 	blocked := s.BlockedNodes()
 	route, err := s.route(blocked)
 	if err != nil {
@@ -412,7 +416,7 @@ func (s Store) Runtime(profile string) ([]byte, error) {
 	if len(policies) > 0 {
 		dns["proxy-server-nameserver-policy"] = policies
 	}
-	config := map[string]any{"mixed-port": s.Port, "bind-address": "127.0.0.1", "allow-lan": false, "skip-auth-prefixes": []string{}, "mode": "rule", "ipv6": routeHasIPv6Server(route, originals), "log-level": "warning", "find-process-mode": "off", "external-controller-unix": Socket(profile), "tun": map[string]any{"enable": false}, "dns": dns, "geo-auto-update": false, "profile": map[string]any{"store-selected": false}, "proxy-groups": []any{map[string]any{"name": Group, "type": "select", "proxies": []string{s.Selected}}}}
+	config := map[string]any{"mixed-port": s.Port, "bind-address": "127.0.0.1", "allow-lan": false, "skip-auth-prefixes": []string{}, "mode": "rule", "ipv6": routeHasIPv6Server(route, originals), "log-level": "warning", "find-process-mode": "off", "external-controller-unix": socketPath, "tun": map[string]any{"enable": false}, "dns": dns, "geo-auto-update": false, "profile": map[string]any{"store-selected": false}, "proxy-groups": []any{map[string]any{"name": Group, "type": "select", "proxies": []string{s.Selected}}}}
 	// An explicit environment chain can override imported dialers. Named
 	// account routes retain the node's imported chain, including dependent hops.
 	targets := map[string]string{}

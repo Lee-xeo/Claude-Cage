@@ -24,6 +24,9 @@ const OldPrefix = "agent-vm-"
 // has its name: theirs end with a hash.
 const Template = "base"
 
+// Building is the temporary VM used to build Template.
+const Building = Template + "-building"
+
 // The names Scratch makes.
 var scratchRe = regexp.MustCompile(`^[A-Za-z0-9-]+-scratch-[0-9a-f]{8}$`)
 

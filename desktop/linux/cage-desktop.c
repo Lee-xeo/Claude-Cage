@@ -27,13 +27,15 @@ typedef struct {
     GMenu *menu;
     JsonObject *messages;
     WebKitWebView *web;
+    WebKitWebContext *web_context;
     WebKitUserContentManager *content;
+    GdkRGBA background_color;
     char *backend, *profile, *token, *smoke_output, *web_data, *web_cache;
     const char *storage_phase, *storage_marker;
     int port, result;
     guint backend_commands;
     gboolean bootstrapping, needs_update, ready, picker_open, smoke_started, smoke_finishing, navigation_failed;
-    gboolean initial_dark, media_plugins_isolated, dmabuf_default_set, software_fallback;
+    gboolean initial_dark, media_plugins_isolated, dmabuf_default_set, software_fallback, has_background_color, quit_pending;
 } Cage;
 static Cage app;
 typedef struct { GPtrArray *paths; gint64 expires; } FileSelection;
@@ -1280,7 +1282,9 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
         else {
             g_object_set(gtk_settings_get_default(), "gtk-application-prefer-dark-theme",
                 !strcmp(mode, "system") ? app.initial_dark : !strcmp(mode, "dark"), NULL);
-            webkit_web_view_set_background_color(app.web, &color);
+            app.background_color = color;
+            app.has_background_color = TRUE;
+            if (app.web) webkit_web_view_set_background_color(app.web, &color);
             reply_json(reply, context, "true");
         }
     } else if (!strcmp(name, "importTheme")) {
@@ -1491,6 +1495,7 @@ static gboolean deny_context_menu(WebKitWebView *web, WebKitContextMenu *menu, G
 }
 static void load_changed(WebKitWebView *web, WebKitLoadEvent event, gpointer data) {
     (void)data;
+    if (web != app.web) return;
     if (event == WEBKIT_LOAD_STARTED) app.navigation_failed = FALSE;
     if (event == WEBKIT_LOAD_FINISHED && !app.navigation_failed && valid_workbench(webkit_web_view_get_uri(web), app.port, FALSE)) {
         gtk_stack_set_visible_child_name(GTK_STACK(app.stack), "web");
@@ -1499,7 +1504,8 @@ static void load_changed(WebKitWebView *web, WebKitLoadEvent event, gpointer dat
     }
 }
 static gboolean load_failed(WebKitWebView *web, WebKitLoadEvent event, const char *uri, GError *error, gpointer data) {
-    (void)web; (void)event; (void)uri; (void)data;
+    (void)event; (void)uri; (void)data;
+    if (web != app.web) return TRUE;
     app.navigation_failed = TRUE;
     if (error) diagnostic_event(error->message);
     char *code = g_strdup_printf("%d", error ? error->code : 0);
@@ -1515,6 +1521,7 @@ static gboolean retry_software_fallback(gpointer data) {
 }
 static void process_terminated(WebKitWebView *web, WebKitWebProcessTerminationReason reason, gpointer data) {
     (void)data;
+    if (web != app.web) return;
     const char *kind = reason == WEBKIT_WEB_PROCESS_CRASHED ? "crashed"
         : reason == WEBKIT_WEB_PROCESS_EXCEEDED_MEMORY_LIMIT ? "exceeded-memory"
         : "terminated-by-api";
@@ -1536,13 +1543,105 @@ static void process_terminated(WebKitWebView *web, WebKitWebProcessTerminationRe
     }
     show_error("工作台显示进程已退出。后台任务保留，可重试连接。");
 }
+static void install_web_view(void) {
+    if (app.web) {
+        WebKitWebView *previous = app.web;
+        app.web = NULL;
+        webkit_web_view_stop_loading(previous);
+        gtk_container_remove(GTK_CONTAINER(app.stack), GTK_WIDGET(previous));
+    }
+    app.web = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", app.web_context, "user-content-manager", app.content, NULL));
+    input_initialize(app.web);
+    WebKitSettings *web_settings = webkit_web_view_get_settings(app.web);
+    webkit_settings_set_enable_developer_extras(web_settings, FALSE);
+    webkit_settings_set_javascript_can_open_windows_automatically(web_settings, FALSE);
+    webkit_settings_set_enable_write_console_messages_to_stdout(web_settings, FALSE);
+    webkit_settings_set_enable_webgl(web_settings, FALSE);
+    webkit_settings_set_enable_media_stream(web_settings, !app.software_fallback);
+    if (app.software_fallback) {
+        webkit_settings_set_hardware_acceleration_policy(web_settings, WEBKIT_HARDWARE_ACCELERATION_POLICY_NEVER);
+        webkit_settings_set_enable_media(web_settings, FALSE);
+    }
+#if WEBKIT_CHECK_VERSION(2, 38, 0)
+    webkit_settings_set_enable_webrtc(web_settings, FALSE);
+#endif
+    if (app.has_background_color)
+        webkit_web_view_set_background_color(app.web, &app.background_color);
+    g_signal_connect(app.web, "decide-policy", G_CALLBACK(decide_policy), NULL);
+    g_signal_connect(app.web, "permission-request", G_CALLBACK(handle_permission), NULL);
+    g_signal_connect(app.web, "run-file-chooser", G_CALLBACK(workbench_file_chooser), NULL);
+    g_signal_connect(app.web, "context-menu", G_CALLBACK(deny_context_menu), NULL);
+    g_signal_connect(app.web, "load-changed", G_CALLBACK(load_changed), NULL);
+    g_signal_connect(app.web, "load-failed", G_CALLBACK(load_failed), NULL);
+    g_signal_connect(app.web, "web-process-terminated", G_CALLBACK(process_terminated), NULL);
+    gtk_stack_add_named(GTK_STACK(app.stack), GTK_WIDGET(app.web), "web");
+    gtk_widget_show(GTK_WIDGET(app.web));
+}
+typedef struct { WebKitWebView *web; GCancellable *cancel; guint deadline; gboolean timed_out; } QuitProbe;
+static gboolean quit_probe_timeout(gpointer data) {
+    QuitProbe *probe = data;
+    gboolean current = (probe->web == app.web);
+    probe->deadline = 0;
+    probe->timed_out = TRUE;
+    app.quit_pending = FALSE;
+    g_cancellable_cancel(probe->cancel);
+    if (current) {
+        diagnostic_event("Workbench did not respond to quit request within 1.5s; exiting desktop window");
+        g_application_quit(G_APPLICATION(app.application));
+    }
+    return G_SOURCE_REMOVE;
+}
+static void quit_probe_finished(GObject *source, GAsyncResult *result, gpointer data) {
+    QuitProbe *probe = data;
+    GError *error = NULL;
+    JSCValue *value = webkit_web_view_evaluate_javascript_finish(WEBKIT_WEB_VIEW(source), result, &error);
+    if (probe->deadline) { g_source_remove(probe->deadline); probe->deadline = 0; }
+    if (!probe->timed_out) {
+        app.quit_pending = FALSE;
+        if (WEBKIT_WEB_VIEW(source) == app.web) {
+            gboolean handled = value && !error && jsc_value_is_boolean(value) && jsc_value_to_boolean(value);
+            if (!handled) {
+                diagnostic_event("Workbench quit handoff failed; exiting desktop window");
+                g_application_quit(G_APPLICATION(app.application));
+            }
+        }
+    }
+    if (value) g_object_unref(value);
+    g_clear_error(&error);
+    g_object_unref(probe->cancel);
+    g_free(probe);
+}
+static void request_quit(void) {
+    if (!app.web || gtk_stack_get_visible_child(GTK_STACK(app.stack)) != GTK_WIDGET(app.web) ||
+        !app.port || !valid_workbench(webkit_web_view_get_uri(app.web), app.port, FALSE)) {
+        g_application_quit(G_APPLICATION(app.application));
+        return;
+    }
+    if (app.quit_pending) return;
+    app.quit_pending = TRUE;
+    QuitProbe *probe = g_new0(QuitProbe, 1);
+    probe->web = app.web;
+    probe->cancel = g_cancellable_new();
+    probe->deadline = g_timeout_add(1500, quit_probe_timeout, probe);
+    webkit_web_view_evaluate_javascript(app.web,
+        "typeof window.cageNativeAction==='function'?(window.cageNativeAction('quit'),true):false",
+        -1, NULL, NULL, probe->cancel, quit_probe_finished, probe);
+}
 static void menu_action(GSimpleAction *simple, GVariant *parameter, gpointer data) {
     (void)parameter; (void)data;
     const char *name = g_action_get_name(G_ACTION(simple));
     if (!strcmp(name, "closeWindow")) { gtk_widget_hide(app.window); publish_visibility(); }
-    else if (!strcmp(name, "quit")) {
-        if (gtk_stack_get_visible_child(GTK_STACK(app.stack)) == GTK_WIDGET(app.web)) action("quit");
-        else g_application_quit(G_APPLICATION(app.application));
+    else if (!strcmp(name, "reloadWorkbench")) {
+        gtk_widget_show(app.window);
+        gtk_window_deiconify(GTK_WINDOW(app.window));
+        gtk_window_present(GTK_WINDOW(app.window));
+        if (!app.bootstrapping) {
+            diagnostic_event("Reloading workbench WebView");
+            install_web_view();
+            bootstrap(app.needs_update ? "--existing" : NULL);
+        }
+    } else if (!strcmp(name, "quit")) {
+        request_quit();
     } else if (!strcmp(name, "updates")) {
         GtkWidget *dialog = gtk_message_dialog_new(GTK_WINDOW(app.window), GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_CLOSE,
             "%s", ui_text("Linux 版本通过安装包更新。请保存文件、停止环境并退出 Cage，再安装已核对摘要的官方新版本。"));
@@ -1558,6 +1657,7 @@ static void update_menu(void) {
     g_menu_append(file, ui_text("新建网页"), "app.newTab");
     g_menu_append(file, ui_text("新建终端"), "app.newTerminal");
     g_menu_append(file, ui_text("关闭当前标签"), "app.closeTab");
+    g_menu_append(file, ui_text("重新加载界面"), "app.reloadWorkbench");
     g_menu_append(file, ui_text("关闭窗口（保留环境）"), "app.closeWindow");
     g_menu_append(file, ui_text("退出 Cage…"), "app.quit");
     g_menu_append(settings, ui_text("打开设置"), "app.settings");
@@ -1585,7 +1685,7 @@ static void create_window(void) {
     gtk_container_add(GTK_CONTAINER(app.window), layout);
     app.menu = g_menu_new();
     /* Workbench shortcuts stay in JavaScript so terminal/browser focus rules apply. */
-    const char *actions[] = {"openProject", "newTab", "newTerminal", "closeTab", "closeWindow", "quit", "settings", "updates", "about"};
+    const char *actions[] = {"openProject", "newTab", "newTerminal", "closeTab", "reloadWorkbench", "closeWindow", "quit", "settings", "updates", "about"};
     for (guint i = 0; i < G_N_ELEMENTS(actions); i++) {
         GSimpleAction *simple = g_simple_action_new(actions[i], NULL);
         g_signal_connect(simple, "activate", G_CALLBACK(menu_action), NULL);
@@ -1621,42 +1721,23 @@ static void create_window(void) {
      * browser profile or guest browser data is shared with this WebView. */
     WebKitWebsiteDataManager *storage = webkit_website_data_manager_new(
         "base-data-directory", app.web_data, "base-cache-directory", app.web_cache, NULL);
-    WebKitWebContext *context = webkit_web_context_new_with_website_data_manager(storage);
+    app.web_context = webkit_web_context_new_with_website_data_manager(storage);
     g_object_unref(storage);
-    webkit_web_context_set_sandbox_enabled(context, TRUE);
+    webkit_web_context_set_sandbox_enabled(app.web_context, TRUE);
     if (app.media_plugins_isolated) {
         char *gst_root = g_build_filename(app.web_cache, "gstreamer", NULL);
         char *gst_plugins = g_build_filename(gst_root, "plugins", NULL);
-        webkit_web_context_add_path_to_sandbox(context, gst_root, FALSE);
-        webkit_web_context_add_path_to_sandbox(context, gst_plugins, TRUE);
+        webkit_web_context_add_path_to_sandbox(app.web_context, gst_root, FALSE);
+        webkit_web_context_add_path_to_sandbox(app.web_context, gst_plugins, TRUE);
         g_free(gst_plugins);
         g_free(gst_root);
     }
-    webkit_website_data_manager_set_network_proxy_settings(webkit_web_context_get_website_data_manager(context), WEBKIT_NETWORK_PROXY_MODE_NO_PROXY, NULL);
-    g_signal_connect(context, "download-started", G_CALLBACK(deny_download), NULL);
+    webkit_website_data_manager_set_network_proxy_settings(webkit_web_context_get_website_data_manager(app.web_context), WEBKIT_NETWORK_PROXY_MODE_NO_PROXY, NULL);
+    g_signal_connect(app.web_context, "download-started", G_CALLBACK(deny_download), NULL);
     app.content = webkit_user_content_manager_new();
     g_signal_connect(app.content, "script-message-with-reply-received::cageTransport", G_CALLBACK(bridge_received), NULL);
     webkit_user_content_manager_register_script_message_handler_with_reply(app.content, "cageTransport", NULL);
-    app.web = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", context, "user-content-manager", app.content, NULL));
-    input_initialize(app.web);
-    g_object_unref(context);
-    WebKitSettings *web_settings = webkit_web_view_get_settings(app.web);
-    webkit_settings_set_enable_developer_extras(web_settings, FALSE);
-    webkit_settings_set_javascript_can_open_windows_automatically(web_settings, FALSE);
-    webkit_settings_set_enable_write_console_messages_to_stdout(web_settings, FALSE);
-    webkit_settings_set_enable_webgl(web_settings, FALSE);
-    webkit_settings_set_enable_media_stream(web_settings, TRUE);
-#if WEBKIT_CHECK_VERSION(2, 38, 0)
-    webkit_settings_set_enable_webrtc(web_settings, FALSE);
-#endif
-    g_signal_connect(app.web, "decide-policy", G_CALLBACK(decide_policy), NULL);
-    g_signal_connect(app.web, "permission-request", G_CALLBACK(handle_permission), NULL);
-    g_signal_connect(app.web, "run-file-chooser", G_CALLBACK(workbench_file_chooser), NULL);
-    g_signal_connect(app.web, "context-menu", G_CALLBACK(deny_context_menu), NULL);
-    g_signal_connect(app.web, "load-changed", G_CALLBACK(load_changed), NULL);
-    g_signal_connect(app.web, "load-failed", G_CALLBACK(load_failed), NULL);
-    g_signal_connect(app.web, "web-process-terminated", G_CALLBACK(process_terminated), NULL);
-    gtk_stack_add_named(GTK_STACK(app.stack), GTK_WIDGET(app.web), "web");
+    install_web_view();
     gtk_widget_show_all(app.window);
     bootstrap(NULL);
 }
@@ -1756,6 +1837,7 @@ int main(int argc, char **argv) {
     g_object_unref(app.application);
     g_free(app.backend); g_free(app.profile); g_free(app.token); g_free(app.smoke_output);
     g_free(app.web_data); g_free(app.web_cache);
+    g_clear_object(&app.web_context);
     g_clear_object(&app.content);
     g_clear_object(&app.menu);
     g_clear_pointer(&app.messages, json_object_unref);

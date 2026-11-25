@@ -12,9 +12,16 @@ import (
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 )
 
-type accountProbeError struct{ cause error }
+type accountProbeError struct {
+	message  string
+	cause    error
+	exitCode int
+}
 
 func (e *accountProbeError) Error() string {
+	if e.message != "" {
+		return e.message
+	}
 	return "无法读取账号状态，请确认环境已启动并检查 Claude Code"
 }
 func (e *accountProbeError) Unwrap() error { return e.cause }
@@ -510,7 +517,12 @@ func (s *Server) runClaudeRefresh(parent context.Context, id, guestID string, ca
 			return
 		}
 		diagnostics.Log("warn", "accounts", fmt.Sprintf("probe claude account failed: %v", probeErr))
-		err = &accountProbeError{cause: probeErr}
+		var classified *accountProbeError
+		if errors.As(probeErr, &classified) {
+			err = classified
+			return
+		}
+		err = &accountProbeError{cause: probeErr, exitCode: -1}
 		return
 	}
 	m.mu.Lock()

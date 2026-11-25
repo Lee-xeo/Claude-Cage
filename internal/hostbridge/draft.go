@@ -96,6 +96,14 @@ func TranslateDraftManifest(draft DraftManifest, overrideKind, minEngine string)
 	}
 	if minEngine == "" {
 		minEngine = DefaultDraftEngineRange
+		// A draft never names an engine range; one that uses view presentation
+		// gets the first version that reads it.
+		for _, view := range draft.Contributes.Views {
+			if view.Presentation != "" || view.Width != 0 || view.Height != 0 {
+				minEngine = fmt.Sprintf(">=%d.%d.%d", floatingViewsSince[0], floatingViewsSince[1], floatingViewsSince[2])
+				break
+			}
+		}
 	}
 	platforms := draft.Platforms
 	if kind == KindGuest {

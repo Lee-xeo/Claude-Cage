@@ -48,28 +48,74 @@ macos_link_probe() {
     "$directory/probe.c" -o "$directory/probe" 2> "$directory/probe.log"
 }
 
+macos_swift_probe() {
+  local directory="$1"
+  printf 'import Cocoa\n' > "$directory/probe.swift"
+  xcrun swiftc ${swift_flags[@]+"${swift_flags[@]}"} -typecheck "$directory/probe.swift" 2> "$directory/swift.log"
+}
+
+macos_swift_sdk_mismatch() {
+  grep -Eq 'this SDK is not supported by the compiler|compiled with a newer version of the compiler' "$1"
+}
+
+macos_sdk_roots() {
+  local developer
+  developer="$(xcode-select -p 2>/dev/null || true)"
+  if [[ -n "$developer" ]]; then
+    printf '%s\n' "$developer/SDKs" "$developer/Platforms/MacOSX.platform/Developer/SDKs"
+  fi
+  printf '%s\n' /Library/Developer/CommandLineTools/SDKs
+}
+
+macos_list_installed_sdks() {
+  local root path name
+  while IFS= read -r root; do
+    [[ -d "$root" ]] || continue
+    (find "$root" -maxdepth 1 -name 'MacOSX[0-9]*.sdk' -type d 2>/dev/null || true) | while IFS= read -r path; do
+      name="${path##*/MacOSX}"
+      printf '%s\t%s\n' "${name%.sdk}" "$path"
+    done
+  done < <(macos_sdk_roots) | sort -V -r | awk -F '\t' '!seen[$2]++ { print $2 }'
+}
+
+# Probes installed SDKs newest-to-oldest in an isolated subdirectory so failing
+# candidates never overwrite the original default-SDK error logs.
+macos_select_compatible_sdk() {
+  local probe="$1" reason="$2" require_swift="$3"
+  local candidate="$probe/candidate"
+  mkdir -p "$candidate"
+  local sdk
+  while IFS= read -r sdk; do
+    [[ -n "$sdk" ]] || continue
+    if ! SDKROOT="$sdk" macos_link_probe "$candidate"; then
+      continue
+    fi
+    if [[ "$require_swift" == true ]] && ! SDKROOT="$sdk" macos_swift_probe "$candidate"; then
+      continue
+    fi
+    export SDKROOT="$sdk"
+    printf 'The default macOS SDK is newer than this %s; using %s\n' "$reason" "$SDKROOT" >&2
+    return 0
+  done < <(macos_list_installed_sdks)
+  return 1
+}
+
 macos_check_toolchain() {
+  mkdir -p "$PWD/_output"
   local probe
   probe="$(mktemp -d "$PWD/_output/toolchain-check.XXXXXX")"
   # cgo links against the default SDK. Command Line Tools can install an SDK
-  # newer than their clang understands (tapi: unknown architecture arm64e.x1).
+  # newer than their clang understands (tapi: unknown architecture arm64e.x1) or
+  # newer than their swiftc can import (this SDK is not supported by the compiler).
   if ! macos_link_probe "$probe"; then
     if [[ -z "${SDKROOT:-}" ]] && grep -q 'unknown architecture' "$probe/probe.log"; then
-      local sdk developer
-      developer="$(xcode-select -p 2>/dev/null || true)"
-      while IFS= read -r sdk; do
-        if SDKROOT="$sdk" macos_link_probe "$probe"; then
-          export SDKROOT="$sdk"
-          printf 'The default macOS SDK is newer than this clang; using %s\n' "$SDKROOT" >&2
-          break
-        fi
-      done < <(for root in "$developer/SDKs" "$developer/Platforms/MacOSX.platform/Developer/SDKs" /Library/Developer/CommandLineTools/SDKs; do
-        [[ -d "$root" ]] || continue
-        find "$root" -maxdepth 1 -name 'MacOSX[0-9]*.sdk' -type d | while IFS= read -r path; do
-          name="${path##*/MacOSX}"
-          printf '%s\t%s\n' "${name%.sdk}" "$path"
-        done
-      done | sort -V -r | cut -f 2)
+      if macos_select_compatible_sdk "$probe" clang true; then
+        rm -rf "$probe"
+        return 0
+      fi
+      # No installed SDK passed both clang and swiftc; if one can still link C,
+      # select it so the Swift probe below reports the real Swift failure.
+      macos_select_compatible_sdk "$probe" clang false || true
     fi
     if [[ -z "${SDKROOT:-}" ]] || ! macos_link_probe "$probe"; then
       cat "$probe/probe.log" >&2
@@ -78,11 +124,18 @@ macos_check_toolchain() {
       exit 1
     fi
   fi
-  printf 'import Cocoa\n' > "$probe/probe.swift"
-  if ! xcrun swiftc ${swift_flags[@]+"${swift_flags[@]}"} -typecheck "$probe/probe.swift" 2> "$probe/swift.log"; then
+  if ! macos_swift_probe "$probe"; then
+    if [[ -z "${SDKROOT:-}" ]] && macos_swift_sdk_mismatch "$probe/swift.log"; then
+      if macos_select_compatible_sdk "$probe" swiftc true; then
+        rm -rf "$probe"
+        return 0
+      fi
+    fi
     cat "$probe/swift.log" >&2
     if grep -q "redefinition of module 'SwiftBridging'" "$probe/swift.log"; then
       echo 'The Command Line Tools contain leftover module maps from an older version (both usr/include/swift/module.modulemap and bridging.modulemap define SwiftBridging). Reinstall the Command Line Tools, or select Xcode with xcode-select, then retry.' >&2
+    elif macos_swift_sdk_mismatch "$probe/swift.log"; then
+      echo 'The selected macOS SDK is newer than xcrun swiftc. Update Xcode or the Command Line Tools, or set SDKROOT to an older installed SDK that matches this swiftc (check xcrun --show-sdk-path and the SDKs directory).' >&2
     else
       echo 'xcrun swiftc cannot import Cocoa. Check xcode-select -p and the installed Xcode or Command Line Tools.' >&2
     fi

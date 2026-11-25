@@ -59,12 +59,12 @@ func storageRecoveryRoute(r *http.Request) bool {
 		return true
 	}
 	switch path {
-	case "/api/account", "/api/session", "/api/launch", "/api/handoff", "/api/remote/manifest", "/api/environment/storage/recover":
+	case "/api/account", "/api/session", "/api/launch", "/api/handoff", "/api/remote/manifest", "/api/environment/storage/recover", "/api/environment/device-reset/preview", "/api/environment/device-reset/execute":
 		return true
 	}
 	if r.Method == http.MethodGet {
 		switch path {
-		case "/api/status", "/api/settings", "/api/appearance", "/api/favorites", "/api/proxy", "/api/agent/routes", "/api/environment/storage", "/api/environment/initialization":
+		case "/api/status", "/api/settings", "/api/appearance", "/api/favorites", "/api/proxy", "/api/agent/routes", "/api/environment/storage", "/api/environment/initialization", "/api/environment/device-reset":
 			return true
 		}
 	}

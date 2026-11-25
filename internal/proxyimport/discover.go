@@ -59,9 +59,14 @@ const (
 	// Nyanpasu is Clash Nyanpasu. Its runtime file moved between releases and
 	// its root config files may hold only app or core settings.
 	Nyanpasu
+	// SakuraCat stores config.json and offline_cache.json in a private encoded
+	// format, so the directory only yields a migration notice.
+	SakuraCat
 )
 
 const encryptedConfigError = "配置文件使用 age 加密，Cage 不会解密私有配置，无法直接导入。请从原客户端或服务商导出明文 Clash/Mihomo YAML 后通过“添加来源”导入，或手动添加节点"
+
+const sakuraCatConfigError = "SakuraCat 的配置使用私有格式保存，Cage 不会读取或解密，也不能把它的本机代理端口当作节点。请通过 SakuraCat 支持的导出入口或服务商用户中心取得个人 Clash/Mihomo 订阅、YAML 或节点分享链接，再通过“添加来源”导入"
 
 type Location struct {
 	Client, Directory string
@@ -134,6 +139,7 @@ func Locations(platform, home, dataHome, configHome string) []Location {
 			Location{"FlClash", filepath.Join(dataHome, "com.follow", "clash"), Plain, ""},
 			Location{"FlClash", filepath.Join(dataHome, "com.follow", "clash", "profiles"), Plain, ""},
 			Location{"FlClash for oixCloud", filepath.Join(dataHome, "com.oixcloud", "FlClash"), OixCloud, ""},
+			Location{"SakuraCat", filepath.Join(dataHome, "SakuraCat", "SakuraCat"), SakuraCat, ""},
 			Location{"Clash / Mihomo", filepath.Join(home, ".config", "clash"), Plain, ""},
 			Location{"Clash Verge", filepath.Join(home, ".config", "clash-verge"), Verge, ""},
 			Location{"ShadowsocksR", filepath.Join(dataHome, "ShadowsocksR"), Plain, ""})
@@ -220,6 +226,26 @@ func Scan(locations []Location, key []byte) []Config {
 			}
 		}
 		switch loc.Layout {
+		case SakuraCat:
+			// A future plain Clash/Mihomo config.json stays importable; anything
+			// else is reported once without echoing file names or content.
+			c, ok, _ := build("config.json", "", "当前生效配置", "", true)
+			if ok && c.Error == "" {
+				out = append(out, c)
+				continue
+			}
+			var present []string
+			for _, file := range []string{"config.json", "offline_cache.json"} {
+				if info, err := os.Lstat(filepath.Join(root, file)); err == nil && info.Mode().IsRegular() {
+					present = append(present, file)
+				}
+			}
+			if len(present) == 0 {
+				continue
+			}
+			notice := Config{Client: loc.Client, Name: "私有格式配置", Error: sakuraCatConfigError}
+			signConfig(&notice, root, key, present...)
+			out = append(out, notice)
 		case OixCloud:
 			var encryptedFiles []string
 			var fallbackErrors []Config

@@ -338,3 +338,26 @@ func TestParseDraftManifestRejectsUnknownFields(t *testing.T) {
 		t.Fatal("expected unknown field 'engines' to be rejected in neutral extension.json")
 	}
 }
+
+func TestTranslateDraftManifestEngineFollowsViewPresentation(t *testing.T) {
+	parse := func(view string) DraftManifest {
+		draft, err := ParseDraftManifest([]byte(`{"name":"hud","version":"1","description":"A view.","target":"workspace","contributes":{"views":[` + view + `]}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return draft
+	}
+	page, _, err := TranslateDraftManifest(parse(`{"id":"hud","title":"HUD","entry":"view/index.html"}`), "", "")
+	if err != nil || page.Engines.Cage != DefaultDraftEngineRange {
+		t.Fatalf("page draft: %+v %v", page.Engines, err)
+	}
+	// 0.2.0 does not read view presentation, so a floating draft must not
+	// claim to run there.
+	floating, _, err := TranslateDraftManifest(parse(`{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating","width":312}`), "", "")
+	if err != nil || floating.Engines.Cage != ">=0.2.1" {
+		t.Fatalf("floating draft: %+v %v", floating.Engines, err)
+	}
+	if _, _, err := TranslateDraftManifest(parse(`{"id":"hud","title":"HUD","entry":"view/index.html","presentation":"floating"}`), "", ">=0.2.0"); err == nil {
+		t.Fatal("an explicit older engine range accepted a floating view")
+	}
+}

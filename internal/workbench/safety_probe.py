@@ -92,7 +92,16 @@ def probe(path):
         with opener.open(request, timeout=16) as response:
             return {"status": response.status, **json.loads(response.read(4096))}
     except urllib.error.HTTPError as error:
-        return {"status": error.code}
+        body = {}
+        try:
+            parsed = json.loads(error.read(4096))
+            if isinstance(parsed, dict):
+                for key in ("error", "reason"):
+                    if isinstance(parsed.get(key), str):
+                        body[key] = parsed[key]
+        except (OSError, ValueError):
+            pass
+        return {"status": error.code, **body}
     except (OSError, ValueError):
         return {"status": 0}
 

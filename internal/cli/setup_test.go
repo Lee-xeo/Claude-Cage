@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	agentvm "github.com/sylvinus/agent-vm"
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/state"
 	"github.com/sylvinus/agent-vm/internal/vm"
@@ -44,6 +45,31 @@ func (te *testEnv) setupBase(args []string) int {
 	skipPrereqs = true
 	defer func() { skipPrereqs = saved }()
 	return te.main(context.Background(), args)
+}
+
+func TestSetupRejectsLimaSocketPathBeforeBuilding(t *testing.T) {
+	stateDir := t.TempDir()
+	home := filepath.Join(stateDir, strings.Repeat("private-path-", 9))
+	t.Setenv("AGENT_VM_STATE_DIR", stateDir)
+	t.Setenv("AGENT_VM_LIMA_HOME", home)
+	t.Setenv("LIMA_HOME", "")
+	t.Setenv("CAGE_LOGICAL_LIMA_HOME", "")
+	t.Setenv(cage.ConfigEnv, filepath.Join(stateDir, "config.json"))
+	saved := skipPrereqs
+	skipPrereqs = true
+	t.Cleanup(func() { skipPrereqs = saved })
+
+	got := run(t, "setup", "--preinstall=none")
+	if got.Code != 1 || !strings.Contains(got.Stderr, cage.LimaSocketPathReason) ||
+		!strings.Contains(got.Stderr, "更短的本地目录") || strings.Contains(got.Stderr, stateDir) ||
+		strings.Contains(got.Stdout, "Creating base VM") {
+		t.Fatalf("setup should refuse the path before creating a VM: %+v", got)
+	}
+	for _, path := range []string{home, filepath.Join(stateDir, "logs")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("setup created Lima or setup state before preflight: %v", err)
+		}
+	}
 }
 
 func exportsOf(t *testing.T, stdin []string) map[string]string {
@@ -343,5 +369,41 @@ func TestCageSetupResumesExistingBuild(t *testing.T) {
 	log := te.fake.CallLog()
 	if strings.Contains(log, "create base-building") || !strings.Contains(log, "clone base-building base") {
 		t.Fatalf("partial build was recreated instead of resumed: %s", log)
+	}
+}
+
+func TestSetupCleansPartialReadOnlyBuildState(t *testing.T) {
+	te := newTestEnv(t, vmtest.New())
+	host.CPUs = func() int { return 64 }
+	host.MemGiB = func() int { return 256 }
+
+	for _, name := range []string{building, vmname.Template} {
+		partial := filepath.Join(LimaHome(te.state), name)
+		nested := filepath.Join(partial, "nested")
+		if err := os.MkdirAll(nested, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(partial, "cloud-config.yaml"), []byte("#cloud-config\n"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(nested, "lima-version"), []byte("2.0.0"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(nested, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = host.RemoveAllWritable(partial) })
+	}
+
+	if code := te.setupBase([]string{"setup", "--preinstall=none"}); code != 0 {
+		t.Fatalf("setup failed to clean read-only partial VM state (%d): %s", code, te.out())
+	}
+	if !strings.Contains(te.out(), "Detected partial VM state") {
+		t.Fatalf("expected partial VM state cleanup log, got: %s", te.out())
+	}
+	for _, name := range []string{building, vmname.Template} {
+		if _, err := os.Lstat(filepath.Join(LimaHome(te.state), name)); !os.IsNotExist(err) {
+			t.Fatalf("partial directory %s still exists: %v", name, err)
+		}
 	}
 }

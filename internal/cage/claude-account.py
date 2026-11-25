@@ -63,6 +63,10 @@ class SubscriptionStatusTimeout(SubscriptionStatusError):
     pass
 
 
+class ClaudeCLINotInstalled(ValueError):
+    pass
+
+
 def profile(account_id):
     if account_id != DEFAULT and not re.fullmatch("[0-9a-f]{24}", account_id):
         raise ValueError("invalid account ID")
@@ -2601,7 +2605,7 @@ def main(args, *, mobile_settings_fd=None, verify_mobile=None):
             raise ValueError("not the default subscription configuration")
     binary = os.environ.get("CAGE_CLI_BINARY") if os.name == "nt" else shutil.which("claude", path=env["PATH"])
     if not binary:
-        raise ValueError("Claude is not installed")
+        raise ClaudeCLINotInstalled("Claude is not installed")
     if mode == "archive-login":
         # Only authentication follows a user who signs into a different account.
         if len(rest) != 2 or base.name == DEFAULT or base.name == rest[0]:
@@ -2766,6 +2770,8 @@ def entrypoint(args):
         print("读取 Claude 订阅状态超时，请稍后重试；现有登录信息已保留。", file=sys.stderr)
     except SubscriptionStatusError:
         print("无法读取 Claude 订阅状态，请确认官方 CLI 可正常运行后重试；现有登录信息已保留。", file=sys.stderr)
+    except ClaudeCLINotInstalled:
+        print("未找到官方 Claude Code CLI，请先在环境中安装后重试。", file=sys.stderr)
     except _runtime["RuntimePathConflict"]:
         print("终端运行路径发生冲突，原数据已保留，请同步环境组件后重试。", file=sys.stderr)
     except (OSError, ValueError, subprocess.SubprocessError, TypeError):

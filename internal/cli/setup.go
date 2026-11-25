@@ -242,7 +242,7 @@ func (e *app) swapBase(ctx context.Context, b vm.Backend) bool {
 	defer unlock()
 	if d := filepath.Join(LimaHome(e.state), vmname.Template); isDirNoYAML(d) {
 		fmt.Fprintf(w, "Detected partial VM state at %s (no lima.yaml): cleaning up.\n", d)
-		if err := os.RemoveAll(d); err != nil {
+		if err := host.RemoveAllWritable(d); err != nil {
 			fmt.Fprintf(w, "Error: could not remove %s: %v\n", d, err)
 			return false
 		}
@@ -385,7 +385,7 @@ func (e *app) askCodeExtensions(in install) {
 
 // building is the VM the new base is built as. The base that is there keeps
 // serving the starts, with its markers, until the new one is complete.
-const building = vmname.Template + "-building"
+const building = vmname.Building
 
 // buildBase makes the base template: built as `building` (created, booted,
 // provisioned by the setup script and the user's, stopped), then swapped in
@@ -396,6 +396,18 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 	if err != nil {
 		fmt.Fprintf(e.io.Stderr, "Error: %v\n", err)
 		return 1
+	}
+	if lima, ok := b.(*vm.Lima); ok {
+		names := []string{building, vmname.Template}
+		if e.cageProfile != "" {
+			names = append(names, cage.InstanceName(e.cageProfile, cage.EnvironmentDir(e.cageProfile)))
+		}
+		for _, name := range names {
+			if err := lima.ValidateName(name); err != nil {
+				fmt.Fprintf(e.io.Stderr, "Error: %s\n", diagnostics.Redact(err.Error()))
+				return 1
+			}
+		}
 	}
 	// One setup at a time: two would build in the same VM.
 	unlockSetup, err := e.lockVM(ctx, vmname.Template+"-setup")
@@ -415,7 +427,7 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 	// A build an earlier setup left, finished or not, is not this one's.
 	if d := filepath.Join(LimaHome(e.state), building); isDirNoYAML(d) {
 		fmt.Fprintf(e.io.Stderr, "Detected partial VM state at %s (no lima.yaml): cleaning up.\n", d)
-		if err := os.RemoveAll(d); err != nil {
+		if err := host.RemoveAllWritable(d); err != nil {
 			fmt.Fprintf(e.io.Stderr, "Error: could not remove %s: %v\n", d, err)
 			return 1
 		}

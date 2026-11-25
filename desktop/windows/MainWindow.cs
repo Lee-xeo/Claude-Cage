@@ -17,7 +17,7 @@ internal sealed class MainWindow : Form
     private readonly NotifyIcon tray;
     private readonly AppUpdater updater;
     private int expectedPort;
-    private bool controllerNeedsUpdate, allowQuit, bootstrapping, webFailed;
+    private bool controllerNeedsUpdate, allowQuit, bootstrapping, initializing, webFailed, quitProbeInFlight;
     private bool completingSmoke;
     // Bridge requests still running on the UI thread, such as refreshSession's "desktop".
     private int nativeRequests;
@@ -53,12 +53,13 @@ internal sealed class MainWindow : Form
         };
         var trayMenu = new TrayMenu();
         AddTrayItem("打开 Cage", TrayIconKind.Open, (_, _) => RestoreWindow());
+        AddTrayItem("重新加载界面", TrayIconKind.CheckUpdates, async (_, _) => await ReloadWorkbench());
         AddTrayItem("检查应用更新…", TrayIconKind.CheckUpdates, (_, _) => updater!.Handle("check"));
         AddTrayItem("关于 Cage", TrayIconKind.About, (_, _) => MessageBox.Show(this,
             $"Cage {AppUpdater.Version}\n" + InterfaceLanguage.Text("本机隔离编码工作区"),
             InterfaceLanguage.Text("关于 Cage")));
         trayMenu.Items.Add(new ToolStripSeparator());
-        AddTrayItem("退出 Cage…", TrayIconKind.Quit, (_, _) => RequestQuit(), destructive: true);
+        AddTrayItem("退出 Cage…", TrayIconKind.Quit, async (_, _) => await RequestQuit(), destructive: true);
         trayMenu.Opening += (_, _) => {
             foreach (ToolStripItem item in trayMenu.Items)
                 if (item.Tag is TrayItemMetadata meta) item.Text = InterfaceLanguage.Text(meta.SourceKey);
@@ -166,11 +167,49 @@ internal sealed class MainWindow : Form
         InterfaceLanguage.Text("保存并停止环境后安装重启"), MessageBoxButtons.OKCancel, MessageBoxIcon.Information) == DialogResult.OK;
 
     public void RestoreWindow() { Show(); if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal; Activate(); PublishVisibility(); }
-    private void RequestQuit()
+    private async Task ReloadWorkbench()
     {
         RestoreWindow();
-        if (web.Visible) Action("quit");
-        else { allowQuit = true; Close(); }
+        if (initializing || bootstrapping) return;
+        _ = Backend.Report("Reloading workbench WebView");
+        if (controllerNeedsUpdate) await Initialize(true, "--existing");
+        else await Initialize(true);
+    }
+    private async Task RequestQuit()
+    {
+        RestoreWindow();
+        if (!web.Visible || web.IsDisposed || web.CoreWebView2 == null || webFailed)
+        {
+            allowQuit = true; Close(); return;
+        }
+        if (quitProbeInFlight) return;
+        quitProbeInFlight = true;
+        var probedWeb = web;
+        try
+        {
+            var probe = probedWeb.ExecuteScriptAsync("typeof window.cageNativeAction === 'function' ? (window.cageNativeAction('quit'), true) : false");
+            _ = probe.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+            var completed = await Task.WhenAny(probe, Task.Delay(TimeSpan.FromMilliseconds(1500), lifetime.Token));
+            if (allowQuit || IsDisposed || !ReferenceEquals(web, probedWeb)) return;
+            if (completed == probe)
+            {
+                var result = await probe;
+                if (result == "true") return;
+                _ = Backend.Report("Workbench quit handoff returned " + result + "; closing desktop window");
+            }
+            else
+            {
+                _ = Backend.Report("Workbench did not respond to quit request within 1.5s; closing desktop window");
+            }
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.Runtime.InteropServices.COMException or OperationCanceledException)
+        {
+            if (allowQuit || IsDisposed || !ReferenceEquals(web, probedWeb)) return;
+            _ = Backend.Report("Workbench quit handoff failed: " + error.Message);
+        }
+        finally { quitProbeInFlight = false; }
+        allowQuit = true;
+        Close();
     }
     private void Action(string name) => Script("window.cageNativeAction?.(" + JsonSerializer.Serialize(name) + ")");
     private void PublishFocus(bool focused) => Script($"window.cageWindowFocused = {(focused ? "true" : "false")}; window.dispatchEvent(new Event('cage-window-focus'));");
@@ -197,14 +236,19 @@ internal sealed class MainWindow : Form
         message.Text = text; status.Show(); status.BringToFront(); retry.Show(); web.Hide();
     }
 
-    private async Task Initialize(bool recreate = false)
+    private async Task Initialize(bool recreate = false, params string[] bootstrapOptions)
     {
+        if (initializing) return;
+        initializing = true;
         smokePhase = "initializing_webview";
         retry.Enabled = false;
         try
         {
             if (recreate)
             {
+                message.Text = InterfaceLanguage.Text("正在启动 Cage 工作台…");
+                status.Show(); status.BringToFront();
+                retry.Hide(); existing.Hide(); complete.Hide();
                 Controls.Remove(web); web.Dispose();
                 web = new WebView2 { Dock = DockStyle.Fill, Visible = false };
                 Controls.Add(web); status.BringToFront();
@@ -230,6 +274,7 @@ internal sealed class MainWindow : Form
             core.ProcessFailed += (_, _) => { webFailed = true; Error(InterfaceLanguage.Text("工作台显示进程已退出。后台任务保留，可重试连接。")); };
             core.NavigationCompleted += (_, e) => {
                 if (!e.IsSuccess) {
+                    if (e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled) return;
                     Error(e.WebErrorStatus.ToString() switch {
                         "Timeout" => InterfaceLanguage.Text("打开工作台失败：等待本机后台响应超时。请点击“重试连接”；仍失败时请保留此错误提示并反馈给维护者。后台任务不会因此自动结束。"),
                         "CannotConnect" => InterfaceLanguage.Text("打开工作台失败：本机后台没有接受连接，可能尚未启动或已经退出。请点击“重试连接”；仍失败时请保留此错误提示并反馈给维护者。后台任务不会因此自动结束。"),
@@ -242,7 +287,7 @@ internal sealed class MainWindow : Form
             await core.AddScriptToExecuteOnDocumentCreatedAsync(BridgeScript);
             if (Program.SmokeOutput != null) await core.AddScriptToExecuteOnDocumentCreatedAsync(SmokeDiagnosticsScript);
             webFailed = false;
-            await Bootstrap();
+            await Bootstrap(bootstrapOptions);
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -250,7 +295,7 @@ internal sealed class MainWindow : Form
             webFailed = true;
         }
         catch (Exception error) { webFailed = true; Error(InterfaceLanguage.Format("无法初始化工作台：{0}", error.Message)); }
-        finally { retry.Enabled = true; }
+        finally { initializing = false; retry.Enabled = true; }
     }
 
     private async Task SmokeDeadline()

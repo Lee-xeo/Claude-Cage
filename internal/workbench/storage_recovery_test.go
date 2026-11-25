@@ -348,3 +348,76 @@ func TestStorageRecoveryProductionStartupKeepsLoginAndDiagnostics(t *testing.T) 
 		t.Fatal("pending startup wrote environment data", err)
 	}
 }
+
+func TestStorageRecoveryAllowsLocalRebuildAndBlocksQuickReset(t *testing.T) {
+	s := storageRecoveryServer(t)
+	journal := storageRecoveryJournal(t, s)
+	s.failStorageRecovery(errors.New("synthetic corrupted storage path"))
+
+	// Host-only read & preview endpoints stay available during storage recovery.
+	if w := desktopRequestForTest(s, http.MethodGet, "/api/environment/device-reset", nil); w.Code != http.StatusOK {
+		t.Fatalf("GET device-reset during recovery returned %d: %s", w.Code, w.Body.String())
+	}
+	if w := desktopRequestForTest(s, http.MethodPost, "/api/environment/device-reset/preview", []byte(`{}`)); w.Code != http.StatusOK {
+		t.Fatalf("POST device-reset/preview during recovery returned %d: %s", w.Code, w.Body.String())
+	}
+	// Quick reset, archive restore, and archive delete remain blocked during storage recovery.
+	if w := desktopRequestForTest(s, http.MethodPost, "/api/environment/device-reset/execute", []byte(`{"mode":"quick","items":[]}`)); w.Code != http.StatusConflict {
+		t.Fatalf("quick reset during recovery should be 409, got %d: %s", w.Code, w.Body.String())
+	}
+	for _, blocked := range []string{"/api/environment/device-reset/restore", "/api/environment/device-reset/delete-archive"} {
+		if w := desktopRequestForTest(s, http.MethodPost, blocked, []byte(`{"kind":"archive","id":"deadbeef1234"}`)); w.Code != http.StatusConflict {
+			t.Fatalf("%s during recovery should be 409, got %d: %s", blocked, w.Code, w.Body.String())
+		}
+	}
+	// Untrusted request cannot trigger rebuild during recovery.
+	if w := request(s, http.MethodPost, "/api/environment/device-reset/execute", s.origin, `{"mode":"rebuild","items":[]}`, true); w.Code != http.StatusForbidden {
+		t.Fatalf("untrusted rebuild during recovery should be 403, got %d", w.Code)
+	}
+
+	// Confirmed local rebuild detaches the broken journal (preserving it in archive),
+	// clears storage recovery, and invokes startEnv with storage healthy.
+	stopCalled := false
+	startCalled := false
+	s.deviceReset = deviceResetHooks{
+		stopEnv: func() error {
+			stopCalled = true
+			return nil
+		},
+		startEnv: func(bool) error {
+			if s.storageRecoveryStatus().Required {
+				return errors.New("storage recovery was still active when startEnv ran")
+			}
+			startCalled = true
+			return nil
+		},
+	}
+
+	w := desktopRequestForTest(s, http.MethodPost, "/api/environment/device-reset/execute", []byte(`{"mode":"rebuild","items":[]}`))
+	if w.Code != http.StatusOK {
+		t.Fatalf("rebuild during storage recovery returned %d: %s", w.Code, w.Body.String())
+	}
+	job := waitDeviceResetJob(t, s)
+	if job.Error != "" {
+		t.Fatalf("rebuild job failed: %+v", job)
+	}
+	if stopCalled {
+		t.Fatal("stopEnv should not run when VM is not running during storage recovery")
+	}
+	if !startCalled {
+		t.Fatal("startEnv was not invoked during recovery rebuild")
+	}
+	if s.storageRecoveryStatus().Required {
+		t.Fatalf("storage recovery remained required after rebuild: %+v", s.storageRecoveryStatus())
+	}
+	if _, err := os.Stat(journal); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pending journal remained at profile root: %v", err)
+	}
+	archives, err := filepath.Glob(filepath.Join(s.profile, "storage-recovery-archive-*", "environment-storage-pending.json"))
+	if err != nil || len(archives) != 1 {
+		t.Fatalf("expected archived pending journal, got %v (%v)", archives, err)
+	}
+	if w := desktopRequestForTest(s, http.MethodGet, "/api/environment/storage", nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"directory"`) {
+		t.Fatalf("storage endpoint did not recover after rebuild: %d %s", w.Code, w.Body.String())
+	}
+}

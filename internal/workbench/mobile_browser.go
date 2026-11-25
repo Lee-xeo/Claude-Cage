@@ -3,8 +3,6 @@ package workbench
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -40,11 +38,21 @@ func (p *mobilePairing) surface(kind phoneSurface) *phoneSurfaceState {
 	if kind == phoneDesktop {
 		return &p.desktop
 	}
-	return &p.browser
+	if len(p.slots) > 0 {
+		return &p.slots[0].browser
+	}
+	return &phoneSurfaceState{}
+}
+
+func (p *mobilePairing) surfaceForSlot(kind phoneSurface, slot *phoneSlot) *phoneSurfaceState {
+	if kind == phoneDesktop {
+		return &p.desktop
+	}
+	return &slot.browser
 }
 
 func (p *mobilePairing) pairedRequestLocked(r *http.Request) bool {
-	return p.roomCtx != nil && p.roomCtx.Err() == nil && p.roomProof != "" && equalSecret(p.roomProof, r.Header.Get(mobilelink.PhoneRoomHeader))
+	return p.matchPhoneLocked(r) != nil
 }
 
 func (s *Server) mobileSurfaceRoutes(mux routeRegistrar) {
@@ -64,11 +72,10 @@ func (s *Server) mobileSurfaceRoutes(mux routeRegistrar) {
 
 // Keep the private guest profile stable across reconnects to the same enrollment.
 func (p *mobilePairing) peerLocked() string {
-	if p.record == nil {
+	if len(p.slots) == 0 {
 		return ""
 	}
-	digest := sha256.Sum256(p.record.Seed)
-	return hex.EncodeToString(digest[:])
+	return p.slots[0].peer()
 }
 
 type phoneSurfaceSession struct {
@@ -178,8 +185,11 @@ func (s *Server) phoneSurfaceNetwork(ctx context.Context) bool {
 // Caller holds this surface’s operation lock. Closing only this ID lets later opens safely use a
 // fresh session after a lock, disconnected phone, failed open or revocation.
 func (s *Server) retirePhoneSurface(surface phoneSurface, b *phoneSurfaceSession) {
-	state := s.phones.surface(surface)
-	if b == nil || state.session != b {
+	s.retirePhoneSurfaceState(s.phones.surface(surface), surface, b)
+}
+
+func (s *Server) retirePhoneSurfaceState(state *phoneSurfaceState, surface phoneSurface, b *phoneSurfaceSession) {
+	if state == nil || b == nil || state.session != b {
 		return
 	}
 	state.session = nil
@@ -225,11 +235,17 @@ func (s *Server) phoneSurfaceGuest(ctx context.Context, surface phoneSurface, to
 func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter, r *http.Request) {
 	p := &s.phones
 	p.mu.Lock()
-	state := p.surface(surface)
-	room, profile := p.roomCtx, p.peerLocked()
-	allowed := p.pairedRequestLocked(r)
+	slot := p.matchPhoneLocked(r)
+	var state *phoneSurfaceState
+	var room context.Context
+	var profile string
+	if slot != nil {
+		state = p.surfaceForSlot(surface, slot)
+		room = slot.roomCtx
+		profile = slot.peer()
+	}
 	p.mu.Unlock()
-	if !allowed {
+	if slot == nil {
 		http.Error(w, "请通过电脑 Cage 的二维码或配对码连接这台主机，再打开"+surface.label()+"。", 403)
 		return
 	}
@@ -244,7 +260,7 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 		return
 	}
 	if input.After != "" || input.Profile != "" || (op != "open" && input.ID != "") ||
-		(input.ReturnFrame && (surface != phoneBrowser || op != "action")) {
+		(input.ReturnFrame && op != "action") {
 		http.Error(w, "图形会话请求无效", 400)
 		return
 	}
@@ -286,7 +302,7 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 	}
 	b := state.session
 	if b != nil && (b.ctx.Err() != nil || op == "open" && b.id != input.ID) {
-		s.retirePhoneSurface(surface, b)
+		s.retirePhoneSurfaceState(state, surface, b)
 		b = nil
 	}
 	if op != "open" && (b == nil || b.id != input.ID) {
@@ -294,12 +310,12 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 		return
 	}
 	if op == "close" {
-		s.retirePhoneSurface(surface, b)
+		s.retirePhoneSurfaceState(state, surface, b)
 		jsonReply(w, map[string]string{"id": input.ID})
 		return
 	}
 	if !s.phoneSurfaceNetwork(r.Context()) {
-		s.retirePhoneSurface(surface, b)
+		s.retirePhoneSurfaceState(state, surface, b)
 		http.Error(w, "请在电脑启动 Cage，并确保网络检查已放行。", 409)
 		return
 	}
@@ -320,13 +336,13 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 		if surface == phoneDesktop {
 			release, err := s.acquireDesktopView()
 			if err != nil {
-				s.retirePhoneSurface(surface, b)
+				s.retirePhoneSurfaceState(state, surface, b)
 				http.Error(w, "无法恢复 Claude Desktop 画面，请重新打开", http.StatusBadGateway)
 				return
 			}
 			b.releaseDisplay = release
 		}
-		context.AfterFunc(sessionCtx, func() { state.op.Lock(); defer state.op.Unlock(); s.retirePhoneSurface(surface, b) })
+		context.AfterFunc(sessionCtx, func() { state.op.Lock(); defer state.op.Unlock(); s.retirePhoneSurfaceState(state, surface, b) })
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	stop := context.AfterFunc(b.ctx, cancel)
@@ -334,7 +350,7 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 	if b.startJob != "" || b.openInput.ID != "" {
 		job := s.jobs.snapshot()
 		if b.startJob != "" && job.ID == b.startJob && !job.Running && job.Error != "" {
-			s.retirePhoneSurface(surface, b)
+			s.retirePhoneSurfaceState(state, surface, b)
 			http.Error(w, "电脑上的 Claude Desktop 未能启动，请在电脑上查看操作详情", 502)
 			return
 		}
@@ -348,7 +364,7 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 				http.Error(w, "正在打开 Claude Desktop", http.StatusTooEarly)
 				return
 			}
-			s.retirePhoneSurface(surface, b)
+			s.retirePhoneSurfaceState(state, surface, b)
 			http.Error(w, "无法连接电脑上的 Claude Desktop，请重新打开", 502)
 			return
 		}
@@ -363,13 +379,13 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 		out, status, err = s.phoneSurfaceGuest(ctx, surface, b.token, op, input)
 	}
 	if b.ctx.Err() != nil || epoch.Err() != nil || room.Err() != nil {
-		s.retirePhoneSurface(surface, b)
+		s.retirePhoneSurfaceState(state, surface, b)
 		http.Error(w, surface.label()+"授权已结束", 410)
 		return
 	}
 	if r.Context().Err() != nil {
 		if op == "open" {
-			s.retirePhoneSurface(surface, b)
+			s.retirePhoneSurfaceState(state, surface, b)
 		}
 		return
 	}
@@ -380,7 +396,7 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 			job, err = s.submitJob("claude-desktop-start", s.startClaudeDesktop)
 		}
 		if err != nil {
-			s.retirePhoneSurface(surface, b)
+			s.retirePhoneSurfaceState(state, surface, b)
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
@@ -400,20 +416,20 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 		}
 	}
 	if (op == "frame" || input.ReturnFrame) && status == 200 && !s.phoneSurfaceNetwork(ctx) {
-		s.retirePhoneSurface(surface, b)
+		s.retirePhoneSurfaceState(state, surface, b)
 		http.Error(w, "电脑上的 Cage 网络检查已暂停", 409)
 		return
 	}
 	if err != nil || status != 200 {
 		if op == "open" || status == 410 || status == 404 {
-			s.retirePhoneSurface(surface, b)
+			s.retirePhoneSurfaceState(state, surface, b)
 		}
 		if surface == phoneBrowser && status == http.StatusTooEarly {
 			http.Error(w, "正在启动客机浏览器", status)
 			return
 		}
 		if surface == phoneBrowser && (op == "open" || op == "frame") && status == http.StatusServiceUnavailable {
-			s.retirePhoneSurface(surface, b)
+			s.retirePhoneSurfaceState(state, surface, b)
 			http.Error(w, "客机浏览器暂时无法启动，请稍后重新打开；若仍失败，请在电脑 Cage 中检查并更新客机组件。", status)
 			return
 		}
@@ -478,13 +494,23 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 		out = append(out, `"action_frame":true}`...)
 	}
 	defer interruptHTTPOnCancel(w, r.WithContext(ctx))()
-	if surface == phoneDesktop && op == "frame" {
+	if surface == phoneDesktop && (op == "frame" || (op == "action" && input.ReturnFrame)) {
 		var frame map[string]json.RawMessage
-		if json.Unmarshal(out, &frame) == nil && string(frame["pixel_ratio_control"]) == "true" {
-			// Both this host and the guest understand pixel_ratio. Older hosts
-			// must keep receiving the original request shape from new clients.
-			frame["pixel_ratio_supported"] = json.RawMessage("true")
-			out, _ = json.Marshal(frame)
+		if json.Unmarshal(out, &frame) == nil {
+			changed := false
+			if string(frame["pixel_ratio_control"]) == "true" {
+				// Both this host and the guest understand pixel_ratio. Older hosts
+				// must keep receiving the original request shape from new clients.
+				frame["pixel_ratio_supported"] = json.RawMessage("true")
+				changed = true
+			}
+			if string(frame["action_frame_control"]) == "true" {
+				frame["action_frame"] = json.RawMessage("true")
+				changed = true
+			}
+			if changed {
+				out, _ = json.Marshal(frame)
+			}
 		}
 	}
 	if (op == "frame" || input.ReturnFrame) && len(out) > 3<<20 {
@@ -512,10 +538,15 @@ type phoneHistoryRequest struct {
 
 func (s *Server) servePhoneHistory(w http.ResponseWriter, r *http.Request) {
 	s.phones.mu.Lock()
-	room, profile := s.phones.roomCtx, s.phones.peerLocked()
-	allowed := s.phones.pairedRequestLocked(r)
+	slot := s.phones.matchPhoneLocked(r)
+	var room context.Context
+	var profile string
+	if slot != nil {
+		room = slot.roomCtx
+		profile = slot.peer()
+	}
 	s.phones.mu.Unlock()
-	if !allowed || profile == "" {
+	if slot == nil || profile == "" {
 		http.Error(w, "请通过电脑 Cage 的二维码或配对码连接这台主机，再查看浏览历史。", http.StatusForbidden)
 		return
 	}

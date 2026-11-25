@@ -352,6 +352,79 @@ func TestScanFlClashForOixCloudEncryptedProfiles(t *testing.T) {
 	}
 }
 
+func TestScanWindowsSakuraCatPrivateConfig(t *testing.T) {
+	found := false
+	for _, loc := range Locations("windows", "/home/person", "", "") {
+		if loc.Client == "SakuraCat" {
+			found = loc.Layout == SakuraCat && loc.Directory == filepath.Join("/home/person", "AppData", "Roaming", "SakuraCat", "SakuraCat")
+		}
+	}
+	if !found {
+		t.Fatal("missing SakuraCat location on windows")
+	}
+	for _, platform := range []string{"darwin", "linux"} {
+		for _, loc := range Locations(platform, "/home/person", "", "") {
+			if loc.Layout == SakuraCat {
+				t.Fatal("SakuraCat location outside windows:", loc)
+			}
+		}
+	}
+
+	data := t.TempDir()
+	root := filepath.Join(data, "SakuraCat", "SakuraCat")
+	writeConfig(t, root, "config.json", "\x00\x17private-encoded-node-password\xff")
+	writeConfig(t, root, "offline_cache.json", "U2FrdXJhQ2F0LWNhY2hlLXRva2Vu")
+	writeConfig(t, root, "shared_preferences.json", `{"flutter.token":"private-preference-token"}`)
+	// Another client's readable config must stay separate and importable.
+	writeConfig(t, filepath.Join(data, "ShadowsocksR"), "config.yaml", testNode)
+	configs := Scan(Locations("windows", t.TempDir(), data, ""), []byte("session"))
+	var notice *Config
+	others := 0
+	for i, c := range configs {
+		if c.Client == "SakuraCat" {
+			if notice != nil {
+				t.Fatalf("SakuraCat reported more than once: %s", mustJSON(t, configs))
+			}
+			notice = &configs[i]
+		} else if c.Error == "" && c.Nodes == 1 {
+			others++
+		}
+	}
+	if notice == nil || others != 1 || configs[len(configs)-1].Client != "SakuraCat" {
+		t.Fatalf("unexpected scan result: %s", mustJSON(t, configs))
+	}
+	if notice.Name != "私有格式配置" || notice.Nodes != 0 || len(notice.Data) != 0 || notice.Refreshable {
+		t.Fatalf("unexpected SakuraCat notice: %s", mustJSON(t, *notice))
+	}
+	for _, want := range []string{"SakuraCat", "私有格式", "本机代理端口", "Clash/Mihomo", "添加来源"} {
+		if !strings.Contains(notice.Error, want) {
+			t.Fatalf("SakuraCat notice missing %q: %q", want, notice.Error)
+		}
+	}
+	view := mustJSON(t, configs)
+	for _, secret := range []string{root, "config.json", "offline_cache.json", "private-encoded-node-password", "U2FrdXJhQ2F0", "private-preference-token"} {
+		if strings.Contains(view, secret) {
+			t.Fatalf("display metadata leaked %q", secret)
+		}
+	}
+	locs := []Location{{"SakuraCat", root, SakuraCat, ""}}
+	id := Scan(locs, []byte("session"))[0].ID
+	if id != notice.ID || Scan(locs, []byte("other-session"))[0].ID == id {
+		t.Fatal("SakuraCat notice handle not stable per session")
+	}
+
+	plain := t.TempDir()
+	writeConfig(t, plain, "config.json", `{"proxies":[{"name":"a","type":"http","server":"192.0.2.1","port":1080}]}`)
+	if got := Scan([]Location{{"SakuraCat", plain, SakuraCat, ""}}, []byte("session")); len(got) != 1 || got[0].Error != "" || got[0].Nodes != 1 {
+		t.Fatalf("plain SakuraCat config.json not importable: %s", mustJSON(t, got))
+	}
+	empty := t.TempDir()
+	writeConfig(t, empty, "shared_preferences.json", `{}`)
+	if got := Scan([]Location{{"SakuraCat", empty, SakuraCat, ""}}, []byte("session")); len(got) != 0 {
+		t.Fatalf("SakuraCat notice without config files: %s", mustJSON(t, got))
+	}
+}
+
 func mustJSON(t *testing.T, v any) string {
 	t.Helper()
 	data, err := json.Marshal(v)

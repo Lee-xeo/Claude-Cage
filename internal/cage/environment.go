@@ -89,10 +89,9 @@ func InstanceName(profile, workspace string) string {
 	home := filepath.Join(profile, "state", "lima")
 	_, err := os.Stat(filepath.Join(profile, locationFile))
 	logical := err == nil
-	if logical {
-		if real, e := filepath.EvalSymlinks(profile); e == nil {
-			home = filepath.Join(real, "state", "lima")
-		}
+	if effective, e := ProfileLimaHome(profile, logical); e == nil {
+		home = effective
+		logical = true // The effective home is already resolved as needed.
 	}
 	dir := paths.Host(filepath.Clean(workspace))
 	expected := vmname.HomeLimit(home, logical).Name(dir)

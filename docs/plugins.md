@@ -183,9 +183,9 @@ my-plugin/
 | `icon` | 否 | 格式同顶层 `icon`。目前侧栏显示的是插件的顶层图标，这个字段为以后预留 |
 | `server` | 否 | 页面可以调用的 MCP 服务的 `id`。省略表示纯静态页面 |
 | `openUrls` | 否 | 页面可以请求打开的地址模式，见下 |
-| `presentation` | 否 | 展示方式：`page`（默认，作为独立工作区页面打开）或 `floating`（作为可拖动、可收起的半透明毛玻璃浮窗悬浮在工作台上）。需要 `engines.cage` 至少为 `0.2.0` |
-| `width` | 否 | 仅 `presentation: "floating"` 可用：浮窗初始宽度（CSS 像素，范围 `220`–`720`），需要 `engines.cage` 至少为 `0.2.0` |
-| `height` | 否 | 仅 `presentation: "floating"` 可用：浮窗内容区初始高度（CSS 像素，范围 `100`–`720`），需要 `engines.cage` 至少为 `0.2.0` |
+| `presentation` | 否 | 展示方式：`page`（默认，作为独立工作区页面打开）或 `floating`（作为可拖动、可收起的半透明毛玻璃浮窗悬浮在工作台上）。需要 `engines.cage` 至少为 `0.2.1` |
+| `width` | 否 | 仅 `presentation: "floating"` 可用：浮窗初始宽度（CSS 像素，范围 `220`–`720`），需要 `engines.cage` 至少为 `0.2.1` |
+| `height` | 否 | 仅 `presentation: "floating"` 可用：浮窗内容区初始高度（CSS 像素，范围 `100`–`720`），需要 `engines.cage` 至少为 `0.2.1` |
 
 清单里的文件路径不超过 200 个字符。
 
