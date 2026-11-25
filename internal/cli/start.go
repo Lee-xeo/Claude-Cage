@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -640,8 +641,10 @@ func isDirNoYAML(d string) bool {
 	if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
 		return false
 	}
+	// Only a definite absence is partial state; a permission or I/O error says
+	// nothing about the disk the folder holds.
 	_, err := os.Stat(filepath.Join(d, "lima.yaml"))
-	return err != nil
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // boot starts the stopped VM, its config checked first.

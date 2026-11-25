@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -932,5 +933,54 @@ func TestStartPolicyFiles(t *testing.T) {
 	se.run("doctor")
 	if !strings.Contains(se.stdout.String(), "  warn  network isolation off") {
 		t.Errorf("doctor, open: %s", se.stdout.String())
+	}
+}
+
+func TestIsDirNoYAML(t *testing.T) {
+	root := t.TempDir()
+	partial := filepath.Join(root, "partial")
+	healthy := filepath.Join(root, "healthy")
+	for _, d := range []string{partial, healthy} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(healthy, "lima.yaml"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !isDirNoYAML(partial) {
+		t.Error("directory without lima.yaml must count as partial")
+	}
+	if isDirNoYAML(healthy) {
+		t.Error("directory with lima.yaml must not count as partial")
+	}
+	if isDirNoYAML(filepath.Join(root, "missing")) {
+		t.Error("missing directory must not count as partial")
+	}
+}
+
+// A stat error that is not "does not exist" proves nothing about the
+// persistent disk in the folder, so it must never lead to its removal.
+func TestIsDirNoYAMLOtherStatError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits do not block stat on Windows")
+	}
+	root := t.TempDir()
+	d := filepath.Join(root, "vm")
+	if err := os.Mkdir(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "lima.yaml"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(d, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(d, 0o755) })
+	if _, err := os.Stat(filepath.Join(d, "lima.yaml")); err == nil {
+		t.Skip("running with privileges that ignore directory permissions")
+	}
+	if isDirNoYAML(d) {
+		t.Error("an unreadable directory must not count as partial")
 	}
 }
