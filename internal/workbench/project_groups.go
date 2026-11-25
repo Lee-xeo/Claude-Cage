@@ -166,6 +166,12 @@ func (s *Server) saveProject(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// A rename is stored with the saved projects. A temporary client share
+	// lives only while its client is connected and must not be persisted.
+	if renameOnly && slices.ContainsFunc(previous.Folders, isClientMountPath) {
+		http.Error(w, "临时客户端共享请单独管理", http.StatusBadRequest)
+		return
+	}
 	if !renameOnly && !ready {
 		http.Error(w, "环境尚未就绪或正在处理其他操作，请稍后重试", http.StatusConflict)
 		return

@@ -148,3 +148,14 @@ func TestProjectGroupRenameOnlyWhenStopped(t *testing.T) {
 	saveGroupRequest(t, s, projectGroup{Workspace: a, Name: "add-offline", Folders: []string{a, b}}, 409)
 	saveGroupRequest(t, s, projectGroup{Name: "new-offline", Folders: []string{b}}, 409)
 }
+
+func TestRenamingClientShareIsRejectedAndNotPersisted(t *testing.T) {
+	s := testServer(t)
+	s.ready = true
+	path := clientMountRoot + "/" + strings.Repeat("c", 32)
+	s.clientMounts = map[string]*guestClientMount{path: {ctx: t.Context(), ready: true}}
+	saveGroupRequest(t, s, projectGroup{Workspace: path, Name: "renamed", Folders: []string{path}}, http.StatusBadRequest)
+	if _, err := os.Stat(filepath.Join(s.profile, "projects.json")); !os.IsNotExist(err) {
+		t.Fatalf("temporary client share was persisted: %v", err)
+	}
+}
