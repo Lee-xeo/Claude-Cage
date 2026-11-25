@@ -88,7 +88,7 @@ func limaInstanceReady(dir string) bool {
 	if err != nil || !yamlInfo.Mode().IsRegular() {
 		return false
 	}
-	for _, disk := range []string{"diffdisk", "basedisk"} {
+	for _, disk := range []string{"disk", "diffdisk", "basedisk"} {
 		if info, err := os.Stat(filepath.Join(dir, disk)); err == nil && info.Mode().IsRegular() {
 			return true
 		}
