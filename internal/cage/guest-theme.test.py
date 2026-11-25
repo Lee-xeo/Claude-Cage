@@ -251,6 +251,51 @@ class GuestThemeTests(unittest.TestCase):
             if symlink_created:
                 self.assertEqual(secret.read_text(encoding="utf-8"), '{"keep":true}')
 
+    def test_user_chosen_themes_are_kept(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            editor = home / ".local/share/code-server/User/settings.json"
+            editor.parent.mkdir(parents=True)
+            editor.write_text(json.dumps({"workbench.colorTheme": "Solarized Light"}), encoding="utf-8")
+            cli = home / ".claude/settings.json"
+            cli.parent.mkdir(parents=True)
+            cli.write_text(json.dumps({"theme": "light-daltonized"}), encoding="utf-8")
+            other = home / ".claude.json"
+            other.write_text(json.dumps({"theme": "custom-theme"}), encoding="utf-8")
+
+            self.assertEqual(guest_theme.apply_theme("dark", home=home), [])
+
+            self.assertEqual(json.loads(editor.read_text(encoding="utf-8"))["workbench.colorTheme"], "Solarized Light")
+            self.assertEqual(json.loads(cli.read_text(encoding="utf-8")), {"theme": "dark-daltonized"})
+            self.assertEqual(json.loads(other.read_text(encoding="utf-8")), {"theme": "custom-theme"})
+
+    def test_lone_surrogate_in_existing_json_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            state = home / ".claude.json"
+            state.write_text('{"note": "abc\\ud83d", "theme": "light"}', encoding="utf-8")
+
+            self.assertEqual(guest_theme.apply_theme("dark", home=home), [])
+
+            data = json.loads(state.read_text(encoding="utf-8"))
+            self.assertEqual(data, {"note": "abc\ud83d", "theme": "dark"})
+
+    def test_one_failing_target_does_not_stop_the_others(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            (home / ".config/gtk-3.0").mkdir(parents=True)
+            (home / ".config/gtk-3.0/settings.ini").write_bytes(b"[Settings]\n\xff\xfe\n")
+            cli = home / ".claude/settings.json"
+            cli.parent.mkdir(parents=True)
+            cli.write_text("{}", encoding="utf-8")
+            with mock.patch.object(guest_theme, "update_code_server", side_effect=OSError("read-only")):
+                failed = guest_theme.apply_theme("dark", home=home)
+
+            self.assertEqual(failed, ["editor"])
+            self.assertEqual(json.loads(cli.read_text(encoding="utf-8")), {"theme": "dark"})
+            self.assertEqual((home / ".config/gtk-3.0/settings.ini").read_bytes(), b"[Settings]\n\xff\xfe\n")
+
     def test_notify_desktop_portal_posts_variant_over_unix_socket(self) -> None:
         af_unix = getattr(socket, "AF_UNIX", None)
         if af_unix is None:

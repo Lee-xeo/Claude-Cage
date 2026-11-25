@@ -25,6 +25,9 @@ CODE_SELECTION = {
     "dark": "#264f78",
 }
 DEFAULT_SELECTIONS = frozenset(v.lower() for v in CODE_SELECTION.values())
+DEFAULT_CODE_THEMES = frozenset(CODE_THEME.values())
+# Claude Code themes come in light/dark pairs; a chosen family is kept.
+CLI_THEME_RE = re.compile(r"^(light|dark)(-daltonized|-ansi)?$")
 GTK_THEME = {
     "light": ("Adwaita", "0", "prefer-light"),
     "dark": ("Adwaita-dark", "1", "prefer-dark"),
@@ -100,11 +103,27 @@ def update_json_dict(
         data = loaded
     if not mutator(data):
         return
-    atomic_write_text(
-        path,
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        mode=mode,
-    )
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        # A lone surrogate escape in the existing file cannot be written as
+        # UTF-8; escaping keeps the value byte-for-byte equivalent as JSON.
+        text = json.dumps(data, indent=2) + "\n"
+    atomic_write_text(path, text, mode=mode)
+
+
+def synced_cli_theme(current, variant: str):
+    """The theme to store for variant, or None to leave the file alone."""
+    if current is None:
+        return variant
+    if not isinstance(current, str):
+        return None
+    match = CLI_THEME_RE.fullmatch(current)
+    if not match:
+        return None
+    target = variant + (match.group(2) or "")
+    return None if target == current else target
 
 
 def update_code_server(home: Path, variant: str) -> None:
@@ -114,7 +133,11 @@ def update_code_server(home: Path, variant: str) -> None:
 
     def mutate(data: dict) -> bool:
         changed = False
-        if data.get("workbench.colorTheme") != target_theme:
+        current_theme = data.get("workbench.colorTheme")
+        # A theme the user picked in the editor stays; only the stock pair follows.
+        if current_theme != target_theme and (
+            current_theme is None or current_theme in DEFAULT_CODE_THEMES
+        ):
             data["workbench.colorTheme"] = target_theme
             changed = True
         custom = data.get("workbench.colorCustomizations")
@@ -151,7 +174,7 @@ def update_gtk_ini(path: Path, variant: str) -> None:
     if path.exists():
         try:
             existing_lines = path.read_text(encoding="utf-8").splitlines()
-        except OSError:
+        except (OSError, ValueError):
             return
 
     desired = {
@@ -249,7 +272,7 @@ def rewrite_xsettings_file(
                 for line in path.read_text(encoding="utf-8").splitlines()
                 if not line.startswith(XSETTINGS_THEME_PREFIXES)
             ]
-        except OSError:
+        except (OSError, ValueError):
             return False
     elif default_lines is not None:
         lines = list(default_lines)
@@ -422,18 +445,20 @@ def update_desktop_runtimes(variant: str) -> None:
 
 def update_claude_cli(home: Path, variant: str) -> None:
     def set_top_theme(data: dict) -> bool:
-        if data.get("theme") == variant:
+        target = synced_cli_theme(data.get("theme"), variant)
+        if target is None:
             return False
-        data["theme"] = variant
+        data["theme"] = target
         return True
 
     def set_shared_theme(data: dict) -> bool:
         keys = data.get("keys")
         if not isinstance(keys, dict):
             return False
-        if keys.get("theme") == variant:
+        target = synced_cli_theme(keys.get("theme"), variant)
+        if target is None:
             return False
-        keys["theme"] = variant
+        keys["theme"] = target
         return True
 
     update_json_dict(home / ".claude/settings.json", set_top_theme, create_if_missing=True)
@@ -494,15 +519,28 @@ def update_claude_cli(home: Path, variant: str) -> None:
                 )
 
 
-def apply_theme(variant: str, *, home: Path | None = None) -> None:
+def apply_theme(variant: str, *, home: Path | None = None) -> list[str]:
+    """Apply variant everywhere it can be applied; return the steps that failed."""
     if variant not in ("light", "dark"):
         raise ValueError(f"unsupported theme variant: {variant!r}")
     root = home or Path.home()
-    atomic_write_text(root / ".config/claude-cage/theme-variant", variant + "\n", mode=0o600)
-    update_code_server(root, variant)
-    update_gtk_configs(root, variant)
-    update_desktop_runtimes(variant)
-    update_claude_cli(root, variant)
+    steps = (
+        ("variant", lambda: atomic_write_text(root / ".config/claude-cage/theme-variant", variant + "\n", mode=0o600)),
+        ("editor", lambda: update_code_server(root, variant)),
+        ("gtk", lambda: update_gtk_configs(root, variant)),
+        ("desktop", lambda: update_desktop_runtimes(variant)),
+        ("cli", lambda: update_claude_cli(root, variant)),
+    )
+    failed: list[str] = []
+    for name, step in steps:
+        # Appearance is cosmetic: one unwritable or unreadable file must not
+        # stop the remaining targets, nor the caller that starts the session.
+        try:
+            step()
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            failed.append(name)
+            print(f"theme: {name}: {type(exc).__name__}: {exc}", file=sys.stderr)
+    return failed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -510,8 +548,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) != 1 or args[0] not in ("light", "dark"):
         print("usage: cage-apply-theme <light|dark>", file=sys.stderr)
         return 2
-    apply_theme(args[0])
-    return 0
+    return 1 if apply_theme(args[0]) else 0
 
 
 if __name__ == "__main__":

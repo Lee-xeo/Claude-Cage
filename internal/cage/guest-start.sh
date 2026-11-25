@@ -159,7 +159,8 @@ except Exception:
     raise
 PYCODE
 if [ "${CAGE_GUEST_THEME:-}" = light ] || [ "${CAGE_GUEST_THEME:-}" = dark ]; then
-  sudo -u cage-browser env CAGE_GUEST_THEME="$CAGE_GUEST_THEME" python3 - <<'PYTHEME'
+  # Appearance never decides whether the session starts.
+  sudo -u cage-browser env CAGE_GUEST_THEME="$CAGE_GUEST_THEME" python3 - <<'PYTHEME' || echo 'theme: browser preference not updated' >&2
 import json, os, tempfile
 from pathlib import Path
 p = Path("/home/cage-browser/theme.json")
@@ -193,7 +194,7 @@ if not p.exists():
     shutil.copyfile('/etc/claude-cage/editor-theme.json', p)
 PYEDITOR
 if [ "${CAGE_GUEST_THEME:-}" = light ] || [ "${CAGE_GUEST_THEME:-}" = dark ]; then
-  /usr/local/bin/cage-apply-theme "$CAGE_GUEST_THEME"
+  /usr/local/bin/cage-apply-theme "$CAGE_GUEST_THEME" || echo 'theme: some preferences not updated' >&2
 fi
 # Systemd owns the editor independently of the SSH session and restarts crashes.
 (umask 077; tmp=$(mktemp "$HOME/.config/claude-cage/.editor-workspace.XXXXXX"); printf '%s' "$PWD" > "$tmp"; sync "$tmp" 2>/dev/null || true; mv -f "$tmp" "$HOME/.config/claude-cage/editor-workspace"; sync "$HOME/.config/claude-cage" 2>/dev/null || true)
