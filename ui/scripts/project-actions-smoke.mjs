@@ -72,6 +72,7 @@ try {
       await editDialog.getByLabel("项目名称", { exact: true }).fill("beta");
       await editDialog.getByRole("button", { name: "保存项目", exact: true }).click();
       await page.getByRole("region", { name: "项目 beta", exact: true }).waitFor();
+      assert.equal(state.settings.workspace, projectA);
       // Unpin beta restores original order.
       await page.getByRole("button", { name: "beta 的操作", exact: true }).click();
       await page.getByRole("menuitem", { name: "取消置顶", exact: true }).click();

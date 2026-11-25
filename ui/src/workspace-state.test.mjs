@@ -5,6 +5,7 @@ import {
   mergeBrowserTabs,
   mergeTabs,
   orderedProjects,
+  projectSaveOpens,
   sameState,
   shouldShowBrowserError,
   togglePinnedProject,
@@ -82,4 +83,11 @@ test("orderedProjects places pinned projects first and respects saved order with
   assert.deepEqual(togglePinnedProject(["/p/a", "/p/b"], "/p/a"), ["/p/b"]);
   assert.equal(isClientProjectPath("/run/cage-client-projects/0123456789abcdef0123456789abcdef"), true);
   assert.equal(isClientProjectPath("/projects/alpha"), false);
+});
+
+test("projectSaveOpens skips activation only for a direct sidebar edit", () => {
+  assert.equal(projectSaveOpens("edit", "/p/b"), false);
+  assert.equal(projectSaveOpens("browse", "/p/b"), true);
+  assert.equal(projectSaveOpens("browse", ""), true);
+  assert.equal(projectSaveOpens("edit", ""), true);
 });

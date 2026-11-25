@@ -5,7 +5,7 @@ import { api, native, nativeAvailable } from "./api";
 import { SafetyMessage } from "./safety-message";
 import { Modal } from "./views";
 import { ProjectRecovery } from "./project-recovery";
-import { projectGroups, projectName, rememberClientProjectName } from "./workspace-state.mjs";
+import { projectGroups, projectName, projectSaveOpens, rememberClientProjectName } from "./workspace-state.mjs";
 import { getClientContext, isRemoteClient } from "./client-context.mjs";
 import { useTranslation } from "./interface-language.mjs";
 
@@ -16,6 +16,7 @@ export function ProjectDialog({
   activate = true,
   onClose,
   onOpened,
+  onSaved,
   onRemoved,
   onSettings,
 }) {
@@ -180,6 +181,10 @@ export function ProjectDialog({
       const saved = await api("/projects/save", {
         workspace: editing, name: name.trim() || projectName(draftFolders[0]), folders: draftFolders,
       });
+      if (!projectSaveOpens(initialMode, editing)) {
+        await onSaved(saved.workspace);
+        return;
+      }
       workspace = saved.workspace;
       setEditing(saved.workspace);
     }

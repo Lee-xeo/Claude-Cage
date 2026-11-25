@@ -62,6 +62,12 @@ export function togglePinnedProject(pinnedProjects = [], path) {
     : [...current, path];
 }
 
+// /projects/save already connects every folder; opening after a sidebar edit
+// would only switch the active project away from the user's current work.
+export function projectSaveOpens(mode, editing) {
+  return !(mode === "edit" && editing);
+}
+
 export function rememberClientProjectName(share) {
   if (!clientMount.test(share.guest_path)) return;
   try { sessionStorage.setItem(share.guest_path, folderName(share.path)); }
