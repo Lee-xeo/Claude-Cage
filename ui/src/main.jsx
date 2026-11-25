@@ -44,7 +44,7 @@ import { TERMINAL_LIMIT, liveTerminalCount } from "./session-order.mjs";
 import { InitializationGate } from "./initialization";
 import { ProjectRecovery } from "./project-recovery";
 import { DesktopPanes, useAccountDesktops } from "./account-desktops";
-import { desktopTitle, mergedDefaultInstance } from "./account-desktop-state.mjs";
+import { desktopTitle, fallbackDesktopInstance } from "./account-desktop-state.mjs";
 import { ClaudeDesktop } from "./claude-desktop";
 import { ClaudeAccountsPanel, useClaudeAccounts } from "./claude-accounts";
 import { AccountProvider, AccountGate, useAccount } from "./account";
@@ -390,9 +390,14 @@ function App() {
   }, [finishedLogins, claudeProfiles.load]);
   // A plugin page may mark its notice as an error, shown in the error color.
   const notify = (text, tone) => { setToast(text); setToastTone(tone === "error" ? "error" : ""); };
+  const handleDefaultDesktopRemoved = useCallback(() => {
+    setDefaultDesktopRunning(false);
+    setDefaultDesktopStopped(true);
+    setDefaultDesktopSignal((n) => n + 1);
+  }, []);
   const accountDesktops = useAccountDesktops(
     () => {setManagementPage(""); setHome(false); setDesktopOpen(true);},
-    () => {setDesktopOpen(false); setHome(true);}, notify, (...args) => confirm(...args), desktopOpen && running && status?.account_desktops_supported && !managementPage, status?.desktop_catalog_revision);
+    () => {setDesktopOpen(false); setHome(true);}, notify, (...args) => confirm(...args), desktopOpen && running && status?.account_desktops_supported && !managementPage, status?.desktop_catalog_revision, handleDefaultDesktopRemoved);
   useEffect(() => {
     if (!running) {
       setDefaultDesktopRunning(false);
@@ -1149,11 +1154,11 @@ function App() {
       setBrowserError("");
       if (b.desktopFocus === true) {
         const currentDesktops = notificationViewRef.current.accountDesktops;
-        const merged = mergedDefaultInstance(currentDesktops?.catalog);
-        if (merged) {
+        const target = fallbackDesktopInstance(currentDesktops?.catalog);
+        if (target) {
           setSettingsOpen(false);
-          void currentDesktops.act(merged, "start");
-        } else {
+          void currentDesktops.act(target, "start");
+        } else if (!currentDesktops?.catalog?.default_removed) {
           currentDesktops?.clear();
           setDesktopOpen(true);
           setHome(false);
@@ -1862,11 +1867,12 @@ function App() {
             accountDesktops={status.account_desktops_supported ? accountDesktops : null}
             onDesktopRename={(desktop) => setRename({ id: desktop.id, title: desktop.label || "", desktop: true })}
             onClaudeDesktop={() => {
-              const merged = mergedDefaultInstance(accountDesktops.catalog);
-              if (merged) {
-                void accountDesktops.act(merged, "start");
+              const target = fallbackDesktopInstance(accountDesktops.catalog);
+              if (target) {
+                void accountDesktops.act(target, "start");
                 return;
               }
+              if (accountDesktops.catalog?.default_removed) return;
               accountDesktops.clear();
               setManagementPage("");
               setHome(false);

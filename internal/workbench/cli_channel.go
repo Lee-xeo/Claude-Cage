@@ -58,6 +58,11 @@ var cliChannelBundle = sync.OnceValue(func() []byte {
 // Exit status of the bootstrap when this helper version is not yet installed.
 const cliChannelMissing = 75
 
+// cliChannelTimeout bounds each helper install and each channel attempt. A
+// guest answers within a second or two; tests that run the helper on a loaded
+// host interpreter raise it.
+var cliChannelTimeout = 15 * time.Second
+
 func cliChannelDigest() string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(cliChannelHelper+cliResumePrompt+claudeAccountResumePrompt)))
 }
@@ -82,7 +87,7 @@ if not p.is_file():
 }
 
 func (s *Server) installCLIChannel(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, cliChannelTimeout)
 	defer cancel()
 	script := "exec /bin/bash -lc " + shellescape.Quote("exec "+cliChannelInstallCommand())
 	bundle := cliChannelBundle()
@@ -201,7 +206,7 @@ func (s *Server) runCLIChannel(parent context.Context, mode string, input any, o
 	sent := false
 	var lastCtxErr error
 	for attempt := 0; ; attempt++ {
-		ctx, cancel := context.WithTimeout(baseCtx, 15*time.Second)
+		ctx, cancel := context.WithTimeout(baseCtx, cliChannelTimeout)
 		result, stderr = bytes.Buffer{}, fileControlStderr{}
 		exit, transportLost, sent = -1, false, false
 		// Session views and discovery run every few seconds for each terminal.

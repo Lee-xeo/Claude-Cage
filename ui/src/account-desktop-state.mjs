@@ -1,10 +1,33 @@
 export const desktopTitle = (a) =>
   a.number ? `#${String(a.number).padStart(2, "0")} ${a.label}` : a.label;
 
+export function hasDefaultDesktop(catalog) {
+  if (!catalog) return true;
+  return !catalog.default_removed && !catalog.redirects?.default;
+}
+
+export function visibleDesktopCount(catalog) {
+  const instances = catalog?.instances ?? catalog?.accounts ?? [];
+  const others = instances.filter((item) => item.id !== "default");
+  return (hasDefaultDesktop(catalog) ? 1 : 0) + others.length;
+}
+
+export function canDeleteDesktop(catalog) {
+  return Boolean(catalog?.supported) && visibleDesktopCount(catalog) > 1;
+}
+
 export function mergedDefaultInstance(catalog) {
   const target = catalog?.redirects?.default;
   if (!target || !Array.isArray(catalog?.instances)) return null;
   return catalog.instances.find((item) => item.id === target) || null;
+}
+
+export function fallbackDesktopInstance(catalog) {
+  const merged = mergedDefaultInstance(catalog);
+  if (merged) return merged;
+  if (!catalog?.default_removed || !Array.isArray(catalog?.instances)) return null;
+  const others = catalog.instances.filter((item) => item.id !== "default");
+  return others.find((item) => item.running) || others[0] || null;
 }
 
 export function reconcileAccountDesktopPanes(oldPanes, catalog, viewingDefault = false) {

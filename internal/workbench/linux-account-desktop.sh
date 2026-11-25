@@ -5,6 +5,23 @@ umask 077
 id=$1
 code=$2
 scope=$3
+if [[ $id == default && $scope == delete ]]; then
+  state=$(systemctl show --property=ActiveState --value cage-claude-desktop.service 2>/dev/null || :)
+  if [[ $state != "" && $state != inactive && $state != failed ]]; then
+    sudo systemctl stop cage-claude-desktop.service 2>/dev/null || ! systemctl is-active --quiet cage-claude-desktop.service
+  fi
+  sudo systemctl reset-failed cage-claude-desktop.service 2>/dev/null || :
+  if [[ -e /run/systemd/system/cage-claude-desktop.service.d/40-account.conf || -e /run/systemd/system/cage-claude-desktop.service.d/account-scope ]]; then
+    sudo rm -f -- /run/systemd/system/cage-claude-desktop.service.d/40-account.conf /run/systemd/system/cage-claude-desktop.service.d/account-scope 2>/dev/null || :
+  fi
+  for target in "$HOME/.config/Claude" "$HOME/.cache/Claude" "$HOME/.local/share/Claude" "$HOME/.local/share/keyrings"; do
+    if [[ -e $target || -L $target ]]; then
+      chmod -R u+rwX -- "$target" 2>/dev/null || :
+      rm -rf -- "$target"
+    fi
+  done
+  exit 0
+fi
 [[ $id =~ ^[0-9a-f]{24}$ && ( $code == default || $code =~ ^[0-9a-f]{24}$ ) ]]
 unit="desktop-$id"
 base="$HOME/.local/share/desktop-profiles/$id"

@@ -3267,6 +3267,8 @@
   "新设备已配对。": "Nouvel appareil associé.",
   "最多可同时配对 8 台设备，请先移除不需要的设备": "Vous pouvez associer jusqu'à 8 appareils simultanément. Supprimez d'abord un appareil inutile.",
   "未找到已配对的设备": "Appareil associé introuvable",
+  "至少保留一个 Desktop 实例，不能删除最后一个": "Au moins une instance Desktop doit être conservée ; la dernière ne peut pas être supprimée",
+  "默认 Desktop 已删除，请从实例列表打开其他 Desktop": "Le Desktop par défaut a été supprimé ; ouvrez un autre Desktop depuis la liste des instances",
   "同步环境内部主题": "Synchroniser le thème interne de l'environnement",
   "将环境内的浏览器、编辑器、桌面应用与 Claude Code 同步为相同的浅色或深色主题。": "Synchronise le navigateur, l'éditeur, l'application de bureau et Claude Code dans l'environnement avec le même thème clair ou sombre."
 }
