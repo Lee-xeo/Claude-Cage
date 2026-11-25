@@ -51,28 +51,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: TEMPORARY cold guest interpreter timing (remove before merge)
-        run: |
-          home="$(mktemp -d)"
-          home2="$(mktemp -d)"
-          now() { perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
-          t() {
-            local s e rc
-            s="$(now)"
-            "$@" >/dev/null 2>&1
-            rc=$?
-            e="$(now)"
-            echo "$(perl -e "printf '%.3f', $e-$s")s rc=$rc :: $*"
-          }
-          xcode-select -p || true
-          t env -i HOME="$home" PATH=/usr/bin:/bin /usr/bin/python3 -I -c ''
-          t env -i HOME="$home" PATH=/usr/bin:/bin /usr/bin/python3 -I -c ''
-          t env -i HOME="$home" PATH=/usr/bin:/bin /usr/bin/python3 -I -c ''
-          t env -i HOME="$home2" PATH=/usr/bin:/bin /usr/bin/python3 -I -c ''
-          t env -i HOME="$home2" PATH=/usr/bin:/bin /bin/bash -lc "exec python3 -I -c ''"
-          t env -i HOME="$home2" PATH=/usr/bin:/bin /bin/bash -lc true
-          t env -i HOME="$home2" PATH=/usr/bin:/bin /bin/bash -c true
-          env -i HOME="$home" PATH=/usr/bin:/bin /usr/bin/python3 -I -c 'import sys; print(sys.executable, sys.version)' || true
       - name: Application version consistency
         run: |
           node scripts/check-version.mjs
