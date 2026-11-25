@@ -286,3 +286,15 @@ test("derived muted color maintains clear visual hierarchy without losing legibi
     }
   }
 });
+
+test("syncGuestTheme defaults to true, preserves explicit false, and stays excluded from portable theme documents", () => {
+  assert.equal(defaultAppearance.syncGuestTheme, true);
+  assert.equal(normalizeAppearance({}).syncGuestTheme, true);
+  assert.equal(normalizeAppearance({ syncGuestTheme: false }).syncGuestTheme, false);
+  assert.equal(normalizeAppearance({ syncGuestTheme: true }).syncGuestTheme, true);
+  const doc = themeDocument("Theme Export", {
+    ...defaultAppearance,
+    syncGuestTheme: false,
+  });
+  assert.equal("syncGuestTheme" in doc, false);
+});

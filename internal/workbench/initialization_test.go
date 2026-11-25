@@ -236,4 +236,21 @@ func TestEnvironmentPreparedRejectsStaleBaseMarkerWithoutVMFiles(t *testing.T) {
 	if !s.environmentPrepared() {
 		t.Fatal("intact active instance reported environmentPrepared=false")
 	}
+
+	// Lima v2 stores VM disks as "disk" (across macOS VZ/QEMU, Windows and Linux).
+	if err := os.Remove(filepath.Join(instDir, "basedisk")); err != nil {
+		t.Fatal(err)
+	}
+	if s.environmentPrepared() {
+		t.Fatal("instance without any disk reported environmentPrepared=true")
+	}
+	if err := os.WriteFile(filepath.Join(instDir, "disk"), []byte("raw"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !s.environmentPrepared() {
+		t.Fatal("intact Lima v2 active instance with disk reported environmentPrepared=false")
+	}
+	if view, err := s.initializationState(); err != nil || view.Required || !view.Prepared {
+		t.Fatalf("existing Lima v2 instance unexpectedly required setup: %+v %v", view, err)
+	}
 }

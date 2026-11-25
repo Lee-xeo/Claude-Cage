@@ -490,12 +490,18 @@ func (s *Server) setHostTools(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Install != "" {
 		if err := s.installFromMarket(r.Context(), body.Install, body.Replace); err != nil {
+			if ready || !s.hostToolsView().Enabled {
+				s.ensureHostTools()
+			}
 			requestError(w, errors.New("插件安装失败："+err.Error()))
 			return
 		}
 	}
 	if body.RestoreDefault != "" {
 		if err := s.restoreDefaultPlugin(body.RestoreDefault, body.Replace); err != nil {
+			if ready || !s.hostToolsView().Enabled {
+				s.ensureHostTools()
+			}
 			requestError(w, errors.New("默认插件安装失败："+err.Error()))
 			return
 		}
@@ -504,6 +510,9 @@ func (s *Server) setHostTools(w http.ResponseWriter, r *http.Request) {
 		// Stop the plugin's program before its folder moves.
 		s.closeHostTools()
 		if err := s.removeHostPlugin(body.Remove); err != nil {
+			if ready || !s.hostToolsView().Enabled {
+				s.ensureHostTools()
+			}
 			requestError(w, err)
 			return
 		}

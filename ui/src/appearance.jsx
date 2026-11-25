@@ -115,6 +115,17 @@ export function AppearanceProvider({ children }) {
         setError("外观已应用到工作台，原生窗口未能同步，请重新打开 Cage。"),
       );
   }, [appearance, variant, systemReduced]);
+  useEffect(() => {
+    if (loading || !appearance.syncGuestTheme) return;
+    let cancelled = false;
+    queue.current.catch(() => {}).then(() => {
+      if (!cancelled && current.current.syncGuestTheme)
+        api("/appearance/guest-theme", { variant }).catch(() => {});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, appearance.syncGuestTheme, variant]);
   const update = (next) => {
     next = normalizeAppearance(
       typeof next === "function" ? next(current.current) : next,

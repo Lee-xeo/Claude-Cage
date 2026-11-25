@@ -129,7 +129,8 @@ try {
     .click({ button: "right" });
   await page.getByRole("menuitem", { name: "置顶标签", exact: true }).click();
   assert.equal(await tabs().getByRole("tab").first().innerText(), "本地预览");
-  await page.getByRole("button", { name: "打开 design-lab 的编辑器", exact: true }).click();
+  await page.getByRole("button", { name: "design-lab 的操作", exact: true }).click();
+  await page.getByRole("menuitem", { name: "打开文件", exact: true }).click();
   await page
     .getByRole("tab", { name: "文件 · design-lab", exact: true })
     .waitFor();
@@ -321,9 +322,11 @@ try {
     3,
   );
   assert.equal(await tabs().getByRole("tab").count(), 2);
-  await page.getByRole("button", { name: "打开 another-project 的编辑器", exact: true }).click();
+  await page.getByRole("button", { name: "another-project 的操作", exact: true }).click();
+  await page.getByRole("menuitem", { name: "打开文件", exact: true }).click();
   await tabs().getByRole("tab", { name: "文件 · another-project", exact: true }).waitFor();
-  await page.getByRole("button", { name: "打开 design-lab 的编辑器", exact: true }).click();
+  await page.getByRole("button", { name: "design-lab 的操作", exact: true }).click();
+  await page.getByRole("menuitem", { name: "打开文件", exact: true }).click();
   await tabs()
     .getByRole("tab", { name: "文件 · design-lab", exact: true })
     .waitFor();

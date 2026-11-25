@@ -105,7 +105,7 @@ d['editorPassword']=next(line.split(':',1)[1].strip() for line in yaml.read_text
 atomic_write(p, json.dumps(d), 0o640, grp.getgrnam('cage-browser').gr_gid)
 atomic_write(p.with_name('desktop-downloads.json'), json.dumps({'workspace': d['workspace']}), 0o644)
 PYCONTROL
-sudo -u cage-browser env CAGE_LANGUAGE="$CAGE_LANGUAGE" python3 - <<'PYCODE'
+sudo -u cage-browser env CAGE_LANGUAGE="$CAGE_LANGUAGE" CAGE_GUEST_THEME="${CAGE_GUEST_THEME:-}" python3 - <<'PYCODE'
 import json, os
 from pathlib import Path
 p = Path.home() / "profile/Default/Preferences"
@@ -132,6 +132,13 @@ d["credentials_enable_service"] = False
 if not isinstance(d.get("profile"), dict):
     d["profile"] = {}
 d["profile"]["password_manager_enabled"] = False
+theme = os.environ.get("CAGE_GUEST_THEME", "")
+if theme in ("light", "dark"):
+    if not isinstance(d.get("browser"), dict):
+        d["browser"] = {}
+    if not isinstance(d["browser"].get("theme"), dict):
+        d["browser"]["theme"] = {}
+    d["browser"]["theme"]["color_scheme2"] = 2 if theme == "dark" else 1
 fd, name = tempfile.mkstemp(prefix=".Preferences-", dir=p.parent)
 try:
     with os.fdopen(fd, "w") as f:
@@ -151,6 +158,28 @@ except Exception:
         pass
     raise
 PYCODE
+if [ "${CAGE_GUEST_THEME:-}" = light ] || [ "${CAGE_GUEST_THEME:-}" = dark ]; then
+  sudo -u cage-browser env CAGE_GUEST_THEME="$CAGE_GUEST_THEME" python3 - <<'PYTHEME'
+import json, os, tempfile
+from pathlib import Path
+p = Path("/home/cage-browser/theme.json")
+theme = os.environ["CAGE_GUEST_THEME"]
+fd, name = tempfile.mkstemp(prefix=".theme-", dir=p.parent)
+try:
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"variant": theme}))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(name, p)
+except Exception:
+    try:
+        os.unlink(name)
+    except OSError:
+        pass
+    raise
+PYTHEME
+fi
 sudo systemctl reset-failed cage-display cage-window-manager cage-browser cage-webvnc 2>/dev/null || true
 sudo systemctl reset-failed cage-display-governor 2>/dev/null || true
 sudo systemctl restart cage-display cage-window-manager cage-browser cage-webvnc
@@ -163,6 +192,9 @@ if not p.exists():
     p.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile('/etc/claude-cage/editor-theme.json', p)
 PYEDITOR
+if [ "${CAGE_GUEST_THEME:-}" = light ] || [ "${CAGE_GUEST_THEME:-}" = dark ]; then
+  /usr/local/bin/cage-apply-theme "$CAGE_GUEST_THEME"
+fi
 # Systemd owns the editor independently of the SSH session and restarts crashes.
 (umask 077; tmp=$(mktemp "$HOME/.config/claude-cage/.editor-workspace.XXXXXX"); printf '%s' "$PWD" > "$tmp"; sync "$tmp" 2>/dev/null || true; mv -f "$tmp" "$HOME/.config/claude-cage/editor-workspace"; sync "$HOME/.config/claude-cage" 2>/dev/null || true)
 if ! systemctl is-active --quiet cage-editor.service; then

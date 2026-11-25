@@ -1,6 +1,6 @@
 import { isWindows, isMac } from "./platform.mjs";
 import React, { useEffect, useState } from "react";
-import { FolderMinus, FolderOpen, LoaderCircle, PencilLine, Plus } from "lucide-react";
+import { FolderOpen, LoaderCircle, PencilLine, Plus, Trash2 } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
 import { SafetyMessage } from "./safety-message";
 import { Modal } from "./views";
@@ -12,6 +12,7 @@ import { useTranslation } from "./interface-language.mjs";
 export function ProjectDialog({
   status,
   initialPath = "",
+  initialMode = "browse",
   activate = true,
   onClose,
   onOpened,
@@ -22,15 +23,17 @@ export function ProjectDialog({
   const groups = projectGroups(status);
   const projects = groups.map(group => group.workspace);
   const initialGroup = groups.find(group => group.folders.includes(initialPath));
-  const [adding, setAdding] = useState(Boolean(initialPath && !initialGroup) || projects.length === 0);
-  const [path, setPath] = useState(initialGroup?.workspace || initialPath || groups.find(group => group.folders.includes(status.workspace))?.workspace || projects[0] || "");
-  const [editing, setEditing] = useState("");
-  const [name, setName] = useState("");
-  const [folders, setFolders] = useState([]);
+  const directEdit = initialMode === "edit" && Boolean(initialGroup);
+  const directRemoveTarget = initialMode === "remove" ? (initialGroup?.workspace || initialPath) : "";
+  const [adding, setAdding] = useState(directEdit || Boolean(initialPath && !initialGroup && !directRemoveTarget) || projects.length === 0);
+  const [path, setPath] = useState(directEdit ? "" : (initialGroup?.workspace || initialPath || groups.find(group => group.folders.includes(status.workspace))?.workspace || projects[0] || ""));
+  const [editing, setEditing] = useState(directEdit ? initialGroup.workspace : "");
+  const [name, setName] = useState(directEdit ? initialGroup.name : "");
+  const [folders, setFolders] = useState(directEdit ? initialGroup.folders : []);
   const [error, setError] = useState("");
   const [recovery, setRecovery] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState("");
+  const [removeTarget, setRemoveTarget] = useState(directRemoveTarget);
   const [removed, setRemoved] = useState([]);
   const [directories, setDirectories] = useState(null);
   const [browsing, setBrowsing] = useState(false);
@@ -75,7 +78,6 @@ export function ProjectDialog({
   };
   const projectList = [...new Set([...projects, ...shares.map((s) => s.guest_path)])].filter(project => !removed.includes(project));
   const displayName = value => projectName(value, groups);
-  const selectedGroup = groups.find(group => group.workspace === path);
   const draftFolders = [...new Set([...folders, ...(path.trim() ? [path.trim()] : [])])];
   const appendFolder = value => {
     const folder = value.trim();
@@ -84,10 +86,11 @@ export function ProjectDialog({
     setName(previous => previous || projectName(folder));
     setPath(""); setError("");
   };
-  const edit = () => {
-    if (!selectedGroup) return;
-    setEditing(selectedGroup.workspace); setName(selectedGroup.name);
-    setFolders(selectedGroup.folders); setPath(""); setAdding(true); setError("");
+  const edit = (targetPath = path) => {
+    const targetGroup = groups.find(group => group.workspace === targetPath);
+    if (!targetGroup) return;
+    setEditing(targetGroup.workspace); setName(targetGroup.name);
+    setFolders(targetGroup.folders); setPath(""); setAdding(true); setError("");
   };
   const selectedShare = shares.find((item) => item.guest_path === path);
   const busy = submitting || Boolean(status.job?.running);
@@ -96,14 +99,53 @@ export function ProjectDialog({
     setSubmitting(true); setError("");
     try {
       const result = await api("/projects/remove", { workspace: removeTarget });
-      setRemoved(previous => [...previous, removeTarget]);
+      const target = removeTarget;
+      setRemoved(previous => [...previous, target]);
       setPath(result.workspace || "");
       if (!result.workspace) setAdding(true);
       setRemoveTarget("");
-      await onRemoved?.(removeTarget, result.workspace);
+      await onRemoved?.(target, result.workspace);
+      if (directRemoveTarget) onClose?.();
     } catch (e) { setError(e.message); }
     finally { setSubmitting(false); }
   };
+  if (directRemoveTarget) {
+    return (
+      <Modal
+        title={tr("移除项目")}
+        onClose={busy ? undefined : onClose}
+        footer={
+          <>
+            <span className="save-note">
+              {busy ? submitting ? tr("正在移除项目…") : status.job?.message : tr("会话历史保留")}
+            </span>
+            <button disabled={busy} onClick={onClose}>
+              {tr("取消")}
+            </button>
+            <button
+              className="primary danger"
+              type="button"
+              disabled={busy || !removeTarget}
+              onClick={remove}
+            >
+              {busy ? <LoaderCircle className="spin" size={15} /> : <Trash2 size={15} />}
+              {tr("确认移除项目")}
+            </button>
+          </>
+        }
+      >
+        <div className="modal-body project-form">
+          <p>{tr("移除“")}{displayName(directRemoveTarget)}{tr("”将解除所有绑定文件夹的共享。原文件和会话历史保留，重新添加相同目录后可继续使用历史。")}</p>
+          <p className="field-help">{tr("请先保存文件，并关闭此项目的终端、运行中会话和编辑器。移除当前项目后选中剩余项目；移除最后一个项目后，可重新添加文件夹。")}</p>
+          {error && (
+            <div className="error-message" role="alert">
+              <SafetyMessage message={error} />
+            </div>
+          )}
+        </div>
+      </Modal>
+    );
+  }
   const browse = async (directory = path.trim()) => {
     setBrowsing(true); setError("");
     try { setDirectories(await api(`/projects/directories?${new URLSearchParams({ path: directory })}`)); }
@@ -209,33 +251,40 @@ export function ProjectDialog({
         {!sharing && !adding && <>
           <fieldset className="project-picker-list" disabled={busy || Boolean(removeTarget)}>
             <legend>{tr("项目")}</legend>
-            {projectList.map((project) => <div className={`project-picker-row ${path === project ? "selected" : ""}`} key={project}>
-              <label className="project-picker-item">
-                <input type="radio" name="project" value={project} checked={path === project} onChange={() => { setPath(project); setError(""); }} />
-                <FolderOpen size={18} aria-hidden="true" />
-                <span>
-                  <strong>{displayName(project)}</strong>
-                  <small>{shares.find((s) => s.guest_path === project)?.path || groups.find(g => g.workspace === project)?.folders.join(" · ") || project}</small>
-                  {status.project_errors?.some((item) => (groups.find(group => group.workspace === project)?.folders || [project]).includes(item.path)) && <small>{tr("需要重新连接，选择后重试")}</small>}
-                </span>
-              </label>
-              {path === project && !selectedShare && !removeTarget && <div className="project-picker-actions">
-                {selectedGroup && <button type="button" className="icon-button" aria-label={tr("编辑名称与文件夹…")} disabled={busy || !status.ready} onClick={edit}><PencilLine size={16} aria-hidden="true" /></button>}
-                {activate && <button type="button" className="icon-button project-picker-remove" aria-label={tr("从 Cage 移除此项目")} disabled={busy} onClick={() => { setRemoveTarget(path); setError(""); setRecovery(""); }}><FolderMinus size={16} aria-hidden="true" /></button>}
-              </div>}
-            </div>)}
+            {projectList.map((project) => {
+              const rowShare = shares.find((s) => s.guest_path === project);
+              const rowGroup = groups.find(g => g.workspace === project);
+              const label = displayName(project);
+              return <div className={`project-picker-row ${path === project ? "selected" : ""}`} key={project}>
+                <label className="project-picker-item">
+                  <input type="radio" name="project" value={project} checked={path === project} onChange={() => { setPath(project); setError(""); }} />
+                  <FolderOpen size={18} aria-hidden="true" />
+                  <span>
+                    <strong>{label}</strong>
+                    <small>{rowShare?.path || rowGroup?.folders.join(" · ") || project}</small>
+                    {status.project_errors?.some((item) => (rowGroup?.folders || [project]).includes(item.path)) && <small>{tr("需要重新连接，选择后重试")}</small>}
+                  </span>
+                </label>
+                {!rowShare && !removeTarget && <div className="project-picker-actions">
+                  {rowGroup && <button type="button" className="icon-button" aria-label={tr("编辑 {0}", label)} title={tr("编辑名称与文件夹…")} disabled={busy || !status.ready} onClick={() => edit(project)}><PencilLine size={16} aria-hidden="true" /></button>}
+                  {activate && <button type="button" className="icon-button project-picker-remove" aria-label={tr("移除 {0}", label)} title={tr("从 Cage 移除此项目")} disabled={busy} onClick={() => { setPath(project); setRemoveTarget(project); setError(""); setRecovery(""); }}><Trash2 size={15} aria-hidden="true" /></button>}
+                </div>}
+              </div>;
+            })}
           </fieldset>
           {selectedShare && <button type="button" disabled={submitting} onClick={() => revoke(selectedShare)}>{tr("停止共享本机项目（")}{selectedShare.readonly ? tr("只读") : tr("读写")}）</button>}
-          {removeTarget && <section className="project-picker-list" aria-label={tr("确认移除项目")}>
+          {removeTarget && <section className="project-remove-confirm" aria-label={tr("确认移除项目")}>
             <p>{tr("移除“")}{displayName(removeTarget)}{tr("”将解除所有绑定文件夹的共享。原文件和会话历史保留，重新添加相同目录后可继续使用历史。")}</p>
             <p className="field-help">{tr("请先保存文件，并关闭此项目的终端、运行中会话和编辑器。移除当前项目后选中剩余项目；移除最后一个项目后，可重新添加文件夹。")}</p>
-            <button type="button" disabled={busy} onClick={() => { setRemoveTarget(""); setError(""); }}>{tr("取消移除")}</button>
-            <button type="button" disabled={busy} onClick={remove}>{tr("确认移除项目")}</button>
+            <div className="project-remove-actions">
+              <button type="button" disabled={busy} onClick={() => { setRemoveTarget(""); setError(""); }}>{tr("取消移除")}</button>
+              <button type="button" className="primary danger" disabled={busy} onClick={remove}>{tr("确认移除项目")}</button>
+            </div>
           </section>}
           <button type="button" className="quiet-button project-picker-add" onClick={add} disabled={busy || Boolean(removeTarget) || !status.ready}><Plus size={16} />{remote ? tr("添加云端项目…") : tr("添加本机项目…")}</button>
         </>}
         {!sharing && adding && <>
-          {projects.length > 0 && <button type="button" className="quiet-button project-picker-add" disabled={busy} onClick={() => { setAdding(false); setEditing(""); setFolders([]); setPath(groups.find(group => group.folders.includes(status.workspace))?.workspace || projects[0]); setError(""); }}>{tr("返回已有项目")}</button>}
+          {projects.length > 0 && !directEdit && <button type="button" className="quiet-button project-picker-add" disabled={busy} onClick={() => { setAdding(false); setEditing(""); setFolders([]); setPath(groups.find(group => group.folders.includes(status.workspace))?.workspace || projects[0]); setError(""); }}>{tr("返回已有项目")}</button>}
           <label htmlFor="project-name">{tr("项目名称")}</label>
           <input id="project-name" autoFocus value={name} maxLength={100} onChange={event => setName(event.target.value)} placeholder={tr("例如：课程系统")} disabled={busy} />
           <label>{tr("源文件夹")}</label>

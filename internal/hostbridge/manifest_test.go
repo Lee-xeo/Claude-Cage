@@ -264,3 +264,42 @@ func TestLoadPluginsCanLeaveHostPluginsOut(t *testing.T) {
 		t.Fatalf("a plugin on this computer was started: %d %v", len(plugins), failures)
 	}
 }
+
+func TestEngineSatisfiedEnforcesFeatureFloors(t *testing.T) {
+	floating := Manifest{
+		Kind:    KindGuest,
+		Engines: &Engines{Cage: ">=0.2.0"},
+		Contributes: &Contributes{
+			Views: []View{{ID: "status", Title: "Status", Entry: "view/index.html", Presentation: ViewPresentationFloating, Width: 316, Height: 286}},
+		},
+	}
+	if floating.EngineSatisfied("0.2.0") || floating.Unavailable("0.2.0", true) != NeedsNewerApplication {
+		t.Fatalf("floating view with stale engines.cage was treated as supported on 0.2.0")
+	}
+	if !floating.EngineSatisfied("0.2.1") || floating.Unavailable("0.2.1", true) != "" {
+		t.Fatalf("floating view should satisfy 0.2.1")
+	}
+	if !floating.EngineSatisfied("") || floating.Unavailable("", true) != "" {
+		t.Fatalf("floating view should satisfy an unversioned build")
+	}
+	entry := MarketEntry{
+		Name:        "system-status",
+		Version:     "0.2.0",
+		Kind:        KindGuest,
+		Engines:     floating.Engines,
+		Contributes: floating.Contributes,
+	}
+	if entry.EngineSatisfied("0.2.0") || !entry.EngineSatisfied("0.2.1") {
+		t.Fatalf("MarketEntry.EngineSatisfied did not enforce floating view floor")
+	}
+	desktopApp := Manifest{
+		Kind:    KindGuest,
+		Engines: &Engines{Cage: ">=0.2.0"},
+		Contributes: &Contributes{
+			DesktopApps: []DesktopApp{{ID: "demo", Title: "Demo"}},
+		},
+	}
+	if desktopApp.EngineSatisfied("0.2.0") || !desktopApp.EngineSatisfied("0.2.1") {
+		t.Fatalf("Manifest.EngineSatisfied did not enforce desktopApps floor")
+	}
+}

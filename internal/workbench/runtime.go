@@ -88,7 +88,7 @@ func limaInstanceReady(dir string) bool {
 	if err != nil || !yamlInfo.Mode().IsRegular() {
 		return false
 	}
-	for _, disk := range []string{"diffdisk", "basedisk"} {
+	for _, disk := range []string{"disk", "diffdisk", "basedisk"} {
 		if info, err := os.Stat(filepath.Join(dir, disk)); err == nil && info.Mode().IsRegular() {
 			return true
 		}
@@ -245,6 +245,9 @@ func (s *Server) attach() error {
 	s.credentials = credentials
 	s.ready = true
 	s.mu.Unlock()
+	if v := resolvedGuestTheme(s.profile); v != "" {
+		s.applyGuestThemeAsync(v)
+	}
 	s.restoreProjectShares()
 	s.ensureHostTools()
 	s.desktopViews.background(s.changeDesktopVisibility)
@@ -335,6 +338,11 @@ func (s *Server) runCage(args ...string) error {
 	}
 	if tls12Compat {
 		cmd.Env = append(cmd.Env, cage.InstallTLS12Env+"=1")
+	}
+	if len(args) > 0 && args[0] == "up" {
+		if v := resolvedGuestTheme(s.profile); v != "" {
+			cmd.Env = append(cmd.Env, cage.GuestThemeEnv+"="+v)
+		}
 	}
 	cmd.Env = append(cmd.Env, cage.JobEnv+"="+execution.id)
 	cmd.Stdout, cmd.Stderr = execution, execution

@@ -110,12 +110,20 @@ const size = bytes => !bytes ? "" : bytes < 1024 * 1024 ? `${Math.max(1, Math.ro
 // and reads the plugin market once when first shown.
 export function useHostPlugins(active) {
   const windowVisible = useWindowVisibility();
-  const [view, setView] = useState(null), [error, setError] = useState(""), [busy, setBusy] = useState("");
+  const [view, setView] = useState(null), [loadError, setLoadError] = useState(""), [actionError, setActionError] = useState(""), [busy, setBusy] = useState("");
   const [market, setMarket] = useState({ loading: false, loaded: false });
   const [drafts, setDrafts] = useState({ loading: false, loaded: false, ready: false, items: [], error: "" });
   const [syncStatus, setSyncStatus] = useState(null);
   const [bridgeStatus, setBridgeStatus] = useState(null);
-  const mounted = useRef(true), revision = useRef(0), marketRevision = useRef(0), draftsRevision = useRef(0);
+  const mounted = useRef(true), revision = useRef(0), marketRevision = useRef(0), draftsRevision = useRef(0), busyRef = useRef("");
+  const beginBusy = useCallback((key) => {
+    busyRef.current = key;
+    setBusy(key);
+  }, []);
+  const endBusy = useCallback(() => {
+    busyRef.current = "";
+    if (mounted.current) setBusy("");
+  }, []);
   const refreshRemoteExtras = useCallback(async () => {
     if (!isRemoteClient()) {
       setSyncStatus(null);
@@ -138,9 +146,9 @@ export function useHostPlugins(active) {
       const value = await api("/host-tools");
       if (mounted.current && current === revision.current) {
         setView(previous => (sameState(previous, value) ? previous : value));
-        setError("");
+        setLoadError("");
       }
-    } catch (e) { if (mounted.current && current === revision.current) setError(e.message); }
+    } catch (e) { if (mounted.current && current === revision.current) setLoadError(e.message); }
     await refreshRemoteExtras();
   }, [refreshRemoteExtras]);
   const loadMarket = useCallback(async (fresh = false) => {
@@ -176,72 +184,82 @@ export function useHostPlugins(active) {
   // in the main sidebar; the market is read once the plugin views are shown.
   const browsing = active === true;
   useEffect(() => {
+    if (!browsing) setActionError("");
+  }, [browsing]);
+  useEffect(() => {
     if (!active || !windowVisible) return;
     void refresh();
     if (browsing) void loadDrafts();
     const timer = setInterval(() => {
-      if (!busy) {
+      if (!busyRef.current) {
         void refresh();
         if (browsing) void loadDrafts();
       }
     }, browsing ? 5000 : 30000);
     return () => { revision.current++; clearInterval(timer); };
-  }, [active, browsing, busy, refresh, loadDrafts, windowVisible]);
+  }, [active, browsing, refresh, loadDrafts, windowVisible]);
   useEffect(() => { if (browsing && !market.loaded && !market.loading) void loadMarket(); }, [browsing, market.loaded, market.loading, loadMarket]);
   // change sends one request; key names what is in progress, for the buttons.
   const change = useCallback(async (body, key = "change") => {
-    setBusy(key); setError(""); revision.current++;
+    beginBusy(key); setActionError(""); revision.current++;
     try {
       const value = await api("/host-tools", body);
-      if (mounted.current) setView(value);
+      if (mounted.current) {
+        setView(value);
+        setLoadError("");
+      }
       if (body.install || body.remove || body.restore_default) void loadMarket();
       return true;
-    } catch (e) { if (mounted.current) setError(e.message); return false; }
-    finally { if (mounted.current) setBusy(""); }
-  }, [loadMarket]);
+    } catch (e) { if (mounted.current) setActionError(e.message); return false; }
+    finally { endBusy(); }
+  }, [beginBusy, endBusy, loadMarket]);
   const readDraftFile = useCallback(async (id, relPath) => {
     return api(`/host-tools/drafts/file?id=${encodeURIComponent(id)}&path=${encodeURIComponent(relPath)}`);
   }, []);
   const installDraft = useCallback(async (body) => {
-    setBusy(`draft-install:${body.id}`); setError(""); revision.current++;
+    beginBusy(`draft-install:${body.id}`); setActionError(""); revision.current++;
     try {
       const value = await api("/host-tools/drafts/install", body);
-      if (mounted.current) setView(value);
+      if (mounted.current) {
+        setView(value);
+        setLoadError("");
+      }
       void loadDrafts();
       void loadMarket();
       return true;
-    } catch (e) { if (mounted.current) setError(e.message); return false; }
-    finally { if (mounted.current) setBusy(""); }
-  }, [loadDrafts, loadMarket]);
+    } catch (e) { if (mounted.current) setActionError(e.message); return false; }
+    finally { endBusy(); }
+  }, [beginBusy, endBusy, loadDrafts, loadMarket]);
   const discardDraft = useCallback(async (id) => {
-    setBusy(`draft-discard:${id}`); setError("");
+    beginBusy(`draft-discard:${id}`); setActionError("");
     try {
       await api("/host-tools/drafts/discard", { id });
       void loadDrafts();
       return true;
-    } catch (e) { if (mounted.current) setError(e.message); return false; }
-    finally { if (mounted.current) setBusy(""); }
-  }, [loadDrafts]);
+    } catch (e) { if (mounted.current) setActionError(e.message); return false; }
+    finally { endBusy(); }
+  }, [beginBusy, endBusy, loadDrafts]);
   const triggerSync = useCallback(async () => {
-    setBusy("sync"); setError("");
+    beginBusy("sync"); setActionError("");
     try {
       const value = await api("/client/plugins/sync", {});
       if (mounted.current) setSyncStatus(value);
       setTimeout(() => { if (mounted.current) void refresh(); }, 800);
       return true;
-    } catch (e) { if (mounted.current) setError(e.message); return false; }
-    finally { if (mounted.current) setBusy(""); }
-  }, [refresh]);
+    } catch (e) { if (mounted.current) setActionError(e.message); return false; }
+    finally { endBusy(); }
+  }, [beginBusy, endBusy, refresh]);
   const toggleBridge = useCallback(async (plugin, shared) => {
-    setBusy(`bridge:${plugin}`); setError("");
+    beginBusy(`bridge:${plugin}`); setActionError("");
     try {
       const value = await api("/client/plugins/bridge", { plugin, shared });
       if (mounted.current) setBridgeStatus(value);
       void refresh();
       return true;
-    } catch (e) { if (mounted.current) setError(e.message); return false; }
-    finally { if (mounted.current) setBusy(""); }
-  }, [refresh]);
+    } catch (e) { if (mounted.current) setActionError(e.message); return false; }
+    finally { endBusy(); }
+  }, [beginBusy, endBusy, refresh]);
+  const error = actionError || loadError;
   return { view, error, busy, change, market, loadMarket, drafts, loadDrafts, readDraftFile, installDraft, discardDraft, syncStatus, bridgeStatus, triggerSync, toggleBridge };
 }
 
@@ -423,7 +441,7 @@ function SidebarSection({ title, count, open, onToggle, action, children }) {
 function PluginRow({ entry, view, selected, busy, onSelect, onInstall }) {
   const tr = useTranslation();
   const info = entryInfo(entry, view);
-  const action = !entry.plugin ? info.item.supported && "安装" : entry.offer && "更新";
+  const action = !entry.plugin ? info.item.supported && "安装" : entry.offer?.supported && "更新";
   const installing = busy === `install:${entry.name}`;
   return (
     <div className={`plugin-row ${selected ? "selected" : ""} ${entry.plugin?.enabled === false ? "off" : ""}`}>
@@ -437,7 +455,7 @@ function PluginRow({ entry, view, selected, busy, onSelect, onInstall }) {
         </span>
       </button>
       {action && <button type="button" className="plugin-row-action" disabled={Boolean(busy)} onClick={onInstall}>
-        {installing ? <LoaderCircle size={12} className="spin" /> : null}{installing ? tr("正在安装") : action}
+        {installing ? <LoaderCircle size={12} className="spin" /> : null}{installing ? (entry.plugin ? tr("正在更新") : tr("正在安装")) : tr(action)}
       </button>}
     </div>
   );
@@ -471,7 +489,7 @@ export function HostPluginsSidebar({ visible, model, page, onPage, onBack, onCon
   const [open, setOpen] = useState(true);
   const { installed, available } = useMemo(() => pluginEntries(model), [model]);
   const shown = installed.filter(entry => matches(entry, query));
-  const updates = installed.filter(entry => entry.offer).length;
+  const updates = installed.filter(entry => entry.offer?.supported).length;
   const installable = available.filter(entry => entry.offer.supported).length;
   const draftCount = drafts?.items?.length || 0;
   const inMarket = page?.kind === "market" || page?.kind === "plugin" && !installed.some(entry => entry.name === page.name);
@@ -875,8 +893,8 @@ function Detail({ model, name, onConfirm, onPage }) {
             {!plugin && <button type="button" className="primary" disabled={Boolean(busy) || !offer.supported} onClick={() => installPlugin(model, entry, onConfirm)}>
               {installing ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}{!offer.supported ? unsupportedLabel(offer) : installing ? tr("正在安装…") : tr("安装")}
             </button>}
-            {plugin && offer && <button type="button" className="primary" disabled={Boolean(busy)} onClick={() => installPlugin(model, entry, onConfirm)}>
-              {installing ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}{installing ? tr("正在更新…") : tr("更新到 {0}", (offer.version))}
+            {plugin && offer && <button type="button" className="primary" disabled={Boolean(busy) || !offer.supported} onClick={() => installPlugin(model, entry, onConfirm)}>
+              {installing ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}{!offer.supported ? unsupportedLabel(offer) : installing ? tr("正在更新…") : tr("更新到 {0}", (offer.version))}
             </button>}
             {plugin && !offer && plugin.default_update && <button type="button" className="primary" disabled={Boolean(busy)} onClick={updateDefault}>
               {busy === `restore:${name}` ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}{busy === `restore:${name}` ? tr("正在更新…") : tr("更新到 {0}", plugin.default_update)}
@@ -900,7 +918,7 @@ function Detail({ model, name, onConfirm, onPage }) {
         <strong>{plugin.missing_program ? tr("需要本机安装 {0}", plugin.missing_program) : tr("插件无法加载")}</strong>
         <p>{plugin.missing_program ? missingProgramGuide(plugin.missing_program) : plugin.problem}</p>
       </div></div>}
-      {!plugin && offer?.problem && <div className="plugin-banner problem" role="status"><TriangleAlert size={17} /><div><strong>{tr("暂时无法安装")}</strong><p>{offer.problem}</p></div></div>}
+      {offer?.problem && <div className="plugin-banner problem" role="status"><TriangleAlert size={17} /><div><strong>{plugin ? tr("暂时无法更新") : tr("暂时无法安装")}</strong><p>{offer.problem}</p></div></div>}
       <nav className="plugin-tabs" role="tablist" aria-label={tr("{0} 的内容", (info.title))}>
         <button type="button" role="tab" aria-selected={tab === "tools"} onClick={() => setTab("tools")}>{tr("工具")}<em>{tools.length}</em></button>
         <button type="button" role="tab" aria-selected={tab === "permissions"} onClick={() => setTab("permissions")}>{plugin ? tr("授权与权限") : tr("权限")}<em>{declared.length}</em></button>

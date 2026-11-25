@@ -1965,6 +1965,11 @@ svg {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.project-disclosure > .project-pin {
+  flex: none;
+  color: var(--muted);
+  margin-left: auto;
+}
 .project-disclosure > svg:first-child {
   color: var(--muted);
   transition: color var(--duration-fast) var(--ease-out);
@@ -1981,13 +1986,32 @@ svg {
   opacity: 0.36;
   transition: opacity var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.project-heading:is(:hover, :focus-within, .current-project) > .icon-button {
+.project-heading:is(:hover, :focus-within, .current-project, :has([aria-expanded="true"])) > .icon-button {
   opacity: 1;
 }
 @media (hover: none) {
   .project-heading > .icon-button {
     opacity: 1;
   }
+}
+.project-action-menu {
+  position: fixed;
+  right: auto;
+  min-width: 176px;
+  z-index: 40;
+}
+.project-action-menu .menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line-subtle, var(--line));
+}
+.project-action-menu .menu-item-danger {
+  color: var(--danger);
+}
+.project-action-menu .menu-item-danger:hover:not(:disabled),
+.project-action-menu .menu-item-danger:focus-visible:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, var(--paper));
 }
 .project-children {
   display: grid;
@@ -2675,6 +2699,16 @@ svg {
   flex: none;
   gap: 2px;
   color: var(--muted);
+  opacity: 0.52;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.project-picker-row:is(:hover, :focus-within, .selected) .project-picker-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .project-picker-actions {
+    opacity: 1;
+  }
 }
 .project-picker-row.selected > .project-picker-item > svg {
   color: var(--accent);
@@ -2682,6 +2716,24 @@ svg {
 .project-picker-actions .project-picker-remove:hover:not(:disabled) {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, var(--paper));
+}
+.project-remove-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 4%, var(--paper));
+}
+.project-remove-confirm p {
+  margin: 0;
+}
+.project-remove-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
 }
 .project-picker-add {
   align-self: flex-start;

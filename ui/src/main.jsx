@@ -44,7 +44,7 @@ import { TERMINAL_LIMIT, liveTerminalCount } from "./session-order.mjs";
 import { InitializationGate } from "./initialization";
 import { ProjectRecovery } from "./project-recovery";
 import { DesktopPanes, useAccountDesktops } from "./account-desktops";
-import { desktopTitle, mergedDefaultInstance } from "./account-desktop-state.mjs";
+import { desktopTitle, fallbackDesktopInstance } from "./account-desktop-state.mjs";
 import { ClaudeDesktop } from "./claude-desktop";
 import { ClaudeAccountsPanel, useClaudeAccounts } from "./claude-accounts";
 import { AccountProvider, AccountGate, useAccount } from "./account";
@@ -62,6 +62,7 @@ import {
   splitTab,
   projectName,
   projectGroups,
+  togglePinnedProject,
   tabName,
   sameState,
   mergeTabs,
@@ -170,6 +171,8 @@ function App() {
     [selectedProject, setSelectedProject] = useState(""),
     [savedProjectOrder, setSavedProjectOrder] = useState(() =>
       readLocal(clientStorageKey("cage-sidebar-project-order"), {})),
+    [savedProjectPins, setSavedProjectPins] = useState(() =>
+      readLocal(clientStorageKey("cage-sidebar-project-pins"), {})),
     [savedTabs, setSavedTabs] = useState(readLocal(clientStorageKey("cage-tab-layout"), {})),
     [privateTabMetadata, setPrivateTabMetadata] = useState({}),
     [projectDialog, setProjectDialog] = useState(null),
@@ -390,9 +393,14 @@ function App() {
   }, [finishedLogins, claudeProfiles.load]);
   // A plugin page may mark its notice as an error, shown in the error color.
   const notify = (text, tone) => { setToast(text); setToastTone(tone === "error" ? "error" : ""); };
+  const handleDefaultDesktopRemoved = useCallback(() => {
+    setDefaultDesktopRunning(false);
+    setDefaultDesktopStopped(true);
+    setDefaultDesktopSignal((n) => n + 1);
+  }, []);
   const accountDesktops = useAccountDesktops(
     () => {setManagementPage(""); setHome(false); setDesktopOpen(true);},
-    () => {setDesktopOpen(false); setHome(true);}, notify, (...args) => confirm(...args), desktopOpen && running && status?.account_desktops_supported && !managementPage, status?.desktop_catalog_revision);
+    () => {setDesktopOpen(false); setHome(true);}, notify, (...args) => confirm(...args), desktopOpen && running && status?.account_desktops_supported && !managementPage, status?.desktop_catalog_revision, handleDefaultDesktopRemoved);
   useEffect(() => {
     if (!running) {
       setDefaultDesktopRunning(false);
@@ -1149,11 +1157,11 @@ function App() {
       setBrowserError("");
       if (b.desktopFocus === true) {
         const currentDesktops = notificationViewRef.current.accountDesktops;
-        const merged = mergedDefaultInstance(currentDesktops?.catalog);
-        if (merged) {
+        const target = fallbackDesktopInstance(currentDesktops?.catalog);
+        if (target) {
           setSettingsOpen(false);
-          void currentDesktops.act(merged, "start");
-        } else {
+          void currentDesktops.act(target, "start");
+        } else if (!currentDesktops?.catalog?.default_removed) {
           currentDesktops?.clear();
           setDesktopOpen(true);
           setHome(false);
@@ -1813,6 +1821,7 @@ function App() {
             projects={projects}
             projectGroups={groups}
             projectOrder={savedProjectOrder[tabLayoutKey]}
+            pinnedProjects={savedProjectPins[tabLayoutKey] || []}
             tabs={displayTabs}
             sessions={cliSessions.sessions.map(session => ({ ...session,
               claudeAccountNumber: claudeNumbers.get(session.account_id) }))}
@@ -1845,6 +1854,11 @@ function App() {
             splitDrag={splitDrag}
             onProjectReorder={order => persist("cage-sidebar-project-order",
               { ...savedProjectOrder, [tabLayoutKey]: order }, setSavedProjectOrder)}
+            onProjectPin={path => persist("cage-sidebar-project-pins",
+              { ...savedProjectPins, [tabLayoutKey]: togglePinnedProject(savedProjectPins[tabLayoutKey], path) }, setSavedProjectPins)}
+            onProjectRename={path => setRename({ id: path, title: projectName(path, groups), project: true, error: "" })}
+            onProjectEdit={path => setProjectDialog({ path, mode: "edit" })}
+            onProjectRemove={path => setProjectDialog({ path, mode: "remove" })}
             onSessionReorder={(path, order) => changeTabMetadata({ ...metadata,
               sessionOrder: { ...metadata.sessionOrder, [path]: order } })}
             onProjectSelect={setSelectedProject}
@@ -1862,11 +1876,12 @@ function App() {
             accountDesktops={status.account_desktops_supported ? accountDesktops : null}
             onDesktopRename={(desktop) => setRename({ id: desktop.id, title: desktop.label || "", desktop: true })}
             onClaudeDesktop={() => {
-              const merged = mergedDefaultInstance(accountDesktops.catalog);
-              if (merged) {
-                void accountDesktops.act(merged, "start");
+              const target = fallbackDesktopInstance(accountDesktops.catalog);
+              if (target) {
+                void accountDesktops.act(target, "start");
                 return;
               }
+              if (accountDesktops.catalog?.default_removed) return;
               accountDesktops.clear();
               setManagementPage("");
               setHome(false);
@@ -2350,19 +2365,33 @@ function App() {
           current={settings}
           status={status}
           initialPath={projectDialog.path}
+          initialMode={projectDialog.mode || "browse"}
           onClose={() => setProjectDialog(null)}
           onSettings={() => { setProjectDialog(null); openSettings("project"); }}
           onOpened={openedProject}
           onRemoved={async (removed, workspace) => {
+            const members = groups.find(group => group.workspace === removed)?.folders || [removed];
+            const currentPins = savedProjectPins[tabLayoutKey] || [];
+            if (currentPins.some(path => members.includes(path))) {
+              persist("cage-sidebar-project-pins",
+                { ...savedProjectPins, [tabLayoutKey]: currentPins.filter(path => !members.includes(path)) },
+                setSavedProjectPins);
+            }
+            const currentOrder = savedProjectOrder[tabLayoutKey] || [];
+            if (currentOrder.some(path => members.includes(path))) {
+              persist("cage-sidebar-project-order",
+                { ...savedProjectOrder, [tabLayoutKey]: currentOrder.filter(path => !members.includes(path)) },
+                setSavedProjectOrder);
+            }
             await refreshSettings();
             await refreshStatus.current?.();
-            if ((groups.find(group => group.workspace === removed)?.folders || [removed]).includes(selectedProject)) setSelectedProject(workspace);
+            if (members.includes(selectedProject)) setSelectedProject(workspace);
           }}
         />
       )}
       {rename && (
         <Modal
-          title={rename.desktop ? tr("重命名 Desktop") : tr("重命名标签")}
+          title={rename.project ? tr("重命名项目") : rename.desktop ? tr("重命名 Desktop") : tr("重命名标签")}
           onClose={rename.saving ? undefined : () => setRename(null)}
           footer={
             <>
@@ -2385,6 +2414,22 @@ function App() {
             onSubmit={async (event) => {
               event.preventDefault();
               if (!rename.title.trim() || rename.saving) return;
+              if (rename.project) {
+                const group = groups.find(item => item.workspace === rename.id) || { workspace: rename.id, folders: [rename.id] };
+                setRename((current) => current && { ...current, saving: true, error: "" });
+                try {
+                  await api("/projects/save", {
+                    workspace: group.workspace,
+                    name: rename.title.trim(),
+                    folders: group.folders,
+                  });
+                  await refreshStatus.current?.();
+                  setRename(null);
+                } catch (error) {
+                  setRename((current) => current && { ...current, saving: false, error: error.message });
+                }
+                return;
+              }
               if (rename.desktop) {
                 setRename((current) => current && { ...current, saving: true });
                 try {
@@ -2421,7 +2466,7 @@ function App() {
               setRename(null);
             }}
           >
-            <label htmlFor="tab-title">{rename.desktop ? tr("Desktop 名称") : tr("标签名称")}</label>
+            <label htmlFor="tab-title">{rename.project ? tr("项目名称") : rename.desktop ? tr("Desktop 名称") : tr("标签名称")}</label>
             <input
               id="tab-title"
               autoFocus
@@ -2429,9 +2474,14 @@ function App() {
               maxLength={100}
               value={rename.title}
               onChange={(event) =>
-                setRename({ ...rename, title: event.target.value })
+                setRename({ ...rename, title: event.target.value, error: "" })
               }
             />
+            {rename.error && (
+              <div className="error-message" role="alert">
+                <SafetyMessage message={rename.error} />
+              </div>
+            )}
           </form>
         </Modal>
       )}

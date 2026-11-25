@@ -39,6 +39,29 @@ export function dropAfter(row, clientY) {
 const clientMount = /^\/run\/cage-client-projects\/[0-9a-f]{32}$/;
 const folderName = (path) => path?.split(/[\\/]/).filter(Boolean).at(-1);
 
+export function isClientProjectPath(path) {
+  return clientMount.test(path || "");
+}
+
+export function orderedProjects(projects = [], projectOrder = [], pinnedProjects = []) {
+  const pinned = new Set(pinnedProjects || []);
+  const ranks = new Map((projectOrder || []).map((path, index) => [path, index]));
+  const rank = (path) => ranks.get(path) ?? ranks.size;
+  return [...projects].sort((a, b) => {
+    const pinDiff = Number(pinned.has(b)) - Number(pinned.has(a));
+    if (pinDiff) return pinDiff;
+    return rank(a) - rank(b);
+  });
+}
+
+export function togglePinnedProject(pinnedProjects = [], path) {
+  const current = Array.isArray(pinnedProjects) ? pinnedProjects : [];
+  if (!path) return current;
+  return current.includes(path)
+    ? current.filter((item) => item !== path)
+    : [...current, path];
+}
+
 export function rememberClientProjectName(share) {
   if (!clientMount.test(share.guest_path)) return;
   try { sessionStorage.setItem(share.guest_path, folderName(share.path)); }

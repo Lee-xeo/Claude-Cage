@@ -84,6 +84,7 @@ type Server struct {
 	diagnosticRateMu                                 sync.Mutex
 	diagnosticWindow                                 time.Time
 	diagnosticCount                                  int
+	guestThemeMu                                     sync.Mutex
 	tickets                                          map[string]time.Time
 	remoteDesktopTickets                             map[string]bool
 	browserControl                                   *browserClient
@@ -472,6 +473,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/favorites", s.serveFavorites)
 	mux.HandleFunc("POST /api/appearance", s.saveAppearance)
 	mux.HandleFunc("GET /api/appearance/codex", s.codexAppearance)
+	mux.HandleFunc("POST /api/appearance/guest-theme", s.syncGuestAppearance)
 	mux.HandleFunc("POST /api/settings/probe", s.probe)
 	mux.HandleFunc("POST /api/settings/dns-check", s.checkDNS)
 	mux.HandleFunc("GET /api/proxy", s.proxyStatus)

@@ -5,6 +5,23 @@ umask 077
 id=$1
 code=$2
 scope=$3
+if [[ $id == default && $scope == delete ]]; then
+  state=$(systemctl show --property=ActiveState --value cage-claude-desktop.service 2>/dev/null || :)
+  if [[ $state != "" && $state != inactive && $state != failed ]]; then
+    sudo systemctl stop cage-claude-desktop.service 2>/dev/null || ! systemctl is-active --quiet cage-claude-desktop.service
+  fi
+  sudo systemctl reset-failed cage-claude-desktop.service 2>/dev/null || :
+  if [[ -e /run/systemd/system/cage-claude-desktop.service.d/40-account.conf || -e /run/systemd/system/cage-claude-desktop.service.d/account-scope ]]; then
+    sudo rm -f -- /run/systemd/system/cage-claude-desktop.service.d/40-account.conf /run/systemd/system/cage-claude-desktop.service.d/account-scope 2>/dev/null || :
+  fi
+  for target in "$HOME/.config/Claude" "$HOME/.cache/Claude" "$HOME/.local/share/Claude" "$HOME/.local/share/keyrings"; do
+    if [[ -e $target || -L $target ]]; then
+      chmod -R u+rwX -- "$target" 2>/dev/null || :
+      rm -rf -- "$target"
+    fi
+  done
+  exit 0
+fi
 [[ $id =~ ^[0-9a-f]{24}$ && ( $code == default || $code =~ ^[0-9a-f]{24}$ ) ]]
 unit="desktop-$id"
 base="$HOME/.local/share/desktop-profiles/$id"
@@ -79,6 +96,7 @@ fi
 # inside the service's private /tmp so it also exists for the Code tab.
 export CLAUDE_CONFIG_DIR
 CLAUDE_CONFIG_DIR=$(python3 -I -c 'import runpy,sys;print(runpy.run_path("/usr/local/bin/client_runtime.py")["path"](sys.argv[1]))' "$config")
+work_home=$HOME
 export HOME="$base/home" XDG_RUNTIME_DIR="$RUNTIME_DIRECTORY"
 unset RUNTIME_DIRECTORY INVOCATION_ID JOURNAL_STREAM SYSTEMD_EXEC_PID
 rm -f "$XDG_RUNTIME_DIR/stopping"
@@ -182,6 +200,9 @@ if [[ "${CAGE_LANGUAGE:-}" =~ ^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$ ]]; then
 fi
 unset CAGE_LANGUAGE
 dbus-update-activation-environment DISPLAY XAUTHORITY HOME XDG_RUNTIME_DIR TZ LANG LC_ALL
+if [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+  printf '%s' "$DBUS_SESSION_BUS_ADDRESS" > "$XDG_RUNTIME_DIR/bus-address"
+fi
 cat > "$XDG_RUNTIME_DIR/windows.xml" <<'XML'
 <openbox_config xmlns="http://openbox.org/3.4/rc"><desktops><number>1</number></desktops><applications><application type="normal"><decor>no</decor><maximized>yes</maximized></application></applications></openbox_config>
 XML
@@ -189,6 +210,29 @@ openbox --config-file "$XDG_RUNTIME_DIR/windows.xml" >/dev/null 2>&1 &
 # Settings that stay as they are when the density changes. Electron draws its
 # own GTK controls; Openbox decorations alone do not hide them.
 printf 'Gtk/DecorationLayout ":"\n' > "$XDG_RUNTIME_DIR/xsettings.fixed"
+guest_theme=
+if [ -r "$work_home/.config/claude-cage/theme-variant" ]; then
+  read -r guest_theme < "$work_home/.config/claude-cage/theme-variant" || true
+  if [ "$guest_theme" = dark ]; then
+    printf 'Net/ThemeName "Adwaita-dark"\nGtk/ApplicationPreferDarkTheme 1\n' >> "$XDG_RUNTIME_DIR/xsettings.fixed"
+  elif [ "$guest_theme" = light ]; then
+    printf 'Net/ThemeName "Adwaita"\nGtk/ApplicationPreferDarkTheme 0\n' >> "$XDG_RUNTIME_DIR/xsettings.fixed"
+  fi
+fi
+if [ -n "$guest_theme" ]; then
+  if [ -x /usr/local/bin/cage-apply-theme ]; then
+    HOME="$work_home" /usr/local/bin/cage-apply-theme "$guest_theme" >/dev/null 2>&1 || true
+  fi
+  if command -v gsettings >/dev/null 2>&1; then
+    if [ "$guest_theme" = dark ]; then
+      gsettings set org.gnome.desktop.interface color-scheme prefer-dark 2>/dev/null || true
+      gsettings set org.gnome.desktop.interface gtk-theme Adwaita-dark 2>/dev/null || true
+    elif [ "$guest_theme" = light ]; then
+      gsettings set org.gnome.desktop.interface color-scheme prefer-light 2>/dev/null || true
+      gsettings set org.gnome.desktop.interface gtk-theme Adwaita 2>/dev/null || true
+    fi
+  fi
+fi
 { printf 'Xft/DPI %s\nGdk/WindowScalingFactor 1\nGdk/UnscaledDPI %s\n' "$dpi" "$dpi"; cat "$XDG_RUNTIME_DIR/xsettings.fixed"; } > "$XDG_RUNTIME_DIR/xsettings.conf"
 xsettingsd --config="$XDG_RUNTIME_DIR/xsettings.conf" &
 printf '%s\n' "$!" > "$XDG_RUNTIME_DIR/xsettings.pid"

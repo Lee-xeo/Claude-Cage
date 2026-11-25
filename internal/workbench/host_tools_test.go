@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/hostbridge"
+	"github.com/sylvinus/agent-vm/internal/version"
 )
 
 func TestHostToolDirsListsTheCurrentProjectFirst(t *testing.T) {
@@ -415,5 +416,73 @@ func TestMissingProgramMessageAndProjectPlaceholderHelpers(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("blender not found in hostToolsView")
+	}
+}
+
+func TestMarketFloatingViewFloorRejectsUpdateBeforeDownload(t *testing.T) {
+	prevVersion := version.Version
+	version.Version = "0.2.0"
+	defer func() { version.Version = prevVersion }()
+
+	downloaded := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		downloaded = true
+		http.Error(w, "unexpected download", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	previous := hostbridge.CommunityMarket
+	hostbridge.CommunityMarket = hostbridge.Market{IndexURL: server.URL + "/index.json", ArchivePrefix: server.URL + "/dist/"}
+	defer func() { hostbridge.CommunityMarket = previous }()
+
+	s := &Server{profile: t.TempDir()}
+	s.hostMarket.fetched = time.Now()
+	s.hostMarket.entries = []hostbridge.MarketEntry{{
+		Name:        "system-status",
+		Version:     "0.2.0",
+		Kind:        hostbridge.KindGuest,
+		Permissions: []string{},
+		Engines:     &hostbridge.Engines{Cage: ">=0.2.0"},
+		Contributes: &hostbridge.Contributes{
+			Views: []hostbridge.View{{
+				ID:           "status",
+				Title:        "System Status",
+				Entry:        "view/index.html",
+				Presentation: hostbridge.ViewPresentationFloating,
+				Width:        316,
+				Height:       286,
+			}},
+		},
+		Archive: server.URL + "/dist/system-status-0.2.0.tar.gz",
+		SHA256:  strings.Repeat("a", 64),
+		Bytes:   128,
+	}}
+	installed := filepath.Join(s.hostPluginDir(), "system-status")
+	if err := os.MkdirAll(installed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldManifest := `{"name":"system-status","version":"0.1.0","description":"Status.","permissions":[],"engines":{"cage":">=0.1.9"},"kind":"guest","contributes":{"mcpServers":[{"id":"status","command":["python3","server.py"]}]}}`
+	if err := os.WriteFile(filepath.Join(installed, hostbridge.ManifestFile), []byte(oldManifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	s.getHostMarket(rec, httptest.NewRequest(http.MethodGet, "/api/host-tools/market", nil))
+	var view struct {
+		Entries []hostMarketEntryView `json:"entries"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &view); err != nil || len(view.Entries) != 1 {
+		t.Fatalf("unexpected market response: %s", rec.Body.String())
+	}
+	if view.Entries[0].Supported || !view.Entries[0].Update || view.Entries[0].Problem == "" {
+		t.Fatalf("expected unsupported floating update on 0.2.0, got %+v", view.Entries[0])
+	}
+	if err := s.installFromMarket(context.Background(), "system-status", true); err == nil {
+		t.Fatal("expected installFromMarket to reject floating view on 0.2.0")
+	}
+	if downloaded {
+		t.Fatal("installFromMarket downloaded archive before checking feature engine floor")
+	}
+	if m, err := hostbridge.LoadManifest(installed); err != nil || m.Version != "0.1.0" {
+		t.Fatalf("existing plugin was disturbed: %+v %v", m, err)
 	}
 }
