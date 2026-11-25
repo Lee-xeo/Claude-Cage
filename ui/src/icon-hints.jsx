@@ -70,7 +70,15 @@ export function IconHints() {
       hovering = null;
       if (focused) show(focused); else hide();
     }
-    function focus(event) { focused = candidate(event.target); if (focused) show(focused); }
+    // Script and pointer focus (a dialog focusing its close button) must not pop a hint.
+    function keyboardFocus(element) {
+      try { return element.matches(":focus-visible"); } catch { return true; }
+    }
+    function focus(event) {
+      const element = candidate(event.target);
+      focused = element && keyboardFocus(element) ? element : null;
+      if (focused) show(focused);
+    }
     function blur(event) { if (focused === event.target) { focused = null; if (hovering) show(hovering); else hide(); } }
     function down(event) {
       if (event.pointerType !== "touch") return;
