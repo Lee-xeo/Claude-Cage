@@ -25,8 +25,14 @@ const config = JSON.parse(
   readFileSync("/etc/claude-cage/browser-control.json", "utf8"),
 );
 const displayScale = config.display_scale === 1.5 ? 1.5 : 2;
+const themeFile = "/home/cage-browser/theme.json";
+let browserTheme = "";
+try {
+  const saved = JSON.parse(readFileSync(themeFile, "utf8")).variant;
+  if (saved === "light" || saved === "dark") browserTheme = saved;
+} catch {}
 // Started before Chromium, which then opens at this density.
-const displaySettings = createDisplaySettings({ file: "/home/cage-browser/.cache/cage-display/xsettings.conf", initial: displayScale });
+const displaySettings = createDisplaySettings({ file: "/home/cage-browser/.cache/cage-display/xsettings.conf", initial: displayScale, initialTheme: browserTheme });
 process.on("exit", () => displaySettings.close());
 const selectionFile = "/home/cage-browser/workbench-state.json";
 const homepageFile = "/home/cage-browser/homepage.json";
@@ -398,6 +404,11 @@ for (const channel of chrome.stdio.slice(3))
     console.error(`Chromium control pipe failed: ${error?.code || error?.name || "unknown"}`);
     process.exit(1);
   });
+async function applyTabColorScheme(sessionId) {
+  await cdp("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: browserTheme }],
+  }, sessionId).catch(() => {});
+}
 async function session(id, timeout = 12000) {
   if (!targets.has(id)) throw new Error("Tab no longer exists");
   if (!sessions.has(id))
@@ -411,6 +422,7 @@ async function session(id, timeout = 12000) {
           if (result?.skipped.length) console.warn("Browser copy observer skipped a modified or replaced document; reload the page to enable copy buttons.");
         }).catch(() => console.warn("Browser copy observer unavailable for this page."));
         await vault.attach(id, r.sessionId).catch(() => {});
+        if (browserTheme) await applyTabColorScheme(r.sessionId);
         return r.sessionId;
       }).catch(error => { sessions.delete(id); throw error; }),
     );
@@ -1000,6 +1012,20 @@ const server = http.createServer(async (req, res) => {
       if (req.url === "/visibility") {
         await visibility.set(input.visible);
         return { ok: true };
+      }
+      if (req.url === "/theme") {
+        const next = input.variant === "light" || input.variant === "dark" ? input.variant : "";
+        if (input.variant !== undefined && input.variant !== "" && next === "")
+          throw new Error("Invalid browser theme");
+        browserTheme = next;
+        if (browserTheme) {
+          writeFileSync(themeFile, JSON.stringify({ variant: browserTheme }), { mode: 0o600 });
+        } else {
+          rmSync(themeFile, { force: true });
+        }
+        displaySettings.setTheme(browserTheme);
+        await Promise.allSettled([...sessions.values()].map(async pendingSession => applyTabColorScheme(await pendingSession)));
+        return { ok: true, variant: browserTheme };
       }
       if (req.url === "/resize")
         return resizeDisplay(input.width, input.height, input.scale);

@@ -210,6 +210,9 @@ func (s *Server) cancelClaudeDraft(id string) (claudeAccountList, error) {
 		delete(list.DesktopLabels, a.DesktopInstanceID)
 	}
 	list.Accounts = slices.DeleteFunc(list.Accounts, func(a claudeAccount) bool { return a.ID == id })
+	if list.desktopCount() == 0 {
+		list.DefaultDesktopRemoved = false
+	}
 	err = s.saveClaudeAccounts(list)
 	if err == nil {
 		delete(m.attempted, id)
@@ -310,6 +313,9 @@ func (s *Server) deleteClaudeAccount(ctx context.Context, id string) (claudeAcco
 				delete(list.DesktopRedirects, old)
 			}
 		}
+	}
+	if list.desktopCount() == 0 {
+		list.DefaultDesktopRemoved = false
 	}
 	err = s.saveClaudeAccounts(list)
 	if err == nil {

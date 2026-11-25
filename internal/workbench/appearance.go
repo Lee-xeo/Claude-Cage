@@ -44,10 +44,11 @@ type Appearance struct {
 	PointerCursors bool                   `json:"pointerCursors"`
 	FontSmoothing  bool                   `json:"fontSmoothing"`
 	ReducedMotion  string                 `json:"reducedMotion"`
+	SyncGuestTheme bool                   `json:"syncGuestTheme"`
 }
 
 func defaultAppearance() Appearance {
-	return Appearance{Mode: "system", Light: AppearanceTheme{Preset: "codex", Accent: "#339cff", Surface: "#ffffff", Ink: "#1a1c1f", Contrast: 45}, Dark: AppearanceTheme{Preset: "codex", Accent: "#339cff", Surface: "#181818", Ink: "#ffffff", Contrast: 60}, UIFontSize: 14, CodeFontSize: 13, FontSmoothing: true, ReducedMotion: "system"}
+	return Appearance{Mode: "system", Light: AppearanceTheme{Preset: "codex", Accent: "#339cff", Surface: "#ffffff", Ink: "#1a1c1f", Contrast: 45}, Dark: AppearanceTheme{Preset: "codex", Accent: "#339cff", Surface: "#181818", Ink: "#ffffff", Contrast: 60}, UIFontSize: 14, CodeFontSize: 13, FontSmoothing: true, ReducedMotion: "system", SyncGuestTheme: true}
 }
 
 func (a Appearance) validate() error {
@@ -129,16 +130,8 @@ func validateAppearanceTheme(theme AppearanceTheme) error {
 }
 
 func (s *Server) getAppearance(w http.ResponseWriter, r *http.Request) {
-	a := defaultAppearance()
-	b, err := os.ReadFile(filepath.Join(s.profile, "appearance.json"))
-	if err == nil {
-		err = json.Unmarshal(b, &a)
-	}
-	if err != nil && !os.IsNotExist(err) {
-		requestError(w, errors.New("无法读取已保存的外观设置"))
-		return
-	}
-	if err = a.validate(); err != nil {
+	a, _, err := loadSavedAppearance(s.profile)
+	if err != nil {
 		requestError(w, err)
 		return
 	}
@@ -146,7 +139,7 @@ func (s *Server) getAppearance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveAppearance(w http.ResponseWriter, r *http.Request) {
-	var a Appearance
+	a := Appearance{SyncGuestTheme: true}
 	if !readJSON(w, r, &a, 512<<10) {
 		return
 	}
@@ -154,11 +147,11 @@ func (s *Server) saveAppearance(w http.ResponseWriter, r *http.Request) {
 		requestError(w, err)
 		return
 	}
-	// Appearance has no VM or network side effects and uses its own atomic file.
 	if err := writePrivate(filepath.Join(s.profile, "appearance.json"), a); err != nil {
 		requestError(w, errors.New("外观设置未能保存，请重试"))
 		return
 	}
+	s.onAppearanceSaved(a)
 	jsonReply(w, a)
 }
 

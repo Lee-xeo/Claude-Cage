@@ -6,6 +6,10 @@ from http.server import BaseHTTPRequestHandler
 import json
 import os
 from pathlib import Path
+try:
+    import pwd
+except ImportError:
+    pwd = None
 import re
 import select
 import shutil
@@ -20,6 +24,30 @@ from urllib.parse import parse_qs, unquote, urlsplit
 LIMIT = 2 * 1024 ** 3
 PORTAL = 'org.freedesktop.portal.FileChooser'
 ROOT = '/org/freedesktop/portal/desktop'
+SETTINGS_PORTAL = 'org.freedesktop.portal.Settings'
+APPEARANCE_NS = 'org.freedesktop.appearance'
+COLOR_SCHEMES = {'': 0, 'dark': 1, 'light': 2}
+
+
+def initial_color_scheme():
+    override = os.environ.get('CAGE_THEME_VARIANT_FILE', '')
+    if override:
+        candidate = Path(override)
+    else:
+        base = Path.home()
+        if pwd is not None and hasattr(os, 'geteuid'):
+            try:
+                base = Path(pwd.getpwuid(os.geteuid()).pw_dir)
+            except (KeyError, OSError):
+                pass
+        candidate = base / '.config/claude-cage/theme-variant'
+    try:
+        if candidate.is_symlink() or not candidate.is_file():
+            return 0
+        variant = candidate.read_text(encoding='utf-8').strip()
+    except (OSError, UnicodeError):
+        return 0
+    return COLOR_SCHEMES.get(variant, 0)
 
 
 def image_context():
@@ -265,6 +293,8 @@ class Handler(BaseHTTPRequestHandler):
                 value = json.loads(data or b'{}')
                 if route.path == '/start':
                     result = broker.start(value.get('kind', 'paste'))
+                elif route.path == '/appearance' and getattr(self.server, 'portal', None):
+                    result = self.server.portal.set_appearance(value.get('variant', ''))
                 elif route.path == '/finish':
                     result = broker.finish(value.get('id', ''))
                 elif route.path == '/finish-image':
@@ -328,12 +358,19 @@ class Portal:
       </interface><interface name="org.freedesktop.FileManager1">
       <method name="ShowItems"><arg type="as" direction="in"/><arg type="s" direction="in"/></method>
       <method name="ShowFolders"><arg type="as" direction="in"/><arg type="s" direction="in"/></method>
+      </interface><interface name="org.freedesktop.portal.Settings">
+      <property name="version" type="u" access="read"/>
+      <method name="Read"><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="v" direction="out"/></method>
+      <method name="ReadOne"><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="v" direction="out"/></method>
+      <method name="ReadAll"><arg type="as" direction="in"/><arg type="a{sa{sv}}" direction="out"/></method>
+      <signal name="SettingChanged"><arg type="s"/><arg type="s"/><arg type="v"/></signal>
       </interface><interface name="org.freedesktop.portal.Request">
       <method name="Close"/><signal name="Response"><arg type="u"/><arg type="a{sv}"/></signal>
       </interface></node>'''
 
     def __init__(self, broker):
         self.broker, self.objects = broker, {}
+        self.color_scheme = initial_color_scheme()
         self.glib = C.CDLL(find_library('glib-2.0') or 'libglib-2.0.so.0')
         self.gio = C.CDLL(find_library('gio-2.0') or 'libgio-2.0.so.0')
         p, s, u = C.c_void_p, C.c_char_p, C.c_uint
@@ -341,6 +378,7 @@ class Portal:
         self.variant_print = bind(self.glib, 'g_variant_print', p, p, C.c_int)
         self.free = bind(self.glib, 'g_free', None, p)
         self.child = bind(self.glib, 'g_variant_get_child_value', p, p, C.c_size_t)
+        self.n_children = bind(self.glib, 'g_variant_n_children', C.c_size_t, p)
         self.string = bind(self.glib, 'g_variant_get_string', s, p, p)
         self.boolean = bind(self.glib, 'g_variant_get_boolean', C.c_int, p)
         self.lookup = bind(self.glib, 'g_variant_lookup_value', p, p, s, p)
@@ -392,13 +430,15 @@ class Portal:
         self.method_callback = method_type(self.method)
         # Advertise FileChooser v4 so Electron/Chromium accepts the portal even
         # when callers pass defaultPath/current_folder instead of falling back to GTK.
-        self.property_callback = property_type(lambda *_: self.new_uint(4))
+        self.property_callback = property_type(lambda _conn, _sender, _path, interface, _prop, _err, _data:
+                                               self.new_uint(2) if interface == SETTINGS_PORTAL.encode() else self.new_uint(4))
         class VTable(C.Structure):
             _fields_ = [('method', method_type), ('get', property_type), ('set', p), ('padding', p * 8)]
         self.vtable = VTable(self.method_callback, self.property_callback, None)
         if not self.register(self.connection, ROOT.encode(), self.interface(self.node, PORTAL.encode()), C.byref(self.vtable), None, None, None):
             raise RuntimeError('桌面文件选择接口无法注册')
         for object_path, interface in ((ROOT, 'org.freedesktop.portal.OpenURI'),
+                                       (ROOT, SETTINGS_PORTAL),
                                        ('/org/freedesktop/FileManager1', 'org.freedesktop.FileManager1')):
             if not self.register(self.connection, object_path.encode(), self.interface(self.node, interface.encode()), C.byref(self.vtable), None, None, None):
                 raise RuntimeError('本机文件打开接口无法注册')
@@ -423,8 +463,62 @@ class Portal:
         finally:
             self.unref(value)
 
-    def method(self, _connection, sender, path, _interface, method, parameters, invocation, _data):
+    def set_appearance(self, variant):
+        if not isinstance(variant, str) or variant not in COLOR_SCHEMES:
+            raise ValueError('桌面主题无效')
+        scheme = COLOR_SCHEMES[variant]
+        self.color_scheme = scheme
+        payload = self.tuple(
+            self.new_string(APPEARANCE_NS.encode()),
+            self.new_string(b'color-scheme'),
+            self.new_variant(self.new_uint(scheme)),
+        )
+        self.emit(self.connection, None, ROOT.encode(), SETTINGS_PORTAL.encode(), b'SettingChanged', payload, None)
+        return {'ok': True, 'color_scheme': scheme}
+
+    def method(self, _connection, sender, path, interface, method, parameters, invocation, _data):
         try:
+            if interface == SETTINGS_PORTAL.encode():
+                if method in (b'Read', b'ReadOne'):
+                    ns_val, key_val = self.child(parameters, 0), self.child(parameters, 1)
+                    try:
+                        namespace = self.string(ns_val, None).decode()
+                        key = self.string(key_val, None).decode()
+                    finally:
+                        self.unref(ns_val)
+                        self.unref(key_val)
+                    if namespace != APPEARANCE_NS or key != 'color-scheme':
+                        self.error(invocation, b'org.freedesktop.portal.Error.NotFound', b'Requested setting not found')
+                        return
+                    value = self.new_variant(self.new_uint(self.color_scheme))
+                    self.reply(invocation, self.tuple(self.new_variant(value) if method == b'Read' else value))
+                    return
+                if method == b'ReadAll':
+                    groups = self.child(parameters, 0)
+                    patterns = []
+                    try:
+                        for index in range(self.n_children(groups)):
+                            item = self.child(groups, index)
+                            try:
+                                patterns.append(self.string(item, None).decode())
+                            finally:
+                                self.unref(item)
+                    finally:
+                        self.unref(groups)
+                    matches = (not patterns) or any(
+                        p in ('', '*', APPEARANCE_NS) or (p.endswith('.*') and APPEARANCE_NS.startswith(p[:-1]))
+                        for p in patterns
+                    )
+                    entries = []
+                    if matches:
+                        inner = self.array('{sv}', [
+                            self.new_entry(self.new_string(b'color-scheme'), self.new_variant(self.new_uint(self.color_scheme)))
+                        ])
+                        entries.append(self.new_entry(self.new_string(APPEARANCE_NS.encode()), inner))
+                    self.reply(invocation, self.tuple(self.array('{sa{sv}}', entries)))
+                    return
+                self.error(invocation, b'org.freedesktop.DBus.Error.UnknownMethod', b'Unknown method')
+                return
             if method in (b'ShowItems', b'ShowFolders'):
                 uris = self.child(parameters, 0)
                 try:
@@ -671,6 +765,7 @@ def main():
     server = FileServer(str(socket), Handler)
     os.chmod(socket, 0o600)
     server.broker = broker
+    server.portal = portal
     threading.Thread(target=server.serve_forever, daemon=True).start()
     portal.run()
 

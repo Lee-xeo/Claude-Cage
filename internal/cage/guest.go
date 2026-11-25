@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -203,7 +204,7 @@ func phoneBrowserScript() string {
 }
 
 func browserServices() string {
-	return deviceObservationScript() + "sudo tee /usr/local/lib/cage-wait-services.py >/dev/null <<'CAGE_WAIT_SERVICES'\n" + guestWaitServices + "\nCAGE_WAIT_SERVICES\n" + toolInstallFunctions() + "\n" + tailnetClientScript() + "sudo tee /usr/local/lib/browser-visibility.mjs >/dev/null <<'CAGE_BROWSER_VISIBILITY'\n" + browserVisibility + "\nCAGE_BROWSER_VISIBILITY\nsudo tee /usr/local/lib/browser-wheel.mjs >/dev/null <<'CAGE_BROWSER_WHEEL'\n" + browserWheel + "\nCAGE_BROWSER_WHEEL\nsudo tee /usr/local/lib/display-density.mjs >/dev/null <<'CAGE_DISPLAY_DENSITY'\n" + displayDensity + "\nCAGE_DISPLAY_DENSITY\n" + displayGovernorScript() + PhoneDesktopProvisionScript() + phoneBrowserScript() + "\nsudo tee /usr/local/lib/browser-extensions.mjs >/dev/null <<'CAGE_BROWSER_EXTENSIONS'\n" + browserExtensions + "\nCAGE_BROWSER_EXTENSIONS\n" + "\nsudo tee /usr/local/lib/browser-history.mjs >/dev/null <<'CAGE_BROWSER_HISTORY'\n" + browserHistory + "\nCAGE_BROWSER_HISTORY\n" + "\nsudo tee /usr/local/lib/browser-extension-archive.py >/dev/null <<'CAGE_EXTENSION_ARCHIVE'\n" + browserExtensionArchive + "\nCAGE_EXTENSION_ARCHIVE\n" + "\nsudo tee /usr/local/lib/browser-private.mjs >/dev/null <<'CAGE_BROWSER_PRIVATE'\n" + browserPrivate + "\nCAGE_BROWSER_PRIVATE\n" + "\nsudo tee /usr/local/lib/browser-cookies.mjs >/dev/null <<'CAGE_BROWSER_COOKIES'\n" + browserCookies + "\nCAGE_BROWSER_COOKIES\n" + "\nsudo tee /usr/local/lib/browser-vault.mjs >/dev/null <<'CAGE_BROWSER_VAULT'\n" + browserVault + "\nCAGE_BROWSER_VAULT\n" + guestMemory + "\n" + GuestDiskGrowScript + "\n" + guestDiagnostics() + guestAudioInputScript() + guestAudio + "\n" + guestOpenScript() + splitExtensionScript() + browserClipboardScript() + imageInputScript() + "\nsudo tee /usr/local/lib/browser-uploads.mjs >/dev/null <<'CAGE_BROWSER_UPLOADS'\n" + browserUploads + "\nCAGE_BROWSER_UPLOADS\n" + guestServices + "\nsudo tee /usr/local/lib/browser-downloads.mjs >/dev/null <<'CAGE_BROWSER_DOWNLOADS'\n" + browserDownloads + "\nCAGE_BROWSER_DOWNLOADS\n" + "\nsudo tee /usr/local/bin/cage-editor-migrate >/dev/null <<'CAGE_EDITOR_MIGRATE'\n" + editorMigrate + "\nCAGE_EDITOR_MIGRATE\nsudo chmod 0755 /usr/local/bin/cage-editor-migrate\n" + "\nsudo tee /usr/local/lib/browser-audit.mjs >/dev/null <<'CAGE_BROWSER_AUDIT'\n" + browserAudit + "\nCAGE_BROWSER_AUDIT\n" + "\nsudo tee /usr/local/lib/cage-browser-agent.mjs >/dev/null <<'CAGE_BROWSER_AGENT'\n" + browserAgent + "\nCAGE_BROWSER_AGENT\n" + "sudo tee /usr/local/bin/cage-save-download >/dev/null <<'CAGE_DOWNLOAD_HELPER'\n" + saveDownload + "\nCAGE_DOWNLOAD_HELPER\nsudo chmod 0755 /usr/local/bin/cage-save-download\nprintf 'cage-browser ALL=(root) NOPASSWD: /usr/local/bin/cage-save-download *\\n' | sudo tee /etc/sudoers.d/cage-download >/dev/null\nsudo chmod 0440 /etc/sudoers.d/cage-download\n" + "\nsudo python3 - \"$cage_novnc_root\" <<'CAGE_NOVNC_PATCH'\n" + novncPatch + "\nCAGE_NOVNC_PATCH\n" + "\nsudo tee \"$cage_novnc_root/cage-clipboard.js\" >/dev/null <<'CAGE_CLIPBOARD_JS'\n" + clipboardJS + "\nCAGE_CLIPBOARD_JS\n" + `sudo python3 - <<'PYCODE'
+	return deviceObservationScript() + "sudo tee /usr/local/lib/cage-wait-services.py >/dev/null <<'CAGE_WAIT_SERVICES'\n" + guestWaitServices + "\nCAGE_WAIT_SERVICES\n" + toolInstallFunctions() + "\n" + tailnetClientScript() + "sudo tee /usr/local/lib/browser-visibility.mjs >/dev/null <<'CAGE_BROWSER_VISIBILITY'\n" + browserVisibility + "\nCAGE_BROWSER_VISIBILITY\nsudo tee /usr/local/lib/browser-wheel.mjs >/dev/null <<'CAGE_BROWSER_WHEEL'\n" + browserWheel + "\nCAGE_BROWSER_WHEEL\nsudo tee /usr/local/lib/display-density.mjs >/dev/null <<'CAGE_DISPLAY_DENSITY'\n" + displayDensity + "\nCAGE_DISPLAY_DENSITY\n" + displayGovernorScript() + PhoneDesktopProvisionScript() + phoneBrowserScript() + "\nsudo tee /usr/local/lib/browser-extensions.mjs >/dev/null <<'CAGE_BROWSER_EXTENSIONS'\n" + browserExtensions + "\nCAGE_BROWSER_EXTENSIONS\n" + "\nsudo tee /usr/local/lib/browser-history.mjs >/dev/null <<'CAGE_BROWSER_HISTORY'\n" + browserHistory + "\nCAGE_BROWSER_HISTORY\n" + "\nsudo tee /usr/local/lib/browser-extension-archive.py >/dev/null <<'CAGE_EXTENSION_ARCHIVE'\n" + browserExtensionArchive + "\nCAGE_EXTENSION_ARCHIVE\n" + "\nsudo tee /usr/local/lib/browser-private.mjs >/dev/null <<'CAGE_BROWSER_PRIVATE'\n" + browserPrivate + "\nCAGE_BROWSER_PRIVATE\n" + "\nsudo tee /usr/local/lib/browser-cookies.mjs >/dev/null <<'CAGE_BROWSER_COOKIES'\n" + browserCookies + "\nCAGE_BROWSER_COOKIES\n" + "\nsudo tee /usr/local/lib/browser-vault.mjs >/dev/null <<'CAGE_BROWSER_VAULT'\n" + browserVault + "\nCAGE_BROWSER_VAULT\n" + guestMemory + "\n" + GuestDiskGrowScript + "\n" + guestDiagnostics() + guestAudioInputScript() + guestAudio + "\n" + guestOpenScript() + splitExtensionScript() + browserClipboardScript() + imageInputScript() + "\nsudo tee /usr/local/lib/browser-uploads.mjs >/dev/null <<'CAGE_BROWSER_UPLOADS'\n" + browserUploads + "\nCAGE_BROWSER_UPLOADS\n" + guestServices + "\nsudo tee /usr/local/lib/browser-downloads.mjs >/dev/null <<'CAGE_BROWSER_DOWNLOADS'\n" + browserDownloads + "\nCAGE_BROWSER_DOWNLOADS\n" + "\nsudo tee /usr/local/bin/cage-editor-migrate >/dev/null <<'CAGE_EDITOR_MIGRATE'\n" + editorMigrate + "\nCAGE_EDITOR_MIGRATE\nsudo chmod 0755 /usr/local/bin/cage-editor-migrate\n" + "\nsudo tee /usr/local/bin/cage-apply-theme >/dev/null <<'CAGE_APPLY_THEME'\n" + GuestThemeScript + "\nCAGE_APPLY_THEME\nsudo chmod 0755 /usr/local/bin/cage-apply-theme\n" + "\nif [ -f /usr/local/bin/cage-claude-session ]; then sudo tee /usr/local/bin/cage-claude-session >/dev/null <<'CAGE_CLAUDE_SESSION'\n" + claudeDesktopSession + "\nCAGE_CLAUDE_SESSION\nsudo chmod 0755 /usr/local/bin/cage-claude-session\nfi\n" + "\nsudo tee /usr/local/lib/browser-audit.mjs >/dev/null <<'CAGE_BROWSER_AUDIT'\n" + browserAudit + "\nCAGE_BROWSER_AUDIT\n" + "\nsudo tee /usr/local/lib/cage-browser-agent.mjs >/dev/null <<'CAGE_BROWSER_AGENT'\n" + browserAgent + "\nCAGE_BROWSER_AGENT\n" + "sudo tee /usr/local/bin/cage-save-download >/dev/null <<'CAGE_DOWNLOAD_HELPER'\n" + saveDownload + "\nCAGE_DOWNLOAD_HELPER\nsudo chmod 0755 /usr/local/bin/cage-save-download\nprintf 'cage-browser ALL=(root) NOPASSWD: /usr/local/bin/cage-save-download *\\n' | sudo tee /etc/sudoers.d/cage-download >/dev/null\nsudo chmod 0440 /etc/sudoers.d/cage-download\n" + "\nsudo python3 - \"$cage_novnc_root\" <<'CAGE_NOVNC_PATCH'\n" + novncPatch + "\nCAGE_NOVNC_PATCH\n" + "\nsudo tee \"$cage_novnc_root/cage-clipboard.js\" >/dev/null <<'CAGE_CLIPBOARD_JS'\n" + clipboardJS + "\nCAGE_CLIPBOARD_JS\n" + `sudo python3 - <<'PYCODE'
 from pathlib import Path
 import re
 p = Path("/usr/share/novnc/vnc.html")
@@ -223,6 +224,9 @@ var GuestSetup = APTBootstrapScript + "\n" + guestDependencies + "\n" + browserS
 
 //go:embed editor-theme.json
 var editorTheme string
+
+//go:embed guest-theme.py
+var GuestThemeScript string
 
 //go:embed guest-start.sh
 var guestStart string
@@ -258,6 +262,9 @@ var DebianPrepareScript = DebianPrepareScriptFor("")
 // build's CAGE_DEBIAN_MIRROR names a mirror URL instead, hence the distinct
 // name.
 const DebianMirrorEnv = "CAGE_DEBIAN_MIRROR_ORDER"
+
+// GuestThemeEnv carries the workbench's resolved light/dark variant into guest startup scripts.
+const GuestThemeEnv = "CAGE_GUEST_THEME"
 
 // InstallTLS12Env carries the user's explicit opt-in TLS 1.2 compatibility
 // switch to the host cage CLI. It stays on the host; when set to "1", setup
@@ -374,7 +381,11 @@ printf 'Cage tool packages are ready; applying browser and editor components.\n'
 }
 
 func (c Config) EnvironmentScript() string {
-	return fmt.Sprintf("export CAGE_TZ=%s\nexport CAGE_LOCALE=%s\nexport CAGE_LANGUAGE=%s\n", shellescape.Quote(c.Timezone), shellescape.Quote(c.Locale), shellescape.Quote(c.BrowserLanguage)) + guestEnv
+	env := fmt.Sprintf("export CAGE_TZ=%s\nexport CAGE_LOCALE=%s\nexport CAGE_LANGUAGE=%s\n", shellescape.Quote(c.Timezone), shellescape.Quote(c.Locale), shellescape.Quote(c.BrowserLanguage))
+	if theme := os.Getenv(GuestThemeEnv); theme == "light" || theme == "dark" {
+		env += fmt.Sprintf("export %s=%s\n", GuestThemeEnv, shellescape.Quote(theme))
+	}
+	return env + guestEnv
 }
 
 func (c Config) StartScript() string {

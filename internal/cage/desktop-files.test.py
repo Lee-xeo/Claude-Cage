@@ -1,7 +1,11 @@
+import http.client
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -145,18 +149,56 @@ class DesktopFileDBusTests(unittest.TestCase):
             root = Path(directory)
             document = root / 'Word 报告 #+%.docx'
             document.write_bytes(b'generated document')
+            theme_file = root / 'theme-variant'
+            theme_file.write_text('dark\n', encoding='utf-8')
+            old_theme_env = os.environ.get('CAGE_THEME_VARIANT_FILE')
+            os.environ['CAGE_THEME_VARIANT_FILE'] = str(theme_file)
+            self.addCleanup(lambda: os.environ.__setitem__('CAGE_THEME_VARIANT_FILE', old_theme_env) if old_theme_env is not None else os.environ.pop('CAGE_THEME_VARIANT_FILE', None))
             broker = files.Broker(root / 'uploads')
             portal = files.Portal(broker)
             broker.deliver = portal.deliver
             threading.Thread(target=portal.run, daemon=True).start()
             client = Gio.DBusConnection.new_for_address_sync(os.environ['DBUS_SESSION_BUS_ADDRESS'],
                 Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, None)
+
+            version = client.call_sync('org.freedesktop.portal.Desktop', files.ROOT,
+                'org.freedesktop.DBus.Properties', 'Get', GLib.Variant('(ss)', ('org.freedesktop.portal.Settings', 'version')),
+                GLib.VariantType.new('(v)'), Gio.DBusCallFlags.NONE, 5000, None)
+            self.assertEqual(version.unpack(), (2,))
+
+            read_outer = client.call_sync('org.freedesktop.portal.Desktop', files.ROOT,
+                'org.freedesktop.portal.Settings', 'Read', GLib.Variant('(ss)', ('org.freedesktop.appearance', 'color-scheme')),
+                GLib.VariantType.new('(v)'), Gio.DBusCallFlags.NONE, 5000, None)
+            self.assertEqual(read_outer.get_child_value(0).get_variant().get_variant().get_uint32(), 1)
+
+            read_one = client.call_sync('org.freedesktop.portal.Desktop', files.ROOT,
+                'org.freedesktop.portal.Settings', 'ReadOne', GLib.Variant('(ss)', ('org.freedesktop.appearance', 'color-scheme')),
+                GLib.VariantType.new('(v)'), Gio.DBusCallFlags.NONE, 5000, None)
+            self.assertEqual(read_one.unpack(), (1,))
+
+            read_all = client.call_sync('org.freedesktop.portal.Desktop', files.ROOT,
+                'org.freedesktop.portal.Settings', 'ReadAll', GLib.Variant('(as)', (['org.freedesktop.*'],)),
+                GLib.VariantType.new('(a{sa{sv}})'), Gio.DBusCallFlags.NONE, 5000, None)
+            self.assertEqual(read_all.unpack(), ({'org.freedesktop.appearance': {'color-scheme': 1}},))
+
+            with self.assertRaises(GLib.Error) as missing_err:
+                client.call_sync('org.freedesktop.portal.Desktop', files.ROOT,
+                    'org.freedesktop.portal.Settings', 'Read', GLib.Variant('(ss)', ('org.freedesktop.appearance', 'unknown')),
+                    GLib.VariantType.new('(v)'), Gio.DBusCallFlags.NONE, 5000, None)
+            self.assertIn('org.freedesktop.portal.Error.NotFound', str(missing_err.exception))
+
             responses, received = [], threading.Event()
+            theme_changes, theme_changed = [], threading.Event()
             def response(_connection, _sender, _path, _interface, _signal, parameters):
                 responses.append(parameters.unpack())
                 received.set()
+            def on_setting_changed(_connection, _sender, _path, _interface, _signal, parameters):
+                theme_changes.append(parameters.unpack())
+                theme_changed.set()
             client.signal_subscribe(None, 'org.freedesktop.portal.Request', 'Response', None, None,
                                     Gio.DBusSignalFlags.NONE, response)
+            client.signal_subscribe(None, 'org.freedesktop.portal.Settings', 'SettingChanged', None, None,
+                                    Gio.DBusSignalFlags.NONE, on_setting_changed)
             client.call_sync('org.freedesktop.FileManager1', '/org/freedesktop/FileManager1',
                 'org.freedesktop.FileManager1', 'ShowItems', GLib.Variant('(ass)', ([document.as_uri()], '')),
                 None, Gio.DBusCallFlags.NONE, 5000, None)
@@ -184,10 +226,13 @@ class DesktopFileDBusTests(unittest.TestCase):
 
             # Run the actual shell and Python entry points against their private
             # Unix socket. This also exercises Electron's relative `.` fallback.
-            socket = Path('/run/cage-desktop/files.sock')
-            server = files.FileServer(str(socket), files.Handler)
+            sock = root / 'files.sock'
+            server = files.FileServer(str(sock), files.Handler)
             server.broker = broker
+            server.portal = portal
             threading.Thread(target=server.serve_forever, daemon=True).start()
+            old_runtime = os.environ.get('XDG_RUNTIME_DIR')
+            os.environ['XDG_RUNTIME_DIR'] = str(root)
             try:
                 for argument, want in ((document.as_uri(), str(document)), ('.', str(root))):
                     subprocess.run(['sh', str(Path(__file__).with_name('guest-open.sh').resolve()), argument],
@@ -195,10 +240,29 @@ class DesktopFileDBusTests(unittest.TestCase):
                     key = broker.snapshot()['opens'][0]['id']
                     self.assertEqual(broker.claim_open(key)['path'], want)
                     broker.complete_open(key)
+                class UnixConn(http.client.HTTPConnection):
+                    def connect(self):
+                        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                        self.sock.settimeout(5)
+                        self.sock.connect(str(sock))
+                conn = UnixConn('localhost')
+                conn.request('POST', '/appearance', json.dumps({'variant': 'light'}).encode(), {'Content-Type': 'application/json'})
+                self.assertEqual(conn.getresponse().status, 200)
+                conn.close()
+                self.assertTrue(theme_changed.wait(5))
+                self.assertEqual(theme_changes[-1], ('org.freedesktop.appearance', 'color-scheme', 2))
+                read_after = client.call_sync('org.freedesktop.portal.Desktop', files.ROOT,
+                    'org.freedesktop.portal.Settings', 'ReadOne', GLib.Variant('(ss)', ('org.freedesktop.appearance', 'color-scheme')),
+                    GLib.VariantType.new('(v)'), Gio.DBusCallFlags.NONE, 5000, None)
+                self.assertEqual(read_after.unpack(), (2,))
             finally:
+                if old_runtime is None:
+                    os.environ.pop('XDG_RUNTIME_DIR', None)
+                else:
+                    os.environ['XDG_RUNTIME_DIR'] = old_runtime
                 server.shutdown()
                 server.server_close()
-                socket.unlink(missing_ok=True)
+                sock.unlink(missing_ok=True)
 
     def test_portal_version_four_and_open_socket_resolution(self):
         import socket as sockmod

@@ -265,6 +265,8 @@ export const backendMessageKeys = [
   "文件尚未下载完成或已不可用",
   "所选本机扩展已不可用，请刷新清单",
   "Claude Desktop 尚未启动",
+  "至少保留一个 Desktop 实例，不能删除最后一个",
+  "默认 Desktop 已删除，请从实例列表打开其他 Desktop",
 ];
 
 function unquoteGo(raw) {

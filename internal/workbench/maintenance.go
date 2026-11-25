@@ -205,11 +205,15 @@ func StartGuestServices(ctx context.Context, configPath string, stdout, stderr i
 	if prefs.BalancedDisplay {
 		scale = "1.5"
 	}
+	themePrefix := ""
+	if v := resolvedGuestTheme(filepath.Dir(configPath)); v != "" {
+		themePrefix = "export " + cage.GuestThemeEnv + "=" + v + "\n"
+	}
 	cfg, err := cage.Load(configPath)
 	if err != nil {
 		return err
 	}
-	return runMaintenanceScript(ctx, configPath, cfg, "export CAGE_DISPLAY_SCALE="+scale+"\n"+cfg.StartScript(), stdout, stderr)
+	return runMaintenanceScript(ctx, configPath, cfg, "export CAGE_DISPLAY_SCALE="+scale+"\n"+themePrefix+cfg.StartScript(), stdout, stderr)
 }
 
 func RunMaintenanceScript(ctx context.Context, configPath, script string, stdout, stderr io.Writer) error {

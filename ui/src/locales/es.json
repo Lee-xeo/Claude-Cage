@@ -3267,6 +3267,10 @@
   "新设备已配对。": "Nuevo dispositivo vinculado.",
   "最多可同时配对 8 台设备，请先移除不需要的设备": "Se pueden vincular hasta 8 dispositivos a la vez. Elimina primero un dispositivo que no necesites.",
   "未找到已配对的设备": "No se encontró el dispositivo vinculado",
+  "至少保留一个 Desktop 实例，不能删除最后一个": "Debe mantenerse al menos una instancia de Desktop; no se puede eliminar la última",
+  "默认 Desktop 已删除，请从实例列表打开其他 Desktop": "Se eliminó el Desktop predeterminado; abre otro Desktop desde la lista de instancias",
+  "同步环境内部主题": "Sincronizar tema interno del entorno",
+  "将环境内的浏览器、编辑器、桌面应用与 Claude Code 同步为相同的浅色或深色主题。": "Sincroniza el navegador, el editor, la aplicación de escritorio y Claude Code dentro del entorno con el mismo tema claro u oscuro.",
   "重命名项目": "Cambiar nombre del proyecto",
   "移除项目": "Quitar proyecto",
   "移除 {0}": "Quitar {0}"
