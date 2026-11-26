@@ -26,6 +26,14 @@ func TestAutomaticRegionSettingsPreserveManualOverrides(t *testing.T) {
 	}
 }
 
+// The guest login profile reapplies only CAGE_ACCOUNT_TZ over the
+// environment's timezone, so the account wrapper must export both names.
+func TestAccountTimezoneExportsSurviveLoginProfile(t *testing.T) {
+	if got, want := accountTimezoneExports("America/New_York"), " TZ=America/New_York CAGE_ACCOUNT_TZ=America/New_York"; got != want {
+		t.Fatalf("exports %q, want %q", got, want)
+	}
+}
+
 func TestMissingExitPolicyDoesNotRelaxSavedStaticRule(t *testing.T) {
 	s := testServer(t)
 	old := cage.DefaultConfig()

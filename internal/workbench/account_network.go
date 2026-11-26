@@ -494,9 +494,16 @@ func (s *Server) routeSelected(ctx context.Context, a claudeAccount, command str
 	opener := "/usr/local/lib/account-routes/" + a.ID + "/open"
 	regionExports := ""
 	if tz, _ := s.accountRegionOverrides(a.ProxyNodeID); tz != "" {
-		regionExports = " TZ=" + shellescape.Quote(tz)
+		regionExports = accountTimezoneExports(tz)
 	}
 	return wrapAccountNamespace("ip netns exec net-"+a.ID+" unshare -m", "export CAGE_ACCOUNT_BROWSER="+opener+" BROWSER="+opener+regionExports+"; "+command), nil
+}
+
+// The guest profile resets TZ in every login shell the command starts and
+// reapplies only CAGE_ACCOUNT_TZ, so the node timezone travels under both names.
+func accountTimezoneExports(tz string) string {
+	quoted := shellescape.Quote(tz)
+	return " TZ=" + quoted + " CAGE_ACCOUNT_TZ=" + quoted
 }
 
 const accountNamespaceMaskSockets = `set -eu
