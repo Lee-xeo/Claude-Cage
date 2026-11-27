@@ -353,6 +353,20 @@ func TestLocalBrowserSessionAndHostHeaders(t *testing.T) {
 	if res := call("GET", "/link-bootstrap?page=other", "", nil, nil); res.StatusCode != 401 {
 		t.Fatal("unexpected native bootstrap query accepted")
 	}
+	russian, err := http.NewRequest("GET", origin+"/link-bootstrap?page=archived", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	russian.Header.Set("User-Agent", "Android WebView CageMobile/1 CageLocale/ru")
+	boot, err := web.Client().Do(russian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodyRU, err := io.ReadAll(boot.Body)
+	boot.Body.Close()
+	if err != nil || boot.StatusCode != 200 || !strings.Contains(string(bodyRU), `lang="ru"`) || len(boot.Cookies()) != 0 {
+		t.Fatalf("Russian bootstrap changed session state or did not localize: status=%d err=%v", boot.StatusCode, err)
+	}
 	if res := call("POST", "/link-session", "https://untrusted.invalid", nil, body); res.StatusCode != 403 {
 		t.Fatal("cross-origin browser obtained session")
 	}

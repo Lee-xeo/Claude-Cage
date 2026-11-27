@@ -1,3 +1,4 @@
+import { mobileText } from "./language.mjs";
 export const activeTurn = (status) => status === "running" || status === "stopping" || status === "queued";
 export const abnormalTurn = (status) => status === "stopped" || status === "failed" || status === "interrupted";
 
@@ -167,7 +168,7 @@ export function reconcileDispatchError({ error, item, draft, queue, previousConf
       paused: repeated,
       waitingSync: !repeated,
       conflictId: repeated ? null : item.request_id,
-      actionError: repeated ? error.message || "当前会话暂无法发送排队消息，已暂停发送。" : "",
+      actionError: repeated ? error.message || mobileText("当前会话暂无法发送排队消息，已暂停发送。") : "",
       reload: true,
     };
   }

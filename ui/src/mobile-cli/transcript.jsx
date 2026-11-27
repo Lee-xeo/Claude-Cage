@@ -1,3 +1,4 @@
+import { mobileText } from "./language.mjs";
 import React, { createContext, memo, useContext, useMemo } from "react";
 import { Marked } from "marked";
 import { Bell, Check, ChevronRight, CircleAlert, Terminal } from "lucide-react";
@@ -6,22 +7,22 @@ import "./transcript.css";
 
 export const TranscriptContext = createContext(null);
 const statuses = {
-  completed: "已完成",
-  failed: "失败",
-  killed: "已终止",
-  stopped: "已停止",
-  running: "运行中",
-  pending: "等待中",
-  called: "已调用",
+  completed: mobileText("已完成"),
+  failed: mobileText("失败"),
+  killed: mobileText("已终止"),
+  stopped: mobileText("已停止"),
+  running: mobileText("运行中"),
+  pending: mobileText("等待中"),
+  called: mobileText("已调用"),
 };
 const wrapperLabels = {
-  "task-notification": "后台任务",
-  "system-reminder": "系统提示",
-  "local-command-stdout": "命令输出",
-  "local-command-stderr": "命令错误",
-  "command-name": "命令",
-  "command-message": "命令消息",
-  "command-args": "命令参数",
+  "task-notification": mobileText("后台任务"),
+  "system-reminder": mobileText("系统提示"),
+  "local-command-stdout": mobileText("命令输出"),
+  "local-command-stderr": mobileText("命令错误"),
+  "command-name": mobileText("命令"),
+  "command-message": mobileText("命令消息"),
+  "command-args": mobileText("命令参数"),
 };
 const wrapper =
   /^ {0,3}<(task-notification|system-reminder|local-command-std(?:out|err)|command-(?:name|message|args))>([\s\S]*?)<\/\1>/;
@@ -75,24 +76,22 @@ function Record({ token }) {
     (m) => !known.has(m[1]),
   );
   const names = {
-    "task-id": "任务编号",
-    "tool-use-id": "工具调用",
-    "output-file": "输出文件",
-    result: "结果",
-    usage: "用量",
+    "task-id": mobileText("任务编号"),
+    "tool-use-id": mobileText("工具调用"),
+    "output-file": mobileText("输出文件"),
+    result: mobileText("结果"),
+    usage: mobileText("用量"),
   };
   return (
     <details className="claude-record task-record">
       <summary>
         <Icon className={status === "failed" ? "bad" : "task-icon"} size={17} />
         <span>
-          <small>
-            后台任务
-            {status &&
+          <small>{mobileText("后台任务")}{status &&
               " · " +
                 (Object.hasOwn(statuses, status) ? statuses[status] : status)}
           </small>
-          <strong>{field("summary") || "任务通知"}</strong>
+          <strong>{field("summary") || mobileText("任务通知")}</strong>
         </span>
         <ChevronRight size={15} />
       </summary>
@@ -120,14 +119,14 @@ function Reference({ token }) {
     return (
       <a
         href={url}
-        title={"用远程浏览器打开 " + new URL(url).hostname}
+        title={mobileText("用远程浏览器打开 {0}", new URL(url).hostname)}
         onClick={(e) => {
           e.preventDefault();
           openWeb(url);
         }}
       >
         {token.type === "image" ? (
-          token.text || "查看图片"
+          token.text || mobileText("查看图片")
         ) : (
           <Tokens list={token.tokens} />
         )}
@@ -207,7 +206,7 @@ function Token({ token: t }) {
           type="checkbox"
           checked={t.checked}
           disabled
-          aria-label={t.checked ? "已完成" : "未完成"}
+          aria-label={t.checked ? mobileText("已完成") : mobileText("未完成")}
         />
       );
     case "codespan":
@@ -283,8 +282,7 @@ export function ToolActivity({ tools }) {
       <summary>
         <Terminal size={16} />
         <span>
-          {tools.length} 次工具调用
-          {failures > 0 && <small className="bad"> · {failures} 次失败</small>}
+          {mobileText("{0} 次工具调用", tools.length)}{failures > 0 && <small className="bad">{mobileText(" · {0} 次失败", failures)}</small>}
         </span>
         <ChevronRight size={15} />
       </summary>
@@ -293,7 +291,7 @@ export function ToolActivity({ tools }) {
           <li key={tool.id}>
             <strong>{tool.name}</strong>
             <small className={tool.status === "failed" ? "bad" : ""}>
-              {statuses[tool.status] || "已调用"}
+              {statuses[tool.status] || mobileText("已调用")}
             </small>
             {tool.detail && <p>{tool.detail}</p>}
           </li>

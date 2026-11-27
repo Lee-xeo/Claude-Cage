@@ -36,17 +36,17 @@ public final class ScanActivity extends Activity implements SurfaceHolder.Callba
         preview.getHolder().addCallback(this);
         finder = new Finder(); frame.addView(finder,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout bar = new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);bar.setPadding(dp(12),0,dp(20),0);
-        Button cancel = new Button(this);cancel.setText("取消");cancel.setTextColor(Color.WHITE);cancel.setTextSize(15);
+        Button cancel = new Button(this);cancel.setText(getString(R.string.cancel));cancel.setTextColor(Color.WHITE);cancel.setTextSize(15);
         cancel.setBackgroundColor(Color.TRANSPARENT);cancel.setOnClickListener(v -> finish());bar.addView(cancel,new LinearLayout.LayoutParams(dp(72),dp(56)));
-        TextView title = new TextView(this);title.setText("扫描电脑二维码");title.setTextColor(Color.WHITE);title.setTextSize(18);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        TextView title = new TextView(this);title.setText(getString(R.string.scan_computer_qr));title.setTextColor(Color.WHITE);title.setTextSize(18);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         bar.addView(title); frame.addView(bar,new FrameLayout.LayoutParams(-1,dp(64),Gravity.TOP));
         LinearLayout instructions = new LinearLayout(this);instructions.setOrientation(LinearLayout.VERTICAL);instructions.setGravity(Gravity.CENTER);
         instructions.setPadding(dp(24),dp(12),dp(24),dp(20));
-        TextView heading = new TextView(this);heading.setText("连接你的电脑");heading.setTextSize(22);heading.setTextColor(Color.WHITE);heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);instructions.addView(heading);
+        TextView heading = new TextView(this);heading.setText(getString(R.string.connect_your_computer));heading.setTextSize(22);heading.setTextColor(Color.WHITE);heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);instructions.addView(heading);
         message = new TextView(this);message.setGravity(Gravity.CENTER);message.setTextSize(15);message.setPadding(0,dp(12),0,dp(10));
-        message.setTextColor(0xffe1e5e2);message.setText("将 Cage 配对二维码放入框内\n在电脑「设置 → 远程连接」中生成");
+        message.setTextColor(0xffe1e5e2);message.setText(getString(R.string.scan_position));
         message.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);instructions.addView(message);
-        TextView privacy = new TextView(this);privacy.setText("仅识别 Cage 配对码");privacy.setTextSize(12);privacy.setTextColor(0xffa9b4ae);instructions.addView(privacy);
+        TextView privacy = new TextView(this);privacy.setText(getString(R.string.scan_cage_only));privacy.setTextSize(12);privacy.setTextColor(0xffa9b4ae);instructions.addView(privacy);
         FrameLayout.LayoutParams copy = new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);frame.addView(instructions,copy);
         frame.setOnApplyWindowInsetsListener((view,insets) -> {
             view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;
@@ -59,7 +59,7 @@ public final class ScanActivity extends Activity implements SurfaceHolder.Callba
         super.onRequestPermissionsResult(id,names,results);
         if(id!=PERMISSION)return;
         if(results.length>0 && results[0]==PackageManager.PERMISSION_GRANTED) start();
-        else finishWithError("相机权限未开启。可返回使用配对码，或在系统设置中允许相机访问。");
+        else finishWithError(getString(R.string.camera_permission_missing));
     }
     private void finishWithError(String error) {setResult(RESULT_CANCELED,new Intent().putExtra("error",error));finish();}
     private void start() {
@@ -83,7 +83,7 @@ public final class ScanActivity extends Activity implements SurfaceHolder.Callba
                 preview.setLayoutParams(new FrameLayout.LayoutParams(Math.round(width*scale),Math.round(height*scale),Gravity.CENTER));
             });
             camera.setPreviewDisplay(preview.getHolder());camera.setPreviewCallback(this);camera.startPreview();finder.animateScan(true);
-        } catch(Exception e){stop();finishWithError("无法打开相机，请重试或返回使用配对码。");}
+        } catch(Exception e){stop();finishWithError(getString(R.string.camera_failed));}
     }
     private void stop(){finder.animateScan(false);if(camera!=null){camera.setPreviewCallback(null);camera.release();camera=null;}}
     @Override public void onPreviewFrame(byte[] data,Camera source){
@@ -95,7 +95,7 @@ public final class ScanActivity extends Activity implements SurfaceHolder.Callba
             if(code.startsWith("CAGE1:") && code.length()<=4096){
                 finished=true;finder.performHapticFeedback(HapticFeedbackConstants.CONFIRM);
                 setResult(RESULT_OK,new Intent().putExtra("code",code));finish();
-            } else message.setText("请扫描 Cage 配对二维码\n在电脑「设置 → 远程连接」中生成");
+            } else message.setText(getString(R.string.scan_cage_qr));
         } catch(ReaderException ignored){} finally {reader.reset();}
     }
     @Override public void onResume(){super.onResume();resumed=true;start();}

@@ -1,3 +1,4 @@
+import { mobileText } from "./language.mjs";
 import React, { useEffect, useState } from "react";
 import { Film, Image as Picture } from "lucide-react";
 import { request, sessionPath } from "./transport.mjs";
@@ -60,7 +61,7 @@ export function ProjectMedia({ reference, label, sessionID }) {
               part.mime,
             )
           )
-            throw Error("文件预览数据无效。");
+            throw Error(mobileText("文件预览数据无效。"));
           version = part.version;
           size = part.size;
           mime = part.mime;
@@ -68,7 +69,7 @@ export function ProjectMedia({ reference, label, sessionID }) {
             c.charCodeAt(0),
           );
           if (!bytes.length || offset + bytes.length > size)
-            throw Error("文件传输不完整。");
+            throw Error(mobileText("文件传输不完整。"));
           chunks.push(bytes);
           offset += bytes.length;
           setProgress(Math.round((offset * 100) / size));
@@ -79,7 +80,7 @@ export function ProjectMedia({ reference, label, sessionID }) {
         if (!controller.signal.aborted)
           setError(
             e.status === 404
-              ? "未找到媒体文件，或电脑端 Cage 需要更新。"
+              ? mobileText("未找到媒体文件，或电脑端 Cage 需要更新。")
               : e.message,
           );
       }
@@ -118,14 +119,14 @@ export function ProjectMedia({ reference, label, sessionID }) {
         <span>{title}</span>
         <small>
           {error
-            ? "重试"
+            ? mobileText("重试")
             : loading
-              ? progress + "% · 取消"
+              ? mobileText("{0}% · 取消", progress)
               : media
-                ? "收起"
+                ? mobileText("收起")
                 : kind === "video"
-                  ? "加载视频"
-                  : "查看图片"}
+                  ? mobileText("加载视频")
+                  : mobileText("查看图片")}
         </small>
       </button>
       {error && (
@@ -142,13 +143,13 @@ export function ProjectMedia({ reference, label, sessionID }) {
             playsInline
             preload="metadata"
             aria-label={title}
-            onError={() => setError("此设备无法播放该视频编码。")}
+            onError={() => setError(mobileText("此设备无法播放该视频编码。"))}
           />
         ) : (
           <img
             src={media}
             alt={title}
-            onError={() => setError("此设备无法解码该图片。")}
+            onError={() => setError(mobileText("此设备无法解码该图片。"))}
           />
         ))}
     </span>
