@@ -99,11 +99,14 @@ function Test-InstallerTransaction {
     function Run-Fixture([string]$Executable, [string[]]$Arguments) {
         $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -WorkingDirectory $scenario -PassThru
         try {
-            if (!$process.WaitForExit(30000)) { $process.Kill($true); $process.WaitForExit(); throw 'The owned NSIS fixture exceeded 30 seconds.' }
-            if ($process.ExitCode -ne 0) {
+            # A transaction starts several Windows PowerShell helpers on older runners.
+            $finished = $process.WaitForExit(120000)
+            if (!$finished) { $process.Kill($true); $process.WaitForExit() }
+            if (!$finished -or $process.ExitCode -ne 0) {
                 foreach ($path in @($report, "$report.helper.json", "$report.uninstall.json", "$report.uninstall.json.helper.json")) {
                     if ((Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -le 8192) { Write-Output ('Quick NSIS diagnostic: ' + (Get-Content -LiteralPath $path -Raw)) }
                 }
+                if (!$finished) { throw 'The owned NSIS fixture exceeded two minutes.' }
                 throw "The NSIS fixture returned $($process.ExitCode)."
             }
         } finally { $process.Dispose() }
