@@ -58,12 +58,6 @@ if [ -r /etc/claude-cage/environment ]; then
   done < /etc/claude-cage/environment
   unset env_key env_value
 fi
-# An inherited TZ may be stale after the environment's timezone changes, so
-# only an account command's node timezone, handed down under its own name,
-# replaces the environment value. It stays exported for nested login shells.
-if [ -n "${CAGE_ACCOUNT_TZ:-}" ]; then
-  export TZ="$CAGE_ACCOUNT_TZ"
-fi
 unset CAGE_LANGUAGE
 # PulseAudio clients find the shared server in the system client configuration.
 if [ "${PULSE_SERVER:-}" = unix:/run/cage-audio/native ]; then

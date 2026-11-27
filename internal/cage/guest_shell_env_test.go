@@ -12,9 +12,21 @@ import (
 // Programs that read a login shell's environment must receive only standard
 // settings from the guest profile, whatever the service environment holds.
 func TestGuestShellProfileExportsOnlyStandardSettings(t *testing.T) {
+	_, profile, ok := strings.Cut(guestServices, "sudo tee /etc/profile.d/claude-cage.sh >/dev/null <<'SCRIPT'\n")
+	if !ok {
+		t.Fatal("missing shell profile")
+	}
+	profile, _, _ = strings.Cut(profile, "\nSCRIPT\n")
 	dir := t.TempDir()
+	environment := filepath.Join(dir, "environment")
 	// The file as an existing guest still has it, without a final newline.
-	file := writeGuestShellProfile(t, dir, "TZ=Asia/Shanghai\nLANG=zh_CN.UTF-8\nLC_ALL=zh_CN.UTF-8\nCAGE_LANGUAGE=zh-CN\nBROWSER=/usr/local/bin/cage-open\nPULSE_SERVER=unix:/run/cage-audio/native")
+	if err := os.WriteFile(environment, []byte("TZ=Asia/Shanghai\nLANG=zh_CN.UTF-8\nLC_ALL=zh_CN.UTF-8\nCAGE_LANGUAGE=zh-CN\nBROWSER=/usr/local/bin/cage-open\nPULSE_SERVER=unix:/run/cage-audio/native"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "profile.sh")
+	if err := os.WriteFile(file, []byte(strings.ReplaceAll(profile, "/etc/claude-cage/environment", environment)), 0600); err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name    string
 		env     []string
@@ -72,86 +84,4 @@ func TestGuestShellProfileExportsOnlyStandardSettings(t *testing.T) {
 			})
 		}
 	}
-}
-
-// An account command exports its node timezone and then starts a login shell;
-// that shell must keep the node timezone, while every other shell follows the
-// environment's timezone even when it inherited a different TZ.
-func TestGuestShellProfileKeepsAccountTimezone(t *testing.T) {
-	dir := t.TempDir()
-	// POSIX zone strings need no tzdata on the test host.
-	file := writeGuestShellProfile(t, dir, "TZ=UTC0\nLANG=C\nLC_ALL=C\n")
-	if err := os.WriteFile(filepath.Join(dir, ".bash_profile"), []byte(". '"+file+"'\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	report := `printf '%s|%s|%s\n' "${TZ-}" "$(date +%z)" "${CAGE_ACCOUNT_TZ-}"`
-	cases := []struct {
-		name      string
-		inherited []string
-		want      string
-	}{
-		{"account node", []string{"TZ=JST-9", "CAGE_ACCOUNT_TZ=JST-9"}, "JST-9|+0900|JST-9"},
-		{"plain shell", nil, "UTC0|+0000|"},
-		{"stale inherited", []string{"TZ=JST-9"}, "UTC0|+0000|"},
-	}
-	for _, shell := range []string{"sh", "bash", "zsh"} {
-		if _, err := exec.LookPath(shell); err != nil {
-			t.Logf("%s unavailable", shell)
-			continue
-		}
-		modes := [][]string{{"-c"}}
-		if shell == "bash" {
-			// The terminal, shared CLI and mobile runner start these after the
-			// account wrapper; HOME's .bash_profile stands in for /etc/profile.
-			modes = append(modes, []string{"-lc"}, []string{"-lic"})
-		}
-		for _, mode := range modes {
-			for _, c := range cases {
-				t.Run(shell+mode[0]+"/"+c.name, func(t *testing.T) {
-					env := []string{"PATH=/usr/bin:/bin", "HOME=" + dir}
-					var cmd *exec.Cmd
-					if mode[0] == "-c" {
-						// A zsh reads the system zshenv before the command runs, so
-						// the command exports the inherited values itself.
-						inherited := ":"
-						if len(c.inherited) > 0 {
-							inherited = "export '" + strings.Join(c.inherited, "' '") + "'"
-						}
-						cmd = exec.Command(shell, "-c", inherited+`; . "$1"; `+report, shell, file)
-					} else {
-						env = append(env, c.inherited...)
-						cmd = exec.Command(shell, mode[0], report)
-					}
-					cmd.Dir, cmd.Env = dir, env
-					// An interactive shell without a terminal warns on stderr.
-					out, err := cmd.Output()
-					if err != nil {
-						t.Fatalf("%v: %s", err, out)
-					}
-					lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-					if got := lines[len(lines)-1]; got != c.want {
-						t.Errorf("TZ|offset|CAGE_ACCOUNT_TZ = %q, want %q", got, c.want)
-					}
-				})
-			}
-		}
-	}
-}
-
-func writeGuestShellProfile(t *testing.T, dir, environment string) string {
-	t.Helper()
-	_, profile, ok := strings.Cut(guestServices, "sudo tee /etc/profile.d/claude-cage.sh >/dev/null <<'SCRIPT'\n")
-	if !ok {
-		t.Fatal("missing shell profile")
-	}
-	profile, _, _ = strings.Cut(profile, "\nSCRIPT\n")
-	path := filepath.Join(dir, "environment")
-	if err := os.WriteFile(path, []byte(environment), 0600); err != nil {
-		t.Fatal(err)
-	}
-	file := filepath.Join(dir, "profile.sh")
-	if err := os.WriteFile(file, []byte(strings.ReplaceAll(profile, "/etc/claude-cage/environment", path)), 0600); err != nil {
-		t.Fatal(err)
-	}
-	return file
 }
