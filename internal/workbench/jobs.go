@@ -130,7 +130,7 @@ func (m *jobManager) submitWithInitiatorTarget(operation sync.Locker, kind, targ
 					}
 					now := time.Now()
 					if p.Operation != "verify" && p.Label == previous.Label && p.Total == previous.Total && p.Received != nil && previous.Received != nil && *p.Received >= *previous.Received && !execution.progressUpdated.IsZero() {
-						p.BytesPerSecond = float64(*p.Received-*previous.Received) / now.Sub(execution.progressUpdated).Seconds()
+						p.BytesPerSecond = transferRate(*p.Received-*previous.Received, now.Sub(execution.progressUpdated), previous.BytesPerSecond)
 					}
 					execution.progressUpdated = now
 					m.state.SetupProgress = p
@@ -179,6 +179,16 @@ func (m *jobManager) submitWithInitiatorTarget(operation sync.Locker, kind, targ
 		m.finishLocked(execution, err)
 	}()
 	return m.state, nil
+}
+
+// Progress lines read from one pipe buffer arrive microseconds apart. Such an
+// interval measures nothing, and a zero one gives +Inf or NaN, which JSON
+// cannot encode; keep the earlier rate instead.
+func transferRate(bytes int64, elapsed time.Duration, previous float64) float64 {
+	if elapsed < 50*time.Millisecond {
+		return previous
+	}
+	return float64(bytes) / elapsed.Seconds()
 }
 
 func (m *jobManager) finishLocked(execution *jobExecution, err error) {
