@@ -46,7 +46,7 @@ function saveRoute(next, push) {
 
 function Status({ value, awaitingApproval, paused, dotOnly = false }) {
   const tr = useTranslation();
-  const label = paused ? tr("已暂停") : awaitingApproval ? tr("等待审批") : tr(labels[value] || "就绪");
+  const label = paused ? tr("已暂停") : awaitingApproval ? "等待审批" : labels[value] || "就绪";
   const tone = paused ? "warn" : active(value) ? "live" : value === "failed" || value === "interrupted" || value === "stopped" ? "bad" : "idle";
   if (dotOnly) {
     return <span className={"status-light " + tone} role="status" aria-label={label} title={label} />;
