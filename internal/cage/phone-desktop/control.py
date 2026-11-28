@@ -47,6 +47,9 @@ def launch(request, record):
     pixel_ratio = request.get('pixel_ratio', 0)
     if type(pixel_ratio) not in (int, float) or not math.isfinite(pixel_ratio) or (pixel_ratio != 0 and not 1 <= pixel_ratio <= 8):
         raise Failure(400)
+    quality = request.get('quality', '') or 'standard'
+    if quality not in ('standard', 'smooth'):
+        raise Failure(400)
     if type(w) is not int or type(h) is not int or not (240 <= w <= 1440 and 160 <= h <= 1600):
         raise Failure(400)
     desktop = command('systemctl', 'show', 'cage-claude-desktop.service', '-p', 'ActiveState', '--value').strip()
@@ -70,7 +73,7 @@ def launch(request, record):
                  'StandardOutput=null', 'StandardError=null']:
         args.append('--property=' + prop)
     for name, value in [('HOME', user.pw_dir), ('CAGE_PHONE_ID', ident), ('CAGE_PHONE_WIDTH', w), ('CAGE_PHONE_HEIGHT', h),
-                        ('CAGE_PHONE_PIXEL_RATIO', pixel_ratio)]:
+                        ('CAGE_PHONE_PIXEL_RATIO', pixel_ratio), ('CAGE_PHONE_QUALITY', quality)]:
         args.append('--setenv=' + name + '=' + str(value))
     command(*args, TOOLS + '/session.sh')
     temporary = record.with_suffix('.new')

@@ -68,6 +68,7 @@ func (s *Server) mobileSurfaceRoutes(mux routeRegistrar) {
 		mux.HandleFunc("POST "+route+"/{id}/action", handle)
 		mux.HandleFunc("POST "+route+"/{id}/close", handle)
 	}
+	mux.HandleFunc("POST /api/mobile/desktop/{id}/upload", s.serveMobileDesktopUpload)
 }
 
 // Keep the private guest profile stable across reconnects to the same enrollment.
@@ -87,6 +88,7 @@ type phoneSurfaceSession struct {
 	startJob       string
 	openInput      phoneSurfaceInput
 	readyUntil     time.Time
+	uploads        map[string]*mobileDesktopUpload
 }
 
 type phoneSurfaceInput struct {
@@ -97,6 +99,7 @@ type phoneSurfaceInput struct {
 	Width       int      `json:"width,omitempty"`
 	Height      int      `json:"height,omitempty"`
 	PixelRatio  float64  `json:"pixel_ratio,omitempty"`
+	Quality     string   `json:"quality,omitempty"`
 	URL         string   `json:"url,omitempty"`
 	Type        string   `json:"type,omitempty"`
 	X           *float64 `json:"x,omitempty"`
@@ -112,6 +115,10 @@ type phoneSurfaceInput struct {
 func (in phoneSurfaceInput) valid(surface phoneSurface, op string) bool {
 	if in.PixelRatio != 0 && (surface != phoneDesktop || in.PixelRatio < 1 || in.PixelRatio > 8 ||
 		(op != "open" && !(op == "action" && in.Type == "resize"))) {
+		return false
+	}
+	if in.Quality != "" && (surface != phoneDesktop || (in.Quality != "standard" && in.Quality != "smooth") ||
+		(op != "open" && !(op == "action" && (in.Type == "resize" || in.Type == "quality")))) {
 		return false
 	}
 	sizeOK := in.Width >= 240 && in.Width <= 1440 && in.Height >= 160 && in.Height <= 1600
@@ -133,6 +140,8 @@ func (in phoneSurfaceInput) valid(surface phoneSurface, op string) bool {
 			return surface == phoneBrowser && urlOK()
 		case "resize":
 			return sizeOK
+		case "quality":
+			return surface == phoneDesktop && (in.Quality == "standard" || in.Quality == "smooth")
 		}
 		if in.Document == "" {
 			return false
@@ -195,6 +204,7 @@ func (s *Server) retirePhoneSurfaceState(state *phoneSurfaceState, surface phone
 	state.session = nil
 	b.stopEpoch()
 	b.cancel()
+	s.cleanupMobileDesktopUploads(b)
 	input := phoneSurfaceInput{ID: b.id}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -266,7 +276,7 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 	}
 	if r.URL.RawQuery != "" {
 		after, ok := mobilelink.FrameAfter(r.URL.RawQuery)
-		if !ok || surface != phoneBrowser || op != "frame" {
+		if !ok || op != "frame" {
 			http.Error(w, "画面请求无效", 400)
 			return
 		}
@@ -515,6 +525,16 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 				frame["action_frame"] = json.RawMessage("true")
 				changed = true
 			}
+			if string(frame["frame_tag_control"]) == "true" {
+				frame["frame_tag_supported"] = json.RawMessage("true")
+				changed = true
+			}
+			if string(frame["quality_control"]) == "true" {
+				frame["quality_supported"] = json.RawMessage("true")
+				changed = true
+			}
+			frame["photo_upload_supported"] = json.RawMessage("true")
+			changed = true
 			if changed {
 				out, _ = json.Marshal(frame)
 			}

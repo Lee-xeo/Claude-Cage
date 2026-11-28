@@ -108,6 +108,56 @@ class PhoneDesktopScrollTests(unittest.TestCase):
             elif ev == 'sleep':
                 self.assertFalse(grabbed, 'time.sleep must not run while X server is grabbed')
 
+    def test_smooth_quality_and_unchanged_snapshot_skip_encode(self):
+        self.assertEqual(self.view_mod.normalize_quality(None), 'standard')
+        self.assertEqual(self.view_mod.normalize_quality('smooth'), 'smooth')
+        with self.assertRaises(self.view_mod.Failure) as ctx:
+            self.view_mod.normalize_quality('ultra')
+        self.assertEqual(ctx.exception.status, 400)
+
+        saved = []
+        class FakeImage:
+            size = (390, 640)
+            def save(self, buf, **kwargs):
+                saved.append(kwargs)
+                buf.write(b'\xff\xd8jpeg')
+        data, size = self.view_mod.encode_frame(FakeImage(), 'smooth')
+        self.assertEqual(size, (390, 640))
+        self.assertTrue(data.startswith(b'\xff\xd8'))
+        self.assertEqual(saved[-1], {'format': 'JPEG', 'quality': 72, 'subsampling': 2})
+
+        view = self.view_mod.View.__new__(self.view_mod.View)
+        view.id = '11111111-1111-4111-8111-111111111111'
+        view.size = (390, 640)
+        view.scale = 1.5
+        view.requested_scale = 1.5
+        view.dynamic_scale = True
+        view.quality = 'smooth'
+        view.scale_ready = 0
+        view.redirected = {42}
+        view.fit_display = Mock()
+        win = Mock(id=42)
+        pixmap = Mock()
+        pixmap.get_image.return_value = types.SimpleNamespace(depth=24, data=b'\x00\x01\x02\x03' * 16)
+        win.composite_name_window_pixmap.return_value = pixmap
+        geometry = types.SimpleNamespace(width=4, height=4)
+        view.active = Mock(return_value=(win, 'desktop', geometry, 'doc-1'))
+        view.focus = Mock(return_value=('', False, ''))
+
+        # Build the exact expected frame_tag and verify snapshot skips Image.frombytes when unchanged.
+        import hashlib, json as _json
+        h = hashlib.sha256()
+        h.update(_json.dumps(['doc-1', '', False, 'desktop', 1.5, 1.5, 'smooth'], separators=(',', ':')).encode())
+        h.update(b'\x00\x01\x02\x03' * 16)
+        tag = h.hexdigest()[:32]
+        self.view_mod.Image.frombytes = Mock(side_effect=AssertionError('must not decode unchanged frame'))
+        reply = view.snapshot(tag)
+        self.assertEqual(reply, {'id': view.id, 'frame_tag': tag, 'unchanged': True})
+        pixmap.free.assert_called_once()
+
+        view.action({'type': 'quality', 'quality': 'standard'})
+        self.assertEqual(view.quality, 'standard')
+
 
 if __name__ == '__main__':
     unittest.main()
