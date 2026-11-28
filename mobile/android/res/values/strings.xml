@@ -110,6 +110,7 @@
     <string name="install_permission_missing">安装权限未开启，可稍后从「检查更新」继续。</string>
     <string name="update_not_installed">更新尚未安装，可稍后从「检查更新」重试。</string>
     <string name="check_network_retry">请检查网络连接后重试。</string>
+    <string name="invalid_update_metadata">更新源返回了无效的版本信息</string>
     <string name="got_it">知道了</string>
     <string name="invalid_download_url">下载地址无效。</string>
     <string name="untrusted_download_url">更新源返回了不受信任的下载地址。</string>

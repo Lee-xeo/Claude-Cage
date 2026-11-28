@@ -21,7 +21,7 @@ async function requestAPI(path, { body, signal, keepalive } = {}) {
     });
   } catch (error) {
     if (signal?.aborted) throw error;
-    throw new Error(connectionErrorMessage(path, body === undefined ? "GET" : "POST", mobileText), { cause: error });
+    throw new Error(connectionErrorMessage(path, "GET", mobileText), { cause: error });
   }
   if (!response.ok) {
     let message;
@@ -38,7 +38,7 @@ async function requestAPI(path, { body, signal, keepalive } = {}) {
         message = httpErrorMessage(path, response.status, message, "text/plain", "POST", mobileText);
     }
     const error = new Error(mobileBackendText(message) ||
-      httpErrorMessage(path, response.status, "", "", body === undefined ? "GET" : "POST", mobileText));
+      httpErrorMessage(path, response.status, "", "", "GET", mobileText));
     error.status = response.status;
     error.recovery = response.headers.get("X-Cage-Recovery") || "";
     throw error;

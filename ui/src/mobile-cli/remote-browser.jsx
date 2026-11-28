@@ -389,7 +389,9 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
                 if (state.reopen) onReopen();
                 else controls.current.refresh();
               }}>{state.reopen ? mobileText("重新打开") : mobileText("重新读取画面")}</button></> :
-              <><LoaderCircle className="spin" aria-hidden="true" /><p>{state.waiting ? mobileText("正在启动远程{0}…", desktop ? "Claude Desktop" : mobileText("浏览器")) : mobileText("正在读取远程画面…")}</p></>}
+              <><LoaderCircle className="spin" aria-hidden="true" /><p>{state.waiting
+                ? desktop ? mobileText("正在启动远程 Claude Desktop…") : mobileText("正在启动远程浏览器…")
+                : mobileText("正在读取远程画面…")}</p></>}
         </div>}
     </div>
     {desktop && photoUpload && (

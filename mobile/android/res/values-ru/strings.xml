@@ -110,6 +110,7 @@
     <string name="install_permission_missing">Android пока не разрешил Cage устанавливать обновления. Чтобы попробовать снова, нажмите «Проверить обновления».</string>
     <string name="update_not_installed">Обновление пока не установлено. Чтобы попробовать снова, нажмите «Проверить обновления».</string>
     <string name="check_network_retry">Проверьте сеть и повторите попытку.</string>
+    <string name="invalid_update_metadata">Сервер обновлений вернул неверные сведения о версии.</string>
     <string name="got_it">Понятно</string>
     <string name="invalid_download_url">Недействительный адрес загрузки.</string>
     <string name="untrusted_download_url">Загрузка с этого адреса заблокирована. Cage принимает обновления только из проверенных источников.</string>

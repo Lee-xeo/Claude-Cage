@@ -220,9 +220,15 @@ final class AppUpdate {
     private void message(String text) { Toast.makeText(activity, text, Toast.LENGTH_LONG).show(); }
 
     private void failure(String title, Exception e) {
-        String detail = e instanceof UpdateDownload.Failure
-                ? ((UpdateDownload.Failure) e).detail(activity)
-                : activity.getString(R.string.check_network_retry);
+        String detail = e.getMessage();
+        if (e instanceof UpdateDownload.Failure) {
+            detail = ((UpdateDownload.Failure) e).detail(activity);
+        } else if ("更新源返回了无效的版本信息".equals(detail)) {
+            detail = activity.getString(R.string.invalid_update_metadata);
+        } else if ("ru".equals(activity.getString(R.string.ui_language))
+                || detail == null || !detail.matches("[\\p{IsHan}].{0,100}")) {
+            detail = activity.getString(R.string.check_network_retry);
+        }
         prompt = new AlertDialog.Builder(activity).setTitle(title).setMessage(detail)
                 .setPositiveButton(activity.getString(R.string.got_it), null).show();
     }
