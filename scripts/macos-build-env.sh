@@ -41,6 +41,34 @@ macos_prepare_caches() {
   fi
 }
 
+# Vite 8 loads a native Rolldown binding whose package declares this range;
+# older Node.js makes npm skip the optional binding with only an EBADENGINE
+# warning, and vite build later fails with "Cannot find native binding".
+# Keep in sync with engines.node in ui/package.json.
+macos_node_range='^20.19.0 || >=22.12.0'
+
+macos_node_supported() {
+  [[ "$1" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+) ]] || return 1
+  local major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}"
+  (( major == 20 && minor >= 19 )) && return 0
+  (( major == 22 && minor >= 12 )) && return 0
+  (( major > 22 ))
+}
+
+macos_check_node() {
+  local version
+  if ! command -v node >/dev/null; then
+    printf 'Building the workbench UI requires Node.js %s: https://nodejs.org/\n' "$macos_node_range" >&2
+    exit 1
+  fi
+  version="$(node -v 2>/dev/null || true)"
+  if ! macos_node_supported "$version"; then
+    printf 'Building the workbench UI requires Node.js %s; found %s at %s. Install a supported Node.js and put it first on PATH, then rerun.\n' \
+      "$macos_node_range" "${version:-an unknown version}" "$(command -v node)" >&2
+    exit 1
+  fi
+}
+
 macos_link_probe() {
   local directory="$1"
   printf 'int main(void) { return 0; }\n' > "$directory/probe.c"

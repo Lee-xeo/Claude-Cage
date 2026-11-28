@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.2.2",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "prepare-vnc": "node scripts/prepare-vnc.mjs",
     "prepare-ui": "npm run prepare-vnc && node scripts/prepare-xterm.mjs",
