@@ -92,9 +92,15 @@ func (s *Stream) output(level, line string) {
 	s.reported = time.Now()
 	s.record(level, line)
 }
+
+// Only key and certificate blocks are withheld until their END line. Other
+// PEM-style banners, such as cloud-init's SSH host key fingerprints, have no
+// END line in the stream and would otherwise hide all later output.
+var privateBlockBegin = regexp.MustCompile(`-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)[^-]*-----`)
+
 func (s *Stream) emit() {
 	line := string(s.line)
-	if bytes.Contains(s.line, []byte("-----BEGIN ")) {
+	if privateBlockBegin.Match(s.line) {
 		s.privateKey = true
 	}
 	if s.privateKey {

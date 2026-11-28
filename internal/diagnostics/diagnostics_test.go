@@ -69,6 +69,25 @@ func TestStreamRedactsSplitSecretsAndPrivateKeys(t *testing.T) {
 		t.Fatal("overlong line lost framing")
 	}
 }
+func TestStreamKeepsOutputAfterNonKeyPEMBanner(t *testing.T) {
+	s := New(t.TempDir())
+	w := s.Stream("vm-hostagent", "info")
+	// cloud-init prints this banner and the stream may end before its END line.
+	_, _ = w.Write([]byte("-----BEGIN SSH HOST KEY FINGERPRINTS-----\n256 SHA256:fingerprint root@host (ED25519)\nCAGE_SETUP_PROGRESS tools\n-----BEGIN RSA PRIVATE KEY-----\nkey-material\n-----END RSA PRIVATE KEY-----\nsetup failed\n"))
+	_ = w.Close()
+	var all string
+	for _, e := range readEvents(t, s) {
+		all += e.Message + "\n"
+	}
+	if strings.Contains(all, "key-material") {
+		t.Fatalf("private key leaked: %s", all)
+	}
+	for _, line := range []string{"CAGE_SETUP_PROGRESS tools", "setup failed"} {
+		if !strings.Contains(all, line) {
+			t.Fatalf("output after the banner lost %q: %s", line, all)
+		}
+	}
+}
 func TestConcurrentRotationCapacityAndRetention(t *testing.T) {
 	s := New(t.TempDir())
 	s.fileBytes = 1000
@@ -184,7 +203,7 @@ func TestGuestRunnerSharesRedactionAndExitStatus(t *testing.T) {
 	t.Setenv("UV_CACHE_DIR", t.TempDir())
 	script := filepath.Join(t.TempDir(), "runner.py")
 	_ = os.WriteFile(script, []byte(GuestRunner()), 0600)
-	cmd := exec.Command("uv", "run", "--no-project", "python", script, "/bin/sh", "-c", `printf 'Cookie: one=first-secret; two=second-secret\nhttps://user:pass@example.com/secret\nsafe-line\n'; exit 7`)
+	cmd := exec.Command("uv", "run", "--no-project", "python", script, "/bin/sh", "-c", `printf 'Cookie: one=first-secret; two=second-secret\nhttps://user:pass@example.com/secret\nsafe-line\n-----BEGIN SSH HOST KEY FINGERPRINTS-----\nafter-fingerprints\n-----BEGIN OPENSSH PRIVATE KEY-----\nkey-material\n-----END OPENSSH PRIVATE KEY-----\nafter-key\n'; exit 7`)
 	out, err := cmd.CombinedOutput()
 	var exit *exec.ExitError
 	if err == nil {
@@ -195,8 +214,13 @@ func TestGuestRunnerSharesRedactionAndExitStatus(t *testing.T) {
 	if strings.Contains(string(out), "first-secret") || strings.Contains(string(out), "second-secret") || strings.Contains(string(out), "example.com") {
 		t.Fatalf("guest leaked: %s", out)
 	}
-	if !strings.Contains(string(out), "safe-line") {
-		t.Fatalf("guest output missing: %s", out)
+	if strings.Contains(string(out), "key-material") {
+		t.Fatalf("guest leaked private key: %s", out)
+	}
+	for _, line := range []string{"safe-line", "after-fingerprints", "after-key"} {
+		if !strings.Contains(string(out), line) {
+			t.Fatalf("guest output missing %q: %s", line, out)
+		}
 	}
 }
 func TestLegacyImportBoundsAndRemovesOldLogs(t *testing.T) {

@@ -17,6 +17,7 @@ func GuestRunner() string {
 rules = [(re.compile(pattern), replacement) for pattern, replacement in json.loads(` + string(mustJSON(string(b))) + `)]
 host_in_message = re.compile(` + string(mustJSON(hostInMessage.String())) + `)
 public_diagnostic = re.compile(` + string(mustJSON(publicDiagnostic.String())) + `)
+private_block_begin = re.compile(` + string(mustJSON(privateBlockBegin.String())) + `)
 def redact_host(match):
     return match[0] if public_diagnostic.fullmatch(match[0]) else match[1] + '[host]'
 # Handle stop signals before the child exists, so a stop that arrives while
@@ -49,7 +50,7 @@ while True:
         print('[oversized output line omitted]', flush=True)
         continue
     line = data.decode('utf-8', 'replace')
-    if '-----BEGIN ' in line:
+    if private_block_begin.search(line):
         private_key = True
     if private_key:
         if '-----END ' in line:
