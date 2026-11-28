@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 const proxyFailure = `time="2026-11-14T10:20:30+08:00" level=warning msg="[TCP] dial CAGE (match Match/) 192.0.2.8:63839 --> api.github.com:443 error: static.example-provider.io:1337 connect error: dns resolve failed: context deadline exceeded"`
@@ -141,13 +142,19 @@ func TestStreamConsumerKeepsStoredRecordsRedacted(t *testing.T) {
 
 func TestExportRedactsLegacyProxyMessages(t *testing.T) {
 	store := New(t.TempDir())
+	// A fixed clock keeps the legacy timestamp within the retention window and
+	// prevents the whole-file leak check from matching digits of the current
+	// clock, such as "1337" in a nanosecond fraction.
+	const legacyTime = "2026-11-14T02:20:30Z"
+	fixedNow, err := time.Parse(time.RFC3339, legacyTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return fixedNow.Add(time.Hour) }
 	if err := store.Clean(); err != nil {
 		t.Fatal(err)
 	}
 	var legacy bytes.Buffer
-	// A fixed time keeps the whole-file leak check from matching digits of
-	// the current clock, such as "1337" in a nanosecond fraction.
-	const legacyTime = "2026-11-14T02:20:30Z"
 	for _, source := range []string{"proxy", "proxy-validation"} {
 		message := strings.Replace(proxyFailure, "192.0.2.8", "[ip]", 1)
 		if err := json.NewEncoder(&legacy).Encode(Event{Time: legacyTime, Level: "warn", Source: source, Message: message}); err != nil {
