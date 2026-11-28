@@ -24,6 +24,12 @@ const JOB_NAMES = new Set([
 ]);
 
 export const backendMessageKeys = [
+  "启动 Linux 基础环境",
+  "准备 Linux 环境",
+  "虚拟机内存分配失败",
+  "请关闭占用内存的应用，或在“计算资源”中调低内存上限后重试。",
+  "Windows 可用物理内存不足 3 GiB",
+  "请关闭占用内存的应用，释放内存后重试。",
   "该账号命令名已被使用，请选择其他名称",
   "账号命令名须以字母或数字开头，最多 64 个字符，可含 -、_ 和 .。不能使用纯数字、内部 ID 或保留命令。",
   // Issue #749: local proxy node validation & migration

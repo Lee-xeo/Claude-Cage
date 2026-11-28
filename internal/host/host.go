@@ -26,6 +26,15 @@ var CPUs = func() int { return runtime.NumCPU() }
 // MemGiB is the host's RAM in GiB, 0 when it cannot be told.
 var MemGiB = func() int { return int(memory.TotalMemory() >> 30) }
 
+// WindowsAvailableMemory returns the physical bytes available for a new QEMU
+// process. A zero observation leaves the normal host-share policy in effect.
+var WindowsAvailableMemory = func() uint64 {
+	if runtime.GOOS == "windows" {
+		return memory.FreeMemory()
+	}
+	return 0
+}
+
 var positiveRe = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 // Divisor is the number the host's resources are divided by to get a VM's

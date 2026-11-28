@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/sylvinus/agent-vm/internal/host"
 )
 
 // ResourceAllocation is separate from network configuration: changing a VM's
@@ -36,14 +38,37 @@ const AutomaticMemoryCapGiB = 8
 
 // AutomaticMemoryGiB is the memory ceiling of an automatic allocation on a
 // host whose share is shareGiB.
-func AutomaticMemoryGiB(shareGiB int) int {
-	return min(shareGiB, AutomaticMemoryCapGiB)
+func AutomaticMemoryGiB(shareGiB int, availableBytes uint64) int {
+	ceiling := min(shareGiB, AutomaticMemoryCapGiB)
+	if availableBytes == 0 {
+		return ceiling
+	}
+	// Leave one GiB for the host and QEMU, subject to the two-GiB guest minimum.
+	return min(ceiling, max(2, int(availableBytes>>30)-1))
 }
 
-func (a ResourceAllocation) Limits() (memory, cpus int, err error) {
+// QEMUGuestMemoryFailure identifies the QEMU error when guest RAM cannot be allocated.
+const QEMUGuestMemoryFailure = "cannot set up guest memory"
+
+// WindowsStartupMemoryLow is returned before starting QEMU when even the
+// minimum guest allocation would consume the host reserve.
+const WindowsStartupMemoryLow = "Windows 可用物理内存不足 3 GiB"
+
+func (a ResourceAllocation) StartLimits() (int, int, error) {
+	var available uint64
+	if a.Automatic {
+		available = host.WindowsAvailableMemory()
+		if available > 0 && available < 3<<30 {
+			return 0, 0, errors.New(WindowsStartupMemoryLow)
+		}
+	}
+	return a.Limits(available)
+}
+
+func (a ResourceAllocation) Limits(availableBytes uint64) (memory, cpus int, err error) {
 	memory, cpus = ResourceLimits()
 	if a.Automatic {
-		return AutomaticMemoryGiB(memory), cpus, nil
+		return AutomaticMemoryGiB(memory, availableBytes), cpus, nil
 	}
 	if a.MemoryGiB < 2 || a.MemoryGiB > memory || a.CPUs < 1 {
 		return 0, 0, fmt.Errorf("内存上限须为 2–%d GiB，CPU 须为 1–%d 个逻辑核心", memory, cpus)
@@ -73,7 +98,7 @@ func ConfiguredResourceLimits(configPath string) (int, int, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	return a.Limits()
+	return a.Limits(host.WindowsAvailableMemory())
 }
 
 // DiskBounds returns the safe [minGiB, maxGiB] range for manual disk sizing.

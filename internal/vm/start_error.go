@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 )
 
@@ -72,9 +73,13 @@ func vmStartError(cause error, instanceDir string, since time.Time) error {
 		if message == "" || strings.Contains(strings.ToLower(message), "warning:") {
 			continue
 		}
-		messages = append(messages, diagnostics.Redact(message))
-		if len(messages) == 6 {
+		if strings.Contains(message, cage.QEMUGuestMemoryFailure) {
+			// This fatal error may follow several informational records.
+			messages = []string{diagnostics.Redact(message)}
 			break
+		}
+		if len(messages) < 6 {
+			messages = append(messages, diagnostics.Redact(message))
 		}
 	}
 	if len(messages) == 0 {

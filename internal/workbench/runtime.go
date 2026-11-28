@@ -361,16 +361,23 @@ func (s *Server) runCage(args ...string) error {
 		}
 		// CLI failures can include the original QEMU stderr before a generic
 		// "Failed to start base VM" footer. Surface that reason in job.error.
-		for _, line := range strings.Split(s.jobs.snapshot().Log, "\n") {
+		output := s.jobs.snapshot().Log
+		if strings.Contains(output, cage.WindowsStartupMemoryLow) {
+			return usererror.New(action, cage.WindowsStartupMemoryLow, "请关闭占用内存的应用，释放内存后重试。", err)
+		}
+		if strings.Contains(output, cage.QEMUGuestMemoryFailure) {
+			return usererror.New(action, "虚拟机内存分配失败", "请关闭占用内存的应用，或在“计算资源”中调低内存上限后重试。", err)
+		}
+		for _, line := range strings.Split(output, "\n") {
 			if _, reason, ok := strings.Cut(line, "Error: QEMU 启动失败："); ok {
 				return fmt.Errorf("%s失败：虚拟机未能启动。QEMU 启动失败：%s。请查看操作详情；仍无法启动时，在设置中导出诊断包。", action, reason)
 			}
 		}
-		if packageErr := packageInstallFailure(action, errors.Join(ctx.Err(), err), s.jobs.snapshot().Log); packageErr != nil {
+		if packageErr := packageInstallFailure(action, errors.Join(ctx.Err(), err), output); packageErr != nil {
 			return packageErr
 		}
 		diagnostics.Log("error", "environment-operation", fmt.Sprintf("operation=%s error=%v context=%v", args[0], err, ctx.Err()))
-		return executionFailure(action, errors.Join(ctx.Err(), err), s.jobs.snapshot().Log)
+		return executionFailure(action, errors.Join(ctx.Err(), err), output)
 	}
 	return nil
 }

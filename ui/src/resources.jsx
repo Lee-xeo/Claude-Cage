@@ -22,7 +22,9 @@ export function ResourceSettings({ status, onConfirm, onDirtyChange }) {
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(false);
   useEffect(() => {
-    if (data && data.runtime !== "container") setDraft((current) => current || allocationFrom(data));
+    if (data && data.runtime !== "container") {
+      setDraft((current) => !current || (current.automatic && data.automatic) ? allocationFrom(data) : current);
+    }
   }, [data]);
   const save = async (event) => {
     event.preventDefault();
@@ -112,7 +114,7 @@ export function ResourceSettings({ status, onConfirm, onDirtyChange }) {
   </section>;
   return <section className="environment-versions resource-settings" aria-label={tr("计算资源")}>
     <h4>{tr("计算资源")}</h4>
-    <p className="field-help resource-intro">{tr("默认使用主机一半的资源，可在下方调整。内存按需使用，持续空闲后逐步归还主机。CPU 按实际任务使用。")}</p>
+    <p className="field-help resource-intro">{tr("环境启动时确定自动内存上限，Windows 会为主机预留可用内存。内存按需使用，持续空闲后逐步归还主机。CPU 按实际任务使用。")}</p>
     {draft ? <form className="resource-allocation" onSubmit={save}>
       <fieldset disabled={busy} className="resource-fields">
         <legend className="sr-only">{tr("资源配置")}</legend>

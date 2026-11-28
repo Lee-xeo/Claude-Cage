@@ -156,18 +156,19 @@ func parseResources(data []byte) (ResourceSample, error) {
 }
 
 type ResourceStatus struct {
-	Version      int             `json:"version"`
-	PID          int             `json:"pid"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	ObservedAt   time.Time       `json:"observed_at"`
-	Maximum      uint64          `json:"maximum_bytes"`
-	Target       uint64          `json:"target_bytes"`
-	CPUs         int             `json:"cpus"`
-	CPUPercent   float64         `json:"cpu_percent"`
-	Guest        *ResourceSample `json:"guest,omitempty"`
-	Pressure     bool            `json:"pressure"`
-	HostPressure bool            `json:"host_pressure"`
-	Error        string          `json:"error,omitempty"`
+	AutomaticAtStart bool            `json:"automatic_at_start,omitempty"`
+	Version          int             `json:"version"`
+	PID              int             `json:"pid"`
+	UpdatedAt        time.Time       `json:"updated_at"`
+	ObservedAt       time.Time       `json:"observed_at"`
+	Maximum          uint64          `json:"maximum_bytes"`
+	Target           uint64          `json:"target_bytes"`
+	CPUs             int             `json:"cpus"`
+	CPUPercent       float64         `json:"cpu_percent"`
+	Guest            *ResourceSample `json:"guest,omitempty"`
+	Pressure         bool            `json:"pressure"`
+	HostPressure     bool            `json:"host_pressure"`
+	Error            string          `json:"error,omitempty"`
 }
 
 // memoryTarget grows immediately and reclaims only after sustained headroom.
@@ -232,6 +233,10 @@ func StartResourceManager(parent context.Context, dir string, maximum uint64, cp
 		defer close(done)
 		p := memoryPolicy{maximum: maximum, target: maximum}
 		status := ResourceStatus{Version: 1, PID: os.Getpid(), Maximum: maximum, Target: maximum, CPUs: cpus}
+		if configPath := os.Getenv(ConfigEnv); runtime.GOOS == "windows" && configPath != "" {
+			allocation, err := LoadResourceAllocation(configPath)
+			status.AutomaticAtStart = err == nil && allocation.Automatic
+		}
 		var previous ResourceSample
 		var bootTotal uint64
 		var lastError string

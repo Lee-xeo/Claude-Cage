@@ -113,6 +113,9 @@ func TestRunCageExplainsCommonFailure(t *testing.T) {
 		os.Exit(7)
 	}
 	for _, tc := range []struct{ output, want string }{
+		{"Error: QEMU 启动失败：cannot set up guest memory 'pc.ram': Cannot allocate memory\nError: Failed to start base VM", "虚拟机内存分配失败。请关闭占用内存的应用，或在“计算资源”中调低内存上限后重试"},
+		{"qemu[stderr]: cannot set up guest memory 'pc.ram'\nDriver stopped due to error: exit status 1", "虚拟机内存分配失败"},
+		{"Error: " + cage.WindowsStartupMemoryLow, "释放内存后重试"},
 		{"curl: (28) Operation timed out", "超时"},
 		{"E: No space left on device", "空间不足"},
 		{"curl: (60) certificate verify failed", "证书验证"},
