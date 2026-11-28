@@ -24,7 +24,7 @@ const (
 
 var sessionPath = regexp.MustCompile(`^/api/mobile/cli/sessions/[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}(/messages|/media|/stop|/approval|/open|/continue|/metadata|/account|/delete|/archive|/restore|/purge)?$`)
 
-var surfacePath = regexp.MustCompile(`^/api/mobile/(?:browser|desktop)/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/(frame|action|close)$`)
+var surfacePath = regexp.MustCompile(`^/api/mobile/(?:browser|desktop)/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/(frame|action|close|upload)$`)
 
 var epochID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
@@ -57,11 +57,14 @@ func allowed(method string, u *url.URL) bool {
 		}
 	}
 	if match := surfacePath.FindStringSubmatch(u.Path); match != nil {
+		if match[1] == "upload" {
+			return method == http.MethodPost && u.RawQuery == "" && strings.HasPrefix(u.Path, "/api/mobile/desktop/")
+		}
 		if u.RawQuery == "" {
 			return (match[1] == "frame" && method == http.MethodGet) || (match[1] != "frame" && method == http.MethodPost)
 		}
 		_, ok := FrameAfter(u.RawQuery)
-		return ok && match[1] == "frame" && method == http.MethodGet && strings.HasPrefix(u.Path, "/api/mobile/browser/")
+		return ok && match[1] == "frame" && method == http.MethodGet
 	}
 	match := sessionPath.FindStringSubmatch(u.Path)
 	if match == nil {

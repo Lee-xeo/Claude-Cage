@@ -1,19 +1,121 @@
 // One displayed page and private debugging pipe per active phone browser.
 // The desktop process, its targets and its profile are never attached here.
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createConnection } from "node:net";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { phoneError, startPhoneProxy, webAddress } from "./browser-phone-network.mjs";
 import { PhoneHistoryStore } from "./browser-history.mjs";
 
 const idleTimeout = 2 * 60 * 1000;
 const maxPhoneBrowsers = 8;
+const minDisplayNumber = 120;
+const maxDisplayNumber = 199;
 const validID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const keys = new Map([
   ["Enter", 13], ["Tab", 9], ["Escape", 27], ["Backspace", 8], ["Delete", 46],
   ["ArrowLeft", 37], ["ArrowUp", 38], ["ArrowRight", 39], ["ArrowDown", 40],
 ]);
+
+function xauthEntry(family, address, displayNumber, cookie) {
+  const addr = Buffer.from(address, "utf8");
+  const num = Buffer.from(String(displayNumber), "utf8");
+  const name = Buffer.from("MIT-MAGIC-COOKIE-1", "ascii");
+  const out = Buffer.alloc(10 + addr.length + num.length + name.length + cookie.length);
+  let off = 0;
+  out.writeUInt16BE(family, off); off += 2;
+  out.writeUInt16BE(addr.length, off); off += 2;
+  addr.copy(out, off); off += addr.length;
+  out.writeUInt16BE(num.length, off); off += 2;
+  num.copy(out, off); off += num.length;
+  out.writeUInt16BE(name.length, off); off += 2;
+  name.copy(out, off); off += name.length;
+  out.writeUInt16BE(cookie.length, off); off += 2;
+  cookie.copy(out, off);
+  return out;
+}
+
+async function writeXauthority(file, displayNumber) {
+  const cookie = randomBytes(16);
+  const data = Buffer.concat([
+    xauthEntry(0x0100, hostname(), displayNumber, cookie),
+    xauthEntry(0xffff, "", displayNumber, cookie),
+  ]);
+  await writeFile(file, data, { mode: 0o600 });
+}
+
+function probeUnixSocket(socketPath) {
+  return new Promise(resolve => {
+    const socket = createConnection(socketPath);
+    const done = ok => { socket.destroy(); resolve(ok); };
+    socket.setTimeout(200, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+}
+
+async function startPhoneDisplay({ xserver, usedDisplays, renderNode }) {
+  let num = -1;
+  for (let candidate = minDisplayNumber; candidate <= maxDisplayNumber; candidate++) {
+    if (usedDisplays.has(candidate)) continue;
+    if (existsSync(`/tmp/.X11-unix/X${candidate}`) || existsSync(`/tmp/.X${candidate}-lock`)) continue;
+    num = candidate;
+    usedDisplays.add(candidate);
+    break;
+  }
+  if (num < 0) return null;
+  let runtimeDir;
+  let proc;
+  let closed = false;
+  const cleanup = async () => {
+    if (closed) return;
+    closed = true;
+    if (proc && proc.exitCode === null && !proc.killed) {
+      try { proc.kill("SIGTERM"); } catch {}
+      await new Promise(resolve => {
+        const timer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} resolve(); }, 1000);
+        proc.once("exit", () => { clearTimeout(timer); resolve(); });
+      });
+    }
+    if (runtimeDir) await rm(runtimeDir, { recursive: true, force: true }).catch(() => {});
+    usedDisplays.delete(num);
+  };
+  try {
+    runtimeDir = await mkdtemp(join(tmpdir(), "pdisp-"));
+    const xauthority = join(runtimeDir, "xauth");
+    const vncSocket = join(runtimeDir, "v");
+    await writeXauthority(xauthority, num);
+    const args = [
+      `:${num}`,
+      ...(renderNode ? ["-rendernode", renderNode] : []),
+      "-geometry", "1920x1080",
+      "-depth", "24",
+      "-rfbport", "-1",
+      "-rfbunixpath", vncSocket,
+      "-rfbunixmode", "0600",
+      "-nolisten", "tcp",
+      "-auth", xauthority,
+      "-SecurityTypes", "None",
+    ];
+    proc = spawn(xserver, args, { stdio: "ignore" });
+    let exited = false;
+    proc.once("error", () => { exited = true; });
+    proc.once("exit", () => { exited = true; });
+    const xSocket = `/tmp/.X11-unix/X${num}`;
+    const deadline = Date.now() + 3000;
+    while (!exited && Date.now() < deadline) {
+      if (existsSync(xSocket) && await probeUnixSocket(xSocket)) {
+        return { display: `:${num}`, xauthority, close: cleanup };
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  } catch {}
+  await cleanup();
+  return null;
+}
 
 function dimensions({ width, height }) {
   if (!Number.isInteger(width) || width < 240 || width > 1440 ||
@@ -22,10 +124,13 @@ function dimensions({ width, height }) {
 }
 
 class BrowserPipe {
-  constructor(binary, args) {
+  constructor(binary, args, env) {
     this.calls = new Map();
     this.sequence = 0;
-    this.process = spawn(binary, args, { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
+    this.process = spawn(binary, args, {
+      stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"],
+      ...(env ? { env } : {}),
+    });
     this.closed = new Promise(resolve => this.process.once("close", resolve));
     let buffered = [];
     const disconnected = () => {
@@ -77,8 +182,8 @@ class BrowserPipe {
   }
 }
 
-// Executed in an isolated world in the current top-level document. A password
-// only enters the page through Input.insertText; no field value is inspected.
+// Executed in an anonymous isolated world in the current top-level document.
+// A password only enters the page through Input.insertText; no field value is inspected.
 const inspectFocus = `(() => {
   let node = document.activeElement;
   while (node?.shadowRoot?.activeElement) node = node.shadowRoot.activeElement;
@@ -87,8 +192,8 @@ const inspectFocus = `(() => {
     (node.isContentEditable || node instanceof HTMLTextAreaElement ||
       (input && ["text","email","search","url","tel","password","number"].includes(node.type)));
   if (!editable) return { focus: "", password: false };
-  const ids = globalThis.cageInputs ??= new WeakMap();
-  if (!ids.has(node)) ids.set(node, String(globalThis.cageSequence = (globalThis.cageSequence || 0) + 1));
+  const ids = globalThis.__focusIds ??= new WeakMap();
+  if (!ids.has(node)) ids.set(node, String(globalThis.__focusSeq = (globalThis.__focusSeq || 0) + 1));
   return { focus: ids.get(node), password: input && node.type === "password" };
 })()`;
 
@@ -109,18 +214,24 @@ async function saveLanguage(profile, language) {
 
 export class PhoneBrowser {
   constructor({ binary = "/usr/bin/chromium", directory = "/home/cage-browser/phone-profiles",
-                language = process.env.CAGE_LANGUAGE || "en-US", connect, pipeFactory, maxSessions = maxPhoneBrowsers } = {}) {
+                language = process.env.CAGE_LANGUAGE || "en-US", connect, pipeFactory,
+                xserver = process.platform === "linux" ? "/usr/bin/Xtigervnc" : "",
+                displayFactory, maxSessions = maxPhoneBrowsers } = {}) {
     this.binary = binary;
     this.directory = directory;
     this.language = language;
     this.connect = connect;
-    this.pipeFactory = pipeFactory ?? ((binary, args) => new BrowserPipe(binary, args));
+    this.customPipeFactory = Boolean(pipeFactory);
+    this.pipeFactory = pipeFactory ?? ((binary, args, env) => new BrowserPipe(binary, args, env));
+    this.xserver = xserver;
+    this.displayFactory = displayFactory;
     this.maxSessions = maxSessions;
     this.historyStore = new PhoneHistoryStore({ directory: this.directory, validateURL: webAddress });
     this.sessions = new Map(); // profile -> session
     this.sessionById = new Map(); // id -> profile
     this.opening = new Set(); // profiles currently launching
     this.lanes = new Map(); // profile -> { queue, pending }
+    this.usedDisplays = new Set();
   }
   get session() {
     let last = null;
@@ -205,9 +316,8 @@ export class PhoneBrowser {
     const data = join(this.directory, profile);
     await saveLanguage(data, this.language);
     const proxy = await startPhoneProxy(this.connect);
-    let pipe;
-    try { pipe = await this.pipeFactory(this.binary, [
-      "--headless=new", "--disable-extensions", "--disable-quic", "--disable-background-networking",
+    const baseArgs = [
+      "--disable-extensions", "--disable-quic", "--disable-background-networking",
       "--no-first-run", "--no-default-browser-check", "--disable-session-crashed-bubble",
       "--disable-sync", "--disable-dev-shm-usage", "--remote-debugging-pipe",
       "--disable-blink-features=AutomationControlled",
@@ -215,8 +325,20 @@ export class PhoneBrowser {
       "--proxy-server=socks5://127.0.0.1:" + proxy.port, "--proxy-bypass-list=<-loopback>",
       "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
       "--lang=" + this.language, "--accept-lang=" + this.language, "--user-data-dir=" + data, "about:blank",
-    ]); } catch (error) { proxy.close(); throw error; }
-    const s = { id, profile, ...size, pipe, proxy, timer: null };
+    ];
+    let display = null;
+    if (this.displayFactory) {
+      display = await this.displayFactory({ renderNode: baseArgs.includes("--use-angle=gl") ? "/dev/dri/renderD128" : "" });
+    } else if (process.platform === "linux" && !this.customPipeFactory && this.xserver && existsSync(this.xserver)) {
+      const renderNode = baseArgs.includes("--use-angle=gl") && existsSync("/dev/dri/renderD128") ? "/dev/dri/renderD128" : "";
+      display = await startPhoneDisplay({ xserver: this.xserver, usedDisplays: this.usedDisplays, renderNode });
+    }
+    const args = display ? baseArgs : ["--headless=new", ...baseArgs];
+    const env = display ? { ...process.env, DISPLAY: display.display, XAUTHORITY: display.xauthority } : undefined;
+    let pipe;
+    try { pipe = await this.pipeFactory(this.binary, args, env); }
+    catch (error) { proxy.close(); await display?.close(); throw error; }
+    const s = { id, profile, ...size, pipe, proxy, display, focusWorld: null, timer: null };
     this.sessions.set(profile, s);
     this.sessionById.set(id, profile);
     let stopping;
@@ -224,6 +346,7 @@ export class PhoneBrowser {
     signal?.addEventListener("abort", stop, { once: true });
     pipe.closed.then(() => {
       proxy.close();
+      void display?.close();
       if (this.sessions.get(profile) === s) {
         this.sessions.delete(profile);
         clearTimeout(s.timer);
@@ -247,18 +370,20 @@ export class PhoneBrowser {
       await pipe.send("Target.setDiscoverTargets", { discover: true });
       await pipe.send("Browser.setDownloadBehavior", { behavior: "deny" });
       await s.send("Page.enable");
-      // Some sites select their layout on the first HTTP request. Device
-      // metrics alone still send Chromium's desktop UA and mobile hint.
-      const { userAgent } = await pipe.send("Browser.getVersion");
-      const platform = process.platform === "darwin" ? "macOS" : process.platform === "win32" ? "Windows" : "Linux";
-      await s.send("Emulation.setUserAgentOverride", {
-        userAgent: userAgent.replace(" Safari/", " Mobile Safari/"),
-        // Chromium supplies its own brands and full versions when omitted.
-        userAgentMetadata: { platform, platformVersion: "", architecture: "", model: "", mobile: true, formFactors: ["Mobile"] },
-      });
+      if (!display) {
+        // Headless fallback only: remove HeadlessChrome from UA while keeping desktop Client Hints coherent.
+        const { userAgent } = await pipe.send("Browser.getVersion");
+        if (typeof userAgent === "string" && userAgent.includes("HeadlessChrome/")) {
+          const platform = process.platform === "darwin" ? "macOS" : process.platform === "win32" ? "Windows" : "Linux";
+          const architecture = process.arch === "arm64" ? "arm" : "x86";
+          await s.send("Emulation.setUserAgentOverride", {
+            userAgent: userAgent.replace(/HeadlessChrome\//g, "Chrome/"),
+            userAgentMetadata: { platform, platformVersion: "", architecture, model: "", mobile: false, formFactors: ["Desktop"] },
+          });
+        }
+      }
       await s.send("Page.setInterceptFileChooserDialog", { enabled: true });
       await this.resize(s, size);
-      await s.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
       if (url) await s.send("Page.navigate", { url });
     } catch (error) { await (stopping ?? this.dispose(s)); throw error; }
     finally { signal?.removeEventListener("abort", stop); }
@@ -273,13 +398,13 @@ export class PhoneBrowser {
     if (this.sessionById.get(s.id) === s.profile) this.sessionById.delete(s.id);
     s.proxy.close();
     await s.pipe.close();
+    await s.display?.close();
   }
   async resize(s, size) {
-    // Keep the page in phone CSS pixels, with enough image pixels for legible
-    // text. Cap the raster size so a tablet frame still fits the paired link.
+    // Keep the page in phone CSS pixels with crisp raster density while avoiding
+    // DevTools mobile-device emulation signals that conflict with desktop Chromium.
     const density = Math.max(1, Math.min(2, Math.sqrt(2_000_000 / (size.width * size.height))));
-    await s.send("Emulation.setDeviceMetricsOverride", { ...size, screenWidth: size.width, screenHeight: size.height,
-      deviceScaleFactor: density, mobile: true });
+    await s.send("Emulation.setDeviceMetricsOverride", { ...size, deviceScaleFactor: density, mobile: false });
     Object.assign(s, size);
   }
   async document(s) {
@@ -293,8 +418,23 @@ export class PhoneBrowser {
     return { url, token, failed, scale: viewport.scale, frameId: frame.id, loaderId: frame.loaderId };
   }
   async focus(s, { frameId, loaderId }) {
-    const { executionContextId } = await s.send("Page.createIsolatedWorld", { frameId, worldName: "CagePhone" });
-    const result = await s.send("Runtime.evaluate", { expression: inspectFocus, contextId: executionContextId, returnByValue: true });
+    const evaluate = async () => {
+      if (!s.focusWorld || s.focusWorld.frameId !== frameId || s.focusWorld.loaderId !== loaderId) {
+        const { executionContextId } = await s.send("Page.createIsolatedWorld", { frameId, worldName: "" });
+        s.focusWorld = { frameId, loaderId, executionContextId };
+      }
+      return s.send("Runtime.evaluate", {
+        expression: inspectFocus,
+        contextId: s.focusWorld.executionContextId,
+        returnByValue: true,
+      });
+    };
+    let result;
+    try { result = await evaluate(); }
+    catch {
+      s.focusWorld = null;
+      result = await evaluate();
+    }
     const field = result.result.value;
     if (!field?.focus) return { focus: "", password: false };
     // Opening the phone keyboard changes the frame geometry, but the same
@@ -356,12 +496,11 @@ export class PhoneBrowser {
     }
     if (!Number.isFinite(input.x) || !Number.isFinite(input.y) ||
         input.x < 0 || input.y < 0 || input.x >= s.width || input.y >= s.height) throw new Error("触点不在当前画面内");
-    // CDP takes CSS coordinates; pages without a viewport meta tag can
-    // render a 980px layout scaled down into a 390px phone image.
     const x = input.x / doc.scale, y = input.y / doc.scale;
     if (type === "tap") {
-      await s.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
-      await s.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await s.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+      await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
+      await s.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 });
     } else if (type === "scroll") {
       if (![input.dx, input.dy].every(n => Number.isFinite(n) && Math.abs(n) <= 3200)) throw new Error("滚动距离无效");
       await s.send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: input.dx / doc.scale, deltaY: input.dy / doc.scale });

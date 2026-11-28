@@ -55,6 +55,7 @@ type Server struct {
 	desktopAction                                    func(context.Context, string, claudeAccount, string) error
 	desktopViews                                     displayViewDemand
 	desktopDisplayUpdate                             func(bool) error
+	mobileDesktopGuestFiles                          func(context.Context, string, string, io.Reader, string) (map[string]any, error)
 	browserViews                                     displayViewDemand
 	desktopStatus                                    desktopStatusCache
 	agentNativeQueue                                 agentNativeQueue

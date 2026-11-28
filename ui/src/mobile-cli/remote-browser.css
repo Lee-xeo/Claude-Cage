@@ -54,6 +54,22 @@
 .remote-keyboard input { border: 1px solid var(--line); padding: 9px; }
 .remote-keyboard .icon-button { width: 38px; }
 .remote-note { width: 100%; padding: 3px 10px; color: var(--error); font-size: 13px; }
+.remote-upload-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--soft);
+  font-size: 13px;
+  color: var(--ink);
+}
+.remote-upload-bar.error { color: var(--error); }
+.remote-upload-copy { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.remote-upload-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-upload-track { height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.remote-upload-fill { height: 100%; border-radius: 999px; background: var(--ink); transition: width 120ms ease-out; }
 @media (max-height: 490px) {
   .remote-tools { padding-block: 0; min-height: 44px; }
 }
