@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -325,6 +327,119 @@ func TestDeviceResetRebuildAutoRollbackOnFailure(t *testing.T) {
 	}
 	if len(s.listDeviceResetArchives()) != 0 {
 		t.Fatal("failed rebuild left stale archive behind")
+	}
+}
+
+func simulateCrossVolumeGuestProfile(t *testing.T) {
+	t.Helper()
+	previous := renameForDeviceReset
+	renameForDeviceReset = func(src, dst string) error {
+		if filepath.Base(src) == guestprofile.Filename || filepath.Base(dst) == "guest-profile.json" {
+			return &os.LinkError{Op: "rename", Old: src, New: dst, Err: syscall.EXDEV}
+		}
+		return previous(src, dst)
+	}
+	t.Cleanup(func() { renameForDeviceReset = previous })
+}
+
+func TestDeviceResetRebuildMovesGuestProfileAcrossVolumes(t *testing.T) {
+	simulateCrossVolumeGuestProfile(t)
+	s := testServer(t)
+	profileDir := s.profile
+	_, instDir, _ := seedFakeLimaEnvironment(t, profileDir, "OLD-XDEV1")
+
+	s.deviceReset = deviceResetHooks{
+		stopEnv: func() error { return nil },
+		startEnv: func(bool) error {
+			return os.MkdirAll(instDir, 0700)
+		},
+	}
+
+	w := desktopRequestForTest(s, http.MethodPost, "/api/environment/device-reset/execute",
+		[]byte(`{"mode":"rebuild","items":[],"irreversible":false,"custom_profile":{"hostname":"NEW-XDEV1","username":"newdev7","browser_username":"newweb7"}}`))
+	if w.Code != http.StatusOK {
+		t.Fatalf("execute rebuild = %d: %s", w.Code, w.Body.String())
+	}
+	if job := waitDeviceResetJob(t, s); job.Error != "" {
+		t.Fatalf("rebuild across volumes failed: %s", job.Error)
+	}
+	archives := s.listDeviceResetArchives()
+	if len(archives) != 1 || !archives[0].HasGuestProfile {
+		t.Fatalf("expected archived guest profile, got %+v", archives)
+	}
+	archived, err := os.ReadFile(filepath.Join(s.deviceResetArchivesRoot(), archives[0].ID, "guest-profile.json"))
+	if err != nil || !strings.Contains(string(archived), "OLD-XDEV1") {
+		t.Fatalf("archived guest profile = %q, %v", archived, err)
+	}
+
+	w = desktopRequestForTest(s, http.MethodPost, "/api/environment/device-reset/restore",
+		[]byte(`{"kind":"archive","id":"`+archives[0].ID+`"}`))
+	if w.Code != http.StatusOK {
+		t.Fatalf("restore archive = %d: %s", w.Code, w.Body.String())
+	}
+	if job := waitDeviceResetJob(t, s); job.Error != "" {
+		t.Fatalf("restore across volumes failed: %s", job.Error)
+	}
+	p, err := guestprofile.Load(profileDir)
+	if err != nil || p == nil || p.Hostname != "OLD-XDEV1" {
+		t.Fatalf("old profile not restored across volumes: %+v, %v", p, err)
+	}
+}
+
+func TestDeviceResetRebuildRollbackRestoresGuestProfileAcrossVolumes(t *testing.T) {
+	simulateCrossVolumeGuestProfile(t)
+	s := testServer(t)
+	profileDir := s.profile
+	seedFakeLimaEnvironment(t, profileDir, "KEEP-XDEV1")
+
+	s.deviceReset = deviceResetHooks{
+		stopEnv:  func() error { return nil },
+		startEnv: func(bool) error { return errors.New("simulated setup failure") },
+	}
+	w := desktopRequestForTest(s, http.MethodPost, "/api/environment/device-reset/execute",
+		[]byte(`{"mode":"rebuild","items":[],"irreversible":false}`))
+	if w.Code != http.StatusOK {
+		t.Fatalf("execute rebuild = %d: %s", w.Code, w.Body.String())
+	}
+	if job := waitDeviceResetJob(t, s); job.Error == "" {
+		t.Fatal("expected rebuild job error")
+	}
+	p, err := guestprofile.Load(profileDir)
+	if err != nil || p == nil || p.Hostname != "KEEP-XDEV1" {
+		t.Fatalf("rollback did not restore profile across volumes: %+v, %v", p, err)
+	}
+	if len(s.listDeviceResetArchives()) != 0 {
+		t.Fatal("rollback left stale archive behind")
+	}
+}
+
+func TestIsCrossDeviceErrorRecognizesWindowsNotSameDevice(t *testing.T) {
+	err := &os.LinkError{Op: "rename", Old: "a", New: "b", Err: syscall.Errno(17)}
+	if got, want := isCrossDeviceError(err), runtime.GOOS == "windows"; got != want {
+		t.Fatalf("isCrossDeviceError(ERROR_NOT_SAME_DEVICE) = %v, want %v", got, want)
+	}
+	if !isCrossDeviceError(&os.LinkError{Op: "rename", Old: "a", New: "b", Err: syscall.EXDEV}) {
+		t.Fatal("EXDEV must be treated as cross-device")
+	}
+}
+
+func TestMovePathKeepsDirectoryRenameErrors(t *testing.T) {
+	previous := renameForDeviceReset
+	renameForDeviceReset = func(src, dst string) error {
+		return &os.LinkError{Op: "rename", Old: src, New: dst, Err: syscall.EXDEV}
+	}
+	t.Cleanup(func() { renameForDeviceReset = previous })
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "instance")
+	if err := os.MkdirAll(src, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := movePath(src, filepath.Join(dir, "archived")); !errors.Is(err, syscall.EXDEV) {
+		t.Fatalf("movePath(directory) = %v, want EXDEV", err)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Fatalf("directory source must stay in place: %v", err)
 	}
 }
 
