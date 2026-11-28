@@ -3,7 +3,9 @@ package workbench
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/host"
@@ -11,6 +13,9 @@ import (
 
 func TestResourceAllocationSaveAndStartup(t *testing.T) {
 	oldMem, oldCPU := host.MemGiB, host.CPUs
+	oldAvailable := host.WindowsAvailableMemory
+	t.Cleanup(func() { host.WindowsAvailableMemory = oldAvailable })
+	host.WindowsAvailableMemory = func() uint64 { return 16 << 30 }
 	t.Cleanup(func() { host.MemGiB, host.CPUs = oldMem, oldCPU })
 	host.MemGiB = func() int { return 24 }
 	host.CPUs = func() int { return 10 }
@@ -77,4 +82,54 @@ func TestResourceAllocationSaveAndStartup(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 	check(8, 5)
+}
+
+func TestWindowsAutomaticMemoryForStoppedAndRunningVM(t *testing.T) {
+	oldMem, oldCPU, oldAvailable := host.MemGiB, host.CPUs, host.WindowsAvailableMemory
+	t.Cleanup(func() { host.MemGiB, host.CPUs, host.WindowsAvailableMemory = oldMem, oldCPU, oldAvailable })
+	t.Setenv("AGENT_VM_HOST_SHARE", "2")
+	host.MemGiB = func() int { return 15 }
+	host.CPUs = func() int { return 32 }
+	host.WindowsAvailableMemory = func() uint64 { return 6042 << 20 }
+	s := testServer(t)
+	if err := writePrivate(filepath.Join(s.profile, "environment.json"), cage.EnvironmentRecord{Directory: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	check := func(wantMemory int, wantRestart bool) {
+		t.Helper()
+		w := request(s, "GET", "/api/environment/resources", "", "", true)
+		var data struct {
+			CPUs        int   `json:"cpus"`
+			Memory      int   `json:"memory_gib"`
+			Recommended int64 `json:"recommended_memory_bytes"`
+			Restart     bool  `json:"restart_required"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &data); err != nil || data.CPUs != 16 || data.Memory != wantMemory || data.Recommended != int64(wantMemory)<<30 || data.Restart != wantRestart {
+			t.Fatalf("unexpected resource settings: %s (%v)", w.Body, err)
+		}
+	}
+	check(4, false)
+	dir := s.instanceDir()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "lima.yaml"), []byte("memory: 4GiB\ncpus: 16\ndisk: 24GiB\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePrivate(filepath.Join(dir, "cage-running.json"), map[string]int{"pid": os.Getpid()}); err != nil {
+		t.Fatal(err)
+	}
+	host.WindowsAvailableMemory = func() uint64 { t.Fatal("sampled available memory while the VM was running"); return 0 }
+	for _, automatic := range []bool{true, false} {
+		status := cage.ResourceStatus{Version: 1, UpdatedAt: time.Now(), Maximum: 4 << 30, CPUs: 16, AutomaticAtStart: automatic}
+		if err := writePrivate(filepath.Join(dir, "cage-resources.json"), status); err != nil {
+			t.Fatal(err)
+		}
+		if automatic {
+			check(4, false)
+		} else {
+			// The running VM was manually sized before the user restored auto.
+			check(7, true)
+		}
+	}
 }

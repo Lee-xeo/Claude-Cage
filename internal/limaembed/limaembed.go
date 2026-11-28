@@ -5,6 +5,7 @@ package limaembed
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -55,8 +56,9 @@ func Run(args []string) bool {
 			}
 			return cage.StartResourceManager(ctx, dir, uint64(maximum), *cfg.CPUs, read, balloon.SetMemoryTarget)
 		}
-		diagnosticStream = diagnostics.New(filepath.Dir(path)).Stream("vm-hostagent", "warn")
-		diagnostics.SetDefault(diagnostics.New(filepath.Dir(path)))
+		store := diagnostics.New(filepath.Dir(path))
+		diagnosticStream = hostagentDiagnostics(store, os.Stderr)
+		diagnostics.SetDefault(store)
 		logrus.SetOutput(diagnosticStream)
 		defer diagnosticStream.Close()
 	}
@@ -168,6 +170,16 @@ func Run(args []string) bool {
 	}
 	os.Exit(0)
 	return true
+}
+
+// Managed hostagents log to the profile store. Forward the allocation failure
+// to this instance's ha.stderr.log as well, where its startup caller reads it.
+func hostagentDiagnostics(store *diagnostics.Store, stderr io.Writer) *diagnostics.Stream {
+	return diagnostics.NewStream(store, "vm-hostagent", "warn", func(line string) {
+		if strings.Contains(line, cage.QEMUGuestMemoryFailure) && strings.Contains(line, "qemu[stderr]") {
+			_, _ = io.WriteString(stderr, `{"level":"error","msg":"qemu[stderr]: `+cage.QEMUGuestMemoryFailure+`"}`+"\n")
+		}
+	})
 }
 
 // windowsPath puts QEMU's usual folders on PATH, as limactl's main does.

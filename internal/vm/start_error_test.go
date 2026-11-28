@@ -89,3 +89,19 @@ func TestVMStartErrorPreservesWindowsLoaderFailure(t *testing.T) {
 		t.Fatalf("direct loader failure was lost: %v", err)
 	}
 }
+
+func TestVMStartErrorFindsGuestMemoryFailureAfterQEMUStartupMessages(t *testing.T) {
+	previous := diagnostics.Default()
+	diagnostics.SetDefault(diagnostics.New(t.TempDir()))
+	t.Cleanup(func() { diagnostics.SetDefault(previous) })
+	dir := t.TempDir()
+	log := strings.Repeat(`{"msg":"qemu[stderr]: WHPX: initializing partition"}`+"\n", 8) +
+		`{"msg":"qemu[stderr]: cannot set up guest memory 'pc.ram': Cannot allocate memory"}`
+	if err := os.WriteFile(filepath.Join(dir, "ha.stderr.log"), []byte(log), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := vmStartError(errors.New("exit status 1"), dir, time.Time{})
+	if !strings.Contains(err.Error(), "QEMU 启动失败：cannot set up guest memory") {
+		t.Fatal(err)
+	}
+}

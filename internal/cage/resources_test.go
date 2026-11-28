@@ -45,12 +45,12 @@ func TestWindowsVMCPUsStayBelowQEMUEventLimit(t *testing.T) {
 	host.CPUs = func() int { return 192 }
 	want := vmCPULimit(runtime.GOOS, 96)
 	for _, a := range []ResourceAllocation{{Automatic: true}, {MemoryGiB: 8, CPUs: want}} {
-		if _, cpus, err := a.Limits(); err != nil || cpus != want {
+		if _, cpus, err := a.Limits(0); err != nil || cpus != want {
 			t.Fatalf("%+v on a 192-thread host: %d %v", a, cpus, err)
 		}
 	}
 	// A larger value saved earlier never reaches the VM, and still starts it.
-	if _, cpus, err := (ResourceAllocation{MemoryGiB: 8, CPUs: want + 1}).Limits(); err != nil || cpus != want {
+	if _, cpus, err := (ResourceAllocation{MemoryGiB: 8, CPUs: want + 1}).Limits(0); err != nil || cpus != want {
 		t.Fatalf("a saved %d vCPUs gave %d %v, want the host's %d", want+1, cpus, err, want)
 	}
 }
@@ -181,17 +181,46 @@ func TestAutomaticAllocationIsCappedButManualKeepsHostShare(t *testing.T) {
 	host.CPUs = func() int { return 10 }
 	for _, tc := range []struct{ host, automatic, share int }{{64, 8, 32}, {24, 8, 12}, {16, 8, 8}, {8, 4, 4}, {4, 2, 2}} {
 		host.MemGiB = func() int { return tc.host }
-		memory, _, err := ResourceAllocation{Automatic: true}.Limits()
+		memory, _, err := ResourceAllocation{Automatic: true}.Limits(0)
 		if err != nil || memory != tc.automatic {
 			t.Fatalf("automatic on %d GiB host: %d %v", tc.host, memory, err)
 		}
 		if share, _ := ResourceLimits(); share != tc.share {
 			t.Fatalf("share on %d GiB host: %d", tc.host, share)
 		}
-		memory, _, err = ResourceAllocation{MemoryGiB: tc.share, CPUs: 2}.Limits()
+		memory, _, err = ResourceAllocation{MemoryGiB: tc.share, CPUs: 2}.Limits(0)
 		if err != nil || memory != tc.share {
 			t.Fatalf("manual allocation up to the host share rejected: %d %v", memory, err)
 		}
+	}
+}
+
+func TestWindowsStartMemoryAt16VCPUs(t *testing.T) {
+	oldMem, oldCPU, oldAvailable := host.MemGiB, host.CPUs, host.WindowsAvailableMemory
+	t.Cleanup(func() { host.MemGiB, host.CPUs, host.WindowsAvailableMemory = oldMem, oldCPU, oldAvailable })
+	t.Setenv("AGENT_VM_HOST_SHARE", "2")
+	host.MemGiB = func() int { return 15 }
+	host.CPUs = func() int { return 32 }
+	var available uint64
+	host.WindowsAvailableMemory = func() uint64 { return available }
+	auto := ResourceAllocation{Automatic: true}
+	for _, tc := range []struct {
+		available uint64
+		want      int
+	}{
+		{10 << 30, 7}, {6042 << 20, 4}, {3 << 30, 2}, {0, 7},
+	} {
+		available = tc.available
+		if mem, cpu, err := auto.StartLimits(); err != nil || mem != tc.want || cpu != 16 {
+			t.Fatalf("available %d: got %d GiB / %d vCPU, %v", available, mem, cpu, err)
+		}
+	}
+	available = 3<<30 - 1
+	if _, _, err := auto.StartLimits(); err == nil || err.Error() != WindowsStartupMemoryLow {
+		t.Fatalf("minimum allocation would consume the reserve, got %v", err)
+	}
+	if mem, cpu, err := (ResourceAllocation{MemoryGiB: 7, CPUs: 16}).StartLimits(); err != nil || mem != 7 || cpu != 16 {
+		t.Fatalf("manual allocation changed: %d GiB / %d vCPU, %v", mem, cpu, err)
 	}
 }
 

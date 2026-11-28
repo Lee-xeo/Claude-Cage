@@ -11,6 +11,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -65,19 +66,30 @@ func (s *Server) resourceStatus(w http.ResponseWriter, r *http.Request) {
 		requestError(w, err)
 		return
 	}
-	memory, cpus, err := a.Limits()
+	running := s.vmRunning()
+	var availableBytes uint64
+	if !running {
+		availableBytes = host.WindowsAvailableMemory()
+	}
+	memory, cpus, err := a.Limits(availableBytes)
 	allocationError := ""
 	if err != nil {
 		allocationError = err.Error()
 		memory, cpus = a.MemoryGiB, a.CPUs
 	}
 	maxMemory, maxCPUs := cage.ResourceLimits()
-	running := s.vmRunning()
+	recommendedMemory := cage.AutomaticMemoryGiB(maxMemory, availableBytes)
 	maximum, configuredCPUs, configuredDiskBytes := s.configuredInstanceResources()
 	var observation *cage.ResourceStatus
 	status, err := cage.ReadResourceStatus(s.instanceDir())
 	if running && err == nil {
 		observation = &status
+		if a.Automatic && status.AutomaticAtStart {
+			// Compare against the budget chosen at startup. This VM already
+			// occupies that memory, so another host sample cannot size it.
+			memory = min(memory, int(status.Maximum>>30))
+			recommendedMemory = memory
+		}
 	}
 	var guestDiskUsed uint64
 	if observation != nil && observation.Guest != nil {
@@ -113,9 +125,9 @@ func (s *Server) resourceStatus(w http.ResponseWriter, r *http.Request) {
 		"max_memory_gib": maxMemory, "max_cpus": maxCPUs,
 		"min_disk_gib": minDiskGiB, "max_disk_gib": maxDiskGiB,
 		"resource_error":           allocationError,
-		"recommended_memory_bytes": uint64(cage.AutomaticMemoryGiB(maxMemory)) << 30, "recommended_cpus": maxCPUs,
-		"recommended_disk_bytes":   uint64(cage.DefaultDiskGiB) << 30,
-		"configured_memory_bytes":  maximum, "configured_cpus": configuredCPUs,
+		"recommended_memory_bytes": uint64(recommendedMemory) << 30, "recommended_cpus": maxCPUs,
+		"recommended_disk_bytes":  uint64(cage.DefaultDiskGiB) << 30,
+		"configured_memory_bytes": maximum, "configured_cpus": configuredCPUs,
 		"configured_disk_bytes":     configuredDiskBytes,
 		"host_disk_allocated_bytes": hostDiskAllocated,
 		"disk_change_pending":       diskChanged,
@@ -136,7 +148,7 @@ func (s *Server) applyResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if input.Allocation != nil {
-		if _, _, err := input.Allocation.Limits(); err != nil {
+		if _, _, err := input.Allocation.Limits(0); err != nil {
 			requestError(w, err)
 			return
 		}
@@ -183,7 +195,7 @@ func (s *Server) applyResources(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		if _, _, err := allocation.Limits(); err != nil {
+		if _, _, err := allocation.Limits(0); err != nil {
 			return err
 		}
 		_, _, configuredDiskBytes := s.configuredInstanceResources()

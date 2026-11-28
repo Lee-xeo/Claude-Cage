@@ -18,6 +18,8 @@ test("localizeBackendMessage preserves original Chinese in default locale", () =
 test("localizeBackendMessage translates ErrLocalProxyNode and dynamic backend errors across all 14 languages", () => {
   const errLocalNode = "本机代理端口不能用作节点。请导入原客户端的具体节点，在 Cage 中按中转到最终出口的顺序重新配置并应用";
   const samples = [
+    "启动 Linux 基础环境失败：虚拟机内存分配失败。请关闭占用内存的应用，或在“计算资源”中调低内存上限后重试。",
+    "准备 Linux 环境失败：Windows 可用物理内存不足 3 GiB。请关闭占用内存的应用，释放内存后重试。",
     errLocalNode,
     `节点 "local-socks" 需要迁移：${errLocalNode}`,
     `没有可导入的节点，已跳过 2 个；第 1 个节点 "socks1"：${errLocalNode}；第 2 个节点 "bad"：节点协议暂不支持`,
