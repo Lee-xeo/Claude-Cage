@@ -492,11 +492,30 @@ func (s *Server) routeSelected(ctx context.Context, a claudeAccount, command str
 		return "", err
 	}
 	opener := "/usr/local/lib/account-routes/" + a.ID + "/open"
-	regionExports := ""
+	regionExports, setup := "", ""
 	if tz, _ := s.accountRegionOverrides(a.ProxyNodeID); tz != "" {
 		regionExports = " TZ=" + shellescape.Quote(tz)
+		setup = accountTimezoneEnvironment(tz)
 	}
-	return wrapAccountNamespace("ip netns exec net-"+a.ID+" unshare -m", "export CAGE_ACCOUNT_BROWSER="+opener+" BROWSER="+opener+regionExports+"; "+command), nil
+	return wrapAccountNamespace("ip netns exec net-"+a.ID+" unshare -m", setup, "export CAGE_ACCOUNT_BROWSER="+opener+" BROWSER="+opener+regionExports+"; "+command), nil
+}
+
+// Every login shell resets TZ from the guest environment file. Inside the
+// account's private mount namespace that file is replaced by a copy carrying
+// the node timezone, so nested login shells and tmux windows keep it without
+// another variable in the user's environment. A failure keeps the
+// environment's timezone rather than blocking the command.
+func accountTimezoneEnvironment(tz string) string {
+	return `environment=/etc/claude-cage/environment
+if [ -f "$environment" ] && account_environment=$(mktemp /run/cage-account-environment.XXXXXX); then
+  { grep -v '^TZ=' "$environment" || [ $? -eq 1 ]; } >"$account_environment" &&
+    printf 'TZ=%s\n' ` + shellescape.Quote(tz) + ` >>"$account_environment" &&
+    chown --reference="$environment" "$account_environment" &&
+    chmod --reference="$environment" "$account_environment" &&
+    mount --bind "$account_environment" "$environment" || true
+  rm -f "$account_environment"
+fi
+unset environment account_environment`
 }
 
 const accountNamespaceMaskSockets = `set -eu
@@ -510,8 +529,12 @@ const accountNamespaceRunPayload = `script=$ROUTE_COMMAND; unset ROUTE_COMMAND S
 // No shell supplied by the caller runs before setpriv drops root privileges.
 // Used for persistent root-owned account namespaces (`ip netns exec net-<id>`)
 // which inherently require passwordless sudo / CAP_SYS_ADMIN in the guest.
-func wrapAccountNamespace(namespace, command string) string {
-	enter := accountNamespaceMaskSockets + "\n" + `exec setpriv --reuid="$SUDO_UID" --regid="$SUDO_GID" --init-groups /bin/bash -c '` + accountNamespaceRunPayload + `'`
+// setup runs as root inside the new namespace before privileges are dropped.
+func wrapAccountNamespace(namespace, setup, command string) string {
+	if setup != "" {
+		setup += "\n"
+	}
+	enter := accountNamespaceMaskSockets + "\n" + setup + `exec setpriv --reuid="$SUDO_UID" --regid="$SUDO_GID" --init-groups /bin/bash -c '` + accountNamespaceRunPayload + `'`
 	return "exec env ROUTE_COMMAND=" + shellescape.Quote(command) + " sudo -n --preserve-env=ROUTE_COMMAND,HOME,USER,LOGNAME,TERM " + namespace + " /bin/bash -c " + shellescape.Quote(enter)
 }
 
