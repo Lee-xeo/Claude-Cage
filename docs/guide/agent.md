@@ -280,7 +280,7 @@ cage agent call settings.get --scope selected --connection 当前连接代次
 | 本机信任、记住登录、设置密码保护 | desktop 范围 client.trusted-login：action 为 resume/enable/disable/protect，按同一规则提供 password、connection_id。全新配置先用 account.create 注册用户名和密码。 |
 | Touch ID 与快捷登录 | native.submit 提交 accountDevice，operation 为 status/enable/disable/unlock，kind 为 automatic/biometric；设备密钥由原生安全存储管理。Windows/Linux 不支持的操作与用户界面返回相同限制。 |
 | 外观、字体、配色、自定义主题 | appearance.get/set 读写完整对象，appearance.codex 读取本机 Codex 外观导入；读取后保留未修改字段。 |
-| 出口位置检测、测速、连接和日志 | settings.probe 输入完整设置草稿；proxy.delay 输入 node_id 测一个节点，返回 `delay`；或输入 node_ids（最多 300 个，每次并发 4 个）批量测速，返回逐节点的 `results`（成功为 `delay`，失败为区分未载入、超时与上游失败的 `error`）和最快可用节点 `best`。批量测速不改变当前选择，需要切换时用 `best` 调用 proxy.select；proxy.connections/logs。dry_run 仅静态校验。 |
+| 出口位置检测、测速、连接和日志 | settings.probe 输入完整设置草稿；proxy.delay 输入 node_id 测一个节点，返回 `delay`（默认目标超时后改用备用地址测得时，另返回实际使用的 `target`）；或输入 node_ids（最多 300 个，每次并发 4 个）批量测速，返回逐节点的 `results`（成功为 `delay`，失败为区分未载入、超时与上游失败的 `error`）和最快可用节点 `best`。批量测速不改变当前选择，需要切换时用 `best` 调用 proxy.select；proxy.connections/logs。dry_run 仅静态校验。 |
 | 尚未开始安装时重选系统 | guest.reselect 输入 guest.options.pending.id，仍由原安装状态约束。 |
 | Claude 账号、额度、分组、启停、调度与排序 | claude-accounts.get/change，动作与字段类型由 capabilities 给出；业务 action 与界面相同。 |
 | 密码保险箱 | vault.get 列元数据；vault.change 的 action 为 save/delete/unblock/reveal；reveal 仍需 account_password，再次验证后返回真实密码；vault.browser 提供页面填充和保存。 |

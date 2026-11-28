@@ -691,16 +691,52 @@ func (s *Server) applyProxy(p managedproxy.Store, old cage.Config, resumeVersion
 
 var nodeHostname = regexp.MustCompile(`^(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$`)
 
-// measureProxyDelay asks the running core to time one node. Tests replace it.
-var measureProxyDelay = func(ctx context.Context, profile, nodeID string) (int, error) {
+// Delay targets. A single target can time out through a working node (for
+// example when the exit's route to one CDN is degraded), so a timeout on the
+// primary target is retried once on the fallback before blaming the node.
+const (
+	proxyDelayPrimaryURL  = "https://www.gstatic.com/generate_204"
+	proxyDelayFallbackURL = "https://cp.cloudflare.com/generate_204"
+)
+
+// coreDelay asks the running core to time one node against one target.
+func coreDelay(ctx context.Context, profile, nodeID, target string) (int, error) {
 	var v struct {
 		Delay int `json:"delay"`
 	}
-	err := managedproxy.API(ctx, profile, "GET", "/proxies/"+url.PathEscape(nodeID)+"/delay?timeout=5000&url="+url.QueryEscape("https://www.gstatic.com/generate_204"), nil, &v)
-	if err != nil {
-		return 0, managedproxy.DelayError(err)
+	err := managedproxy.API(ctx, profile, "GET", "/proxies/"+url.PathEscape(nodeID)+"/delay?timeout=5000&url="+url.QueryEscape(target), nil, &v)
+	return v.Delay, err
+}
+
+// measureProxyDelay times one node and returns the target that answered.
+// Only a timeout falls back: an unloaded node or an upstream connection error
+// would fail the same way on any target. Tests replace it.
+var measureProxyDelay = func(ctx context.Context, profile, nodeID string) (int, string, error) {
+	delay, err := coreDelay(ctx, profile, nodeID, proxyDelayPrimaryURL)
+	if err == nil {
+		return delay, proxyDelayPrimaryURL, nil
 	}
-	return v.Delay, nil
+	if !managedproxy.DelayTimedOut(err) || ctx.Err() != nil {
+		return 0, "", managedproxy.DelayError(err)
+	}
+	delay, fallbackErr := coreDelay(ctx, profile, nodeID, proxyDelayFallbackURL)
+	if fallbackErr == nil {
+		return delay, proxyDelayFallbackURL, nil
+	}
+	if managedproxy.DelayTimedOut(fallbackErr) {
+		// Both targets timed out: report the timeout, not the fallback's state.
+		return 0, "", managedproxy.DelayError(err)
+	}
+	return 0, "", managedproxy.DelayError(fallbackErr)
+}
+
+// delayTarget names the measured target in replies only when it differs from
+// the primary, so the usual reply shape stays unchanged.
+func delayTarget(target string) string {
+	if target == proxyDelayPrimaryURL {
+		return ""
+	}
+	return target
 }
 
 const (
@@ -713,10 +749,16 @@ const (
 type proxyDelayResult struct {
 	NodeID string `json:"node_id"`
 	Delay  int    `json:"delay,omitempty"`
+	Target string `json:"target,omitempty"`
 	Error  string `json:"error,omitempty"`
 }
 
-// proxyDelay measures one node (node_id, reply {"delay"}) or several
+type proxyDelayReply struct {
+	Delay  int    `json:"delay"`
+	Target string `json:"target,omitempty"`
+}
+
+// proxyDelay measures one node (node_id, reply {"delay", "target"}) or several
 // (node_ids, reply {"results", "best"}). It never changes the selected node:
 // "best" is the fastest successful node, which the caller may apply with
 // proxy.select, so the usual exit and network checks still run.
@@ -743,12 +785,12 @@ func (s *Server) proxyDelay(w http.ResponseWriter, r *http.Request) {
 			requestError(w, err)
 			return
 		}
-		delay, err := measureProxyDelay(r.Context(), s.profile, in.NodeID)
+		delay, target, err := measureProxyDelay(r.Context(), s.profile, in.NodeID)
 		if err != nil {
 			requestError(w, err)
 			return
 		}
-		jsonReply(w, map[string]int{"delay": delay})
+		jsonReply(w, proxyDelayReply{Delay: delay, Target: delayTarget(target)})
 		return
 	}
 	if in.NodeID != "" {
@@ -789,8 +831,8 @@ func (s *Server) proxyDelay(w http.ResponseWriter, r *http.Request) {
 					results[i] = proxyDelayResult{NodeID: id, Error: reason}
 					continue
 				}
-				delay, err := measureProxyDelay(r.Context(), s.profile, id)
-				results[i] = proxyDelayResult{NodeID: id, Delay: delay}
+				delay, target, err := measureProxyDelay(r.Context(), s.profile, id)
+				results[i] = proxyDelayResult{NodeID: id, Delay: delay, Target: delayTarget(target)}
 				if err != nil {
 					results[i] = proxyDelayResult{NodeID: id, Error: err.Error()}
 				}

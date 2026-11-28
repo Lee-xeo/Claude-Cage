@@ -188,6 +188,13 @@ func DelayError(err error) error {
 	}
 }
 
+// DelayTimedOut reports whether a raw /proxies/{id}/delay error is the core's
+// timeout reply, which another target may still answer.
+func DelayTimedOut(err error) bool {
+	var core *coreError
+	return errors.As(err, &core) && (core.status == http.StatusGatewayTimeout || core.status == http.StatusRequestTimeout)
+}
+
 func Running(ctx context.Context, profile string, s Store) bool {
 	return RunningStage(ctx, profile, s) == ""
 }

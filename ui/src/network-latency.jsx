@@ -32,7 +32,7 @@ export function NetworkLatency({ enabled, revision, selected }) {
           } else if (Number.isFinite(result.delay) && result.delay > 0) {
             setSample({
               label: `${Math.round(result.delay)} ms`,
-              detail:
+              detail: result.target ||
                 "当前节点到 www.gstatic.com 的 HTTP 往返延迟（统一延迟口径），通常不含建连开销，不代表网页首开耗时。每 30 秒更新，点击重新检测；环境联网状态单独检查。",
             });
           } else {
