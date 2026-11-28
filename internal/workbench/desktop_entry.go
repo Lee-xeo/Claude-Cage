@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,6 +96,21 @@ func DesktopEntry(fullConfig string, opts DesktopOptions) (DesktopResult, error)
 	if err != nil || code != http.StatusOK {
 		return DesktopResult{}, errors.New("无法关联桌面窗口和连接服务")
 	}
+	if result.Status != "ready" {
+		// Older entries reject the unknown trusted_view field.
+		return result, nil
+	}
+	// Only the native window that owns this entry receives the trusted-view
+	// proof. `cage desktop` without a window opens a browser and stays untrusted.
+	var launch launchResponse
+	code, err = c.call("POST", "/api/launch", map[string]any{"token": c.record.Token, "trusted_view": true}, &launch)
+	if err != nil || code != http.StatusOK || launch.Controller.PID != result.Controller.PID {
+		return DesktopResult{}, errors.New("无法为桌面窗口建立本机会话")
+	}
+	if u, err := url.Parse(launch.URL); err != nil || u.Scheme+"://"+u.Host != c.origin || u.User != nil || u.Fragment == "" {
+		return DesktopResult{}, errors.New("桌面连接服务返回了无效入口")
+	}
+	result.URL = launch.URL
 	return result, nil
 }
 
