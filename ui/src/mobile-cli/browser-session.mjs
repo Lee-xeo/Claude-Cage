@@ -74,7 +74,7 @@ export function framePoint(rect, frame, x, y) {
 
 // Only frame reads repeat. One input or resize is followed by a fresh frame
 // before the next input is accepted. A failed write is never replayed.
-export function connectDisplay(stage, update, id, start, tool, initialURL) {
+export function connectDisplay(stage, update, id, start, tool, initialURL, options = {}) {
   const desktop = tool === "desktop";
   const request = desktop ? desktopRequest : browserRequest;
   const toolName = desktop ? "Claude Desktop" : "远程浏览器";
@@ -83,11 +83,23 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
   let alive = true, visible = true, opened = false, opening = true, writing = false;
   let frame = null, read, timer, paused = false, mayExist = false;
   let generation = 0, actionFrame = false, quietReads = 0, writeType = "";
-  let pixelRatioSupported = false;
-  const displaySize = () => ({...viewportSize(stage),
-    ...(pixelRatioSupported ? {pixel_ratio:clamp(window.devicePixelRatio || 1, 1, 8)} : {})});
-  const needsResize = size => frame && (frame.width !== size.width || frame.height !== size.height ||
-    (pixelRatioSupported && frame.requested_pixel_ratio !== size.pixel_ratio));
+  let pixelRatioSupported = false, frameTagSupported = false, qualitySupported = false;
+  let quality = desktop && options?.quality === "smooth" ? "smooth" : "standard";
+  const effectivePixelRatio = () => {
+    const dpr = clamp(window.devicePixelRatio || 1, 1, 8);
+    return quality === "smooth" ? Math.min(dpr, 1.5) : dpr;
+  };
+  const displaySize = () => ({
+    ...viewportSize(stage),
+    ...(pixelRatioSupported ? { pixel_ratio: effectivePixelRatio() } : {}),
+    ...(qualitySupported ? { quality } : {}),
+  });
+  const needsResize = size => frame && (
+    frame.width !== size.width ||
+    frame.height !== size.height ||
+    (pixelRatioSupported && frame.requested_pixel_ratio !== size.pixel_ratio) ||
+    (qualitySupported && frame.quality !== size.quality)
+  );
   let queuedScroll = null, scrollTimer;
   // Only untransmitted displacement lives in this queue. A scroll is taken
   // out before sending; neither an interrupted write nor an old document replays it.
@@ -139,7 +151,13 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
     quietReads = changed || fromAction ? 0 : Math.min(5, quietReads + 1);
     // The first follow-up catches delayed paint after an input. Stable pages
     // use conditional reads and progressively return to the idle cadence.
-    const delay = desktop ? 450 : [90, 180, 380, 800, 1500, 2500][quietReads];
+    const delay = desktop
+      ? (quality === "smooth"
+          ? [60, 120, 260, 600, 1200, 2000][quietReads]
+          : frameTagSupported
+            ? [90, 180, 380, 750, 1400, 2200][quietReads]
+            : 450)
+      : [90, 180, 380, 800, 1500, 2500][quietReads];
     timer = setTimeout(readFrame, delay);
   }
   async function decodeFrame(next, valid) {
@@ -152,7 +170,8 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
     const src = "data:image/jpeg;base64," + next.image;
     const changed = frame?.image !== src || !sameSurface(frame, next) || frame.focus !== next.focus ||
       frame.url !== next.url || frame.title !== next.title || frame.password !== next.password || frame.window !== next.window || frame.shared !== next.shared ||
-      frame.login_supported !== next.login_supported || frame.content_width !== next.content_width || frame.content_height !== next.content_height;
+      frame.login_supported !== next.login_supported || frame.content_width !== next.content_width || frame.content_height !== next.content_height ||
+      frame.quality !== next.quality;
     if (frame?.image !== src) {
       const image = new Image();
       image.src = src;
@@ -162,6 +181,8 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
     if (next.url && next.url !== "about:blank") homeNotice = "";
     if (next.action_frame === true) actionFrame = true;
     pixelRatioSupported = desktop && next.pixel_ratio_supported === true;
+    frameTagSupported = desktop && next.frame_tag_supported === true;
+    qualitySupported = desktop && next.quality_supported === true;
     waitingSince = 0;
     frame = {...next, image:src};
     return changed;
@@ -172,7 +193,8 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
     read = controller;
     const valid = () => read === controller && !controller.signal.aborted && alive && visible && !paused;
     const known = frame;
-    const tag = !desktop && actionFrame && /^[a-f0-9]{32}$/.test(known?.frame_tag || "") ? known.frame_tag : "";
+    const supportsTag = desktop ? frameTagSupported : actionFrame;
+    const tag = supportsTag && /^[a-f0-9]{32}$/.test(known?.frame_tag || "") ? known.frame_tag : "";
     try {
       const next = await request(base + "/frame" + (tag ? "?after=" + tag : ""), {signal:controller.signal});
       if (!valid()) return;
@@ -304,6 +326,18 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
   }
   return {
     send, canSend, scroll, cancelScroll,
+    setQuality(nextQuality) {
+      if (!desktop) return;
+      const normalized = nextQuality === "smooth" ? "smooth" : "standard";
+      if (normalized === quality) return;
+      quality = normalized;
+      if (!alive || !visible || !opened || paused || !frame) return;
+      const size = displaySize();
+      if (needsResize(size) && !writing) {
+        cancelRead();
+        void send({type: "resize", ...size}, frame, "resize");
+      }
+    },
     async navigate(url) {
       if (!alive || !visible || !opened || paused) throw new Error("请先恢复远程画面，再前往网址。");
       if (awaitingResizeFrame && !pendingAddress) {
@@ -321,6 +355,12 @@ export function connectDisplay(stage, update, id, start, tool, initialURL) {
       if (!opened || !alive || !visible) return;
       paused = false; waitingSince = 0;
       publish({});
+      void readFrame();
+    },
+    nudge() {
+      if (!opened || !alive || !visible || paused || writing) return;
+      quietReads = 0;
+      cancelRead();
       void readFrame();
     },
     visibility(active) {

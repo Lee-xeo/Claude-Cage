@@ -136,3 +136,96 @@ test("connectDisplay coalesces consecutive desktop scroll actions and uses actio
     globalThis.fetch = originalFetch;
   }
 });
+
+test("connectDisplay uses desktop ?after= conditional frames and smooth quality pixel_ratio cap (#1007)", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDpr = globalThis.window.devicePixelRatio;
+  globalThis.window.devicePixelRatio = 3;
+  const requests = [];
+  const tag1 = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+  let frameReads = 0;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const body = init.body ? JSON.parse(init.body) : null;
+    requests.push({ url, body });
+    if (url.endsWith("/open")) {
+      return new Response(JSON.stringify({ id: "desktop-2" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/frame")) {
+      frameReads++;
+      if (url.includes("?after=" + tag1)) {
+        return new Response(JSON.stringify({ id: "desktop-2", frame_tag: tag1, unchanged: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({
+        id: "desktop-2",
+        document: "doc-q",
+        width: 390,
+        height: 640,
+        image: "ZGVza3RvcA==",
+        frame_tag: tag1,
+        focus: "",
+        window: "desktop",
+        shared: true,
+        action_frame: true,
+        pixel_ratio_supported: true,
+        requested_pixel_ratio: 3,
+        frame_tag_supported: true,
+        quality_supported: true,
+        quality: "standard",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/action")) {
+      return new Response(JSON.stringify({
+        id: "desktop-2",
+        document: "doc-q",
+        width: body.width || 390,
+        height: body.height || 640,
+        image: "c21vb3Ro",
+        frame_tag: tag1,
+        focus: "",
+        window: "desktop",
+        shared: true,
+        action_frame: true,
+        pixel_ratio_supported: true,
+        requested_pixel_ratio: body.pixel_ratio || 1.5,
+        frame_tag_supported: true,
+        quality_supported: true,
+        quality: body.quality || "smooth",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/close")) {
+      return new Response(JSON.stringify({ id: "desktop-2" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error("unexpected URL " + url);
+  };
+
+  let readyResolve;
+  const frameReady = new Promise(resolve => { readyResolve = resolve; });
+  const stage = { clientWidth: 390, clientHeight: 640 };
+  const session = connectDisplay(stage, next => {
+    if (next.frame && readyResolve) {
+      readyResolve();
+      readyResolve = null;
+    }
+  }, "desktop-2", true, "desktop", "", { quality: "smooth" });
+
+  try {
+    await frameReady;
+    for (let i = 0; i < 40 && !requests.some(r => r.url.includes("?after=" + tag1)); i++) {
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    const resizeReq = requests.find(r => r.body?.type === "resize");
+    assert.ok(resizeReq, "smooth quality should trigger resize with capped pixel_ratio and quality=smooth");
+    assert.equal(resizeReq.body.pixel_ratio, 1.5);
+    assert.equal(resizeReq.body.quality, "smooth");
+    assert.ok(requests.some(r => r.url.includes("/frame?after=" + tag1)), "desktop frame polling should send ?after=<frame_tag>");
+    assert.ok(frameReads >= 2);
+  } finally {
+    session.close();
+    globalThis.fetch = originalFetch;
+    globalThis.window.devicePixelRatio = originalDpr;
+  }
+});
