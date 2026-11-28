@@ -2,6 +2,7 @@ package managedproxy
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -60,6 +61,81 @@ func TestProtocolOptionsSurviveImportStoreAndRuntime(t *testing.T) {
 				if err := Validate(context.Background(), profile, loaded); err != nil {
 					t.Fatal(err)
 				}
+			}
+		})
+	}
+}
+
+// #1097: VLESS XHTTP YAML is handed to the bundled core unchanged. Cage does not
+// judge XHTTP parameters itself; the pinned mihomo v1.19.33 implements xhttp in
+// adapter/outbound/vless.go, and its `-t` check accepts stream-one with a path
+// but rejects the same node with download-settings. Neither result says the
+// server is reachable; that is left to apply and exit verification.
+const xhttpNode = `proxies: [{name: xhttp, type: vless, server: example.com, port: 443, uuid: 00000000-0000-4000-8000-000000000000, tls: true, servername: example.com, network: xhttp, xhttp-opts: {mode: stream-one, path: /private-path%s}}]`
+
+func TestVLESSXHTTPYAMLReachesCoreUnchanged(t *testing.T) {
+	for _, tc := range []struct{ name, extra string }{
+		{"stream-one", ""},
+		{"download-settings", ", download-settings: {path: /private-download}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			profile := t.TempDir()
+			s, err := Load(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := fmt.Sprintf(xhttpNode, tc.extra)
+			if err := s.Import("xhttp", "", []byte(data), "xhttp", 0, ""); err != nil {
+				t.Fatal("static import boundary rejected an XHTTP node", err)
+			}
+			if len(s.Sources[0].Nodes) != 1 || len(s.Sources[0].Skipped) != 0 {
+				t.Fatalf("XHTTP node was skipped: %+v", s.Sources[0].Skipped)
+			}
+			s.Selected = s.Sources[0].Nodes[0].ID
+			runtime, err := s.Runtime(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var original, generated struct{ Proxies []map[string]any }
+			if err := yaml.Unmarshal([]byte(data), &original); err != nil {
+				t.Fatal(err)
+			}
+			if err := yaml.Unmarshal(runtime, &generated); err != nil || len(generated.Proxies) != 1 {
+				t.Fatal("runtime lost the XHTTP node", err)
+			}
+			want := original.Proxies[0]
+			want["name"], want["udp"] = s.Selected, false
+			if !reflect.DeepEqual(generated.Proxies[0], want) {
+				t.Fatal("XHTTP transport fields changed before core validation")
+			}
+		})
+	}
+}
+
+func TestBundledCoreValidatesVLESSXHTTPParameters(t *testing.T) {
+	if os.Getenv("CAGE_PROXY_INTEGRATION") != "1" {
+		t.Skip("requires a test binary beside the bundled Mihomo")
+	}
+	for _, tc := range []struct {
+		name, extra string
+		valid       bool
+	}{
+		{"stream-one-path", "", true},
+		{"stream-one-download-settings", ", download-settings: {path: /private-download}", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			profile := t.TempDir()
+			s, _ := Load(profile)
+			if err := s.Import("xhttp", "", []byte(fmt.Sprintf(xhttpNode, tc.extra)), "xhttp", 0, ""); err != nil {
+				t.Fatal(err)
+			}
+			s.Selected = s.Sources[0].Nodes[0].ID
+			err := Validate(context.Background(), profile, s)
+			if tc.valid && err != nil {
+				t.Fatal("bundled core rejected a valid XHTTP node", err)
+			}
+			if !tc.valid && (err == nil || !strings.Contains(err.Error(), "Mihomo") || strings.Contains(err.Error(), "private-")) {
+				t.Fatal("bundled core did not safely reject invalid XHTTP parameters", err)
 			}
 		})
 	}
