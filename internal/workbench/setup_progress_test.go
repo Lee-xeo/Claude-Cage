@@ -1,6 +1,10 @@
 package workbench
 
 import (
+	"encoding/json"
+	"math"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
@@ -223,5 +227,46 @@ func TestBaseCloudInitAPTProgressFollowsBoot(t *testing.T) {
 	}
 	if log := m.snapshot().Log; !strings.Contains(log, "Sources") {
 		t.Fatalf("cloud-init line left the operation log: %q", log)
+	}
+}
+
+// Two progress lines from one pipe read are processed back to back; the job
+// must keep a finite rate so its status stays encodable.
+func TestImageProgressRateIgnoresBackToBackLines(t *testing.T) {
+	var m jobManager
+	var op sync.Mutex
+	_, err := m.submit(&op, "start", 0, nil, nil, func() error {
+		e := m.execution()
+		e.setSetupProgress(&SetupProgress{Phase: "image"})
+		_, _ = e.Write([]byte("CAGE_IMAGE_BYTES 0 100\n"))
+		m.mu.Lock()
+		e.progressUpdated = time.Now().Add(-2 * time.Second)
+		m.mu.Unlock()
+		_, _ = e.Write([]byte("CAGE_IMAGE_BYTES 50 100\nCAGE_IMAGE_BYTES 60 100\nCAGE_IMAGE_BYTES 60 100\n"))
+		job := m.snapshot()
+		if p := job.SetupProgress; *p.Received != 60 || p.BytesPerSecond < 24 || p.BytesPerSecond > 26 {
+			t.Errorf("rate not kept across back-to-back lines: %+v", p)
+		}
+		if _, err := json.Marshal(job); err != nil {
+			t.Errorf("job status not encodable: %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitJobIdle(t, &m)
+}
+
+func TestJSONReplyReportsUnencodableValues(t *testing.T) {
+	w := httptest.NewRecorder()
+	jsonReply(w, map[string]float64{"rate": math.Inf(1)})
+	if w.Code != http.StatusInternalServerError || json.Valid(w.Body.Bytes()) {
+		t.Fatalf("got %d %q, want an error response", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	jsonReply(w, map[string]int{"ok": 1})
+	if w.Code != http.StatusOK || w.Body.String() != "{\"ok\":1}\n" || w.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatalf("got %d %q", w.Code, w.Body.String())
 	}
 }

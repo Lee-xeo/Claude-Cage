@@ -792,9 +792,18 @@ func jsonKind(t reflect.Type) string {
 	}
 	return "其他类型"
 }
+
+// Encode before writing, so a value JSON cannot represent becomes an error
+// response instead of an empty 200 that clients read as non-JSON output.
 func jsonReply(w http.ResponseWriter, v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		diagnostics.Log("error", "api", "encode reply: "+err.Error())
+		http.Error(w, "响应编码失败", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(append(data, '\n'))
 }
 func requestError(w http.ResponseWriter, err error) {
 	diagnostics.Log("error", "api", fmt.Sprintf("%v; cause=%v", err, errors.Unwrap(err)))
