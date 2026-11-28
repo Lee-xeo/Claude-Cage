@@ -30,12 +30,10 @@ import logo from "./logo.png";
 import claudeLogo from "./claude-logo.svg";
 import { dropAfter, isClientProjectPath, moveItem, orderedProjects as sortProjects, projectName } from "./workspace-state.mjs";
 import { WorkspaceTabs } from "./workspace-tabs";
-import { projectSessionRows, sessionKey, unassignedTerminalTabs } from "./session-order.mjs";
+import { SESSION_PREVIEW_LIMIT, previewSessionRows, projectSessionRows, sessionKey, unassignedTerminalTabs } from "./session-order.mjs";
 import { AccountMenu } from "./account";
 import { useSSHNavigation } from "./remote-hosts";
 import { useTranslation } from "./interface-language.mjs";
-
-const SESSION_PREVIEW_LIMIT = 5;
 
 function ProjectActionMenu({
   menu,
@@ -491,7 +489,7 @@ export function WorkspaceSidebar({
           for (const row of rows) rowMetadata[row.id] = { ...saved[row.id], pinned: row.sessionPinned };
           const expanded = !collapsed[path];
           const showAllSessions = Boolean(allSessionsShown[path]);
-          const visibleRows = showAllSessions ? rows : rows.slice(0, SESSION_PREVIEW_LIMIT);
+          const visibleRows = previewSessionRows(rows, active, showAllSessions);
           return (
             <section
               className="sidebar-project"
@@ -645,7 +643,7 @@ export function WorkspaceSidebar({
                       splitDrag={splitDrag}
                     />
                   )}
-                  {rows.length > SESSION_PREVIEW_LIMIT && (
+                  {(showAllSessions ? rows.length > SESSION_PREVIEW_LIMIT : rows.length > visibleRows.length) && (
                     <button
                       className="project-session-toggle"
                       aria-expanded={showAllSessions}

@@ -9,6 +9,15 @@ export function unassignedTerminalTabs(tabs, projects, projectGroups = []) {
   return tabs.filter(tab => tab.kind === "terminal" && !folders.has(tab.workspace));
 }
 
+export const SESSION_PREVIEW_LIMIT = 5;
+
+// A collapsed project shows its first rows, plus the open one wherever it sits:
+// a finished turn drops its row back to its first-seen place, and the terminal
+// a notification opened must still be findable in its project.
+export function previewSessionRows(rows, active, showAll, limit = SESSION_PREVIEW_LIMIT) {
+  return showAll ? rows : rows.filter((row, index) => index < limit || (active && row.id === active));
+}
+
 export function projectSessionRows(tabs, sessions, saved, manualOrder, baseline) {
   const live = tabs.filter(tab => !tab.closed || !sessions.some(session => session.id === tab.cli_session_id));
   const rows = [

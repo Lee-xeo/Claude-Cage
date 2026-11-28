@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TERMINAL_LIMIT, liveTerminalCount, projectSessionRows, sessionKey, unassignedTerminalTabs } from "./session-order.mjs";
+import { SESSION_PREVIEW_LIMIT, TERMINAL_LIMIT, liveTerminalCount, previewSessionRows, projectSessionRows, sessionKey, unassignedTerminalTabs } from "./session-order.mjs";
 
 const sessions = [
   { id: "one", title: "第一段", pinned: true },
@@ -38,6 +38,23 @@ test("manual order overrides activity and pinning, survives terminal ID changes"
   }
   const rows = projectSessionRows([], [...sessions, { id: "new", active: true }], {}, manual, new Map());
   assert.deepEqual(keys(rows), [...manual, "session:new"]);
+});
+test("a session opened from a completion notification stays in its collapsed project list", () => {
+  // #1088: the new session is first seen after the project's existing history,
+  // rises to the top only while its turn runs, and falls back when it completes.
+  const baseline = new Map();
+  const history = Array.from({ length: SESSION_PREVIEW_LIMIT }, (_, i) => ({ id: `old-${i}`, title: `历史 ${i}` }));
+  const tab = { id: "terminal:0123456789abcdef", kind: "terminal", cli_session_id: "fresh" };
+  const preview = (active, activeTab) => previewSessionRows(
+    projectSessionRows([tab], [{ id: "fresh", active }, ...history], {}, undefined, baseline), activeTab, false).map(sessionKey);
+  projectSessionRows([], history, {}, undefined, baseline);
+  assert.ok(preview(true, tab.id).includes("session:fresh"), "running turn");
+  assert.ok(!preview(false, "").includes("session:fresh"), "another tab open: the preview limit still applies");
+  const clicked = preview(false, tab.id);
+  assert.ok(clicked.includes("session:fresh"), "completed turn opened from the notification");
+  assert.deepEqual(clicked.slice(0, SESSION_PREVIEW_LIMIT), history.map(session => `session:${session.id}`), "earlier rows keep their places");
+  const rows = projectSessionRows([tab], [{ id: "fresh" }, ...history], {}, undefined, baseline);
+  assert.equal(previewSessionRows(rows, tab.id, true).length, rows.length, "expanded list is unchanged");
 });
 test("only running terminals count toward the host limit", () => {
   const tabs = [
