@@ -3,6 +3,8 @@ package workbench
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"reflect"
@@ -140,6 +142,104 @@ func TestProxyImportAndRefreshUseBundledCoreValidation(t *testing.T) {
 	after, err := managedproxy.Load(s.profile)
 	if err != nil || !reflect.DeepEqual(after.Sources[1].Nodes, src.Nodes) || after.Selected != before.Selected || !reflect.DeepEqual(after.Chain, before.Chain) || !after.Sources[1].Updated.Equal(src.Updated) || after.Sources[1].Error == "" {
 		t.Fatal("core rejection changed the last good source or active route", err)
+	}
+}
+
+// #1097: the endpoint behind both the UI and the Agent's proxy.import hands a
+// VLESS XHTTP node to core validation, and a core rejection saves nothing.
+const xhttpImport = `proxies: [{name: xhttp, type: vless, server: example.com, port: 443, uuid: 00000000-0000-4000-8000-000000000000, tls: true, servername: example.com, network: xhttp, xhttp-opts: {mode: stream-one, path: /private-path%s}}]`
+
+func TestProxyImportAPIValidatesVLESSXHTTPWithCore(t *testing.T) {
+	s := testServer(t)
+	cfg, _ := loadConfig(s.configPath)
+	cfg.ProxyRevision = ""
+	if err := writePrivate(s.configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	oldValidate := validateProxyCore
+	t.Cleanup(func() { validateProxyCore = oldValidate })
+	validated := 0
+	validateProxyCore = func(_ context.Context, profile string, p managedproxy.Store) error {
+		if _, err := p.Runtime(profile); err != nil {
+			return err
+		}
+		var opts map[string]any
+		for _, src := range p.Sources {
+			for _, n := range src.Nodes {
+				if n.Name == "xhttp" && n.Config["network"] == "xhttp" {
+					opts, _ = n.Config["xhttp-opts"].(map[string]any)
+				}
+			}
+		}
+		if opts["mode"] != "stream-one" {
+			// Runs inside the import job goroutine, so report without t.Fatal.
+			t.Error("core validation did not receive the XHTTP node")
+			return errors.New("missing XHTTP node")
+		}
+		validated++
+		if _, invalid := opts["download-settings"]; invalid {
+			return errors.New("随附的 Mihomo 核心未通过配置校验")
+		}
+		return nil
+	}
+	importJob := func(content string) Job {
+		t.Helper()
+		body, _ := json.Marshal(proxyInput{Name: "xhttp", Content: content})
+		w := request(s, "POST", "/api/proxy/import", s.origin, string(body), true)
+		if w.Code != http.StatusOK {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if job := s.jobs.snapshot(); !job.Running {
+				return job
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("proxy import job did not finish")
+		return Job{}
+	}
+	before, _ := managedproxy.Load(s.profile)
+	if job := importJob(fmt.Sprintf(xhttpImport, ", download-settings: {path: /private-download}")); !strings.Contains(job.Error, "Mihomo") || strings.Contains(job.Error, "private-") {
+		t.Fatal("core rejection was not reported safely", job.Error)
+	}
+	if after, _ := managedproxy.Load(s.profile); len(after.Sources) != len(before.Sources) {
+		t.Fatal("core-rejected XHTTP source was saved")
+	}
+	if job := importJob(fmt.Sprintf(xhttpImport, "")); job.Error != "" {
+		t.Fatal(job.Error)
+	}
+	after, _ := managedproxy.Load(s.profile)
+	src := after.Sources[len(after.Sources)-1]
+	if validated != 2 || len(after.Sources) != len(before.Sources)+1 || len(src.Nodes) != 1 || len(src.Skipped) != 0 || src.Nodes[0].Config["network"] != "xhttp" {
+		t.Fatal("valid XHTTP node was not saved after core validation", validated, src.Skipped)
+	}
+}
+
+func TestProxyImportBundledCoreAcceptsValidAndRejectsInvalidXHTTP(t *testing.T) {
+	if os.Getenv("CAGE_PROXY_INTEGRATION") != "1" {
+		t.Skip("requires a test binary beside the bundled Mihomo")
+	}
+	s := testServer(t)
+	cfg, _ := loadConfig(s.configPath)
+	cfg.ProxyRevision = ""
+	if err := writePrivate(s.configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := managedproxy.Load(s.profile)
+	err := s.changeProxy("import", proxyInput{Name: "xhttp", Content: fmt.Sprintf(xhttpImport, ", download-settings: {path: /private-download}")}, nil)
+	if err == nil || !strings.Contains(err.Error(), "Mihomo") || strings.Contains(err.Error(), "private-") {
+		t.Fatal("bundled core did not safely reject invalid XHTTP parameters", err)
+	}
+	if after, _ := managedproxy.Load(s.profile); !reflect.DeepEqual(after.Sources, before.Sources) {
+		t.Fatal("core-rejected XHTTP import changed saved sources")
+	}
+	if err := s.changeProxy("import", proxyInput{Name: "xhttp", Content: fmt.Sprintf(xhttpImport, "")}, nil); err != nil {
+		t.Fatal("bundled core rejected a valid XHTTP node", err)
+	}
+	after, _ := managedproxy.Load(s.profile)
+	if len(after.Sources) != len(before.Sources)+1 || after.Sources[len(after.Sources)-1].Nodes[0].Config["network"] != "xhttp" {
+		t.Fatal("valid XHTTP node was not saved")
 	}
 }
 
