@@ -55,10 +55,18 @@ export CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=14.0"
 command -v uv >/dev/null || { echo 'Building the workbench requires uv: https://docs.astral.sh/uv/getting-started/installation/' >&2; exit 1; }
 mkdir -p _output
 source scripts/macos-build-env.sh
+macos_check_node
 macos_prepare_caches
 macos_check_toolchain
 bash scripts/fetch-proxy-core.sh
-if ! make cage VERSION="$version"; then
+# Build the UI on its own so a frontend failure is not reported as a Go
+# download problem; -o cage-ui then keeps make cage from rebuilding it.
+if ! make cage-ui; then
+  printf 'Building the workbench UI failed (npm --prefix ui ci or vite build). Node.js on PATH: %s at %s; Vite needs %s.\nIf the log shows EBADENGINE or "Cannot find native binding", switch to a supported Node.js and rerun.\n' \
+    "$(node -v 2>/dev/null || echo unknown)" "$(command -v node)" "$macos_node_range" >&2
+  exit 1
+fi
+if ! make -o cage-ui cage VERSION="$version"; then
   cat >&2 <<'EOF'
 make cage failed. If the error is a Go toolchain or module download (proxy.golang.org, sum.golang.org,
 or the Go 1.27.3 toolchain for tools/tailnet), point Go at reachable mirrors and rerun, for example:
