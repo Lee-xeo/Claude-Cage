@@ -132,6 +132,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, onSetupSt
     applyBtnRef = useRef(null),
     mutating = useRef(false),
     delayReasons = useRef({}),
+    delayTargets = useRef({}),
     loading = useRef(false),
     latest = useRef(null),
     appliedFailure = useRef(null),
@@ -347,6 +348,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, onSetupSt
             try {
               const result = await api("/proxy/delay", { node_id: id });
               delete delayReasons.current[id];
+              delayTargets.current[id] = result.target;
               if (result.delay > 0) timings[id] = result.delay;
               if (alive.current)
                 setDelays((old) => ({ ...old, [id]: `${result.delay} ms` }));
@@ -382,6 +384,7 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, onSetupSt
     try {
       const result = await api("/proxy/delay", { node_id: targetID });
       delete delayReasons.current[targetID];
+      delayTargets.current[targetID] = result.target;
       if (alive.current) {
         setDelays((old) => ({ ...old, [targetID]: `${result.delay} ms` }));
         setRouteTest({ key, ok: true, delay: result.delay, error: "" });
@@ -688,13 +691,13 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, onSetupSt
     const delayLabel = delayRaw ? (delayIsError ? tr("不可用") : tr(delayRaw)) : tr("未测速");
     const delayTitle = delayReasons.current[n.id]
       ? localizeBackendMessage(delayReasons.current[n.id], tr)
-      : tr("检测此节点到 www.gstatic.com 的 HTTP 往返延迟，通常不含建连开销，不代表网页首开耗时");
+      : delayTargets.current[n.id] || tr("检测此节点到 www.gstatic.com 的 HTTP 往返延迟，通常不含建连开销，不代表网页首开耗时");
     return (
       <button
         type="button"
         className={`proxy-delay-btn${delayRaw ? (delayIsError ? " is-error" : " is-measured") : ""}`}
         aria-label={tr("测速 {0}", n.name)}
-        title={delayTitle}
+        title={proxy.running ? delayTitle : tr("环境启动并连接代理后检测网络延迟")}
         disabled={busy || !proxy.running}
         onClick={() => measure([n.id])}
       >
