@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { Archive, ArrowLeft, ArrowUp, LoaderCircle, Monitor, RefreshCw, Settings, Square, Terminal, X } from "lucide-react";
+import { Archive, ArrowLeft, ArrowUp, LoaderCircle, Monitor, RefreshCw, Square, Terminal, X } from "lucide-react";
 import { RemoteDisplay } from "./remote-browser";
 import { CodeNavigation, ProjectTree, WorkspaceDrawer, WorkspaceSidebar, workspaceTools } from "./workspace-drawer";
 import { deviceCommand } from "./device-navigation.mjs";
@@ -43,11 +44,15 @@ function saveRoute(next, push) {
   history[push ? "pushState" : "replaceState"]({ ...history.state, cageCLI: next }, "");
 }
 
-function Status({ value, awaitingApproval, paused }) {
+function Status({ value, awaitingApproval, paused, dotOnly = false }) {
   const tr = useTranslation();
-  if (paused) return <span className="status-label" role="status">{tr("已暂停")}</span>;
-  const tone = active(value) ? "live" : value === "failed" || value === "interrupted" ? "bad" : "";
-  return <span className={"status-label " + tone} role="status"><i className="status-dot" />{awaitingApproval ? "等待审批" : labels[value] || "就绪"}</span>;
+  const label = paused ? tr("已暂停") : awaitingApproval ? "等待审批" : labels[value] || "就绪";
+  const tone = paused ? "warn" : active(value) ? "live" : value === "failed" || value === "interrupted" || value === "stopped" ? "bad" : "idle";
+  if (dotOnly) {
+    return <span className={"status-light " + tone} role="status" aria-label={label} title={label} />;
+  }
+  if (paused) return <span className="status-label" role="status">{label}</span>;
+  return <span className={"status-label " + (tone === "idle" ? "" : tone)} role="status"><i className="status-dot" />{label}</span>;
 }
 function Notice({ children, onRetry, label = "重新读取" }) {
   return <div className="notice" role="alert">{children}
@@ -61,6 +66,7 @@ function Empty({ icon: Icon, title, children }) {
 function App() {
   const [current, setCurrent] = useState(route);
   const [addressSlot, setAddressSlot] = useState(null);
+  const [headerSlot, setHeaderSlot] = useState(null);
   const [wideWorkspace, setWideWorkspace] = useState(matchesTabletWorkspace);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [drawer, setDrawer] = useState(() => phoneWorkspace && !matchesTabletWorkspace() && !history.state?.cageCLI && route().tool === "code");
@@ -266,7 +272,6 @@ function App() {
     creating={creating || actionBusy} onAction={chooseSessionAction} onProject={path => open(path)} onNew={() => start(project)} formatTime={displayTime}
     onSession={id => {open(sessions.find(session => session.id === id)?.workspace || project.path, id, true); setDrawer(false);}} />;
   const activeTool = workspaceTools.find(entry => entry.id === current.tool);
-  const ActiveToolIcon = ["settings", "archived"].includes(current.tool) ? Settings : activeTool?.icon || Terminal;
   const settingsPage = tool => {
     browserControls.current?.close();
     const next = {tool, displayID:"", project:current.project, session:""};
@@ -308,10 +313,15 @@ function App() {
           aria-label={wideWorkspace ? (sidebarOpen ? "收起侧栏" : "展开侧栏") : "展开侧栏"}
           onClick={() => wideWorkspace ? setSidebarOpen(open => !open) : setDrawer(true)}><img className="brand-mark" src={cageLogo} alt="Cage" /></button>
         : <a className="icon-button" href="/" aria-label="返回工作台"><img className="brand-mark" src={cageLogo} alt="Cage" /></a>}
-      {phoneWorkspace && (current.tool === "browser" || current.tool === "claude") && <div className="workspace-address-slot" ref={setAddressSlot} />}
-      <div className="top-actions">{phoneWorkspace
-        ? <span className="workspace-tool-icon" role="img" aria-label={activeTool?.name || "Claude Code"}><ActiveToolIcon size={19} aria-hidden="true" /></span>
-        : <div className="connection-host"><Monitor size={16} /><span>{catalog?.host || "连接电脑"}</span></div>}</div>
+      {phoneWorkspace ? (
+        current.tool === "browser" || current.tool === "claude"
+          ? <div className="workspace-address-slot" ref={setAddressSlot} />
+          : current.tool === "code" && session
+            ? <div className="topbar-chat-slot" ref={setHeaderSlot} />
+            : <div className="topbar-title-slot"><span>{current.tool === "archived" ? "已归档会话" : current.tool === "settings" ? "设置" : activeTool?.name || "Claude Code"}</span></div>
+      ) : (
+        <div className="top-actions"><div className="connection-host"><Monitor size={16} /><span>{catalog?.host || "连接电脑"}</span></div></div>
+      )}
     </header>
     <div className="workspace-body">
       {wideWorkspace && sidebarOpen && <WorkspaceSidebar {...sidebarProps}>{sidebarChildren}</WorkspaceSidebar>}
@@ -331,6 +341,7 @@ function App() {
               onBack={leaveDisplay} onReopen={() => selectTool(current.tool, false, openBrowserRequest.current?.url)} />
           : session
             ? <Chat key={session} id={session} drafts={drafts.current} ready={catalog.ready} visible={visible} refresh={refresh}
+              headerSlot={phoneWorkspace ? headerSlot : null}
               onOpenWeb={url => selectTool("browser", true, url)} onDenied={restricted} onMissing={missingSession} onSnapshot={updateSession} onBack={phoneWorkspace ? undefined : () => open(current.project)} />
           : phoneWorkspace
             ? <div className="workspace-placeholder"><Terminal size={28} /><p>{project ? "在侧栏选择或新建会话" : "请选择远程工具"}</p></div>
@@ -343,7 +354,7 @@ function App() {
   </main>;
 }
 
-function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMissing, onSnapshot, onBack }) {
+function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDenied, onMissing, onSnapshot, onBack }) {
   const tr = useTranslation();
   const [session, setSession] = useState(null);
   const [readError, setReadError] = useState("");
@@ -756,13 +767,18 @@ function Chat({ id, drafts, ready, visible, refresh, onOpenWeb, onDenied, onMiss
     queueLength: queue.length,
     queuePaused,
   });
+  const chatTitle = session?.title || "Claude Code 会话";
+  const headerContent = <>
+    <div className="chat-header chat-header--inline">
+      {onBack && <button type="button" className="icon-button" aria-label="返回会话列表" onClick={onBack}><ArrowLeft size={18} /></button>}
+      {session && <Status dotOnly value={last?.status} paused={session.paused} awaitingApproval={last?.status === "running" && last.approval} />}
+      <h1 title={session?.workspace ? `${chatTitle} — ${session.workspace}` : chatTitle}>{chatTitle}</h1>
+    </div>
+    {session && <SessionAccount id={id} request={request} paused={session.paused} onChanged={() => setReload(n => n + 1)} inline minimal />}
+  </>;
   return <>
-    <section className="chat-header">
-      <div className="title-line">{onBack && <button type="button" className="icon-button" aria-label="返回会话列表" onClick={onBack}><ArrowLeft size={18} /></button>}<h1>{session?.title || "Claude Code 会话"}</h1>{session && <Status value={last?.status} paused={session.paused} awaitingApproval={last?.status === "running" && last.approval} />}</div>
-      {session && <p className="note">{session.workspace}</p>}
-    </section>
+    {headerSlot ? createPortal(headerContent, headerSlot) : <section className="chat-header chat-header--bar">{headerContent}</section>}
     {!uncertain && (readError || connectionError) && <Notice onRetry={() => retry(true)} label="再次连接">{readError || connectionError}</Notice>}
-    {session && <SessionAccount id={id} request={request} paused={session.paused} onChanged={()=>setReload(n=>n+1)} compact />}
     {(sendProgress || connectionProgress || readProgress) && <p className="note" role="status">{sendProgress || tr(connectionProgress) || readProgress}</p>}
     {session?.connection_notice && session.connection_notice !== connectionProgress && <Notice>{tr(session.connection_notice)}</Notice>}
     {session?.history_truncated && <p className="note">手机显示的历史已截断，完整内容保存在电脑 Claude Code 中。</p>}
