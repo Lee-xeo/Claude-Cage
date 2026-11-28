@@ -42,7 +42,8 @@ mkdir -p "$work/apk/assets/licenses"
 cp "$android/licenses/ZXing-LICENSE.txt" "$work/apk/assets/licenses/"
 "$tools/aapt2" compile --dir "$android/res" -o "$work/res.zip"
 "$tools/aapt2" compile --dir "$work/brand" -o "$work/brand.zip"
-"$tools/aapt2" link -o "$work/base.apk" -I "$platform" -A "$mobile_dir/.build/resources" "${manifest_args[@]}" "$work/res.zip" "$work/brand.zip"
+"$tools/aapt2" link -o "$work/base.apk" -I "$platform" -A "$mobile_dir/.build/resources" \
+  --java "$work/generated" "${manifest_args[@]}" "$work/res.zip" "$work/brand.zip"
 zxing="$build/zxing-core-3.5.3.jar"
 if [[ ! -f "$zxing" ]]; then
   curl --fail --location --silent --show-error https://repo.maven.apache.org/maven2/com/google/zxing/core/3.5.3/core-3.5.3.jar -o "$work/zxing.jar"
@@ -50,7 +51,8 @@ if [[ ! -f "$zxing" ]]; then
 fi
 echo "8d8064c1636fdaef7189dd9055c7d59950a8940a12f2293956446ec3c109fd82  $zxing" | shasum -a 256 --check --status
 bash "$android/fetch-webkit.sh" "$build"
-javac --release 8 -encoding UTF-8 -classpath "$platform:$work/aar/classes.jar:$zxing:$build/webkit-1.14.0.jar:$build/core-1.1.0.jar" -d "$work/classes" "$android"/src/io/github/leexeo/cage/mobile/*.java
+javac --release 8 -encoding UTF-8 -classpath "$platform:$work/aar/classes.jar:$zxing:$build/webkit-1.14.0.jar:$build/core-1.1.0.jar" \
+  -d "$work/classes" "$work/generated/io/github/leexeo/cage/mobile/R.java" "$android"/src/io/github/leexeo/cage/mobile/*.java
 jar cf "$work/app.jar" -C "$work/classes" .
 "$tools/d8" --min-api 26 --lib "$platform" --output "$work/dex" "$work/app.jar" "$work/aar/classes.jar" "$zxing" "$build/webkit-1.14.0.jar" "$build/core-1.1.0.jar"
 cp "$work/dex/"*.dex "$work/apk/"

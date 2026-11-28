@@ -1,3 +1,4 @@
+import { mobileBackendText, mobileLocale, mobileText } from "./language.mjs";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -19,15 +20,15 @@ import { IconHints } from "../icon-hints.jsx";
 import { MessageBody, ToolActivity, TranscriptContext } from "./transcript";
 
 const labels = {
-	queued: "消息已送达",
-  running: "正在运行", stopping: "正在停止", completed: "已完成",
-  failed: "运行失败", stopped: "已停止", interrupted: "运行中断",
+	queued: mobileText("消息已送达"),
+  running: mobileText("正在运行"), stopping: mobileText("正在停止"), completed: mobileText("已完成"),
+  failed: mobileText("运行失败"), stopped: mobileText("已停止"), interrupted: mobileText("运行中断"),
 };
 const nativePhone = navigator.userAgent.includes("CageMobile/1");
 const phoneWorkspace = nativePhone || location.pathname === "/";
 const tabletMedia = "(min-width: 768px) and (min-height: 540px)";
 const matchesTabletWorkspace = () => phoneWorkspace && typeof matchMedia === "function" && matchMedia(tabletMedia).matches;
-const dateFormat = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const dateFormat = new Intl.DateTimeFormat(mobileLocale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 function displayTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -46,7 +47,7 @@ function saveRoute(next, push) {
 
 function Status({ value, awaitingApproval, paused, dotOnly = false }) {
   const tr = useTranslation();
-  const label = paused ? tr("已暂停") : awaitingApproval ? "等待审批" : labels[value] || "就绪";
+  const label = paused ? tr("已暂停") : awaitingApproval ? mobileText("等待审批") : labels[value] || mobileText("就绪");
   const tone = paused ? "warn" : active(value) ? "live" : value === "failed" || value === "interrupted" || value === "stopped" ? "bad" : "idle";
   if (dotOnly) {
     return <span className={"status-light " + tone} role="status" aria-label={label} title={label} />;
@@ -54,7 +55,7 @@ function Status({ value, awaitingApproval, paused, dotOnly = false }) {
   if (paused) return <span className="status-label" role="status">{label}</span>;
   return <span className={"status-label " + (tone === "idle" ? "" : tone)} role="status"><i className="status-dot" />{label}</span>;
 }
-function Notice({ children, onRetry, label = "重新读取" }) {
+function Notice({ children, onRetry, label = mobileText("重新读取") }) {
   return <div className="notice" role="alert">{children}
     {onRetry && <button type="button" className="action secondary" onClick={onRetry}><RefreshCw size={15} />{label}</button>}
   </div>;
@@ -158,7 +159,7 @@ function App() {
         const [info, list] = await Promise.all([request("/projects", options), request("/sessions", options)]);
         if (controller.signal.aborted || expectedAccess !== accessGeneration.current || expectedCatalog !== catalogGeneration.current) return;
         for (const session of list.sessions || []) archivedSessions.current.delete(session.id);
-        setCatalog({ ...info, sessions: (list.sessions || []).map(session => list.notice ? {...session, active:false} : session) }); setGate(""); setError(list.notice || "");
+        setCatalog({ ...info, sessions: (list.sessions || []).map(session => list.notice ? {...session, active:false} : session) }); setGate(""); setError(mobileBackendText(list.notice) || "");
       } catch (error) {
         if (controller.signal.aborted) return;
         if (accessDenied(error)) { restricted(error); return; }
@@ -310,30 +311,30 @@ function App() {
     <header className="topbar workspace-topbar">
       {phoneWorkspace
         ? <button type="button" className="icon-button" aria-haspopup={wideWorkspace ? undefined : "dialog"} aria-expanded={wideWorkspace ? sidebarOpen : drawer}
-          aria-label={wideWorkspace ? (sidebarOpen ? "收起侧栏" : "展开侧栏") : "展开侧栏"}
+          aria-label={wideWorkspace ? (sidebarOpen ? mobileText("收起侧栏") : mobileText("展开侧栏")) : mobileText("展开侧栏")}
           onClick={() => wideWorkspace ? setSidebarOpen(open => !open) : setDrawer(true)}><img className="brand-mark" src={cageLogo} alt="Cage" /></button>
-        : <a className="icon-button" href="/" aria-label="返回工作台"><img className="brand-mark" src={cageLogo} alt="Cage" /></a>}
+        : <a className="icon-button" href="/" aria-label={mobileText("返回工作台")}><img className="brand-mark" src={cageLogo} alt="Cage" /></a>}
       {phoneWorkspace ? (
         current.tool === "browser" || current.tool === "claude"
           ? <div className="workspace-address-slot" ref={setAddressSlot} />
           : current.tool === "code" && session
             ? <div className="topbar-chat-slot" ref={setHeaderSlot} />
-            : <div className="topbar-title-slot"><span>{current.tool === "archived" ? "已归档会话" : current.tool === "settings" ? "设置" : activeTool?.name || "Claude Code"}</span></div>
+            : <div className="topbar-title-slot"><span>{current.tool === "archived" ? mobileText("已归档会话") : current.tool === "settings" ? mobileText("设置") : activeTool?.name || "Claude Code"}</span></div>
       ) : (
-        <div className="top-actions"><div className="connection-host"><Monitor size={16} /><span>{catalog?.host || "连接电脑"}</span></div></div>
+        <div className="top-actions"><div className="connection-host"><Monitor size={16} /><span>{catalog?.host || mobileText("连接电脑")}</span></div></div>
       )}
     </header>
     <div className="workspace-body">
       {wideWorkspace && sidebarOpen && <WorkspaceSidebar {...sidebarProps}>{sidebarChildren}</WorkspaceSidebar>}
       <div className="workspace-pane">
         {gate ? <Notice onRetry={refreshAll}>{gate}</Notice> : !catalog
-          ? <section className="page-scroll">{error ? <Notice onRetry={refreshAll}>{error}</Notice> : <Empty icon={LoaderCircle} title="正在读取项目…" />}</section>
+          ? <section className="page-scroll">{error ? <Notice onRetry={refreshAll}>{error}</Notice> : <Empty icon={LoaderCircle} title={mobileText("正在读取项目…")} />}</section>
           : current.tool === "settings" || current.tool === "archived"
-            ? <section className="page-scroll mobile-session-settings" aria-label="会话设置">
-              <button className="action" onClick={leaveSettings}><ArrowLeft size={17} />{current.tool === "archived" ? "返回设置" : "返回会话"}</button>
+            ? <section className="page-scroll mobile-session-settings" aria-label={mobileText("会话设置")}>
+              <button className="action" onClick={leaveSettings}><ArrowLeft size={17} />{current.tool === "archived" ? mobileText("返回设置") : mobileText("返回会话")}</button>
               {current.tool === "archived" ? <ArchivedSessions request={request} ready={catalog.ready}
                 onRestored={id => {archivedSessions.current.delete(id); refreshAll();}} />
-                : <><h1>设置</h1><button className="action secondary" onClick={() => settingsPage("archived")}><Archive size={18} />已归档会话</button></>}
+                : <><h1>{mobileText("设置")}</h1><button className="action secondary" onClick={() => settingsPage("archived")}><Archive size={18} />{mobileText("已归档会话")}</button></>}
             </section>
           : current.displayID
             ? <RemoteDisplay controls={browserControls} key={current.displayID} id={current.displayID} tool={current.tool} addressSlot={addressSlot}
@@ -344,7 +345,7 @@ function App() {
               headerSlot={phoneWorkspace ? headerSlot : null}
               onOpenWeb={url => selectTool("browser", true, url)} onDenied={restricted} onMissing={missingSession} onSnapshot={updateSession} onBack={phoneWorkspace ? undefined : () => open(current.project)} />
           : phoneWorkspace
-            ? <div className="workspace-placeholder"><Terminal size={28} /><p>{project ? "在侧栏选择或新建会话" : "请选择远程工具"}</p></div>
+            ? <div className="workspace-placeholder"><Terminal size={28} /><p>{project ? mobileText("在侧栏选择或新建会话") : mobileText("请选择远程工具")}</p></div>
             : <section className="page-scroll">{error && <Notice onRetry={refreshAll}>{error}</Notice>}{codeNavigation}</section>}
       </div>
     </div>
@@ -460,7 +461,7 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
       if (snapshot) accept(snapshot, generation);
       if (snapshot && checking && checkApproval.current === checking && latest.current?.turns?.at(-1)?.approval?.id === checking.id) {
         checkApproval.current = null;
-        setApprovalFeedback({ id: checking.id, message: "主机仍在等待这次审批。请核对参数后再次选择。" });
+        setApprovalFeedback({ id: checking.id, message: mobileText("主机仍在等待这次审批。请核对参数后再次选择。") });
       }
       setWaitingSync(false);
       setReadError("");
@@ -470,11 +471,11 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
       if (signal.aborted || !live.current) return;
       if (accessDenied(error)) onDenied(error); else if (error.status === 404 || error.status === 410) onMissing();
       else if (retryableSessionError(error) && ++readFailures.current <= sessionRetryLimit) {
-        setReadError(""); setReadProgress(`${sessionFailureMessage(error)} 正在自动重连（${readFailures.current}/${sessionRetryLimit}）…`);
+        setReadError(""); setReadProgress(mobileText("{0} 正在自动重连（{1}/{2}）…", sessionFailureMessage(error), readFailures.current, sessionRetryLimit));
         return sessionRetryDelay(readFailures.current);
       } else {
         setReadProgress("");
-        setReadError(sessionFailureMessage(error) + (retryableSessionError(error) ? " 已自动重连5次，仍未恢复。可以稍后再次连接。" : ""));
+        setReadError(sessionFailureMessage(error) + (retryableSessionError(error) ? mobileText(" 已自动重连5次，仍未恢复。可以稍后再次连接。") : ""));
       }
       return null;
     }
@@ -498,7 +499,7 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
     setConfirming(true); setActionError(""); setReadError(""); setReadProgress("");
     const recovering = recoverPendingMessage({
       signal:controller.signal, pending:() => submission.current,
-      progress:attempt => setSendProgress(`正在重连并确认消息是否送达（${attempt}/${sessionRetryLimit}）…`),
+      progress:attempt => setSendProgress(mobileText("正在重连并确认消息是否送达（{0}/{1}）…", attempt, sessionRetryLimit)),
       read:async () => {
         const generation = latest.current?.generation;
         const snapshot = await request(sessionPath(id), {signal:controller.signal});
@@ -512,7 +513,7 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
       },
     });
     void recovering.then(confirmed => {
-      if (!controller.signal.aborted && !confirmed) setActionError("消息是否送达仍未确认。已自动重连5次，原消息已保留。再次连接后会继续确认，避免重复执行。");
+      if (!controller.signal.aborted && !confirmed) setActionError(mobileText("消息是否送达仍未确认。已自动重连5次，原消息已保留。再次连接后会继续确认，避免重复执行。"));
     }).catch(error => {
       if (controller.signal.aborted) return;
       if (accessDenied(error)) onDenied(error); else if ([404,410].includes(error.status)) onMissing(); else setActionError(sessionFailureMessage(error));
@@ -538,18 +539,18 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
         if (snapshot?.paused || snapshot?.can_send) return;
         if (snapshot?.connection_waiting) started = Date.now();
         if (!snapshot?.connection_waiting && Date.now() - started > 60000) {
-          setConnectionError("会话连接暂未就绪，请重试。");
+          setConnectionError(mobileText("会话连接暂未就绪，请重试。"));
           return;
         }
       } catch (error) {
         if (controller.signal.aborted) return;
         if (accessDenied(error)) { onDenied(error); return; }
         if (retryableSessionError(error) && ++failures <= sessionRetryLimit) {
-          setConnectionProgress(`正在恢复会话连接（${failures}/${sessionRetryLimit}）…`);
+          setConnectionProgress(mobileText("正在恢复会话连接（{0}/{1}）…", failures, sessionRetryLimit));
           delay = sessionRetryDelay(failures);
         } else if (error.status !== 409 || Date.now() - started > 60000) {
           setConnectionProgress("");
-          setConnectionError(sessionFailureMessage(error) + (retryableSessionError(error) ? " 已自动重连5次，可以稍后再次连接。" : "")); return;
+          setConnectionError(sessionFailureMessage(error) + (retryableSessionError(error) ? mobileText(" 已自动重连5次，可以稍后再次连接。") : "")); return;
         }
       }
       timer = setTimeout(connect, delay);
@@ -569,7 +570,7 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
   const dispatchMessage = useCallback(async (item) => {
     if (actionBusy.current) return;
     actionBusy.current = true; setBusy(true); setActionError("");
-    setSendProgress("正在发送消息…");
+    setSendProgress(mobileText("正在发送消息…"));
     try {
       follow.current = true;
       const generation = latest.current?.generation;
@@ -750,7 +751,7 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
       if (!live.current) return;
       if (accessDenied(error)) onDenied(error);
       else if (latest.current?.turns?.at(-1)?.approval?.id === approvalId) {
-        const checking = { id: approvalId, checking: true, message: error.status === 409 ? "这次请求的状态已变化，正在重新读取。" : "审批结果尚未确认，正在重新读取主机状态。" };
+        const checking = { id: approvalId, checking: true, message: error.status === 409 ? mobileText("这次请求的状态已变化，正在重新读取。") : mobileText("审批结果尚未确认，正在重新读取主机状态。") };
         checkApproval.current = checking; setApprovalFeedback(checking); retry();
       }
     } finally { actionBusy.current = false; if (live.current) setBusy(false); }
@@ -767,10 +768,10 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
     queueLength: queue.length,
     queuePaused,
   });
-  const chatTitle = session?.title || "Claude Code 会话";
+  const chatTitle = session?.title || mobileText("Claude Code 会话");
   const headerContent = <>
     <div className="chat-header chat-header--inline">
-      {onBack && <button type="button" className="icon-button" aria-label="返回会话列表" onClick={onBack}><ArrowLeft size={18} /></button>}
+      {onBack && <button type="button" className="icon-button" aria-label={mobileText("返回会话列表")} onClick={onBack}><ArrowLeft size={18} /></button>}
       {session && <Status dotOnly value={last?.status} paused={session.paused} awaitingApproval={last?.status === "running" && last.approval} />}
       <h1 title={session?.workspace ? `${chatTitle} — ${session.workspace}` : chatTitle}>{chatTitle}</h1>
     </div>
@@ -778,55 +779,55 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
   </>;
   return <>
     {headerSlot ? createPortal(headerContent, headerSlot) : <section className="chat-header chat-header--bar">{headerContent}</section>}
-    {!uncertain && (readError || connectionError) && <Notice onRetry={() => retry(true)} label="再次连接">{readError || connectionError}</Notice>}
+    {!uncertain && (readError || connectionError) && <Notice onRetry={() => retry(true)} label={mobileText("再次连接")}>{readError || connectionError}</Notice>}
     {(sendProgress || connectionProgress || readProgress) && <p className="note" role="status">{sendProgress || tr(connectionProgress) || readProgress}</p>}
-    {session?.connection_notice && session.connection_notice !== connectionProgress && <Notice>{tr(session.connection_notice)}</Notice>}
-    {session?.history_truncated && <p className="note">手机显示的历史已截断，完整内容保存在电脑 Claude Code 中。</p>}
-    <section className="transcript" ref={transcript} aria-label="会话消息" onScroll={(e) => {
+    {session?.connection_notice && session.connection_notice !== connectionProgress && <Notice>{mobileBackendText(session.connection_notice)}</Notice>}
+    {session?.history_truncated && <p className="note">{mobileText("手机显示的历史已截断，完整内容保存在电脑 Claude Code 中。")}</p>}
+    <section className="transcript" ref={transcript} aria-label={mobileText("会话消息")} onScroll={(e) => {
       const box = e.currentTarget; follow.current = box.scrollHeight - box.scrollTop - box.clientHeight < 64;
     }}>
-      {!session && !readError && <Empty icon={LoaderCircle} title="正在读取会话…" />}
-      {session && !session.turns?.length && !showPending && !queue.length && <Empty icon={Terminal} title="发送第一条消息">Claude Code 会在所选项目中处理你的请求。</Empty>}
+      {!session && !readError && <Empty icon={LoaderCircle} title={mobileText("正在读取会话…")} />}
+      {session && !session.turns?.length && !showPending && !queue.length && <Empty icon={Terminal} title={mobileText("发送第一条消息")}>{mobileText("Claude Code 会在所选项目中处理你的请求。")}</Empty>}
       <TranscriptContext.Provider value={transcriptContext}>{session?.turns?.map((turn) => <React.Fragment key={turn.id}>
-        <article className="message user" aria-label="你的消息"><MessageBody text={turn.prompt} /></article>
-        <article className="message" aria-label="回复">
+        <article className="message user" aria-label={mobileText("你的消息")}><MessageBody text={turn.prompt} /></article>
+        <article className="message" aria-label={mobileText("回复")}>
           <ToolActivity tools={turn.tools} />
           {turn.text && <MessageBody text={turn.text} />}
-          {turn.truncated && <p className="note">本轮输出超过记录上限，仅显示已保存的部分。</p>}
-          {!turn.text && !turn.approval && active(turn.status) && <p className="note">等待输出…</p>}
+          {turn.truncated && <p className="note">{mobileText("本轮输出超过记录上限，仅显示已保存的部分。")}</p>}
+          {!turn.text && !turn.approval && active(turn.status) && <p className="note">{mobileText("等待输出…")}</p>}
           {turn.id === last.id && turn.status === "running" && turn.approval?.id && <Approval
             key={turn.approval.id} approval={turn.approval} busy={busy || session.paused} feedback={approvalFeedback?.id === turn.approval.id ? approvalFeedback : null}
             onDecide={(allow) => decide(turn.id, turn.approval.id, allow)} />}
           {turn.error && <div className="turn-error">{turn.error}</div>}
-          {turn.denied_tools?.length > 0 && <div className="turn-tools">以下工具需要授权，本次调用已拒绝。<span>{turn.denied_tools.join("、")}</span></div>}
+          {turn.denied_tools?.length > 0 && <div className="turn-tools">{mobileText("以下工具需要授权，本次调用已拒绝。")}<span>{turn.denied_tools.join("、")}</span></div>}
           {["failed", "interrupted", "stopped"].includes(turn.status) && <p className="note">{labels[turn.status]}</p>}
         </article>
       </React.Fragment>)}
-      {showPending && <article className="message user queued" aria-label="正在发送的消息">
+      {showPending && <article className="message user queued" aria-label={mobileText("正在发送的消息")}>
         <div className="queued-meta">
-          <span>{uncertain ? (confirming ? "确认送达中…" : "送达未确认") : "发送中…"}</span>
+          <span>{uncertain ? (confirming ? mobileText("确认送达中…") : mobileText("送达未确认")) : mobileText("发送中…")}</span>
         </div>
         <MessageBody text={pendingMessage.text} />
       </article>}
-      {queue.map((item, index) => <article key={item.request_id} className="message user queued" aria-label="排队待发消息">
+      {queue.map((item, index) => <article key={item.request_id} className="message user queued" aria-label={mobileText("排队待发消息")}>
         <div className="queued-meta">
-          <span>{queuePaused ? `已暂停排队 · 第 ${index + 1} 条` : `排队中 · 第 ${index + 1} 条`}</span>
+          <span>{queuePaused ? mobileText("已暂停排队 · 第 {0} 条", index + 1) : mobileText("排队中 · 第 {0} 条", index + 1)}</span>
           <div className="queued-actions">
-            {queuePaused && index === 0 && <button type="button" className="queued-resume" onClick={resumeQueue}>继续发送</button>}
-            <button type="button" className="queued-cancel" aria-label="取消排队消息" title="取消发送" onClick={() => removeQueued(item.request_id)}><X size={14} /></button>
+            {queuePaused && index === 0 && <button type="button" className="queued-resume" onClick={resumeQueue}>{mobileText("继续发送")}</button>}
+            <button type="button" className="queued-cancel" aria-label={mobileText("取消排队消息")} title={mobileText("取消发送")} onClick={() => removeQueued(item.request_id)}><X size={14} /></button>
           </div>
         </div>
         <MessageBody text={item.text} />
       </article>)}</TranscriptContext.Provider>
     </section>
     <form className="compose" onSubmit={send}>
-      {actionError && <Notice onRetry={uncertain ? () => retry(false) : undefined} label="再次连接">{tr(actionError)}</Notice>}
-      {session?.single_turn && <p className="note">当前凭据或路由只能验证本轮。请返回会话列表，新建会话后继续。</p>}
-      {!ready && <p className="note">请在电脑上启动 Cage 环境。</p>}
+      {actionError && <Notice onRetry={uncertain ? () => retry(false) : undefined} label={mobileText("再次连接")}>{tr(actionError)}</Notice>}
+      {session?.single_turn && <p className="note">{mobileText("当前凭据或路由只能验证本轮。请返回会话列表，新建会话后继续。")}</p>}
+      {!ready && <p className="note">{mobileText("请在电脑上启动 Cage 环境。")}</p>}
       {session?.paused && <PausedSession id={id} request={request} disabled={!ready || busy}
         onContinued={snapshot => accept(snapshot, session.generation)} />}
       <div className="composer-field">
-        <textarea ref={composerInput} aria-label="消息" rows="1" placeholder={session?.paused ? tr("Claude 已暂停") : running ? "正在运行，可继续输入排队发送" : willQueue ? "可继续输入，将按顺序排队发送" : "给 Claude Code 发消息"} value={draft} disabled={!session || session.single_turn || session.paused || session.can_send === false || !ready}
+        <textarea ref={composerInput} aria-label={mobileText("消息")} rows="1" placeholder={session?.paused ? tr("Claude 已暂停") : running ? mobileText("正在运行，可继续输入排队发送") : willQueue ? mobileText("可继续输入，将按顺序排队发送") : mobileText("给 Claude Code 发消息")} value={draft} disabled={!session || session.single_turn || session.paused || session.can_send === false || !ready}
           onChange={(e) => {
             const value = e.target.value;
             draftRef.current = value;
@@ -835,8 +836,8 @@ function Chat({ id, drafts, ready, visible, refresh, headerSlot, onOpenWeb, onDe
           }} onKeyDown={(e) => {
             if (e.key === "Enter" && !e.nativeEvent.isComposing && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); }
           }} />
-        {running && !session?.paused && <button type="button" className={draft.trim() ? "composer-action secondary" : "composer-action"} aria-label={last.status === "stopping" ? "正在停止" : "停止运行"} title={last.status === "stopping" ? "正在停止" : "停止运行"} disabled={busy || last.status !== "running"} onClick={stop}><Square size={17} /></button>}
-        {(!running || draft.trim()) && <button type="submit" className="composer-action" aria-label={willQueue ? "加入待发队列" : "发送"} title={willQueue ? "加入待发队列" : "发送"} disabled={!ready || !session || session.single_turn || session.paused || session.can_send === false || !draft.trim()}><ArrowUp size={21} /></button>}
+        {running && !session?.paused && <button type="button" className={draft.trim() ? "composer-action secondary" : "composer-action"} aria-label={last.status === "stopping" ? mobileText("正在停止") : mobileText("停止运行")} title={last.status === "stopping" ? mobileText("正在停止") : mobileText("停止运行")} disabled={busy || last.status !== "running"} onClick={stop}><Square size={17} /></button>}
+        {(!running || draft.trim()) && <button type="submit" className="composer-action" aria-label={willQueue ? mobileText("加入待发队列") : mobileText("发送")} title={willQueue ? mobileText("加入待发队列") : mobileText("发送")} disabled={!ready || !session || session.single_turn || session.paused || session.can_send === false || !draft.trim()}><ArrowUp size={21} /></button>}
       </div>
     </form>
   </>;
@@ -850,15 +851,15 @@ function Approval({ approval, busy, feedback, onDecide }) {
       input = JSON.stringify(approval.input, null, 2).replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
     } catch { /* An unreadable argument object cannot be approved. */ }
   }
-  return <section className="approval" aria-label="工具审批">
-    <h2>允许使用 {approval.tool}？</h2>
-    {input === null ? <p className="note">无法显示完整参数，请拒绝或重新读取。</p>
-      : <pre tabIndex={0} aria-label={approval.preview ? "工具参数预览" : "完整工具参数"}>{input}</pre>}
-    {approval.preview && <p className="note">参数预览由 Claude Code 提供。若显示省略内容，请在电脑查看完整参数后处理。</p>}
+  return <section className="approval" aria-label={mobileText("工具审批")}>
+    <h2>{mobileText("允许使用 {0}？", approval.tool)}</h2>
+    {input === null ? <p className="note">{mobileText("无法显示完整参数，请拒绝或重新读取。")}</p>
+      : <pre tabIndex={0} aria-label={approval.preview ? mobileText("工具参数预览") : mobileText("完整工具参数")}>{input}</pre>}
+    {approval.preview && <p className="note">{mobileText("参数预览由 Claude Code 提供。若显示省略内容，请在电脑查看完整参数后处理。")}</p>}
     {feedback && <p className="note" role="status">{feedback.message}</p>}
     <div className="approval-actions">
-      <button type="button" className="action secondary" disabled={busy || feedback?.checking} onClick={() => onDecide(false)}>拒绝</button>
-      <button type="button" className="action primary" disabled={busy || feedback?.checking || input === null} onClick={() => onDecide(true)}>允许一次</button>
+      <button type="button" className="action secondary" disabled={busy || feedback?.checking} onClick={() => onDecide(false)}>{mobileText("拒绝")}</button>
+      <button type="button" className="action primary" disabled={busy || feedback?.checking || input === null} onClick={() => onDecide(true)}>{mobileText("允许一次")}</button>
     </div>
   </section>;
 }

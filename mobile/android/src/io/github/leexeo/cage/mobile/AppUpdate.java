@@ -46,7 +46,7 @@ final class AppUpdate {
         }
     }
 
-    String currentVersion() { return "development".equals(current) ? "开发版" : current; }
+    String currentVersion() { return "development".equals(current) ? activity.getString(R.string.development_build) : current; }
 
     void saveState(Bundle state) {
         if (ready != null) {
@@ -69,14 +69,14 @@ final class AppUpdate {
 
     void check(boolean requested) {
         if ("development".equals(current)) {
-            if (requested) message("本地开发版请通过构建工具更新。");
+            if (requested) message(activity.getString(R.string.development_update));
             return;
         }
         if (progress != null || (prompt != null && prompt.isShowing())) return;
         if (requested && ready != null && ready.isFile()) { offerInstall(); return; }
         if (requested) {
             manual = true;
-            message("正在检查更新…");
+            message(activity.getString(R.string.checking_updates));
         }
         if (checking) return;
         long now = System.currentTimeMillis();
@@ -95,19 +95,19 @@ final class AppUpdate {
                     boolean report = manual;
                     manual = false;
                     if (update == null) {
-                        if (report) message("已是当前通道的最新版本。");
+                        if (report) message(activity.getString(R.string.up_to_date));
                         return;
                     }
                     prompt = new AlertDialog.Builder(activity)
-                            .setTitle("发现新版本 " + update.version())
-                            .setMessage("当前版本 " + current + "。下载后由 Android 确认安装。")
-                            .setNegativeButton("稍后", null)
-                            .setPositiveButton("下载更新", (d, w) -> download(update)).show();
+                            .setTitle(activity.getString(R.string.new_version, update.version()))
+                            .setMessage(activity.getString(R.string.current_version_download, current))
+                            .setNegativeButton(activity.getString(R.string.later), null)
+                            .setPositiveButton(activity.getString(R.string.download_update), (d, w) -> download(update)).show();
                 });
             } catch (Exception e) {
                 deliver(() -> {
                     checking = false;
-                    if (manual) failure("检查更新失败", e);
+                    if (manual) failure(activity.getString(R.string.update_check_failed), e);
                     manual = false;
                 });
             }
@@ -119,7 +119,7 @@ final class AppUpdate {
         ProgressDialog dialog = new ProgressDialog(activity);
         progress = dialog;
         progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
-        progress.setTitle("正在下载 " + update.version());
+        progress.setTitle(activity.getString(R.string.downloading_version, update.version()));
         progress.setMax(100);
         progress.setCanceledOnTouchOutside(false);
         Future<?> task = worker.submit(() -> {
@@ -138,7 +138,7 @@ final class AppUpdate {
                 deliver(() -> {
                     if (progress != dialog) return;
                     finishDownload();
-                    failure("更新下载失败", e);
+                    failure(activity.getString(R.string.update_download_failed), e);
                 });
             }
         });
@@ -146,7 +146,7 @@ final class AppUpdate {
             task.cancel(true);
             progress = null;
         });
-        dialog.setButton(ProgressDialog.BUTTON_NEGATIVE, "取消", (d, which) -> dialog.cancel());
+        dialog.setButton(ProgressDialog.BUTTON_NEGATIVE, activity.getString(R.string.cancel), (d, which) -> dialog.cancel());
         dialog.show();
     }
 
@@ -155,25 +155,25 @@ final class AppUpdate {
     }
 
     private void offerInstall() {
-        prompt = new AlertDialog.Builder(activity).setTitle("安装 " + readyVersion)
-                .setMessage("更新已下载并校验完成。")
-                .setNegativeButton("稍后", null)
-                .setPositiveButton("继续安装", (d, w) -> install()).show();
+        prompt = new AlertDialog.Builder(activity).setTitle(activity.getString(R.string.install_version, readyVersion))
+                .setMessage(activity.getString(R.string.update_verified))
+                .setNegativeButton(activity.getString(R.string.later), null)
+                .setPositiveButton(activity.getString(R.string.continue_install), (d, w) -> install()).show();
     }
 
     @SuppressWarnings("deprecation")
     private void install() {
         if (ready == null || !ready.isFile()) {
             ready = null;
-            message("更新文件已清理，请重新检查更新。");
+            message(activity.getString(R.string.update_file_removed));
             return;
         }
         try {
             if (!activity.getPackageManager().canRequestPackageInstalls()) {
-                prompt = new AlertDialog.Builder(activity).setTitle("允许安装应用更新")
-                        .setMessage("在系统设置中开启「允许来自此来源的应用」，返回后即可确认安装。")
-                        .setNegativeButton("稍后", null)
-                        .setPositiveButton("打开设置", (d, w) -> openPermissionSettings()).show();
+                prompt = new AlertDialog.Builder(activity).setTitle(activity.getString(R.string.allow_update_install))
+                        .setMessage(activity.getString(R.string.allow_unknown_source))
+                        .setNegativeButton(activity.getString(R.string.later), null)
+                        .setPositiveButton(activity.getString(R.string.open_settings), (d, w) -> openPermissionSettings()).show();
                 return;
             }
             Uri uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".updates", ready);
@@ -181,7 +181,7 @@ final class AppUpdate {
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).putExtra(Intent.EXTRA_RETURN_RESULT, true);
             activity.startActivityForResult(intent, INSTALL);
         } catch (RuntimeException e) {
-            message("无法打开系统安装器，请在官网下载更新。");
+            message(activity.getString(R.string.installer_failed));
         }
     }
 
@@ -190,21 +190,21 @@ final class AppUpdate {
             activity.startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     Uri.parse("package:" + activity.getPackageName())), ALLOW_INSTALL);
         } catch (RuntimeException e) {
-            message("请在系统设置中允许 Cage 安装未知应用，再到「检查更新」继续。");
+            message(activity.getString(R.string.enable_install_permission));
         }
     }
 
     boolean onResult(int code, int result) {
         if (code == ALLOW_INSTALL) {
             if (activity.getPackageManager().canRequestPackageInstalls()) install();
-            else message("安装权限未开启，可稍后从「检查更新」继续。");
+            else message(activity.getString(R.string.install_permission_missing));
             return true;
         }
         if (code == INSTALL) {
             if (result == Activity.RESULT_OK) {
                 if (ready != null) ready.delete();
                 ready = null;
-            } else message("更新尚未安装，可稍后从「检查更新」重试。");
+            } else message(activity.getString(R.string.update_not_installed));
             return true;
         }
         return false;
@@ -221,9 +221,16 @@ final class AppUpdate {
 
     private void failure(String title, Exception e) {
         String detail = e.getMessage();
-        if (detail == null || !detail.matches("[\\p{IsHan}].{0,100}")) detail = "请检查网络连接后重试。";
+        if (e instanceof UpdateDownload.Failure) {
+            detail = ((UpdateDownload.Failure) e).detail(activity);
+        } else if ("更新源返回了无效的版本信息".equals(detail)) {
+            detail = activity.getString(R.string.invalid_update_metadata);
+        } else if ("ru".equals(activity.getString(R.string.ui_language))
+                || detail == null || !detail.matches("[\\p{IsHan}].{0,100}")) {
+            detail = activity.getString(R.string.check_network_retry);
+        }
         prompt = new AlertDialog.Builder(activity).setTitle(title).setMessage(detail)
-                .setPositiveButton("知道了", null).show();
+                .setPositiveButton(activity.getString(R.string.got_it), null).show();
     }
 
     void close() {

@@ -1,3 +1,4 @@
+import { mobileText } from "./language.mjs";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
@@ -84,7 +85,7 @@ export function InlineSelect({ label, value, options, onChange, onLongPress, foo
       {icon}<span>{selected?.label || label}</span><ChevronDown size={14} aria-hidden="true" />
     </button>
     {visible && createPortal(<div className="inline-select-popover" ref={list} style={position}>
-      <div className="inline-select-options" role="listbox" id={id} aria-label={label + "选项"}>
+      <div className="inline-select-options" role="listbox" id={id} aria-label={label + mobileText("选项")}>
         {options.map((item, index) => <div key={item.value} role="option" id={id + "-" + index}
           aria-selected={item.value === value} data-active={item.value === cursor || undefined}
           {...pointerHandlers(item)} onMouseDown={event => event.preventDefault()}

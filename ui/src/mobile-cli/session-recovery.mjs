@@ -1,9 +1,10 @@
+import { mobileText } from "./language.mjs";
 export const sessionRetryLimit = 5;
 export const sessionRetryDelay = attempt => Math.min(8000, 1000 * 2 ** (attempt - 1));
 export const retryableSessionError = error => !error.status || error.status >= 500 || [408, 425, 429].includes(error.status);
 
 export function sessionFailureMessage(error) {
-  return error.status ? error.message : "手机与电脑的连接暂时中断。";
+  return error.status ? error.message : mobileText("手机与电脑的连接暂时中断。");
 }
 
 function pause(ms, signal) {

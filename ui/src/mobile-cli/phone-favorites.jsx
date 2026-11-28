@@ -1,3 +1,4 @@
+import { mobileText } from "./language.mjs";
 import React, {useEffect, useRef, useState} from "react";
 import {ArrowLeft, Bookmark, BookmarkMinus, BookmarkPlus, Check, ChevronDown, ChevronRight, Folder, RefreshCw} from "lucide-react";
 import {InlineSelect} from "./inline-select";
@@ -30,7 +31,7 @@ export function PhoneFavorites({frame, navigate, onClose}) {
     try {
       const next = await browserRequest("/favorites", {body,signal:controller.signal});
       if (controller.signal.aborted) return;
-      if (!Array.isArray(next?.items) || !Array.isArray(next?.folders)) throw new Error("电脑返回的收藏夹格式无效，请更新电脑端 Cage。");
+      if (!Array.isArray(next?.items) || !Array.isArray(next?.folders)) throw new Error(mobileText("电脑返回的收藏夹格式无效，请更新电脑端 Cage。"));
       setData(next);
       setFolderID(previous => next.folders.some(folder => folder.id === previous) ? previous : "");
       if (body) {
@@ -41,8 +42,8 @@ export function PhoneFavorites({frame, navigate, onClose}) {
       if (controller.signal.aborted) return;
       setData(null); setEditor(null);
       const unsupported = e.status === 404 || e.status === 405 || e instanceof SyntaxError;
-      setError(unsupported ? "这台电脑尚不支持共享收藏夹，请更新电脑端 Cage。" :
-        body && !e.status ? "保存结果待确认，请刷新收藏夹。" : e.message);
+      setError(unsupported ? mobileText("这台电脑尚不支持共享收藏夹，请更新电脑端 Cage。") :
+        body && !e.status ? mobileText("保存结果待确认，请刷新收藏夹。") : e.message);
     } finally {
       if (request.current === controller) {
         request.current = null;
@@ -61,7 +62,7 @@ export function PhoneFavorites({frame, navigate, onClose}) {
     setBusy(true); setError("");
     try {
       if (await navigate(url)) onClose();
-      else setError("网页暂未打开，请查看远程连接。");
+      else setError(mobileText("网页暂未打开，请查看远程连接。"));
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };
@@ -71,33 +72,33 @@ export function PhoneFavorites({frame, navigate, onClose}) {
       <button className="bookmark-open" type="button" disabled={busy} onClick={() => open(item.url)}>
         <Bookmark size={16}/><span><strong>{item.title || item.url}</strong><small>{webURL(item.url)?.host || item.url}</small></span>
       </button>
-      <button className="icon-button" type="button" disabled={busy} aria-label={"取消收藏 " + (item.title || item.url)}
+      <button className="icon-button" type="button" disabled={busy} aria-label={mobileText("取消收藏 {0}", item.title || item.url)}
         onClick={() => remove(item)}><BookmarkMinus size={17}/></button>
     </li>
   )}</ul>;
 
-  return <section className="phone-favorites" aria-label="电脑收藏夹">
-    <div className="bookmark-heading"><button className="icon-button" type="button" ref={back} aria-label="返回网页" onClick={onClose}><ArrowLeft size={18}/></button><h2>收藏夹</h2>
-      <button className="icon-button" type="button" disabled={busy} aria-label="刷新收藏夹" onClick={() => sync()}><RefreshCw size={18}/></button>
+  return <section className="phone-favorites" aria-label={mobileText("电脑收藏夹")}>
+    <div className="bookmark-heading"><button className="icon-button" type="button" ref={back} aria-label={mobileText("返回网页")} onClick={onClose}><ArrowLeft size={18}/></button><h2>{mobileText("收藏夹")}</h2>
+      <button className="icon-button" type="button" disabled={busy} aria-label={mobileText("刷新收藏夹")} onClick={() => sync()}><RefreshCw size={18}/></button>
     </div>
     {error && <p className="notice" role="alert">{error}</p>}
-    {!data && !error && <p className="nav-note" role="status">正在读取电脑收藏夹…</p>}
+    {!data && !error && <p className="nav-note" role="status">{mobileText("正在读取电脑收藏夹…")}</p>}
     {data && <>
       {page && <div className="bookmark-current">
         {editor?.url === frame.url && !saved ? <form onSubmit={event => {
           event.preventDefault();
           void sync({action:"save",title:editor.title,url:editor.url,folder_id:folderID});
         }}>
-          <InlineSelect label="保存到" value={folderID} disabled={busy} onChange={setFolderID} icon={<Folder size={16}/>}
-            options={[{value:"",label:"未分类"}, ...data.folders.map(folder => ({value:folder.id,label:folder.title}))]} />
+          <InlineSelect label={mobileText("保存到")} value={folderID} disabled={busy} onChange={setFolderID} icon={<Folder size={16}/>}
+            options={[{value:"",label:mobileText("未分类")}, ...data.folders.map(folder => ({value:folder.id,label:folder.title}))]} />
           <div className="bookmark-save-actions">
-            <button className="action" type="button" disabled={busy} onClick={() => setEditor(null)}>取消</button>
-            <button className="action primary" type="submit" disabled={busy}><Check size={15}/>保存收藏</button>
+            <button className="action" type="button" disabled={busy} onClick={() => setEditor(null)}>{mobileText("取消")}</button>
+            <button className="action primary" type="submit" disabled={busy}><Check size={15}/>{mobileText("保存收藏")}</button>
           </div>
         </form> : <button className="action secondary" type="button" disabled={busy} onClick={() => {
           if (saved) void remove(saved);
           else {setFolderID(""); setEditor({url:frame.url,title:Array.from(frame.title?.trim() || page.host).slice(0,250).join("")});}
-        }}>{saved ? <BookmarkMinus size={17}/> : <BookmarkPlus size={17}/>}{saved ? "取消此页收藏" : "收藏此页"}</button>}
+        }}>{saved ? <BookmarkMinus size={17}/> : <BookmarkPlus size={17}/>}{saved ? mobileText("取消此页收藏") : mobileText("收藏此页")}</button>}
       </div>}
       {data.folders.map(folder => {
         const shown = expanded.has(folder.id);
@@ -108,11 +109,11 @@ export function PhoneFavorites({frame, navigate, onClose}) {
             if (next.has(folder.id)) next.delete(folder.id); else next.add(folder.id);
             return next;
           })}>{shown ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}<Folder size={17}/><span>{folder.title}</span></button>
-          {shown && (items.length ? entries(items) : <p className="tree-empty">这个文件夹还没有收藏</p>)}
+          {shown && (items.length ? entries(items) : <p className="tree-empty">{mobileText("这个文件夹还没有收藏")}</p>)}
         </div>;
       })}
       {entries(data.items.filter(item => !item.folder_id || !data.folders.some(folder => folder.id === item.folder_id)))}
-      {!data.folders.length && !data.items.length && <p className="nav-note">还没有收藏。</p>}
+      {!data.folders.length && !data.items.length && <p className="nav-note">{mobileText("还没有收藏。")}</p>}
     </>}
   </section>;
 }

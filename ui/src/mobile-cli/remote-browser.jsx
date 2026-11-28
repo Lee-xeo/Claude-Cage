@@ -1,3 +1,4 @@
+import { mobileText } from "./language.mjs";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ArrowDownLeft, ArrowLeft, ArrowRight, BookOpen, Check, CornerDownLeft, Delete, Gauge, Globe2, History, ImagePlus, Keyboard, LoaderCircle, Maximize, Monitor, RotateCw, Star, Zap, ZoomIn, X } from "lucide-react";
@@ -96,7 +97,7 @@ function AddressBar({frame, goToAddress, onNotice}) {
       url = new URL(raw.includes("://") ? raw : "https://" + raw);
       if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.href.length > 16384) throw new Error();
     } catch {
-      setInvalid(true); onNotice("请输入有效的 HTTP 或 HTTPS 网址。");
+      setInvalid(true); onNotice(mobileText("请输入有效的 HTTP 或 HTTPS 网址。"));
       return;
     }
     await openURL(url.href, raw);
@@ -105,8 +106,8 @@ function AddressBar({frame, goToAddress, onNotice}) {
   return <div className="remote-address-wrap" ref={wrapRef}>
     <form className="remote-address" onSubmit={navigate}>
         <Globe2 size={16} aria-hidden="true" />
-        <input ref={inputRef} aria-label="远程网页地址" aria-invalid={invalid} inputMode="url" enterKeyHint="go" autoCapitalize="none"
-          autoCorrect="off" autoComplete="off" spellCheck={false} placeholder="输入网址" disabled={!frame}
+        <input ref={inputRef} aria-label={mobileText("远程网页地址")} aria-invalid={invalid} inputMode="url" enterKeyHint="go" autoCapitalize="none"
+          autoCorrect="off" autoComplete="off" spellCheck={false} placeholder={mobileText("输入网址")} disabled={!frame}
           value={address ?? current}
           onFocus={event => { setFocused(true); event.target.select(); }}
           onChange={event => {
@@ -117,10 +118,10 @@ function AddressBar({frame, goToAddress, onNotice}) {
             if (next.trim()) void loadSources();
           }}
           onKeyDown={event => {if (event.key === "Escape") {setAddress(null); setFocused(false); setInvalid(false); onNotice(""); event.target.blur();}}} />
-        <button type="submit" aria-label="前往网址" aria-busy={submitting} disabled={!frame || submitting}>{submitting ? <LoaderCircle className="spin" size={17} /> : <ArrowDownLeft size={17} />}</button>
+        <button type="submit" aria-label={mobileText("前往网址")} aria-busy={submitting} disabled={!frame || submitting}>{submitting ? <LoaderCircle className="spin" size={17} /> : <ArrowDownLeft size={17} />}</button>
       </form>
       {suggestions.length > 0 && (
-        <ul className="remote-suggestions" role="listbox" aria-label="网址建议">
+        <ul className="remote-suggestions" role="listbox" aria-label={mobileText("网址建议")}>
           {suggestions.map((item) => (
             <li key={item.id} role="option">
               <button
@@ -151,15 +152,15 @@ function RemoteKeyboard({frame, busy, send, onClose}) {
   };
   const tooLong = new TextEncoder().encode(draft).length > 8192;
   return <form className="remote-keyboard" onSubmit={insert}>
-    <input autoFocus type={frame.password ? "password" : "text"} aria-label="待插入文字" placeholder={frame.password ? "输入密码" : "输入文字"}
+    <input autoFocus type={frame.password ? "password" : "text"} aria-label={mobileText("待插入文字")} placeholder={frame.password ? mobileText("输入密码") : mobileText("输入文字")}
       autoComplete="off" autoCapitalize="none" spellCheck={false} autoCorrect="off" enterKeyHint="done"
       maxLength={8192} value={draft} onChange={e => setDraft(e.target.value)}
       onKeyDown={e => {if (e.key === "Enter" && (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)) e.preventDefault();}} />
-    <button type="submit" className="icon-button" aria-label="插入文字" title="插入文字" disabled={busy || !draft || tooLong}><Check size={19} /></button>
-    <Tool label="删除前一字符" icon={Delete} disabled={busy || !!draft} onClick={() => send({type: "key", key: "Backspace", focus: frame.focus}, frame)} />
-    <Tool label="发送回车" icon={CornerDownLeft} disabled={busy || !!draft} onClick={() => send({type: "key", key: "Enter", focus: frame.focus}, frame)} />
-    <Tool label="收起输入框" icon={X} onClick={onClose} />
-    {tooLong && <p role="alert" className="remote-note">单次输入最多 8192 字节，请分段输入。</p>}
+    <button type="submit" className="icon-button" aria-label={mobileText("插入文字")} title={mobileText("插入文字")} disabled={busy || !draft || tooLong}><Check size={19} /></button>
+    <Tool label={mobileText("删除前一字符")} icon={Delete} disabled={busy || !!draft} onClick={() => send({type: "key", key: "Backspace", focus: frame.focus}, frame)} />
+    <Tool label={mobileText("发送回车")} icon={CornerDownLeft} disabled={busy || !!draft} onClick={() => send({type: "key", key: "Enter", focus: frame.focus}, frame)} />
+    <Tool label={mobileText("收起输入框")} icon={X} onClick={onClose} />
+    {tooLong && <p role="alert" className="remote-note">{mobileText("单次输入最多 8192 字节，请分段输入。")}</p>}
   </form>;
 }
 
@@ -178,18 +179,18 @@ function LoginKeyboard({frame, busy, session, onClose}) {
     void session.send({type:"key", key, focus:frame.focus}, frame).then(ok => {
       if (!ok) {
         keys.current.length = 0;
-        setNotice("输入焦点或连接已变化，请检查远程输入框。");
+        setNotice(mobileText("输入焦点或连接已变化，请检查远程输入框。"));
       }
       sending.current = false;
       if (keys.current.length) wake(value => value + 1);
     });
   }, [frame, busy, session, sequence]);
   const press = key => {
-    if (keys.current.length >= 32) {setNotice("请稍候，前面的按键正在发送。"); return;}
+    if (keys.current.length >= 32) {setNotice(mobileText("请稍候，前面的按键正在发送。")); return;}
     keys.current.push(key); setNotice(""); wake(value => value + 1);
   };
   return <div className="remote-keyboard">
-    <input type="password" autoFocus aria-label="逐键登录输入" placeholder="逐键输入英文或符号"
+    <input type="password" autoFocus aria-label={mobileText("逐键登录输入")} placeholder={mobileText("逐键输入英文或符号")}
       autoComplete="off" autoCapitalize="none" spellCheck={false} autoCorrect="off" enterKeyHint="done"
       onPaste={e => e.preventDefault()} onDrop={e => e.preventDefault()}
       onInput={e => {
@@ -197,16 +198,16 @@ function LoginKeyboard({frame, busy, session, onClose}) {
         e.currentTarget.value = "";
         if (e.nativeEvent.inputType === "deleteContentBackward") {press("Backspace"); return;}
         if (!e.nativeEvent.isComposing && /^[ -~]$/.test(value)) press(value);
-        else if (value) setNotice("登录键盘支持逐个输入英文、数字和符号。");
+        else if (value) setNotice(mobileText("登录键盘支持逐个输入英文、数字和符号。"));
       }}
       onKeyDown={e => {
         if (["Backspace","Tab","Enter"].includes(e.key) && !e.nativeEvent.isComposing) {
           e.preventDefault(); press(e.key);
         }
       }} />
-    <Tool label="删除前一字符" icon={Delete} onClick={() => press("Backspace")} />
-    <Tool label="发送回车" icon={CornerDownLeft} onClick={() => press("Enter")} />
-    <Tool label="收起输入框" icon={X} onClick={onClose} />
+    <Tool label={mobileText("删除前一字符")} icon={Delete} onClick={() => press("Backspace")} />
+    <Tool label={mobileText("发送回车")} icon={CornerDownLeft} onClick={() => press("Enter")} />
+    <Tool label={mobileText("收起输入框")} icon={X} onClick={onClose} />
     {notice && <p className="remote-note" role="alert">{notice}</p>}
   </div>;
 }
@@ -226,7 +227,7 @@ function readDesktopQuality() {
 
 export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initialURL, controls, addressSlot}) {
   const desktop = tool === "desktop";
-  const name = desktop ? "Claude Desktop" : tool === "claude" ? "Claude.ai" : "远程浏览器";
+  const name = desktop ? "Claude Desktop" : tool === "claude" ? "Claude.ai" : mobileText("远程浏览器");
   const [reading, setReading] = useState(false);
   const [desktopQuality, setDesktopQuality] = useState(readDesktopQuality);
   const desktopQualityRef = useRef(desktopQuality);
@@ -377,18 +378,20 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
       {frame && favorites ? <PhoneFavorites frame={frame} navigate={url => controls.current.navigate(url)} onClose={() => setFavorites(false)}/> :
        frame && historyOpen ? <PhoneHistory navigate={url => controls.current.navigate(url)} onClose={() => setHistoryOpen(false)} /> :
        frame ? <div className={reading ? "display-surface reading" : "display-surface"} ref={surface}>
-        <img className="remote-screen" alt={desktop ? "远程 Desktop 画面" : "远程浏览器画面"} src={frame.image} draggable={false} />
+        <img className="remote-screen" alt={desktop ? mobileText("远程 Desktop 画面") : mobileText("远程浏览器画面")} src={frame.image} draggable={false} />
       </div> :
         <div className="remote-empty" role={state.error ? "alert" : "status"}>
-          {preview ? <><Globe2 aria-hidden="true" /><p>连接真实电脑后，即可使用{name}。</p></> :
+          {preview ? <><Globe2 aria-hidden="true" /><p>{mobileText("连接真实电脑后，即可使用{0}。", name)}</p></> :
             state.error ? <><p>{state.error}</p>
-              {state.uncertain && <p className="note">输入结果待确认，请先查看最新画面。</p>}
+              {state.uncertain && <p className="note">{mobileText("输入结果待确认，请先查看最新画面。")}</p>}
               <button className="action secondary" onClick={() => {
                 setKeyboard(""); setState({});
                 if (state.reopen) onReopen();
                 else controls.current.refresh();
-              }}>{state.reopen ? "重新打开" : "重新读取画面"}</button></> :
-              <><LoaderCircle className="spin" aria-hidden="true" /><p>{state.waiting ? `正在启动远程${desktop ? " Claude Desktop" : "浏览器"}…` : "正在读取远程画面…"}</p></>}
+              }}>{state.reopen ? mobileText("重新打开") : mobileText("重新读取画面")}</button></> :
+              <><LoaderCircle className="spin" aria-hidden="true" /><p>{state.waiting
+                ? desktop ? mobileText("正在启动远程 Claude Desktop…") : mobileText("正在启动远程浏览器…")
+                : mobileText("正在读取远程画面…")}</p></>}
         </div>}
     </div>
     {desktop && photoUpload && (
@@ -396,7 +399,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
         <div className="remote-upload-copy">
           <span>
             {photoUpload.active
-              ? `正在添加图片 (${photoUpload.current}/${photoUpload.total}) · ${photoUpload.percent}%`
+              ? mobileText("正在添加图片 ({0}/{1}) · {2}%", photoUpload.current, photoUpload.total, photoUpload.percent)
               : photoUpload.error}
           </span>
           {photoUpload.active && (
@@ -406,13 +409,13 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
           )}
         </div>
         {photoUpload.active ? (
-          <button type="button" className="action" onClick={() => { photoAbort.current?.abort(); setPhotoUpload(null); }}>取消</button>
+          <button type="button" className="action" onClick={() => { photoAbort.current?.abort(); setPhotoUpload(null); }}>{mobileText("取消")}</button>
         ) : (
           <>
             {photoUpload.remaining?.length > 0 && (
-              <button type="button" className="action" onClick={() => void startPhotoBatch(photoUpload.remaining)}>重试</button>
+              <button type="button" className="action" onClick={() => void startPhotoBatch(photoUpload.remaining)}>{mobileText("重试")}</button>
             )}
-            <Tool label="关闭提示" icon={X} onClick={() => setPhotoUpload(null)} />
+            <Tool label={mobileText("关闭提示")} icon={X} onClick={() => setPhotoUpload(null)} />
           </>
         )}
       </div>
@@ -421,14 +424,14 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
     {typing ? (login
       ? <LoginKeyboard key={focus} frame={frame} busy={state.busy} session={controls.current} onClose={() => setKeyboard("")} />
       : <RemoteKeyboard key={focus} frame={frame} busy={state.busy} send={send} onClose={() => setKeyboard("")} />) :
-    <nav className="remote-tools" aria-label={desktop ? "远程桌面操作" : "远程网页操作"}>
+    <nav className="remote-tools" aria-label={desktop ? mobileText("远程桌面操作") : mobileText("远程网页操作")}>
       {desktop ? <>
-        <Tool label="断开远程桌面" icon={X} onClick={onBack} />
+        <Tool label={mobileText("断开远程桌面")} icon={X} onClick={onBack} />
         <button type="button" className="action" disabled={!frame} aria-pressed={reading} onClick={() => setReading(!reading)}>
-          {reading ? <Maximize size={17} /> : <ZoomIn size={17} />}{reading ? "全幅" : "放大阅读"}
+          {reading ? <Maximize size={17} /> : <ZoomIn size={17} />}{reading ? mobileText("全幅") : mobileText("放大阅读")}
         </button>
         <button type="button" className="action" disabled={!frame} aria-pressed={desktopQuality === "smooth"}
-          title={desktopQuality === "smooth" ? "流畅优先，点击切回高清" : "切换流畅优先"}
+          title={desktopQuality === "smooth" ? mobileText("流畅优先，点击切回高清") : mobileText("切换流畅优先")}
           onClick={() => {
             const next = desktopQuality === "smooth" ? "standard" : "smooth";
             setDesktopQuality(next);
@@ -436,34 +439,34 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
             controls.current?.setQuality(next);
           }}>
           {desktopQuality === "smooth" ? <Zap size={17} /> : <Gauge size={17} />}
-          {desktopQuality === "smooth" ? "流畅" : "高清"}
+          {desktopQuality === "smooth" ? mobileText("流畅") : mobileText("高清")}
         </button>
         {!frame?.shared && frame?.login_supported !== false && <button type="button" className="action" disabled={!frame || state.busy}
           onClick={() => send({type:login ? "desktop" : "login"}, frame)}>
-          {login ? <Monitor size={17} /> : <Globe2 size={17} />}{login ? "返回 Desktop" : "登录窗口"}
+          {login ? <Monitor size={17} /> : <Globe2 size={17} />}{login ? mobileText("返回 Desktop") : mobileText("登录窗口")}
         </button>}
         {frame?.photo_upload_supported && !login && (
           <Tool
-            label={focus ? "添加图片" : "请先点击对话输入框后再添加图片"}
+            label={focus ? mobileText("添加图片") : mobileText("请先点击对话输入框后再添加图片")}
             icon={ImagePlus}
             disabled={!frame || !focus || state.busy || photoUpload?.active}
             onClick={() => photoInput.current?.click()}
           />
         )}
       </> : <>
-        <Tool label="关闭远程浏览器" icon={X} onClick={onBack} />
-        <Tool label="上一页" icon={ArrowLeft} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"back"}, frame)} />
-        <Tool label="下一页" icon={ArrowRight} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"forward"}, frame)} />
-        {tool === "claude" && <Tool label="网页地址" aria-pressed={showAddress} icon={Globe2} disabled={!frame} onClick={() => {setAddressNotice(""); setShowAddress(!showAddress);}} />}
-        {tool === "browser" && <Tool label="收藏夹" icon={BookOpen} disabled={!frame} aria-expanded={favorites}
+        <Tool label={mobileText("关闭远程浏览器")} icon={X} onClick={onBack} />
+        <Tool label={mobileText("上一页")} icon={ArrowLeft} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"back"}, frame)} />
+        <Tool label={mobileText("下一页")} icon={ArrowRight} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"forward"}, frame)} />
+        {tool === "claude" && <Tool label={mobileText("网页地址")} aria-pressed={showAddress} icon={Globe2} disabled={!frame} onClick={() => {setAddressNotice(""); setShowAddress(!showAddress);}} />}
+        {tool === "browser" && <Tool label={mobileText("收藏夹")} icon={BookOpen} disabled={!frame} aria-expanded={favorites}
           onClick={() => {gesture.current = null; controls.current.cancelScroll(); setHistoryOpen(false); setFavorites(!favorites);}} />}
-        {tool === "browser" && <Tool label="浏览历史" icon={History} disabled={!frame} aria-expanded={historyOpen}
+        {tool === "browser" && <Tool label={mobileText("浏览历史")} icon={History} disabled={!frame} aria-expanded={historyOpen}
           onClick={() => {gesture.current = null; controls.current.cancelScroll(); setFavorites(false); setHistoryOpen(!historyOpen);}} />}
-        <Tool label="重新加载网页" icon={RotateCw} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"reload"}, frame)} />
+        <Tool label={mobileText("重新加载网页")} icon={RotateCw} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"reload"}, frame)} />
       </>}
-      <Tool label="输入文字" icon={Keyboard} disabled={!focus || state.busy || overlayOpen}
+      <Tool label={mobileText("输入文字")} icon={Keyboard} disabled={!focus || state.busy || overlayOpen}
         onClick={() => flushSync(() => setKeyboard(focus))} />
     </nav>}
-    {desktop && frame?.login_supported === false && <p className="remote-home-note" role="status">需要登录时，请在电脑的 Cage 中完成 Claude Desktop 登录，手机会继续使用同一登录状态。</p>}
+    {desktop && frame?.login_supported === false && <p className="remote-home-note" role="status">{mobileText("需要登录时，请在电脑的 Cage 中完成 Claude Desktop 登录，手机会继续使用同一登录状态。")}</p>}
   </section>;
 }
