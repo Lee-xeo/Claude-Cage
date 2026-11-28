@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { InlineSelect } from "./inline-select";
 import "./session-account.css";
 import { useTranslation } from "./interface-language.mjs";
@@ -6,7 +7,7 @@ import { useTranslation } from "./interface-language.mjs";
 const failures = {rate_limit:"请求受到限流，请核对额度后选择等待或接续",authentication_failed:"账号登录失效，请重新登录",account_on_hold:"账号受限，自动接续已停止",overloaded:"服务暂时过载，保留原账号",server_error:"服务暂时异常，保留原账号"};
 
 // Desktop and mobile use the same session operation and durable request ID.
-export function SessionAccount({ id, request, onChanged, compact = false, inline = false, defaultOpen = false, paused = false }) {
+export function SessionAccount({ id, request, onChanged, compact = false, inline = false, minimal = false, defaultOpen = false, paused = false }) {
   const tr = useTranslation();
   const [open,setOpen]=useState(defaultOpen), [view,setView]=useState(null), [busy,setBusy]=useState(false), [error,setError]=useState("");
   const [target,setTarget]=useState(""), [confirmed,setConfirmed]=useState(false), [continueTask,setContinueTask]=useState(false);
@@ -67,9 +68,18 @@ export function SessionAccount({ id, request, onChanged, compact = false, inline
   const sessionPaused = paused || session.paused;
   const occupied = sessionPaused || session.active;
   const switching=sw && sw.phase!=="completed";
-  return <section ref={root} className={`session-account ${compact?"session-account--compact":""} ${inline?"session-account--inline":""}`} aria-label={tr("会话账号")}>
-    {!defaultOpen && <button type="button" className={inline ? "session-account-pill" : "quiet-button"} aria-expanded={open} onClick={()=>setOpen(v=>!v)}>
-      {session.account_label || tr("Claude 账号")} · {session.account_failure?tr("需要处理"):switching?tr("正在交接"):view.unopened?tr("用其他账号继续"):tr("会话绑定")}
+  const accountLabel = session.account_label || tr("Claude 账号");
+  const statusHint = session.account_failure ? tr("需要处理") : switching ? tr("正在交接") : view.unopened ? tr("用其他账号继续") : tr("会话绑定");
+  return <section ref={root} className={`session-account ${compact?"session-account--compact":""} ${inline?"session-account--inline":""} ${minimal?"session-account--minimal":""}`} aria-label={tr("会话账号")}>
+    {!defaultOpen && <button type="button" className={inline ? "session-account-pill" : "quiet-button"} aria-expanded={open}
+      title={minimal ? `${accountLabel} · ${statusHint}` : undefined}
+      aria-label={minimal ? `${accountLabel} · ${statusHint}` : undefined}
+      onClick={()=>setOpen(v=>!v)}>
+      {minimal ? <>
+        {(session.account_failure || switching) && <i className={`session-account-dot ${session.account_failure ? "bad" : "live"}`} aria-hidden="true" />}
+        <span className="session-account-name">{accountLabel}</span>
+        <ChevronDown size={13} aria-hidden="true" />
+      </> : `${accountLabel} · ${statusHint}`}
     </button>}
     {open && <div className="session-account-options">
       {view.unopened
