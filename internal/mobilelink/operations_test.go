@@ -41,6 +41,10 @@ func TestBrowserFrameQuery(t *testing.T) {
 		{"POST", "browser", "action", "after=" + tag, false},
 		{"GET", "desktop", "frame", "after=" + tag, true},
 		{"POST", "desktop", "action", "after=" + tag, false},
+		{"POST", "desktop", "upload", "", true},
+		{"GET", "desktop", "upload", "", false},
+		{"POST", "desktop", "upload", "after=" + tag, false},
+		{"POST", "browser", "upload", "", false},
 	} {
 		u := &url.URL{Path: "/api/mobile/" + tc.surface + "/" + id + "/" + tc.operation, RawQuery: tc.query}
 		if allowed(tc.method, u) != tc.want {

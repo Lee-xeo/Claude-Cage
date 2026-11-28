@@ -357,6 +357,12 @@ export function connectDisplay(stage, update, id, start, tool, initialURL, optio
       publish({});
       void readFrame();
     },
+    nudge() {
+      if (!opened || !alive || !visible || paused || writing) return;
+      quietReads = 0;
+      cancelRead();
+      void readFrame();
+    },
     visibility(active) {
       if (active === visible) return;
       visible = active;

@@ -22,6 +22,8 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -86,6 +88,15 @@ public final class MainActivity extends Activity {
     private MobileTheme palette;
     private SharedPreferences appearance;
     private static final int SCAN = 42;
+    private static final int PICK_WEB_MEDIA = 43;
+    private ValueCallback<Uri[]> webFileChooser;
+
+    private void clearWebFileChooser() {
+        if (webFileChooser != null) {
+            webFileChooser.onReceiveValue(null);
+            webFileChooser = null;
+        }
+    }
 
     private void rememberRelay(String relay) {
         trust.edit().putString("preferred-relay", relay).apply();
@@ -576,6 +587,24 @@ public final class MainActivity extends Activity {
             else if(data!=null && data.hasExtra("error"))status.setText(data.getStringExtra("error"));
             return;
         }
+        if (code == PICK_WEB_MEDIA) {
+            ValueCallback<Uri[]> callback = webFileChooser;
+            webFileChooser = null;
+            if (callback == null) return;
+            Uri[] uris = null;
+            if (result == RESULT_OK && data != null) {
+                if (data.getClipData() != null) {
+                    ClipData clip = data.getClipData();
+                    int count = clip.getItemCount();
+                    uris = new Uri[count];
+                    for (int i = 0; i < count; i++) uris[i] = clip.getItemAt(i).getUri();
+                } else if (data.getData() != null) {
+                    uris = new Uri[]{ data.getData() };
+                }
+            }
+            callback.onReceiveValue(uris);
+            return;
+        }
         if (code != PICK_INVITATION || result != RESULT_OK || data == null || data.getData() == null) return;
         Uri file = data.getData();
         if (!"content".equals(file.getScheme())) { status.setText("请选择设备文件应用中的邀请。"); return; }
@@ -751,6 +780,26 @@ public final class MainActivity extends Activity {
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
             connected.script = WebViewCompat.addDocumentStartJavaScript(view, deviceScript(connected), origins);
+        view.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView w, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (w.getUrl() == null || !allowed(Uri.parse(w.getUrl()), port)) return false;
+                clearWebFileChooser();
+                webFileChooser = callback;
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("image/*");
+                if (params != null && params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                }
+                try {
+                    startActivityForResult(Intent.createChooser(intent, "选择图片"), PICK_WEB_MEDIA);
+                    return true;
+                } catch (Exception e) {
+                    clearWebFileChooser();
+                    return false;
+                }
+            }
+        });
         view.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView w, String url) {
                 if (allowed(Uri.parse(url), port)) w.evaluateJavascript(deviceScript(connected), null);
@@ -829,6 +878,7 @@ public final class MainActivity extends Activity {
         broadcastDevices();
     }
     private void endSession() {
+        clearWebFileChooser();
         ++generation; invitation = null;
         for (ConnectedDevice connected : new java.util.ArrayList<>(connections.values())) {
             if (connected.script != null) connected.script.remove();

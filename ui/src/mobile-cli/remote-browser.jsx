@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { ArrowDownLeft, ArrowLeft, ArrowRight, BookOpen, Check, CornerDownLeft, Delete, Gauge, Globe2, History, Keyboard, LoaderCircle, Maximize, Monitor, RotateCw, Star, Zap, ZoomIn, X } from "lucide-react";
+import { ArrowDownLeft, ArrowLeft, ArrowRight, BookOpen, Check, CornerDownLeft, Delete, Gauge, Globe2, History, ImagePlus, Keyboard, LoaderCircle, Maximize, Monitor, RotateCw, Star, Zap, ZoomIn, X } from "lucide-react";
 import { PhoneFavorites } from "./phone-favorites";
 import { PhoneHistory } from "./phone-history";
 import { browserRequest } from "./transport.mjs";
 import { buildAddressSuggestions } from "../browser-omnibox.mjs";
 import { connectDisplay, desktopDragDelta, desktopReleaseDelta, framePoint } from "./browser-session.mjs";
+import { uploadDesktopPhotoBatch } from "./desktop-photo-upload.mjs";
 import "./remote-browser.css";
 
 function Tool({icon: Icon, label, ...props}) {
@@ -230,6 +231,9 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
   const [desktopQuality, setDesktopQuality] = useState(readDesktopQuality);
   const desktopQualityRef = useRef(desktopQuality);
   desktopQualityRef.current = desktopQuality;
+  const [photoUpload, setPhotoUpload] = useState(null);
+  const photoInput = useRef(null);
+  const photoAbort = useRef(null);
   const [showAddress, setShowAddress] = useState(tool === "browser");
   const [addressNotice, setAddressNotice] = useState("");
   const [favorites, setFavorites] = useState(false);
@@ -270,6 +274,8 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
     window.addEventListener("pageshow", visibility);
     visibility();
     return () => {
+      photoAbort.current?.abort();
+      photoAbort.current = null;
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("offline", offline);
       window.removeEventListener("pagehide", pageHide);
@@ -278,6 +284,30 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
       controls.current = null;
     };
   }, [id, start, tool, initialURL, preview, controls]);
+
+  const startPhotoBatch = async items => {
+    if (!items.length) return;
+    photoAbort.current?.abort();
+    const controller = new AbortController();
+    photoAbort.current = controller;
+    const result = await uploadDesktopPhotoBatch({
+      sessionId: id,
+      items,
+      signal: controller.signal,
+      onUpdate: next => {
+        if (photoAbort.current === controller) setPhotoUpload(next);
+      },
+    });
+    if (photoAbort.current === controller) photoAbort.current = null;
+    if (result.completed > 0) controls.current?.nudge?.();
+    if (!result.error) setPhotoUpload(null);
+  };
+  const onPickPhotos = event => {
+    const files = Array.from(event.currentTarget.files || []).filter(file => !file.type || file.type.startsWith("image/")).slice(0, 10);
+    event.currentTarget.value = "";
+    if (!files.length) return;
+    void startPhotoBatch(files.map(file => ({ file, name: file.name || "photo" })));
+  };
 
   const send = (payload, expected) => controls.current?.send(payload, expected);
   const point = event => framePoint(surface.current.getBoundingClientRect(), frame, event.clientX, event.clientY);
@@ -361,6 +391,33 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
               <><LoaderCircle className="spin" aria-hidden="true" /><p>{state.waiting ? `正在启动远程${desktop ? " Claude Desktop" : "浏览器"}…` : "正在读取远程画面…"}</p></>}
         </div>}
     </div>
+    {desktop && photoUpload && (
+      <div className={photoUpload.error ? "remote-upload-bar error" : "remote-upload-bar"} role={photoUpload.error ? "alert" : "status"}>
+        <div className="remote-upload-copy">
+          <span>
+            {photoUpload.active
+              ? `正在添加图片 (${photoUpload.current}/${photoUpload.total}) · ${photoUpload.percent}%`
+              : photoUpload.error}
+          </span>
+          {photoUpload.active && (
+            <div className="remote-upload-track" aria-hidden="true">
+              <div className="remote-upload-fill" style={{ width: `${Math.max(4, photoUpload.percent)}%` }} />
+            </div>
+          )}
+        </div>
+        {photoUpload.active ? (
+          <button type="button" className="action" onClick={() => { photoAbort.current?.abort(); setPhotoUpload(null); }}>取消</button>
+        ) : (
+          <>
+            {photoUpload.remaining?.length > 0 && (
+              <button type="button" className="action" onClick={() => void startPhotoBatch(photoUpload.remaining)}>重试</button>
+            )}
+            <Tool label="关闭提示" icon={X} onClick={() => setPhotoUpload(null)} />
+          </>
+        )}
+      </div>
+    )}
+    {desktop && <input ref={photoInput} type="file" accept="image/*" multiple hidden onChange={onPickPhotos} />}
     {typing ? (login
       ? <LoginKeyboard key={focus} frame={frame} busy={state.busy} session={controls.current} onClose={() => setKeyboard("")} />
       : <RemoteKeyboard key={focus} frame={frame} busy={state.busy} send={send} onClose={() => setKeyboard("")} />) :
@@ -385,6 +442,14 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
           onClick={() => send({type:login ? "desktop" : "login"}, frame)}>
           {login ? <Monitor size={17} /> : <Globe2 size={17} />}{login ? "返回 Desktop" : "登录窗口"}
         </button>}
+        {frame?.photo_upload_supported && !login && (
+          <Tool
+            label={focus ? "添加图片" : "请先点击对话输入框后再添加图片"}
+            icon={ImagePlus}
+            disabled={!frame || !focus || state.busy || photoUpload?.active}
+            onClick={() => photoInput.current?.click()}
+          />
+        )}
       </> : <>
         <Tool label="关闭远程浏览器" icon={X} onClick={onBack} />
         <Tool label="上一页" icon={ArrowLeft} disabled={!frame || state.busy || overlayOpen} onClick={() => send({type:"back"}, frame)} />
