@@ -758,6 +758,8 @@ func isCrossDeviceError(err error) bool {
 // directory while archives live under state, which storage migration may turn
 // into a symlink or junction to another volume. A regular file that cannot be
 // renamed across volumes is copied, synced and then removed from its source.
+// The copy is restricted to the current user because a new file on Windows
+// inherits its owner and access from the target directory, not from src.
 func movePath(src, dst string) error {
 	err := renameForDeviceReset(src, dst)
 	if err == nil || !isCrossDeviceError(err) {
@@ -767,7 +769,7 @@ func movePath(src, dst string) error {
 	if statErr != nil || !info.Mode().IsRegular() {
 		return err
 	}
-	if err := copyFileSynced(src, dst, info.Mode().Perm()); err != nil {
+	if err := copyPrivateFileSynced(src, dst); err != nil {
 		_ = os.Remove(dst)
 		return err
 	}
@@ -779,14 +781,18 @@ func movePath(src, dst string) error {
 	return nil
 }
 
-func copyFileSynced(src, dst string, perm os.FileMode) error {
+func copyPrivateFileSynced(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
+		return err
+	}
+	if err := host.ProtectFile(dst); err != nil {
+		_ = out.Close()
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {

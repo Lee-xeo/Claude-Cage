@@ -18,6 +18,7 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/guestidentity"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/guestprofile"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/vm"
 	"github.com/sylvinus/agent-vm/internal/vmname"
 )
@@ -367,9 +368,13 @@ func TestDeviceResetRebuildMovesGuestProfileAcrossVolumes(t *testing.T) {
 	if len(archives) != 1 || !archives[0].HasGuestProfile {
 		t.Fatalf("expected archived guest profile, got %+v", archives)
 	}
-	archived, err := os.ReadFile(filepath.Join(s.deviceResetArchivesRoot(), archives[0].ID, "guest-profile.json"))
+	archivedPath := filepath.Join(s.deviceResetArchivesRoot(), archives[0].ID, "guest-profile.json")
+	archived, err := os.ReadFile(archivedPath)
 	if err != nil || !strings.Contains(string(archived), "OLD-XDEV1") {
 		t.Fatalf("archived guest profile = %q, %v", archived, err)
+	}
+	if err := host.CheckPrivateFile(archivedPath); err != nil {
+		t.Fatalf("archived guest profile copy is not private: %v", err)
 	}
 
 	w = desktopRequestForTest(s, http.MethodPost, "/api/environment/device-reset/restore",
