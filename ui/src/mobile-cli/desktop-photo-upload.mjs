@@ -1,3 +1,4 @@
+import { mobileText } from "./language.mjs";
 import { desktopRequest } from "./transport.mjs";
 
 const DEFAULT_CHUNK_SIZE = 44 * 1024;
@@ -56,26 +57,26 @@ async function renderCanvasPNG(source, width, height) {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("当前浏览器无法转换图片格式。");
+  if (!ctx) throw new Error(mobileText("当前浏览器无法转换图片格式。"));
   ctx.drawImage(source, 0, 0, width, height);
   const blob = await new Promise((resolve, reject) => {
-    canvas.toBlob(result => result ? resolve(result) : reject(new Error("图片转换失败。")), "image/png");
+    canvas.toBlob(result => result ? resolve(result) : reject(new Error(mobileText("图片转换失败。"))), "image/png");
   });
   return new Uint8Array(await blob.arrayBuffer());
 }
 
 export async function preparePhotoPNG(file) {
   if (!file || typeof file.arrayBuffer !== "function") {
-    throw new Error("无法读取选中的图片。");
+    throw new Error(mobileText("无法读取选中的图片。"));
   }
   const raw = new Uint8Array(await file.arrayBuffer());
-  if (!raw.length) throw new Error("所选图片为空。");
+  if (!raw.length) throw new Error(mobileText("所选图片为空。"));
   if (isPNGHeader(raw) && raw.length <= PASSTHROUGH_PNG_BYTES) {
     return raw;
   }
   const decoded = await decodeImageSource(file);
   try {
-    if (!decoded.width || !decoded.height) throw new Error("图片尺寸无效。");
+    if (!decoded.width || !decoded.height) throw new Error(mobileText("图片尺寸无效。"));
     let scale = Math.min(1, MAX_LONG_EDGE / Math.max(decoded.width, decoded.height));
     for (let attempt = 0; attempt < 4; attempt++) {
       const width = Math.max(1, Math.round(decoded.width * scale));
@@ -84,7 +85,7 @@ export async function preparePhotoPNG(file) {
       if (png.length <= MAX_PNG_BYTES) return png;
       scale *= 0.72;
     }
-    throw new Error("图片过大，超出 20 MB 上限。");
+    throw new Error(mobileText("图片过大，超出 20 MB 上限。"));
   } finally {
     decoded.close();
   }
@@ -98,10 +99,10 @@ export async function uploadDesktopPhoto({
   onProgress,
 }) {
   if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
-    throw new Error("图片数据无效。");
+    throw new Error(mobileText("图片数据无效。"));
   }
   if (bytes.length > MAX_PNG_BYTES) {
-    throw new Error("单张图片不能超过 20 MB。");
+    throw new Error(mobileText("单张图片不能超过 20 MB。"));
   }
   const endpoint = "/" + sessionId + "/upload";
   const started = await request(endpoint, {
@@ -109,7 +110,7 @@ export async function uploadDesktopPhoto({
     signal,
   });
   const uploadId = started?.upload_id;
-  if (!uploadId) throw new Error("主机未确认图片上传。");
+  if (!uploadId) throw new Error(mobileText("主机未确认图片上传。"));
   const chunkSize = Number.isInteger(started.chunk_size) && started.chunk_size >= 4096 && started.chunk_size <= 48 * 1024
     ? started.chunk_size
     : DEFAULT_CHUNK_SIZE;
@@ -191,8 +192,8 @@ export async function uploadDesktopPhotoBatch({
         return { completed, remaining: items.slice(index), aborted: true, error: "" };
       }
       const message = error?.status === 404
-        ? "这台电脑尚不支持手机相册传图，请更新电脑端 Cage。"
-        : (error?.message || "图片添加失败，请重试。");
+        ? mobileText("这台电脑尚不支持手机相册传图，请更新电脑端 Cage。")
+        : (error?.message || mobileText("图片添加失败，请重试。"));
       const remaining = items.slice(index);
       onUpdate?.({ active: false, total, current: index + 1, completed, percent: 0, error: message, remaining });
       return { completed, remaining, aborted: false, error: message };

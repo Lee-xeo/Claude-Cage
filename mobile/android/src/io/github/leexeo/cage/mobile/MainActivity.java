@@ -802,7 +802,7 @@ public final class MainActivity extends Activity {
                     intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 }
                 try {
-                    startActivityForResult(Intent.createChooser(intent, "选择图片"), PICK_WEB_MEDIA);
+                    startActivityForResult(Intent.createChooser(intent, getString(R.string.pick_image)), PICK_WEB_MEDIA);
                     return true;
                 } catch (Exception e) {
                     clearWebFileChooser();

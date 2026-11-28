@@ -399,7 +399,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
         <div className="remote-upload-copy">
           <span>
             {photoUpload.active
-              ? `正在添加图片 (${photoUpload.current}/${photoUpload.total}) · ${photoUpload.percent}%`
+              ? mobileText("正在添加图片 ({0}/{1}) · {2}%", photoUpload.current, photoUpload.total, photoUpload.percent)
               : photoUpload.error}
           </span>
           {photoUpload.active && (
@@ -409,13 +409,13 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
           )}
         </div>
         {photoUpload.active ? (
-          <button type="button" className="action" onClick={() => { photoAbort.current?.abort(); setPhotoUpload(null); }}>取消</button>
+          <button type="button" className="action" onClick={() => { photoAbort.current?.abort(); setPhotoUpload(null); }}>{mobileText("取消")}</button>
         ) : (
           <>
             {photoUpload.remaining?.length > 0 && (
-              <button type="button" className="action" onClick={() => void startPhotoBatch(photoUpload.remaining)}>重试</button>
+              <button type="button" className="action" onClick={() => void startPhotoBatch(photoUpload.remaining)}>{mobileText("重试")}</button>
             )}
-            <Tool label="关闭提示" icon={X} onClick={() => setPhotoUpload(null)} />
+            <Tool label={mobileText("关闭提示")} icon={X} onClick={() => setPhotoUpload(null)} />
           </>
         )}
       </div>
@@ -431,7 +431,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
           {reading ? <Maximize size={17} /> : <ZoomIn size={17} />}{reading ? mobileText("全幅") : mobileText("放大阅读")}
         </button>
         <button type="button" className="action" disabled={!frame} aria-pressed={desktopQuality === "smooth"}
-          title={desktopQuality === "smooth" ? "流畅优先，点击切回高清" : "切换流畅优先"}
+          title={desktopQuality === "smooth" ? mobileText("流畅优先，点击切回高清") : mobileText("切换流畅优先")}
           onClick={() => {
             const next = desktopQuality === "smooth" ? "standard" : "smooth";
             setDesktopQuality(next);
@@ -439,7 +439,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
             controls.current?.setQuality(next);
           }}>
           {desktopQuality === "smooth" ? <Zap size={17} /> : <Gauge size={17} />}
-          {desktopQuality === "smooth" ? "流畅" : "高清"}
+          {desktopQuality === "smooth" ? mobileText("流畅") : mobileText("高清")}
         </button>
         {!frame?.shared && frame?.login_supported !== false && <button type="button" className="action" disabled={!frame || state.busy}
           onClick={() => send({type:login ? "desktop" : "login"}, frame)}>
@@ -447,7 +447,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
         </button>}
         {frame?.photo_upload_supported && !login && (
           <Tool
-            label={focus ? "添加图片" : "请先点击对话输入框后再添加图片"}
+            label={focus ? mobileText("添加图片") : mobileText("请先点击对话输入框后再添加图片")}
             icon={ImagePlus}
             disabled={!frame || !focus || state.busy || photoUpload?.active}
             onClick={() => photoInput.current?.click()}

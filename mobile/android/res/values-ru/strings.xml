@@ -124,3 +124,5 @@
     <string name="save_update_failed">Не удалось сохранить проверенный пакет.</string>
     <string name="update_package_mismatch">Приложение или версия в пакете не совпадает с ожидаемыми.</string>
     <string name="update_signature_mismatch">Подпись пакета не совпадает с подписью установленного приложения.</string>
+    <string name="pick_image">Выбрать изображение</string>
+</resources>
