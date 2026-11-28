@@ -137,6 +137,52 @@ Only = select, Relay
 	}
 }
 
+func TestSurgeConvertsVLESS(t *testing.T) {
+	dir := t.TempDir()
+	writeSurge(t, dir, "vless.conf", `[Proxy]
+Reality = vless, 203.0.113.30, 443, username=0b1e2a3c-0000-4000-8000-000000000003, flow=xtls-rprx-vision, sni=www.example.com, reality-public-key=CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA, reality-short-id=0123456789abcdef, udp-relay=true
+WS-TLS = vless, 203.0.113.31, 443, username=0b1e2a3c-0000-4000-8000-000000000004, tls=true, sni=w.example, ws=true, ws-path=/vl
+Encrypted = vless, 203.0.113.32, 443, username=0b1e2a3c-0000-4000-8000-000000000005, encryption=mlkem768x25519plus
+NoUUID = vless, 203.0.113.33, 443, sni=n.example
+`)
+	data, warning, err := surgeData(dir, "vless.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := surgeNodes(t, data)
+	if len(nodes) != 2 {
+		t.Fatalf("nodes: %v", reflect.ValueOf(nodes).MapKeys())
+	}
+	check := func(name string, want map[string]any) {
+		t.Helper()
+		for key, value := range want {
+			got, _ := json.Marshal(nodes[name][key])
+			expected, _ := json.Marshal(value)
+			if string(got) != string(expected) {
+				t.Errorf("%s.%s = %s, want %s", name, key, got, expected)
+			}
+		}
+	}
+	check("Reality", map[string]any{"type": "vless", "uuid": "0b1e2a3c-0000-4000-8000-000000000003", "flow": "xtls-rprx-vision",
+		"tls": true, "servername": "www.example.com", "client-fingerprint": "chrome", "udp": true,
+		"reality-opts": map[string]any{"public-key": "CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "short-id": "0123456789abcdef"}})
+	check("WS-TLS", map[string]any{"type": "vless", "tls": true, "servername": "w.example", "network": "ws", "ws-opts": map[string]any{"path": "/vl"}})
+	for _, key := range []string{"reality-opts", "client-fingerprint", "flow"} {
+		if _, ok := nodes["WS-TLS"][key]; ok {
+			t.Errorf("WS-TLS must not set %s", key)
+		}
+	}
+	for _, reason := range []string{"VLESS encryption 暂不支持（1 个）", "VLESS 缺少 username（UUID）（1 个）"} {
+		if !strings.Contains(warning, reason) {
+			t.Errorf("warning lacks %q: %s", reason, warning)
+		}
+	}
+	configs := Scan([]Location{{Client: "Surge", Directory: dir, Layout: Surge}}, []byte("k"))
+	if len(configs) != 1 || configs[0].Error != "" || configs[0].Nodes != 2 || configs[0].Skipped != 0 {
+		t.Fatalf("scan: %+v", configs)
+	}
+}
+
 func TestSurgeIncludesLocalSectionsAndNeverFetchesRemote(t *testing.T) {
 	dir := t.TempDir()
 	writeSurge(t, dir, "main.conf", `[Proxy]

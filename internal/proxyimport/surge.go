@@ -290,6 +290,34 @@ func surgeNode(name string, positional []string, params map[string]string) (node
 			surgeTLS(node, params, "servername")
 		}
 		surgeWebSocket(node, params)
+	case "vless":
+		if enc := params["encryption"]; enc != "" && !strings.EqualFold(enc, "none") {
+			return nil, "VLESS encryption 暂不支持", false
+		}
+		if params["username"] == "" {
+			return nil, "VLESS 缺少 username（UUID）", false
+		}
+		node["type"] = "vless"
+		node["uuid"] = params["username"]
+		if flow := params["flow"]; flow != "" {
+			node["flow"] = flow
+		}
+		if key := params["reality-public-key"]; key != "" {
+			node["tls"] = true
+			opts := map[string]any{"public-key": key}
+			if id := params["reality-short-id"]; id != "" {
+				opts["short-id"] = id
+			}
+			node["reality-opts"] = opts
+			// Surge has no fingerprint option and its REALITY client sends a
+			// Chrome ClientHello; the core's default Go ClientHello fails here.
+			node["client-fingerprint"] = "chrome"
+			surgeTLS(node, params, "servername")
+		} else if surgeBool(params["tls"]) {
+			node["tls"] = true
+			surgeTLS(node, params, "servername")
+		}
+		surgeWebSocket(node, params)
 	case "http", "https", "socks5", "socks5-tls":
 		node["type"] = map[string]string{"http": "http", "https": "http", "socks5": "socks5", "socks5-tls": "socks5"}[kind]
 		if user := credential(3, "username"); user != "" {
