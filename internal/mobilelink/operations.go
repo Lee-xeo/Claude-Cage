@@ -61,7 +61,7 @@ func allowed(method string, u *url.URL) bool {
 			return (match[1] == "frame" && method == http.MethodGet) || (match[1] != "frame" && method == http.MethodPost)
 		}
 		_, ok := FrameAfter(u.RawQuery)
-		return ok && match[1] == "frame" && method == http.MethodGet && strings.HasPrefix(u.Path, "/api/mobile/browser/")
+		return ok && match[1] == "frame" && method == http.MethodGet
 	}
 	match := sessionPath.FindStringSubmatch(u.Path)
 	if match == nil {

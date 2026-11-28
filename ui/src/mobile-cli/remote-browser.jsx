@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { ArrowDownLeft, ArrowLeft, ArrowRight, BookOpen, Check, CornerDownLeft, Delete, Globe2, History, Keyboard, LoaderCircle, Maximize, Monitor, RotateCw, Star, ZoomIn, X } from "lucide-react";
+import { ArrowDownLeft, ArrowLeft, ArrowRight, BookOpen, Check, CornerDownLeft, Delete, Gauge, Globe2, History, Keyboard, LoaderCircle, Maximize, Monitor, RotateCw, Star, Zap, ZoomIn, X } from "lucide-react";
 import { PhoneFavorites } from "./phone-favorites";
 import { PhoneHistory } from "./phone-history";
 import { browserRequest } from "./transport.mjs";
@@ -214,10 +214,22 @@ function remoteHost(url) {
   try { return new URL(url).hostname; } catch { return ""; }
 }
 
+const DESKTOP_QUALITY_KEY = "cage-mobile-desktop-quality";
+function readDesktopQuality() {
+  try {
+    return localStorage.getItem(DESKTOP_QUALITY_KEY) === "smooth" ? "smooth" : "standard";
+  } catch {
+    return "standard";
+  }
+}
+
 export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initialURL, controls, addressSlot}) {
   const desktop = tool === "desktop";
   const name = desktop ? "Claude Desktop" : tool === "claude" ? "Claude.ai" : "远程浏览器";
   const [reading, setReading] = useState(false);
+  const [desktopQuality, setDesktopQuality] = useState(readDesktopQuality);
+  const desktopQualityRef = useRef(desktopQuality);
+  desktopQualityRef.current = desktopQuality;
   const [showAddress, setShowAddress] = useState(tool === "browser");
   const [addressNotice, setAddressNotice] = useState("");
   const [favorites, setFavorites] = useState(false);
@@ -244,7 +256,7 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
     const session = connectDisplay(stage.current, next => {
       if (!next.frame) {gesture.current = null; setKeyboard(""); setFavorites(false); setHistoryOpen(false);}
       setState(next);
-    }, id, start, tool, initialURL);
+    }, id, start, tool, initialURL, desktop ? { quality: desktopQualityRef.current } : undefined);
     controls.current = session;
     const visibility = () => {
       gesture.current = null; setKeyboard("");
@@ -357,6 +369,17 @@ export function RemoteDisplay({visible, onBack, onReopen, id, tool, start, initi
         <Tool label="断开远程桌面" icon={X} onClick={onBack} />
         <button type="button" className="action" disabled={!frame} aria-pressed={reading} onClick={() => setReading(!reading)}>
           {reading ? <Maximize size={17} /> : <ZoomIn size={17} />}{reading ? "全幅" : "放大阅读"}
+        </button>
+        <button type="button" className="action" disabled={!frame} aria-pressed={desktopQuality === "smooth"}
+          title={desktopQuality === "smooth" ? "流畅优先，点击切回高清" : "切换流畅优先"}
+          onClick={() => {
+            const next = desktopQuality === "smooth" ? "standard" : "smooth";
+            setDesktopQuality(next);
+            try { localStorage.setItem(DESKTOP_QUALITY_KEY, next); } catch {}
+            controls.current?.setQuality(next);
+          }}>
+          {desktopQuality === "smooth" ? <Zap size={17} /> : <Gauge size={17} />}
+          {desktopQuality === "smooth" ? "流畅" : "高清"}
         </button>
         {!frame?.shared && frame?.login_supported !== false && <button type="button" className="action" disabled={!frame || state.busy}
           onClick={() => send({type:login ? "desktop" : "login"}, frame)}>

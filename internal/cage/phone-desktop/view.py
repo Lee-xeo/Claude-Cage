@@ -58,16 +58,32 @@ def set_display_scale(value):
     Path('/run/cage-desktop/display-scale').write_text(str(value) + '\n')
 
 
-def encode_frame(image):
-    # Preserve fine text and colored edges at native resolution. Detailed
-    # images fall back within the existing mobile response-size limit.
+QUALITY_MODES = ('standard', 'smooth')
+
+
+def normalize_quality(value):
+    if value in (None, ''):
+        return 'standard'
+    if value not in QUALITY_MODES:
+        raise Failure(400)
+    return value
+
+
+def encode_frame(image, quality_mode='standard'):
+    # Preserve fine text and colored edges at native resolution in standard mode.
+    # Smooth mode uses 4:2:0 subsampling and tighter JPEG budgets for responsive
+    # scrolling and streaming updates over mobile or high-latency relay links.
+    if quality_mode == 'smooth':
+        qualities, subsampling, budget = (72, 60, 48, 38), 2, 450000
+    else:
+        qualities, subsampling, budget = (92, 82, 68, 50), 0, 1900000
     while True:
-        for quality in (92, 82, 68, 50):
+        for quality in qualities:
             buffer = io.BytesIO()
-            image.save(buffer, format='JPEG', quality=quality, subsampling=0)
-            if buffer.tell() <= 1900000:
+            image.save(buffer, format='JPEG', quality=quality, subsampling=subsampling)
+            if buffer.tell() <= budget:
                 return buffer.getvalue(), image.size
-        ratio = min(.85, math.sqrt(1900000 / buffer.tell()) * .95)
+        ratio = min(.85, math.sqrt(budget / buffer.tell()) * .95)
         image = image.resize((max(1, round(image.width * ratio)), max(1, round(image.height * ratio))),
                              Image.Resampling.LANCZOS)
 
@@ -175,12 +191,13 @@ class View:
         self.scale = display_scale()
         self.dynamic_scale = Path('/run/cage-desktop/xsettings.pid').exists()
         self.requested_scale = self.scale
+        self.quality = normalize_quality(os.environ.get('CAGE_PHONE_QUALITY', 'standard'))
         self.scale_ready = 0
         self.resize(int(os.environ['CAGE_PHONE_WIDTH']), int(os.environ['CAGE_PHONE_HEIGHT']),
-                    float(os.environ.get('CAGE_PHONE_PIXEL_RATIO', '0')))
+                    float(os.environ.get('CAGE_PHONE_PIXEL_RATIO', '0')), self.quality)
         self.last = time.monotonic()
 
-    def resize(self, w, h, pixel_ratio=0):
+    def resize(self, w, h, pixel_ratio=0, quality=None):
         if type(w) is not int or type(h) is not int or not (240 <= w <= 1440 and 160 <= h <= 1600):
             raise Failure(400)
         self.size = (w, h)
@@ -188,6 +205,8 @@ class View:
             raise Failure(400)
         if pixel_ratio:
             self.requested_scale = pixel_ratio
+        if quality is not None and quality != '':
+            self.quality = normalize_quality(quality)
         self.fit_display()
 
     def fit_display(self):
@@ -291,7 +310,7 @@ class View:
             return '', False, ''
         return token(self.generation, win.id, ctx), False, ctx
 
-    def snapshot(self):
+    def snapshot(self, previous_tag=''):
         self.fit_display()
         if time.monotonic() < self.scale_ready:
             raise Failure(409)
@@ -309,9 +328,21 @@ class View:
             raw = pixmap.get_image(0, 0, g.width, g.height, X.ZPixmap, 0xffffffff)
             if raw.depth not in (24, 32):
                 raise Failure(503)
-            image = Image.frombytes('RGB', (g.width, g.height), raw.data, 'raw', 'BGRX')
+            raw_bytes = raw.data if isinstance(raw.data, (bytes, bytearray)) else bytes(raw.data)
         finally:
             pixmap.free()
+        focus, password, _ = self.focus(win, role)
+        if document != self.active()[3]:
+            raise Failure(409)
+        quality_mode = getattr(self, 'quality', 'standard')
+        tag_hash = hashlib.sha256()
+        tag_hash.update(json.dumps([document, focus, password, role, self.scale, self.requested_scale, quality_mode],
+                                   separators=(',', ':')).encode())
+        tag_hash.update(raw_bytes)
+        frame_tag = tag_hash.hexdigest()[:32]
+        if previous_tag and previous_tag == frame_tag:
+            return {'id': self.id, 'frame_tag': frame_tag, 'unchanged': True}
+        image = Image.frombytes('RGB', (g.width, g.height), raw_bytes, 'raw', 'BGRX')
         ratio, left, top = fitted_window(self.size, g)
         density = min(self.scale, 1 / ratio)
         canvas = Image.new('RGB', (max(1, round(self.size[0] * density)),
@@ -319,15 +350,14 @@ class View:
         image.thumbnail((max(1, round(g.width * ratio * density)), max(1, round(g.height * ratio * density))),
                         Image.Resampling.LANCZOS)
         canvas.paste(image, (round(left * density), round(top * density)))
-        encoded, encoded_size = encode_frame(canvas)
-        focus, password, _ = self.focus(win, role)
-        if document != self.active()[3]:
-            raise Failure(409)
+        encoded, encoded_size = encode_frame(canvas, quality_mode)
         return {'id': self.id, 'width': self.size[0], 'height': self.size[1], 'document': document,
-                'image': base64.b64encode(encoded).decode(), 'focus': focus, 'password': password,
+                'image': base64.b64encode(encoded).decode(), 'frame_tag': frame_tag,
+                'focus': focus, 'password': password,
                 'pixel_width':encoded_size[0], 'pixel_height':encoded_size[1],
                 'pixel_ratio':self.scale, 'requested_pixel_ratio':self.requested_scale,
                 'pixel_ratio_control':self.dynamic_scale, 'action_frame_control': True,
+                'frame_tag_control': True, 'quality_control': True, 'quality': quality_mode,
                 'window': role, 'title': 'Claude Desktop', 'shared': True}
 
     def switch(self, role):
@@ -340,7 +370,10 @@ class View:
     def action(self, req):
         kind = req.get('type')
         if kind == 'resize':
-            self.resize(req.get('width'), req.get('height'), req.get('pixel_ratio', 0))
+            self.resize(req.get('width'), req.get('height'), req.get('pixel_ratio', 0), req.get('quality'))
+            return
+        if kind == 'quality':
+            self.quality = normalize_quality(req.get('quality'))
             return
         win, role, geometry, document = self.active()
         if document != req.get('document'):
@@ -434,7 +467,12 @@ class Handler(socketserver.StreamRequestHandler):
                 raise Failure(410)
             view.last = time.monotonic()
             if req.get('op') == 'frame':
-                result = view.snapshot()
+                after = req.get('after', '')
+                if after is None:
+                    after = ''
+                if not isinstance(after, str) or (after and len(after) != 32):
+                    raise Failure(400)
+                result = view.snapshot(after)
             elif req.get('op') == 'action':
                 view.action(req)
                 if req.get('return_frame'):
