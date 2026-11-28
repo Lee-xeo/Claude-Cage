@@ -18,7 +18,7 @@ Clash/ClashX 的自动查找只覆盖传统配置目录（`~/.config/clash`）�
 
 Cage 会复制节点及认证参数，由内置核心独立连接；原软件的配置、分组、分流规则、系统代理和监听端口保持原样。Clash Verge 的订阅记录如果带有 HTTPS 链接，也会保留，可在 Cage 的“订阅”页手动更新；导入本身读取本地副本，不下载订阅。当前生效配置会包含已缓存的 provider 节点；未缓存或不兼容的节点会提示，Cage 不执行原软件的配置脚本。Clash Neo 的 `nexo` 和 Clash Verge Ninja 的 `ninja` 是这些客户端专用核心的私有协议，随附的标准 Mihomo 核心无法解析，这类节点会在预览和导入结果中列为跳过并说明原因；请向服务商获取同一出口的标准 Mihomo 兼容节点后再导入。
 
-Surge 配置读取 `[Proxy]` 和 `[Proxy Group]` 中的节点，跟随同目录下的本地 `#!include`，`underlying-proxy` 会转成代理链。远程 `#!include` 不会下载，相关节点需在 Surge 中导出完整配置后再导入；WireGuard、Snell v4 及以上、使用钥匙串私钥的 SSH、非 Shadowsocks 的 ShadowTLS，以及链到多成员分组的节点，会在预览中列为未导入。
+Surge 配置读取 `[Proxy]` 和 `[Proxy Group]` 中的节点，跟随同目录下的本地 `#!include`，`underlying-proxy` 会转成代理链。VLESS（含 REALITY 与 `flow`）会转换为对应节点，REALITY 节点按 Surge 的行为使用 Chrome 指纹。远程 `#!include` 不会下载，相关节点需在 Surge 中导出完整配置后再导入；WireGuard、Snell v4 及以上、使用钥匙串私钥的 SSH、非 Shadowsocks 的 ShadowTLS、`encryption` 不是 `none` 的 VLESS，以及链到多成员分组的节点，会在预览中列为未导入。
 
 自动查找限于软件常用的数据目录。如果检测到 `FlClash for oixCloud` 等使用 `age` 加密保存的配置文件，Cage 不会解密私有配置，会在列表中标出客户端名称及不可直接导入的原因；请先从原软件或服务商导出含节点的明文 Clash/Mihomo 配置，再通过“添加来源”导入或手动添加节点。Windows 上的 FlClash for oixCloud 也可能装在 `%APPDATA%\com.follow\FlClash for oixCloud`，配置以 `FLEN` 开头的私有加密格式保存，Cage 同样只标出不可直接导入的原因，请从服务商用户中心或客户端的导出入口取得兼容的 Clash/Mihomo 订阅或 YAML。Windows 上的 SakuraCat（`%APPDATA%\SakuraCat\SakuraCat`）以私有格式保存配置，Cage 只会在列表中标出它并说明迁移方法：通过 SakuraCat 支持的导出入口或服务商用户中心取得个人 Clash/Mihomo 订阅、YAML 或节点分享链接，再通过“添加来源”导入；它的本机代理端口不能直接作为节点。便携版、自定义目录或其他格式同样可通过“添加来源”导入。远程连接不读取服务器上的代理软件配置；请手动上传要使用的配置。
 
