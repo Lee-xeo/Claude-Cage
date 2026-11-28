@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
@@ -739,13 +740,79 @@ func randomArchiveID() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
+// renameForDeviceReset is replaced in tests to simulate moves across volumes.
+var renameForDeviceReset = os.Rename
+
+// errNotSameDevice is Windows ERROR_NOT_SAME_DEVICE, returned by MoveFileEx
+// when the target is on another volume.
+const errNotSameDevice = syscall.Errno(17)
+
+func isCrossDeviceError(err error) bool {
+	if errors.Is(err, syscall.EXDEV) {
+		return true
+	}
+	return runtime.GOOS == "windows" && errors.Is(err, errNotSameDevice)
+}
+
+// movePath renames src to dst. guest-profile.json lives in the config
+// directory while archives live under state, which storage migration may turn
+// into a symlink or junction to another volume. A regular file that cannot be
+// renamed across volumes is copied, synced and then removed from its source.
+// The copy is restricted to the current user because a new file on Windows
+// inherits its owner and access from the target directory, not from src.
+func movePath(src, dst string) error {
+	err := renameForDeviceReset(src, dst)
+	if err == nil || !isCrossDeviceError(err) {
+		return err
+	}
+	info, statErr := os.Lstat(src)
+	if statErr != nil || !info.Mode().IsRegular() {
+		return err
+	}
+	if err := copyPrivateFileSynced(src, dst); err != nil {
+		_ = os.Remove(dst)
+		return err
+	}
+	if err := os.Remove(src); err != nil {
+		// Keep exactly one copy so callers can treat the move as not done.
+		_ = os.Remove(dst)
+		return err
+	}
+	return nil
+}
+
+func copyPrivateFileSynced(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	if err := host.ProtectFile(dst); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
+}
+
 func moveIfExists(src, dst string) (bool, error) {
 	if _, err := os.Lstat(src); os.IsNotExist(err) {
 		return false, nil
 	} else if err != nil {
 		return false, err
 	}
-	if err := os.Rename(src, dst); err != nil {
+	if err := movePath(src, dst); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -847,7 +914,7 @@ func (s *Server) executeLimaRebuild(ctx context.Context, nextProfile *guestprofi
 		if !moved {
 			return true
 		}
-		return os.Rename(dst, src) == nil
+		return movePath(dst, src) == nil
 	}
 	rollback := func() {
 		s.setMessage("新机构建未完成，正在自动回滚原环境…")
@@ -973,7 +1040,7 @@ func (s *Server) executeContainerRebuild(ctx context.Context, nextProfile *guest
 			ok = env.RestoreArchive(ctx, manifest.ID) == nil
 		}
 		if manifest.HasGuestProfile {
-			ok = os.Rename(profileDst, profileSrc) == nil && ok
+			ok = movePath(profileDst, profileSrc) == nil && ok
 		} else if !hadProfile {
 			_ = os.Remove(profileSrc)
 		}
@@ -1152,7 +1219,7 @@ func (s *Server) restoreDeviceArchive(archiveID string) error {
 					return
 				}
 			}
-			if movedProfile && os.Rename(filepath.Join(swapDir, "guest-profile.json"), profileSrc) != nil {
+			if movedProfile && movePath(filepath.Join(swapDir, "guest-profile.json"), profileSrc) != nil {
 				return
 			}
 			_ = os.Remove(swapDir)
@@ -1170,7 +1237,7 @@ func (s *Server) restoreDeviceArchive(archiveID string) error {
 			return err
 		}
 		if manifest.HasGuestProfile {
-			if err := os.Rename(filepath.Join(archiveDir, "guest-profile.json"), profileSrc); err != nil {
+			if err := movePath(filepath.Join(archiveDir, "guest-profile.json"), profileSrc); err != nil {
 				return err
 			}
 		}
@@ -1236,11 +1303,11 @@ func (s *Server) restoreDeviceArchive(archiveID string) error {
 	undo := func() {
 		for i := len(restoredFromArchive) - 1; i >= 0; i-- {
 			p := restoredFromArchive[i]
-			_ = os.Rename(p.dst, p.src)
+			_ = movePath(p.dst, p.src)
 		}
 		ok := true
 		for _, p := range curPairs {
-			if *p.moved && os.Rename(p.dst, p.src) != nil {
+			if *p.moved && movePath(p.dst, p.src) != nil {
 				ok = false
 			}
 		}
@@ -1262,7 +1329,7 @@ func (s *Server) restoreDeviceArchive(archiveID string) error {
 		if !*p.moved {
 			continue
 		}
-		if err := os.Rename(p.src, p.dst); err != nil {
+		if err := movePath(p.src, p.dst); err != nil {
 			undo()
 			return fmt.Errorf("恢复旧环境失败，已还原当前环境：%w", err)
 		}
