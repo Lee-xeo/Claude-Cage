@@ -90,7 +90,7 @@ type Server struct {
 	diagnosticCount                                  int
 	guestThemeMu                                     sync.Mutex
 	tickets                                          map[string]time.Time
-	remoteDesktopTickets                             map[string]bool
+	ticketScopes                                     map[string]ticketScope
 	browserControl                                   *browserClient
 	controlSession                                   guestSession
 	op                                               sync.Mutex
@@ -383,6 +383,7 @@ func (s *Server) handler() http.Handler {
 		var input struct {
 			Token         string `json:"token"`
 			RemoteDesktop bool   `json:"remote_desktop,omitempty"`
+			TrustedView   bool   `json:"trusted_view,omitempty"`
 		}
 		if !readJSON(w, r, &input) {
 			return
@@ -391,7 +392,20 @@ func (s *Server) handler() http.Handler {
 			http.Error(w, "Launcher refused", http.StatusUnauthorized)
 			return
 		}
-		ticket := s.issueTicketWithScope(input.RemoteDesktop)
+		// Only the desktop entry hands its window the trusted-view proof. A
+		// workload controller keeps that proof in launcher cookie jars.
+		if input.TrustedView && (!s.desktopEntry || input.RemoteDesktop) {
+			http.Error(w, "Launcher refused", http.StatusBadRequest)
+			return
+		}
+		scope := ticketPlain
+		switch {
+		case input.RemoteDesktop:
+			scope = ticketRemoteDesktop
+		case input.TrustedView:
+			scope = ticketTrustedView
+		}
+		ticket := s.issueScopedTicket(scope)
 		jsonReply(w, launchResponse{ConfigPath: s.configPath, ClientOnly: s.clientOnly, DesktopGateway: s.desktopEntry, SessionID: desktopSessionID(), URL: s.origin + "/?launch=" + randomToken()[:8] + "#" + ticket, Controller: s.identity})
 	})
 	if s.desktopEntry || s.clientOnly {
@@ -411,14 +425,17 @@ func (s *Server) handler() http.Handler {
 		if !readJSON(w, r, &v) {
 			return
 		}
-		ok, remoteDesktop := s.consumeTicketWithScope(v.Token)
+		scope, ok := s.consumeScopedTicket(v.Token)
 		if !ok {
 			http.Error(w, "访问凭证无效，请从 Cage 应用重新打开。", http.StatusUnauthorized)
 			return
 		}
 		http.SetCookie(w, &http.Cookie{Name: s.cookieName(), Value: s.session, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400 * 30})
-		if remoteDesktop {
+		switch scope {
+		case ticketRemoteDesktop:
 			http.SetCookie(w, &http.Cookie{Name: s.cookieName() + "-remote-desktop", Value: remoteDesktopProof(s.token), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400 * 30})
+		case ticketTrustedView:
+			http.SetCookie(w, &http.Cookie{Name: s.cookieName() + "-desktop", Value: trustedViewProof(s.token), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400 * 30})
 		}
 		jsonReply(w, map[string]bool{"ok": true})
 	})
@@ -1183,45 +1200,58 @@ func (s *Server) requestStop(w http.ResponseWriter, r *http.Request, logout bool
 
 func (s *Server) cookieName() string { u, _ := url.Parse(s.origin); return cookieName + "_" + u.Port() }
 
+// ticketScope records which extra proof /api/session grants with a ticket.
+type ticketScope int
+
+const (
+	ticketPlain ticketScope = iota
+	// ticketRemoteDesktop marks a desktop client that arrived over SSH.
+	ticketRemoteDesktop
+	// ticketTrustedView marks this computer's native desktop window.
+	ticketTrustedView
+)
+
 func (s *Server) issueTicket() string {
-	return s.issueTicketWithScope(false)
+	return s.issueScopedTicket(ticketPlain)
 }
 
-func (s *Server) issueTicketWithScope(remoteDesktop bool) string {
+func (s *Server) issueScopedTicket(scope ticketScope) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.tickets == nil {
 		s.tickets = map[string]time.Time{}
 	}
-	if s.remoteDesktopTickets == nil {
-		s.remoteDesktopTickets = map[string]bool{}
+	if s.ticketScopes == nil {
+		s.ticketScopes = map[string]ticketScope{}
 	}
 	for token, expires := range s.tickets {
 		if time.Now().After(expires) {
 			delete(s.tickets, token)
-			delete(s.remoteDesktopTickets, token)
+			delete(s.ticketScopes, token)
 		}
 	}
 	token := randomToken()
 	s.tickets[token] = time.Now().Add(time.Minute)
-	if remoteDesktop {
-		s.remoteDesktopTickets[token] = true
+	if scope != ticketPlain {
+		s.ticketScopes[token] = scope
 	}
 	return token
 }
 
 func (s *Server) consumeTicket(token string) bool {
-	ok, _ := s.consumeTicketWithScope(token)
+	_, ok := s.consumeScopedTicket(token)
 	return ok
 }
 
-func (s *Server) consumeTicketWithScope(token string) (bool, bool) {
+func (s *Server) consumeScopedTicket(token string) (ticketScope, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	expires, ok := s.tickets[token]
-	remoteDesktop := s.remoteDesktopTickets[token]
+	scope := s.ticketScopes[token]
 	delete(s.tickets, token)
-	delete(s.remoteDesktopTickets, token)
-	valid := ok && time.Now().Before(expires)
-	return valid, valid && remoteDesktop
+	delete(s.ticketScopes, token)
+	if !ok || !time.Now().Before(expires) {
+		return ticketPlain, false
+	}
+	return scope, true
 }
