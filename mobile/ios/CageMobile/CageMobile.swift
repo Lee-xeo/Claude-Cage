@@ -525,9 +525,9 @@ private struct FinderCorners: Shape {
 private struct QRScannerScreen: View {
     let result: (String?) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sweeping = false
     @State private var hint = "将 Cage 配对二维码放入框内\n在电脑「设置 → 远程连接」中生成"
     private let accent = Color(red: 0.91, green: 0.72, blue: 0.62)
+    private let sweepPeriod: TimeInterval = 2.4
     var body: some View {
         GeometryReader { geometry in
             let side = max(96, min(280, min(geometry.size.width - 56, geometry.size.height - 190)))
@@ -549,21 +549,33 @@ private struct QRScannerScreen: View {
                 FinderCorners().stroke(accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     .frame(width: side, height: side).position(x: box.midX, y: box.midY)
                     .allowsHitTesting(false)
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [accent.opacity(0), accent.opacity(0.22)], startPoint: .top, endPoint: .bottom).frame(height: 26)
-                    Capsule().fill(accent).frame(height: 2)
-                }.frame(width: side - 24)
-                    .position(x: box.midX, y: reduceMotion ? box.midY : box.minY + 24 + (sweeping ? side - 48 : 0))
-                    .animation(reduceMotion ? nil : .linear(duration: 2.4).repeatForever(autoreverses: true), value: sweeping)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                TimelineView(.animation(paused: reduceMotion)) { timeline in
+                    let cycle = sweepPeriod * 2
+                    let elapsed = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle)
+                    let normalized = elapsed < 0 ? elapsed + cycle : elapsed
+                    let progress = reduceMotion ? 0.5 : (normalized <= sweepPeriod ? normalized / sweepPeriod : (cycle - normalized) / sweepPeriod)
+                    let travel = max(0, side - 48)
+                    ZStack(alignment: .top) {
+                        Color.clear
+                        VStack(spacing: 0) {
+                            LinearGradient(colors: [accent.opacity(0), accent.opacity(0.22)], startPoint: .top, endPoint: .bottom).frame(height: 26)
+                            Capsule().fill(accent).frame(height: 2)
+                        }.frame(width: max(0, side - 24))
+                            .offset(y: 24 + travel * progress - 26)
+                    }
+                    .frame(width: side, height: side)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .position(x: box.midX, y: box.midY)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
                 VStack(spacing: 12) {
                     Text("连接你的电脑").font(.title2.bold())
                     Text(hint).font(.subheadline).foregroundStyle(.white.opacity(0.88)).multilineTextAlignment(.center)
                     Text(simulatorPreviewEnabled ? "模拟器预览 · 即将进入示例工作台" : "仅识别 Cage 配对码")
                         .font(.caption).foregroundStyle(.white.opacity(0.6))
                 }.foregroundStyle(.white).padding(.horizontal, 24).padding(.bottom, 24).allowsHitTesting(false).accessibilityElement(children: .combine)
-            }.background(Color.black).onAppear {sweeping = true}
+            }.background(Color.black)
                 .task {
                     #if targetEnvironment(simulator)
                     do {try await Task.sleep(for: .seconds(2))} catch {return}

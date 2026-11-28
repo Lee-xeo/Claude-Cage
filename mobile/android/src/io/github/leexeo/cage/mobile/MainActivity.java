@@ -85,6 +85,8 @@ public final class MainActivity extends Activity {
     private Button connect, forgetHost;
     private boolean busy;
     private int generation;
+    private boolean didBackground;
+    private int lifecycleGeneration;
     private MobileTheme palette;
     private SharedPreferences appearance;
     private static final int SCAN = 42;
@@ -136,6 +138,8 @@ public final class MainActivity extends Activity {
                     invitation = null;
                     imported = null;
                     setConnecting(false);
+                    ConnectedDevice stale = connections.get(saved.relay + "\n" + saved.pin);
+                    if (stale != null) disconnectDevice(stale);
                     connect();
                 });
             } catch (Exception e) {
@@ -188,12 +192,12 @@ public final class MainActivity extends Activity {
 
     private int dp(int value) { return Math.round(getResources().getDisplayMetrics().density * value); }
     private String themeMode() { return appearance.getString("theme", "system"); }
-    private void insets(View root) {
-        root.setOnApplyWindowInsetsListener((v, w) -> {
+    private void insets(View target) {
+        target.setOnApplyWindowInsetsListener((v, w) -> {
             v.setPadding(w.getSystemWindowInsetLeft(), w.getSystemWindowInsetTop(), w.getSystemWindowInsetRight(), w.getSystemWindowInsetBottom());
-            return w.consumeSystemWindowInsets();
+            return w;
         });
-        root.requestApplyInsets();
+        target.requestApplyInsets();
     }
     private LinearLayout column() {
         LinearLayout group = new LinearLayout(this);
@@ -295,7 +299,6 @@ public final class MainActivity extends Activity {
         root = new FrameLayout(this);
         root.setBackgroundColor(palette.bg);
         setContentView(root);
-        insets(root);
         localPin = null;
     }
     private ImageView image(String resource) {
@@ -312,6 +315,7 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         root.addView(scroll, -1, -1);
+        insets(scroll);
         FrameLayout body = new FrameLayout(this);
         body.setMinimumHeight(dp(440));
         scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
@@ -370,6 +374,9 @@ public final class MainActivity extends Activity {
         shade.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         shade.setFocusable(false);
         layer.addView(shade, -1, -1);
+        FrameLayout sheetHost = new FrameLayout(this);
+        layer.addView(sheetHost, -1, -1);
+        insets(sheetHost);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
         scroll.setBackground(surface(palette.panel, 26, false));
@@ -378,7 +385,7 @@ public final class MainActivity extends Activity {
             Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         sheet.setMargins(dp(8), dp(12), dp(8), dp(8));
         sheet.width = Math.min(sheet.width - dp(16), dp(500));
-        layer.addView(scroll, sheet);
+        sheetHost.addView(scroll, sheet);
         form = column();
         form.setPadding(dp(20), dp(14), dp(20), dp(14));
         scroll.addView(form);
@@ -438,6 +445,7 @@ public final class MainActivity extends Activity {
         layout(next);
         ScrollView scroll = new ScrollView(this);
         root.addView(scroll, -1, -1);
+        insets(scroll);
         form = column();
         form.setPadding(dp(22), dp(14), dp(22), dp(28));
         form.setFocusableInTouchMode(true);
@@ -672,6 +680,7 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (attempt != generation || isDestroyed()) { close(connected); return; }
                     setConnecting(false);
+                    if (didBackground) worker.execute(connected::suspend);
                     ConnectedDevice next = new ConnectedDevice(relay + "\n" + pin, connected, url,
                         "电脑 " + (connections.size() + 1));
                     connections.put(next.hostKey, next);
@@ -886,6 +895,45 @@ public final class MainActivity extends Activity {
             worker.execute(() -> close(connected.client));
         }
         connections.clear(); browser = null; activeDevice = null;
+    }
+    @Override protected void onStop() {
+        didBackground = true;
+        lifecycleGeneration++;
+        java.util.List<ConnectedDevice> snapshot = new java.util.ArrayList<>(connections.values());
+        if (!snapshot.isEmpty()) {
+            worker.execute(() -> {
+                for (ConnectedDevice connected : snapshot) connected.client.suspend();
+            });
+        }
+        super.onStop();
+    }
+    @Override protected void onStart() {
+        super.onStart();
+        if (!didBackground) return;
+        didBackground = false;
+        final int lifecycle = ++lifecycleGeneration;
+        java.util.List<ConnectedDevice> snapshot = new java.util.ArrayList<>(connections.values());
+        if (snapshot.isEmpty()) return;
+        worker.execute(() -> {
+            for (ConnectedDevice connected : snapshot) {
+                boolean ok = connected.client.resume();
+                runOnUiThread(() -> {
+                    if (isDestroyed() || lifecycleGeneration != lifecycle || didBackground) return;
+                    if (connections.get(connected.hostKey) != connected) return;
+                    if (ok) {
+                        connected.view.evaluateJavascript("window.dispatchEvent(new Event('online'))", null);
+                    } else {
+                        boolean wasActive = viewingWorkspace && activeDevice == connected;
+                        disconnectDevice(connected);
+                        if (wasActive && credentials.saved()) {
+                            connect();
+                        } else if (status != null) {
+                            status.setText("部分设备的连接已失效，请重新连接。");
+                        }
+                    }
+                });
+            }
+        });
     }
     @Override protected void onPause() {
         updates.pause();
